@@ -39,10 +39,13 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
 import { useMarketplaceViewModel } from '../../application/view-models/useMarketplaceViewModel';
+import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
+import { setSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 import {
   createNativeTabScrollPublisherState,
   publishNativeTabScrollBehavior,
@@ -79,6 +82,7 @@ const SORT_OPTIONS: Array<{
 
 const MIN_DISTANCE = 1;
 const MAX_DISTANCE = 100;
+const marketplaceOrderRepository = createProductRepository();
 
 function MarketplaceSkeleton() {
   return (
@@ -411,6 +415,7 @@ function MarketplaceScreen() {
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [distanceModalVisible, setDistanceModalVisible] = useState(false);
+  const [orderingProductId, setOrderingProductId] = useState<number | null>(null);
  // Collapsible filter panel state. When the user scrolls down past
  // COLLAPSE_THRESHOLD we collapse the filter chip bar (search + sort
  // + category + distance + nearby + reset) and keep only the top app
@@ -651,6 +656,33 @@ function MarketplaceScreen() {
     [navigate],
   );
 
+  const ensureProductInCart = useCallback(
+    async (product: ProductItem) => {
+      if (!product.can_add_to_cart || orderingProductId !== null) return;
+      setOrderingProductId(product.id);
+      try {
+        const result = await marketplaceOrderRepository.ensureProductInCart(
+          product.id,
+        );
+        setSyncedCartCount(result.count, result.type === 'added' ? 1 : 0);
+        navigate(ROUTES.CHECKOUT, {
+          selectedProductIds: [product.id],
+        });
+      } catch (error) {
+        showSnackbar({
+          type: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Không thể mở màn đặt hàng cho sản phẩm này.',
+        });
+      } finally {
+        setOrderingProductId(null);
+      }
+    },
+    [navigate, orderingProductId],
+  );
+
 
   const renderProduct = useCallback(
     ({ item }: ListRenderItemInfo<ProductItem>) => (
@@ -661,10 +693,12 @@ function MarketplaceScreen() {
           product={item}
           onPress={handleProductPress}
           onContactSeller={handleContactSeller}
+          onOrderRequest={ensureProductInCart}
+          isOrderRequesting={orderingProductId === item.id}
         />
       </View>
     ),
-    [handleProductPress, handleContactSeller],
+    [ensureProductInCart, handleProductPress, handleContactSeller, orderingProductId],
   );
  
   const handleMarketplaceScroll = useCallback(

@@ -4388,6 +4388,140 @@ function VNSEEA_AttachMessageSystemEvent($message)
     return $message;
 }
 
+function VNSEEA_IsMarketRequestOrderHash($hash_id)
+{
+    global $db;
+    if (empty($hash_id)) {
+        return false;
+    }
+
+    $order_flow = $db->where('hash_id', Wo_Secure($hash_id))->getValue(
+        T_USER_ORDERS,
+        'order_flow'
+    );
+    return (string)$order_flow === 'request';
+}
+
+function VNSEEA_FormatMarketplaceContextMoney($amount)
+{
+    global $wo;
+    $currency = !empty($wo['config']['currency']) ? $wo['config']['currency'] : 'USD';
+    $rule = Wo_GetCurrencyRule($currency);
+    return $rule['code'] . Wo_FormatPriceByCurrency($amount, $currency);
+}
+
+function VNSEEA_AttachMarketplaceMessageContext($message)
+{
+    global $wo, $db;
+    if (!is_array($message)) {
+        return $message;
+    }
+
+    if (!empty($message['product_id'])) {
+        $product = !empty($message['product'])
+            ? $message['product']
+            : Wo_GetProduct((int)$message['product_id']);
+        if (!empty($product)) {
+            $message['product'] = $product;
+            $image = '';
+            if (!empty($product['images'][0]['image'])) {
+                $image = $product['images'][0]['image'];
+            }
+            $message['marketplace_context'] = array(
+                'type' => 'product_inquiry',
+                'product_id' => (string)$message['product_id'],
+                'name' => !empty($product['name']) ? $product['name'] : 'Sản phẩm',
+                'price' => !empty($product['price_format'])
+                    ? $product['price_format']
+                    : (!empty($product['price']) ? (string)$product['price'] : ''),
+                'image' => $image,
+                'location' => !empty($product['location']) ? $product['location'] : '',
+                'note' => !empty($message['or_text']) ? $message['or_text'] : (!empty($message['text']) ? $message['text'] : ''),
+            );
+        }
+    }
+
+    if (empty($message['market_order_hash'])) {
+        return $message;
+    }
+
+    static $order_cache = array();
+    $hash_id = (string)$message['market_order_hash'];
+    $viewer_id = !empty($wo['user']['user_id']) ? (int)$wo['user']['user_id'] : 0;
+    $cache_key = $viewer_id . ':' . $hash_id;
+    if (array_key_exists($cache_key, $order_cache)) {
+        if (!empty($order_cache[$cache_key])) {
+            $message['market_order'] = $order_cache[$cache_key];
+            $message['marketplace_context'] = $order_cache[$cache_key];
+        }
+        return $message;
+    }
+
+    $orders = $db->where('hash_id', $hash_id)->get(T_USER_ORDERS);
+    if (empty($orders)) {
+        $order_cache[$cache_key] = null;
+        return $message;
+    }
+    $first_order = $orders[0];
+    if ($viewer_id < 1 ||
+        ($viewer_id !== (int)$first_order->user_id &&
+         $viewer_id !== (int)$first_order->product_owner_id)) {
+        $order_cache[$cache_key] = null;
+        return $message;
+    }
+
+    $buyer = Wo_UserData((int)$first_order->user_id);
+    $address = $db->where('id', (int)$first_order->address_id)
+        ->where('user_id', (int)$first_order->user_id)
+        ->getOne(T_USER_ADDRESS);
+    $address_parts = array();
+    foreach (array('address', 'city', 'zip', 'country') as $field) {
+        if (!empty($address) && !empty($address->{$field})) {
+            $address_parts[] = trim(strip_tags((string)$address->{$field}));
+        }
+    }
+
+    $items = array();
+    $total = 0;
+    foreach ($orders as $order) {
+        $product = Wo_GetProduct((int)$order->product_id);
+        $line_total = (float)$order->price;
+        $total += $line_total;
+        $image = '';
+        if (!empty($product['images'][0]['image'])) {
+            $image = $product['images'][0]['image'];
+        }
+        $items[] = array(
+            'product_id' => (string)$order->product_id,
+            'name' => !empty($product['name']) ? $product['name'] : 'Sản phẩm #' . (int)$order->product_id,
+            'image' => $image,
+            'quantity' => max(1, (int)$order->units),
+            'total' => VNSEEA_FormatMarketplaceContextMoney($line_total),
+        );
+    }
+
+    $context = array(
+        'type' => 'order_request',
+        'order_hash' => $hash_id,
+        'buyer_name' => !empty($buyer['name']) ? $buyer['name'] : (!empty($buyer['username']) ? $buyer['username'] : 'Người mua'),
+        'buyer_phone' => !empty($address) && !empty($address->phone) ? (string)$address->phone : '',
+        'buyer_address' => implode(', ', $address_parts),
+        'items' => $items,
+        'total' => VNSEEA_FormatMarketplaceContextMoney($total),
+    );
+    $order_cache[$cache_key] = $context;
+    $message['market_order'] = $context;
+    $message['marketplace_context'] = $context;
+    return $message;
+}
+
+function VNSEEA_AttachCanonicalMessageContext($message)
+{
+    return VNSEEA_AttachMarketplaceMessageContext(
+        VNSEEA_AttachMessageSystemEvent($message)
+    );
+}
+
 function Wo_GetMessages($data = array(), $limit = 50)
 {
     global $wo, $sqlConnect;
@@ -4454,7 +4588,7 @@ function Wo_GetMessages($data = array(), $limit = 50)
                     $fetched_data['story'] = $fetched_data['story'][0];
                 }
             }
-            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
+            $message_data[] = VNSEEA_AttachCanonicalMessageContext($fetched_data);
         }
     }
     return $message_data;
@@ -4494,7 +4628,7 @@ function GetMessageById($id)
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $data = VNSEEA_AttachMessageSystemEvent($fetched_data);
+            $data = VNSEEA_AttachCanonicalMessageContext($fetched_data);
         }
         return $data;
     }
@@ -4569,7 +4703,7 @@ function Wo_GetGroupMessages($args = array())
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
+            $message_data[] = VNSEEA_AttachCanonicalMessageContext($fetched_data);
         }
     }
     return $message_data;
@@ -4702,7 +4836,7 @@ function Wo_GetPageMessages($args = array())
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
+            $message_data[] = VNSEEA_AttachCanonicalMessageContext($fetched_data);
         }
     }
     return $message_data;
@@ -4820,7 +4954,7 @@ function Wo_GetGroupMessagesAPP($args = array())
                 $fetched_data['reply'] = GetMessageById($fetched_data['reply_id']);
             }
             $fetched_data['chat_data'] = $db->where('user_id', $wo['user']['user_id'])->where('group_id', $group_id)->ArrayBuilder()->getOne(T_GROUP_CHAT_USERS);
-            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
+            $message_data[] = VNSEEA_AttachCanonicalMessageContext($fetched_data);
         }
     }
     return $message_data;
@@ -4884,7 +5018,7 @@ function Wo_GetMessagesHeader($data = array(), $type = '')
             $fetched_data['text'] = Wo_EditMarkup($fetched_data['text']);
         }
         $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-        return VNSEEA_AttachMessageSystemEvent($fetched_data);
+        return VNSEEA_AttachCanonicalMessageContext($fetched_data);
     }
     return false;
 }
@@ -10880,7 +11014,7 @@ function Wo_GetMessagesAPPN($data = array(), $limit = 50)
                 }
             }
             $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
+            $message_data[] = VNSEEA_AttachCanonicalMessageContext($fetched_data);
         }
     }
     return $message_data;

@@ -87,7 +87,9 @@ import {
 import type {
   MessageAttachment,
   MessageItem,
+  MarketplaceMessageContext,
   MessageReplyReference,
+  SendMessageOptions,
   MessageSystemEvent,
 } from '../../domain/types/messages.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
@@ -1182,7 +1184,7 @@ function parseProductInquiry(messageText: string) {
       id: idMatch ? idMatch[1] : '',
       userMessage: msgMatch ? msgMatch[1].trim() : '',
     };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -1234,6 +1236,63 @@ function parseOrderInquiry(messageText: string) {
   }
 }
 
+type ProductInquiryContext = Extract<
+  MarketplaceMessageContext,
+  { type: 'product_inquiry' }
+>;
+type OrderRequestContext = Extract<
+  MarketplaceMessageContext,
+  { type: 'order_request' }
+>;
+
+function getProductInquiryContext(
+  message: MessageItem,
+): ProductInquiryContext | null {
+  if (message.marketplaceContext?.type === 'product_inquiry') {
+    return message.marketplaceContext;
+  }
+
+  const legacy = parseProductInquiry(message.message);
+  if (!legacy) return null;
+  return {
+    type: 'product_inquiry',
+    productId: legacy.id,
+    name: legacy.name,
+    price: legacy.price || undefined,
+    location: legacy.location || undefined,
+    image: legacy.image || undefined,
+    note: legacy.userMessage || undefined,
+  };
+}
+
+function getOrderRequestContext(
+  message: MessageItem,
+): OrderRequestContext | null {
+  if (message.marketplaceContext?.type === 'order_request') {
+    return message.marketplaceContext;
+  }
+
+  const legacy = parseOrderInquiry(message.message);
+  if (!legacy) return null;
+  return {
+    type: 'order_request',
+    orderHash: legacy.id || '---',
+    buyerName: legacy.buyerName,
+    buyerPhone: legacy.buyerPhone,
+    buyerAddress: legacy.buyerAddress,
+    items: [
+      {
+        productId: legacy.id || '',
+        name: legacy.name,
+        image: legacy.image || undefined,
+        quantity: Math.max(1, Number(legacy.quantity) || 1),
+        total: legacy.price,
+      },
+    ],
+    total: legacy.price,
+  };
+}
+
 function getMessageSnippet(message: MessageItem, chatName: string) {
   if (message.callEvent) {
     const title = getCallCardTitle(message.callEvent);
@@ -1241,7 +1300,7 @@ function getMessageSnippet(message: MessageItem, chatName: string) {
     return detail ? `${title} · ${detail}` : title;
   }
 
-  const productInquiry = parseProductInquiry(message.message);
+  const productInquiry = getProductInquiryContext(message);
   if (productInquiry) {
     return `🛍️ Hỏi về sản phẩm: ${productInquiry.name}`;
   }
@@ -1319,7 +1378,8 @@ function ReplyMessageBubble({
                 <Video size={17} color="#7C3AED" />
               ) : reply.contentKind === 'audio_call' ? (
                 <Phone size={17} color="#7C3AED" />
-              ) : reply.contentKind === 'product' ? (
+              ) : reply.contentKind === 'product' ||
+                reply.contentKind === 'order' ? (
                 <ShoppingBag size={17} color="#7C3AED" />
               ) : reply.contentKind === 'sticker' ? (
                 <MessageCircle size={17} color="#7C3AED" />
@@ -1344,17 +1404,8 @@ function ReplyMessageBubble({
 
 function ProductInquiryBubble({
   product,
-  isSentByMe,
 }: {
-  product: {
-    name: string;
-    price: string;
-    location?: string;
-    image?: string;
-    id?: string;
-    userMessage: string;
-  };
-  isSentByMe: boolean;
+  product: ProductInquiryContext;
 }) {
   const cardBg = 'bg-white';
   const cardBorder = 'border-slate-200';
@@ -1363,9 +1414,9 @@ function ProductInquiryBubble({
   const navigation = useNavigation<any>();
 
   const handlePressProduct = () => {
-    if (product.id) {
+    if (product.productId) {
       navigation.navigate(ROUTES.PRODUCT_DETAIL, {
-        productId: Number(product.id),
+        productId: Number(product.productId),
       });
     }
   };
@@ -1408,140 +1459,98 @@ function ProductInquiryBubble({
 
 function OrderInquiryBubble({
   order,
-  isSentByMe,
 }: {
-  order: {
-    name: string;
-    price: string;
-    quantity: string;
-    id?: string;
-    image?: string;
-    buyerName: string;
-    buyerPhone: string;
-    buyerAddress: string;
-  };
-  isSentByMe: boolean;
+  order: OrderRequestContext;
 }) {
-  const cardBg = 'bg-white';
-  const cardBorder = 'border-slate-200';
-  const nameColor = 'text-slate-800';
-  const priceColor = 'text-blue-600';
   const navigation = useNavigation<any>();
 
-  const handlePressProduct = () => {
-    if (order.id) {
+  const handlePressProduct = (productId: string) => {
+    if (productId) {
       navigation.navigate(ROUTES.PRODUCT_DETAIL, {
-        productId: Number(order.id),
+        productId: Number(productId),
       });
     }
   };
 
   return (
-    <View
-      className={`w-[260px] rounded-3xl border overflow-hidden ${cardBg} ${cardBorder} shadow-md`}
-    >
-      {/* Header Banner */}
+    <View className="w-[280px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <View
-        className="bg-blue-600 px-3.5 py-2.5 flex-row items-center justify-between"
+        className="flex-row items-center justify-between bg-blue-600 px-3.5 py-2.5"
         style={{ backgroundColor: '#0000ff' }}
       >
-        <Text className="text-[12px] font-extrabold text-white uppercase tracking-wider">
-          📦 ĐƠN HÀNG MỚI
+        <Text className="text-[12px] font-extrabold uppercase text-white">
+          Yêu cầu mua
         </Text>
-        <Text className="text-[11px] text-blue-100 font-bold">
-          ID: #{order.id}
+        <Text className="text-[11px] font-bold text-blue-100">
+          #{order.orderHash}
         </Text>
       </View>
 
-      {/* Product Row */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={handlePressProduct}
-        className="p-3 flex-row border-b border-slate-100"
-      >
-        {!!order.image && (
-          <Image
-            source={{ uri: order.image }}
-            className="w-14 h-14 rounded-lg bg-slate-100 mr-3"
-            resizeMode="cover"
-          />
-        )}
-        <View className="flex-1 justify-center">
-          <Text
-            className={`text-[13px] font-bold leading-4 ${nameColor}`}
-            numberOfLines={2}
+      <View className="border-b border-slate-100">
+        {order.items.map((item, index) => (
+          <TouchableOpacity
+            key={`${item.productId}-${index}`}
+            activeOpacity={item.productId ? 0.85 : 1}
+            disabled={!item.productId}
+            onPress={() => handlePressProduct(item.productId)}
+            className={`flex-row p-3 ${
+              index < order.items.length - 1 ? 'border-b border-slate-100' : ''
+            }`}
           >
-            {order.name}
-          </Text>
-          <View className="flex-row items-center justify-between mt-1">
-            <Text className={`text-[12px] font-extrabold ${priceColor}`}>
-              {order.price}
-            </Text>
-            <Text className="text-[11px] font-medium text-slate-500">
-              x{order.quantity}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
+            {item.image ? (
+              <Image
+                source={{ uri: item.image }}
+                className="mr-3 h-14 w-14 rounded-lg bg-slate-100"
+                resizeMode="cover"
+              />
+            ) : (
+              <View className="mr-3 h-14 w-14 items-center justify-center rounded-lg bg-slate-100">
+                <ShoppingBag size={20} color="#64748b" />
+              </View>
+            )}
+            <View className="flex-1 justify-center">
+              <Text
+                className="text-[13px] font-bold leading-4 text-slate-800"
+                numberOfLines={2}
+              >
+                {item.name}
+              </Text>
+              <View className="mt-1 flex-row items-center justify-between">
+                <Text className="text-[12px] font-extrabold text-blue-600">
+                  {item.total}
+                </Text>
+                <Text className="text-[11px] font-medium text-slate-500">
+                  x{item.quantity}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-      {/* Buyer Details */}
-      <View className="p-3.5 bg-slate-50">
-        <Text className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-          Thông tin nhận hàng
+      <View className="bg-slate-50 p-3.5">
+        <View className="mb-2 flex-row items-center justify-between">
+          <Text className="text-[11px] font-bold uppercase text-slate-400">
+            Thông tin nhận hàng
+          </Text>
+          <Text className="text-[12px] font-extrabold text-blue-600">
+            {order.total}
+          </Text>
+        </View>
+
+        <Text className="text-[12px] font-bold text-slate-800">
+          {order.buyerName || 'Người nhận'}
         </Text>
-
-        <View
-          className="flex-row items-start mb-1.5"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-start',
-            marginBottom: 6,
-          }}
-        >
-          <Text
-            className="text-[12px] text-slate-500 w-20 font-semibold"
-            style={{ width: 80 }}
-          >
-            Người nhận:
-          </Text>
-          <Text className="text-[12px] text-slate-800 flex-1 font-bold">
-            {order.buyerName}
-          </Text>
-        </View>
-
-        <View
-          className="flex-row items-start mb-1.5"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-start',
-            marginBottom: 6,
-          }}
-        >
-          <Text
-            className="text-[12px] text-slate-500 w-20 font-semibold"
-            style={{ width: 80 }}
-          >
-            Điện thoại:
-          </Text>
-          <Text className="text-[12px] text-slate-800 flex-1 font-bold">
+        {!!order.buyerPhone && (
+          <Text className="mt-1 text-[12px] text-slate-600">
             {order.buyerPhone}
           </Text>
-        </View>
-
-        <View
-          className="flex-row items-start"
-          style={{ flexDirection: 'row', alignItems: 'flex-start' }}
-        >
-          <Text
-            className="text-[12px] text-slate-500 w-20 font-semibold"
-            style={{ width: 80 }}
-          >
-            Địa chỉ:
-          </Text>
-          <Text className="text-[12px] text-slate-700 flex-1 font-semibold leading-4">
+        )}
+        {!!order.buyerAddress && (
+          <Text className="mt-1 text-[12px] leading-4 text-slate-600">
             {order.buyerAddress}
           </Text>
-        </View>
+        )}
       </View>
     </View>
   );
@@ -1585,8 +1594,8 @@ function MessageBubble({
     Boolean(message.media) &&
     ['image', 'video', 'audio'].includes(message.mediaType ?? '');
 
-  const orderInquiry = parseOrderInquiry(message.message);
-  const productInquiry = parseProductInquiry(message.message);
+  const orderInquiry = getOrderRequestContext(message);
+  const productInquiry = getProductInquiryContext(message);
   const replyInfo = message.replyTo;
   const sharedPost = message.sharedPost;
   const parsedMapShare =
@@ -1606,7 +1615,7 @@ function MessageBubble({
     : orderInquiry
     ? ''
     : productInquiry
-    ? productInquiry.userMessage || 'Sản phẩm này còn hàng không ạ?'
+    ? productInquiry.note || 'Sản phẩm này còn hàng không ạ?'
     : mapShare
     ? mapShare.caption
     : message.message;
@@ -1879,7 +1888,6 @@ function MessageBubble({
             >
               <OrderInquiryBubble
                 order={orderInquiry}
-                isSentByMe={isSentByMe ?? false}
               />
               <Text
                 className={`text-[9.5px] mt-1 ${
@@ -1898,7 +1906,6 @@ function MessageBubble({
                 <View className="mb-2 shadow-sm">
                   <ProductInquiryBubble
                     product={productInquiry}
-                    isSentByMe={isSentByMe ?? false}
                   />
                 </View>
               )}
@@ -3013,6 +3020,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     ]).start();
 
     let nextText = text;
+    let productInquiry: SendMessageOptions['productInquiry'];
     if (attachedProduct) {
       const currencySymbol =
         attachedProduct.currency_symbol ||
@@ -3021,17 +3029,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         'VNSEEA';
       const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
       const imageUrl = attachedProduct.images?.[0]?.image || '';
-      const productId = attachedProduct.id;
-
-      nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${
-        attachedProduct.name
-      }*\n💰 Giá: *${formattedPrice}*${
-        attachedProduct.location
-          ? `\n📍 Địa điểm: *${attachedProduct.location}*`
-          : ''
-      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${
-        productId ? `\n🆔 ID: *${productId}*` : ''
-      }\n\n💬 Lời nhắn: ${text.trim() || 'Mặt hàng này còn không bạn?'}`;
+      nextText = text.trim() || 'Mặt hàng này còn không bạn?';
+      productInquiry = {
+        productId: String(attachedProduct.id),
+        note: nextText,
+        name: attachedProduct.name,
+        price: formattedPrice,
+        image: imageUrl || undefined,
+        location: attachedProduct.location || undefined,
+      };
 
       setAttachedProduct(undefined);
     } else if (sharedMapLocation) {
@@ -3056,13 +3062,21 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     setAttachments([]);
 
     if (nextAttachments.length === 0) {
-      await sendMessage(nextText, undefined, replyTo ? { replyTo } : undefined);
+      await sendMessage(nextText, undefined, {
+        ...(replyTo ? { replyTo } : {}),
+        ...(productInquiry ? { productInquiry } : {}),
+      });
     } else {
       for (const [index, attachment] of nextAttachments.entries()) {
         await sendMessage(
           index === 0 ? nextText : '',
           attachment,
-          index === 0 && replyTo ? { replyTo } : undefined,
+          index === 0
+            ? {
+                ...(replyTo ? { replyTo } : {}),
+                ...(productInquiry ? { productInquiry } : {}),
+              }
+            : undefined,
         );
       }
     }
@@ -3165,20 +3179,17 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         'VNSEEA';
       const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
       const imageUrl = attachedProduct.images?.[0]?.image || '';
-      const productId = attachedProduct.id;
-
-      const nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${
-        attachedProduct.name
-      }*\n💰 Giá: *${formattedPrice}*${
-        attachedProduct.location
-          ? `\n📍 Địa điểm: *${attachedProduct.location}*`
-          : ''
-      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${
-        productId ? `\n🆔 ID: *${productId}*` : ''
-      }\n\n💬 Lời nhắn: ${optionText}`;
-
       setAttachedProduct(undefined);
-      await sendMessage(nextText);
+      await sendMessage(optionText, undefined, {
+        productInquiry: {
+          productId: String(attachedProduct.id),
+          note: optionText,
+          name: attachedProduct.name,
+          price: formattedPrice,
+          image: imageUrl || undefined,
+          location: attachedProduct.location || undefined,
+        },
+      });
     },
     [attachedProduct, sendMessage],
   );

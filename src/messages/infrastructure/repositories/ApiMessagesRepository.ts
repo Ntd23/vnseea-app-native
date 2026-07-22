@@ -41,6 +41,7 @@ import type {
   MessageItem,
   MessageLabel,
   MessageLocationReference,
+  MarketplaceMessageContext,
   MessageSystemEvent,
   PinnedMessageItem,
   SendMessageOptions,
@@ -395,6 +396,174 @@ function mapMessageSystemEvent(
     targetMessageId,
   };
 }
+
+function readMarketplaceProductImage(product: RawRecord) {
+  const images = Array.isArray(product.images) ? product.images : [];
+  const firstImage = asRecord(images[0]);
+  return normalizeRawUrl(
+    readString(firstImage ?? {}, 'image', 'image_org'),
+    apiConfig.webBaseUrl,
+  );
+}
+
+function mapLegacyOrderRequestContext(
+  messageText: string,
+): MarketplaceMessageContext | undefined {
+  if (
+    !messageText ||
+    (!messageText.includes('Tôi muốn đặt mua sản phẩm:') &&
+      !messageText.includes('TĂ´i muá»‘n Ä‘áº·t mua') &&
+      !messageText.includes('muá»‘n Ä‘áº·t mua sáº£n pháº©m'))
+  ) {
+    return undefined;
+  }
+
+  const name = messageText.match(/👉\s*\*(.*?)\*/)?.[1];
+  if (!name) return undefined;
+
+  const total = messageText.match(
+    /(?:Giá|GiĂ¡|Gi\u00e1):\s*\*(.*?)\*/,
+  )?.[1];
+  const quantity = Math.max(
+    1,
+    Number(
+      messageText.match(
+        /(?:Số lượng|Sá»‘ l\u01b0\u1ee3ng|l\u01b0\u1ee3ng):\s*\*(.*?)\*/,
+      )?.[1],
+    ) || 1,
+  );
+  const productId =
+    messageText.match(/(?:ID):\s*\*(.*?)\*/)?.[1] ?? '';
+
+  return {
+    type: 'order_request',
+    orderHash: productId || '---',
+    buyerName:
+      messageText.match(/(?:Tên|TĂŞn|T\u00ean):\s*\*(.*?)\*/)?.[1] ?? '',
+    buyerPhone:
+      messageText.match(/(?:SĐT|SÄ\u0110T|SDT):\s*\*(.*?)\*/)?.[1] ?? '',
+    buyerAddress:
+      messageText.match(
+        /(?:Địa chỉ|Äá»‹a chá»‰|Dia chi):\s*\*(.*?)\*/,
+      )?.[1] ?? '',
+    items: [
+      {
+        productId,
+        name,
+        image: messageText.match(/(?:Ảnh|áº¢nh|Anh):\s*(\S+)/)?.[1],
+        quantity,
+        total: total ?? '',
+      },
+    ],
+    total: total ?? '',
+  };
+}
+
+function mapMarketplaceMessageContext(
+  raw: RawRecord,
+  messageText: string,
+): MarketplaceMessageContext | undefined {
+  const canonical = asRecord(
+    raw.marketplace_context ?? raw.marketplaceContext,
+  );
+  const rawOrder =
+    asRecord(raw.market_order ?? raw.marketOrder) ??
+    (readString(canonical ?? {}, 'type') === 'order_request'
+      ? canonical
+      : undefined);
+  const typeTwo = readString(raw, 'type_two', 'message_type');
+  const orderHash =
+    readString(rawOrder ?? {}, 'order_hash', 'orderHash', 'hash_id') ||
+    readString(raw, 'market_order_hash');
+
+  if (rawOrder || typeTwo === 'market_order_request' || orderHash) {
+    const rawItems = Array.isArray(rawOrder?.items) ? rawOrder.items : [];
+    const items = rawItems
+      .map(item => asRecord(item))
+      .filter((item): item is RawRecord => Boolean(item))
+      .map(item => ({
+        productId: readString(item, 'product_id', 'productId', 'id'),
+        name: readString(item, 'name', 'product_name') || 'Sản phẩm',
+        image:
+          normalizeRawUrl(
+            readString(item, 'image', 'image_url'),
+            apiConfig.webBaseUrl,
+          ) || undefined,
+        quantity: Math.max(1, readNumber(item, 'quantity', 'units') || 1),
+        total: readString(item, 'total', 'price'),
+      }));
+    return {
+      type: 'order_request',
+      orderHash: orderHash || '---',
+      buyerName: readString(rawOrder ?? {}, 'buyer_name', 'buyerName'),
+      buyerPhone: readString(rawOrder ?? {}, 'buyer_phone', 'buyerPhone'),
+      buyerAddress: readString(
+        rawOrder ?? {},
+        'buyer_address',
+        'buyerAddress',
+      ),
+      items,
+      total: readString(rawOrder ?? {}, 'total'),
+    };
+  }
+
+  const product =
+    asRecord(raw.product) ??
+    (readString(canonical ?? {}, 'type') === 'product_inquiry'
+      ? canonical
+      : undefined);
+  const productId =
+    readString(canonical ?? {}, 'product_id', 'productId') ||
+    readString(raw, 'product_id') ||
+    readString(product ?? {}, 'id', 'product_id');
+  if (productId && (product || typeTwo === 'product_inquiry')) {
+    return {
+      type: 'product_inquiry',
+      productId,
+      name:
+        readString(canonical ?? {}, 'name') ||
+        readString(product ?? {}, 'name') ||
+        'Sản phẩm',
+      price:
+        readString(canonical ?? {}, 'price') ||
+        readString(product ?? {}, 'price_format', 'price') ||
+        undefined,
+      image:
+        normalizeRawUrl(
+          readString(canonical ?? {}, 'image'),
+          apiConfig.webBaseUrl,
+        ) || (product ? readMarketplaceProductImage(product) : undefined),
+      location:
+        readString(canonical ?? {}, 'location') ||
+        readString(product ?? {}, 'location') ||
+        undefined,
+      note:
+        readString(canonical ?? {}, 'note') || messageText || undefined,
+    };
+  }
+
+  const legacyOrder = mapLegacyOrderRequestContext(messageText);
+  if (legacyOrder) {
+    return legacyOrder;
+  }
+
+  const legacyProductName = messageText.match(
+    /Tôi muốn hỏi về sản phẩm:[\s\S]*?👉\s*\*(.*?)\*/,
+  )?.[1];
+  if (legacyProductName) {
+    return {
+      type: 'product_inquiry',
+      productId: messageText.match(/🆔\s*ID:\s*\*(.*?)\*/)?.[1] ?? '',
+      name: legacyProductName,
+      price: messageText.match(/💰\s*Giá:\s*\*(.*?)\*/)?.[1],
+      image: messageText.match(/📷\s*Ảnh:\s*(https?:\/\/\S+)/)?.[1],
+      location: messageText.match(/📍\s*Địa điểm:\s*\*(.*?)\*/)?.[1],
+      note: messageText.match(/💬\s*Lời nhắn:\s*([\s\S]+)$/)?.[1]?.trim(),
+    };
+  }
+
+  return undefined;
+}
 type MessagePreview = {
   text: string;
   kind: ChatPreviewKind;
@@ -446,8 +615,22 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
   }
   if (message.callEvent) return getCallPreview(message.callEvent);
   switch (message.contentKind) {
+    case 'order':
+      return {
+        text:
+          message.marketplaceContext?.type === 'order_request'
+            ? `Yêu cầu mua mới #${message.marketplaceContext.orderHash}`
+            : 'Yêu cầu mua mới',
+        kind: 'order',
+      };
     case 'product':
-      return { text: 'Đã gửi một sản phẩm', kind: 'product' };
+      return {
+        text:
+          message.marketplaceContext?.type === 'product_inquiry'
+            ? `Hỏi về ${message.marketplaceContext.name}`
+            : 'Hỏi về sản phẩm',
+        kind: 'product',
+      };
     case 'sticker':
       return { text: 'Đã gửi một nhãn dán', kind: 'sticker' };
     case 'image':
@@ -1043,6 +1226,9 @@ function mapMessage(
     : media && message === 'Tin nhắn'
       ? ''
       : message;
+  const marketplaceContext = systemEvent
+    ? undefined
+    : mapMarketplaceMessageContext(raw, displayMessage);
   const textDescriptor =
     callEvent || systemEvent
       ? { kind: 'text' as const }
@@ -1056,7 +1242,13 @@ function mapMessage(
   const link = location ? undefined : textDescriptor.link;
   const mediaType = readMediaType(raw, decodedMessage);
   let contentKind: ChatPreviewKind = textDescriptor.kind;
-  if (readNumber(raw, 'product_id') > 0 || asRecord(raw.product)) {
+  if (marketplaceContext?.type === 'order_request') {
+    contentKind = 'order';
+  } else if (
+    marketplaceContext?.type === 'product_inquiry' ||
+    readNumber(raw, 'product_id') > 0 ||
+    asRecord(raw.product)
+  ) {
     contentKind = 'product';
   } else if (readString(raw, 'stickers', 'gif')) {
     contentKind = 'sticker';
@@ -1103,6 +1295,7 @@ function mapMessage(
     contentKind,
     link,
     location,
+    marketplaceContext,
     replyTo,
     media,
     mediaType,
@@ -1415,6 +1608,13 @@ export function createMessagesRepository(): MessagesRepository {
         user_id: target.id,
         text: textPayload,
         message_hash_id: messageHashId,
+        ...(options?.productInquiry
+          ? {
+              product_id: options.productInquiry.productId,
+              message_type: 'product_inquiry',
+              type_two: 'product_inquiry',
+            }
+          : {}),
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
           : {}),

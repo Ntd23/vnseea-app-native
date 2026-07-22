@@ -22,7 +22,7 @@ if (empty($_POST['product_id'])) {
     	if (empty($_FILES['file']['name']) && empty($_POST['image_url']) && empty($_POST['gif'])) {
     	    $error_code    = 3;
     	    $error_message = 'file (STREAM FILE) AND text (POST) AND image_url AND gif (POST) are missing, at least one is required';
-    	}
+	    }
     }
 }
 
@@ -126,13 +126,26 @@ if (empty($error_code)) {
             }
         }
         else{
-            $last_id = Wo_RegisterMessage(array(
+	        $product_id = (int)Wo_Secure($_POST['product_id']);
+	        $product = Wo_GetProduct($product_id);
+	        if (empty($product) || (int)$product['user_id'] !== (int)$recipient_id) {
+	            $error_code = 8;
+	            $error_message = 'Product does not belong to the recipient.';
+	        } else {
+	            $product_note = isset($_POST['text']) ? trim((string)$_POST['text']) : '';
+	            if ($product_note === '') {
+	                $product_note = 'Hỏi về sản phẩm';
+	            }
+	            $last_id = Wo_RegisterMessage(array(
                             'from_id' => Wo_Secure($wo['user']['user_id']),
                             'to_id' => $recipient_id,
                             'time' => time(),
                             'stickers' => '',
-                            'product_id' => Wo_Secure($_POST['product_id'])
+	                            'text' => Wo_Secure($product_note),
+	                            'type_two' => 'product_inquiry',
+	                            'product_id' => $product_id
                         ));
+	        }
         }
         if (!empty($last_id)) {
             if (!empty($_POST['reply_id']) && is_numeric($_POST['reply_id']) && $_POST['reply_id'] > 0) {

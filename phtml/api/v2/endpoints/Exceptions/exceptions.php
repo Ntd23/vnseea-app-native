@@ -1,4 +1,5 @@
 <?php
+// English description: Defines validation helpers used by version 2 API endpoints.
 
 function VNSEEA_GetOwnedUserChat($chat_id)
 {
@@ -15,6 +16,9 @@ function VNSEEA_GetOwnedUserChat($chat_id)
 function VNSEEA_IsMessageInOwnedUserChat($chat_id, $message_id)
 {
     global $wo, $db;
+    if (empty($message_id) || !is_numeric($message_id)) {
+        return false;
+    }
     $chat = VNSEEA_GetOwnedUserChat($chat_id);
     if (empty($chat) || empty($chat->conversation_user_id)) {
         return false;
@@ -25,8 +29,10 @@ function VNSEEA_IsMessageInOwnedUserChat($chat_id, $message_id)
     }
     $current_user_id = (int)$wo['user']['user_id'];
     $participant_id = (int)$chat->conversation_user_id;
-    return (((int)$message->from_id === $current_user_id && (int)$message->to_id === $participant_id) ||
-            ((int)$message->from_id === $participant_id && (int)$message->to_id === $current_user_id));
+    $from_id = (int)$message->from_id;
+    $to_id = (int)$message->to_id;
+    return (($from_id === $current_user_id && $to_id === $participant_id) ||
+            ($from_id === $participant_id && $to_id === $current_user_id));
 }
 
 function VNSEEA_IsMessageInAuthorizedChat($type, $chat_id, $message_id)
@@ -38,6 +44,7 @@ function VNSEEA_IsMessageInAuthorizedChat($type, $chat_id, $message_id)
     if ($type === 'user') {
         return VNSEEA_IsMessageInOwnedUserChat($chat_id, $message_id);
     }
+
     $message = $db->where('id', Wo_Secure($message_id))->getOne(T_MESSAGES);
     if (empty($message)) {
         return false;
@@ -52,21 +59,27 @@ function VNSEEA_IsMessageInAuthorizedChat($type, $chat_id, $message_id)
         }
         $current_user_id = (int)$wo['user']['user_id'];
         $participant_id = (int)$chat->conversation_user_id;
-        return (((int)$message->from_id === $current_user_id && (int)$message->to_id === $participant_id) ||
-                ((int)$message->from_id === $participant_id && (int)$message->to_id === $current_user_id));
+        $from_id = (int)$message->from_id;
+        $to_id = (int)$message->to_id;
+        return (($from_id === $current_user_id && $to_id === $participant_id) ||
+                ($from_id === $participant_id && $to_id === $current_user_id));
     }
-    $group = $db->where('group_id', Wo_Secure($chat_id))->getOne(T_GROUP_CHAT);
-    if (empty($group) || (int)$message->group_id !== (int)$chat_id) {
+
+    $group_id = (int)$chat_id;
+    $current_user_id = (int)$wo['user']['user_id'];
+    $group = $db->where('group_id', $group_id)->getOne(T_GROUP_CHAT);
+    if (empty($group)) {
         return false;
     }
-    $current_user_id = (int)$wo['user']['user_id'];
-    if ((int)$group->user_id === $current_user_id) {
-        return true;
+    $is_member = (int)$group->user_id === $current_user_id;
+    if (!$is_member) {
+        $membership = $db->where('group_id', $group_id)
+                         ->where('user_id', $current_user_id)
+                         ->where('active', 1)
+                         ->getOne(T_GROUP_CHAT_USERS);
+        $is_member = !empty($membership);
     }
-    return (int)$db->where('group_id', Wo_Secure($chat_id))
-                   ->where('user_id', $current_user_id)
-                   ->where('active', 1)
-                   ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)') > 0;
+    return $is_member && (int)$message->group_id === $group_id;
 }
 
 function VNSEEA_GetSharedMessagePin($message_id)
@@ -1001,8 +1014,8 @@ function addressAddValidation()
 {
     global $sqlConnect, $wo,$db;
 
-    if (empty($_POST['name']) || empty($_POST['phone']) || empty($_POST['country']) || empty($_POST['city']) || empty($_POST['zip']) || empty($_POST['address'])) {
-        throw new Exception("name , phone , country , city , zip , address can not be empty");
+    if (empty($_POST['name']) || empty($_POST['phone']) || empty($_POST['country']) || empty($_POST['city']) || empty($_POST['address'])) {
+        throw new Exception("name , phone , country , city , address can not be empty");
     }
 }
 
@@ -1108,7 +1121,6 @@ function marketBuyValidation()
         throw new Exception("no items found");
     }
 
-    $total = 0;
     $wo['insert'] = array();
     foreach ($wo['items'] as $key => $item) {
         $product = $wo['main_product'] = Wo_GetProduct($item->product_id);
@@ -1116,12 +1128,6 @@ function marketBuyValidation()
             throw new Exception("product not found");
         }
         if ($item->units <= $product['units']) {
-            if (!empty($wo['currencies']) && !empty($wo['currencies'][$product['currency']]) && $wo['currencies'][$product['currency']]['text'] != $wo['config']['currency'] && !empty($wo['config']['exchange']) && !empty($wo['config']['exchange'][$wo['currencies'][$product['currency']]['text']])) {
-                $total += (($product['price'] / $wo['config']['exchange'][$wo['currencies'][$product['currency']]['text']]) * $item->units);
-            }
-            else{
-                $total += ($product['price'] * $item->units);
-            }
             if (!in_array($product['user_id'], array_keys($wo['insert']))) {
                 $f_price = $product['price'];
                 if (!empty($wo['config']['exchange']) && !empty($wo['config']['exchange'][$wo['currencies'][$product['currency']]['text']])) {
@@ -1147,13 +1153,57 @@ function marketBuyValidation()
         }
     }
 
-    if ($wo['user']['wallet'] < $total) {
-        throw new Exception("please top up your wallet");
-    }
-
     if (empty($wo['insert'])) {
         throw new Exception("cart is empty");
     }
+}
+
+function VNSEEA_MarketOrderHashFromRequest()
+{
+    foreach (array('hash_id', 'hash_order', 'order_hash') as $key) {
+        if (!empty($_POST[$key])) {
+            return Wo_Secure($_POST[$key]);
+        }
+    }
+    return '';
+}
+
+function marketRequestOrderValidation()
+{
+    global $wo, $db;
+
+    $address_id = isset($_POST['address_id']) ? (string)$_POST['address_id'] : '';
+    if (!preg_match('/^[1-9][0-9]*$/', $address_id)) {
+        throw new Exception('address_id can not be empty');
+    }
+    $wo['address'] = $db->where('id', Wo_Secure($address_id))
+        ->where('user_id', $wo['user']['user_id'])
+        ->getOne(T_USER_ADDRESS);
+    if (empty($wo['address'])) {
+        throw new Exception('address not found');
+    }
+
+    $raw_product_ids = isset($_POST['product_ids']) ? $_POST['product_ids'] : '';
+    if (is_string($raw_product_ids)) {
+        $raw_product_ids = json_decode($raw_product_ids, true);
+    }
+    if (!is_array($raw_product_ids)) {
+        throw new Exception('product_ids can not be empty');
+    }
+
+    $product_ids = array();
+    foreach ($raw_product_ids as $product_id) {
+        $product_id_string = (string)$product_id;
+        if (!preg_match('/^[1-9][0-9]*$/', $product_id_string)) {
+            throw new Exception('product_ids are invalid');
+        }
+        $product_ids[(int)$product_id_string] = true;
+    }
+    if (empty($product_ids) || count($product_ids) > 50) {
+        throw new Exception('product_ids are invalid');
+    }
+
+    $wo['request_product_ids'] = array_keys($product_ids);
 }
 
 function chatSearchValidation()
@@ -1185,13 +1235,14 @@ function marketTrackingValidation()
 {
     global $sqlConnect, $wo,$db;
 
-    if (empty($_POST['tracking_url']) || empty($_POST['tracking_id']) || empty($_POST['order_hash'])) {
+	$hash_id = VNSEEA_MarketOrderHashFromRequest();
+	if (empty($_POST['tracking_url']) || empty($_POST['tracking_id']) || empty($hash_id)) {
         throw new Exception("tracking_url , tracking_id , order_hash can not be empty");
     }
     elseif (!filter_var($_POST['tracking_url'], FILTER_VALIDATE_URL)) {
         throw new Exception("tracking_url not valid");
     }
-    $wo['hash_id'] = Wo_Secure($_POST['order_hash']);
+	$wo['hash_id'] = $hash_id;
     $wo['tracking_url'] = Wo_Secure($_POST['tracking_url']);
     $wo['tracking_id'] = Wo_Secure($_POST['tracking_id']);
     $wo['order'] = $db->where('hash_id',$wo['hash_id'])->where('product_owner_id',$wo['user']['user_id'])->getOne(T_USER_ORDERS);
@@ -1204,16 +1255,20 @@ function marketRefundValidation()
 {
     global $sqlConnect, $wo,$db;
 
-    if (empty($_POST['hash_order']) || empty($_POST['message'])) {
+	$hash_id = VNSEEA_MarketOrderHashFromRequest();
+	if (empty($hash_id) || empty($_POST['message'])) {
         throw new Exception("hash_order , message can not be empty");
     }
 
-    $wo['hash_id'] = Wo_Secure($_POST['order_hash']);
+	$wo['hash_id'] = $hash_id;
     $wo['message'] = Wo_Secure($_POST['message']);
 
-    $wo['order'] = $db->where('hash_id',$wo['hash_id'])->where('product_owner_id',$wo['user']['user_id'])->getOne(T_USER_ORDERS);
+	$wo['order'] = $db->where('hash_id',$wo['hash_id'])->where('user_id',$wo['user']['user_id'])->getOne(T_USER_ORDERS);
     if (empty($wo['order'])) {
         throw new Exception("order not found");
+    }
+    if ((string)$wo['order']->order_flow === 'request') {
+        throw new Exception("request orders do not support refunds");
     }
 }
 
@@ -1221,11 +1276,12 @@ function marketChangeStatusValidation()
 {
     global $sqlConnect, $wo,$db;
 
-    if (empty($_POST['hash_order']) || empty($_POST['status'])) {
+    $hash_id = VNSEEA_MarketOrderHashFromRequest();
+    if (empty($hash_id) || empty($_POST['status'])) {
         throw new Exception("hash_order , status can not be empty");
     }
-    
-    $wo['hash_id'] = Wo_Secure($_POST['order_hash']);
+
+    $wo['hash_id'] = $hash_id;
 
     $wo['order'] = $db->where('hash_id',$wo['hash_id'])->getOne(T_USER_ORDERS);
     if (empty($wo['order'])) {

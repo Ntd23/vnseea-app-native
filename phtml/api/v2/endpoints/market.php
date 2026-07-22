@@ -1,6 +1,462 @@
 <?php
+// English description: Handles marketplace cart, checkout, purchases, and order APIs.
 
-if ($_POST['type'] == 'add_cart') {
+if (!function_exists('VNSEEA_MarketOrderMessageText')) {
+    function VNSEEA_MarketOrderMessageText($value)
+    {
+        $value = html_entity_decode((string) $value, ENT_QUOTES, 'UTF-8');
+        $value = preg_replace('/<br\s*\/?>/i', ', ', $value);
+        $value = strip_tags($value);
+        $value = preg_replace('/\s+/u', ' ', $value);
+
+        return trim($value, " \t\n\r\0\x0B,");
+    }
+}
+
+if (!function_exists('VNSEEA_FormatMarketOrderMessageMoney')) {
+    function VNSEEA_FormatMarketOrderMessageMoney($amount)
+    {
+        global $wo;
+
+        $currency = !empty($wo['config']['currency']) ? $wo['config']['currency'] : 'USD';
+        $rule = Wo_GetCurrencyRule($currency);
+
+        return $rule['code'] . Wo_FormatPriceByCurrency($amount, $currency);
+    }
+}
+
+if (!function_exists('VNSEEA_SendMarketOrderMessage')) {
+    function VNSEEA_SendMarketOrderMessage($seller_id, $hash_id, $items, $total, $address)
+    {
+        global $wo;
+
+        $seller_id = (int) $seller_id;
+        $buyer_id = (int) $wo['user']['user_id'];
+        if ($seller_id < 1 || $buyer_id < 1 || $seller_id === $buyer_id || empty($items)) {
+            return false;
+        }
+
+        $buyer_name = VNSEEA_MarketOrderMessageText(!empty($wo['user']['name']) ? $wo['user']['name'] : $wo['user']['username']);
+        $phone = VNSEEA_MarketOrderMessageText(!empty($address->phone) ? $address->phone : '');
+        $address_parts = array(
+            !empty($address->address) ? $address->address : '',
+            !empty($address->city) ? $address->city : '',
+            !empty($address->zip) ? $address->zip : '',
+            !empty($address->country) ? $address->country : '',
+        );
+        $address_parts = array_values(array_filter(array_map('VNSEEA_MarketOrderMessageText', $address_parts)));
+
+        $lines = array(
+            '📦 ĐƠN HÀNG MỚI # ' . VNSEEA_MarketOrderMessageText($hash_id),
+            '',
+            '👤 Người đặt: ' . $buyer_name,
+            '📞 SĐT: ' . $phone,
+            '📍 Địa chỉ: ' . implode(', ', $address_parts),
+            '',
+            '🧾 Sản phẩm:',
+        );
+
+        foreach ($items as $item) {
+            $product = Wo_GetProduct($item['product_id']);
+            $product_name = !empty($product['name'])
+                ? VNSEEA_MarketOrderMessageText($product['name'])
+                : 'Sản phẩm #' . (int) $item['product_id'];
+            $line_total = (float) $item['price'] * (int) $item['units'];
+            $lines[] = '- ' . $product_name . ' x' . (int) $item['units'] . ' = ' . VNSEEA_FormatMarketOrderMessageMoney($line_total);
+        }
+
+        $lines[] = '';
+        $lines[] = '💰 Tổng: ' . VNSEEA_FormatMarketOrderMessageMoney($total);
+
+        return Wo_RegisterMessage(array(
+            'from_id' => $buyer_id,
+            'to_id' => $seller_id,
+            'time' => time(),
+            'text' => Wo_Secure(implode("\n", $lines)),
+        ));
+    }
+}
+
+if (!function_exists('VNSEEA_MarketCheckoutPrice')) {
+    function VNSEEA_MarketCheckoutPrice($product)
+    {
+        global $wo;
+
+        $price = (float)$product->price;
+        $currency = (string)$product->currency;
+        if (!empty($currency) &&
+            !empty($wo['currencies'][$currency]['text']) &&
+            !empty($wo['config']['exchange'][$wo['currencies'][$currency]['text']])) {
+            $price /= (float)$wo['config']['exchange'][$wo['currencies'][$currency]['text']];
+        }
+        return $price;
+    }
+}
+
+if (!function_exists('VNSEEA_NewMarketOrderHash')) {
+    function VNSEEA_NewMarketOrderHash()
+    {
+        try {
+            return bin2hex(random_bytes(16));
+        } catch (Exception $exception) {
+            return uniqid((string)mt_rand(11111, 999999), true);
+        }
+    }
+}
+
+if (!function_exists('VNSEEA_InsertMarketOrderRequestMessage')) {
+    function VNSEEA_InsertMarketOrderRequestMessage($buyer_id, $seller_id, $hash_id, $time)
+    {
+        global $db;
+
+        return $db->insert(T_MESSAGES, array(
+            'from_id' => (int)$buyer_id,
+            'to_id' => (int)$seller_id,
+            'time' => (int)$time,
+            'text' => Wo_Secure('Yêu cầu mua #' . $hash_id),
+            'type_two' => 'market_order_request',
+            'market_order_hash' => (string)$hash_id,
+        ));
+    }
+}
+
+if (!function_exists('VNSEEA_MarketRequestOrder')) {
+    function VNSEEA_MarketRequestOrder()
+    {
+        global $wo, $db;
+
+        marketRequestOrderValidation();
+
+        $buyer_id = (int)$wo['user']['user_id'];
+        $product_ids = array_map('intval', $wo['request_product_ids']);
+        sort($product_ids, SORT_NUMERIC);
+        $product_id_sql = implode(',', $product_ids);
+        $now = time();
+        $post_commit = array();
+        $response_orders = array();
+        $removed_product_ids = array();
+
+        $db->startTransaction();
+        try {
+            $cart_rows = $db->rawQuery(
+                'SELECT * FROM ' . T_USERCARD . ' WHERE `user_id` = ' . $buyer_id .
+                ' AND `product_id` IN (' . $product_id_sql . ') FOR UPDATE'
+            );
+            if (count($cart_rows) !== count($product_ids)) {
+                throw new Exception('selected cart items not found');
+            }
+
+            $product_rows = $db->rawQuery(
+                'SELECT * FROM ' . T_PRODUCTS . ' WHERE `id` IN (' . $product_id_sql .
+                ') ORDER BY `id` ASC FOR UPDATE'
+            );
+            $products_by_id = array();
+            foreach ($product_rows as $product_row) {
+                $products_by_id[(int)$product_row->id] = $product_row;
+            }
+
+            $items_by_seller = array();
+            foreach ($cart_rows as $cart_row) {
+                $product_id = (int)$cart_row->product_id;
+                $product = isset($products_by_id[$product_id]) ? $products_by_id[$product_id] : null;
+                $quantity = max(1, (int)$cart_row->units);
+                if (empty($product) || (int)$product->active !== 1 || (int)$product->status !== 0) {
+                    throw new Exception('product not found');
+                }
+                if ((int)$product->user_id === $buyer_id) {
+                    throw new Exception('you can not order your own product');
+                }
+                if ((int)$product->units < $quantity) {
+                    throw new Exception('max qty is ' . (int)$product->units);
+                }
+                $seller_id = (int)$product->user_id;
+                if (!isset($items_by_seller[$seller_id])) {
+                    $items_by_seller[$seller_id] = array();
+                }
+                $items_by_seller[$seller_id][] = array(
+                    'product_id' => $product_id,
+                    'name' => (string)$product->name,
+                    'price' => VNSEEA_MarketCheckoutPrice($product),
+                    'units' => $quantity,
+                );
+            }
+            if (empty($items_by_seller)) {
+                throw new Exception('no items found');
+            }
+
+            foreach ($items_by_seller as $seller_id => $items) {
+                $hash_id = VNSEEA_NewMarketOrderHash();
+                $total = 0;
+                $first_name = '';
+                foreach ($items as $item) {
+                    $line_total = (float)$item['price'] * (int)$item['units'];
+                    $total += $line_total;
+                    if ($first_name === '') {
+                        $first_name = $item['name'];
+                    }
+                    $order_id = $db->insert(T_USER_ORDERS, array(
+                        'user_id' => $buyer_id,
+                        'product_owner_id' => (int)$seller_id,
+                        'product_id' => (int)$item['product_id'],
+                        'price' => $line_total,
+                        'commission' => 0,
+                        'final_price' => $line_total,
+                        'hash_id' => $hash_id,
+                        'units' => (int)$item['units'],
+                        'status' => 'placed',
+                        'order_flow' => 'request',
+                        'stock_reserved' => 0,
+                        'address_id' => (int)$wo['address']->id,
+                        'time' => $now,
+                    ));
+                    if (empty($order_id)) {
+                        throw new Exception('order insert failed');
+                    }
+                    $removed_product_ids[(int)$item['product_id']] = true;
+                }
+
+                $purchase_id = $db->insert(T_PURCHAES, array(
+                    'user_id' => $buyer_id,
+                    'order_hash_id' => $hash_id,
+                    'price' => $total,
+                    'data' => json_encode(array('name' => $first_name), JSON_UNESCAPED_UNICODE),
+                    'commission' => 0,
+                    'final_price' => $total,
+                    'time' => $now,
+                ));
+                if (empty($purchase_id)) {
+                    throw new Exception('purchase summary insert failed');
+                }
+
+                $notification_id = $db->insert(T_NOTIFICATION, array(
+                    'notifier_id' => $buyer_id,
+                    'recipient_id' => (int)$seller_id,
+                    'type' => 'new_orders',
+                    'url' => 'index.php?link1=orders',
+                    'time' => $now,
+                ));
+                if (empty($notification_id)) {
+                    throw new Exception('notification insert failed');
+                }
+
+                $message_id = VNSEEA_InsertMarketOrderRequestMessage(
+                    $buyer_id,
+                    (int)$seller_id,
+                    $hash_id,
+                    $now
+                );
+                if (empty($message_id)) {
+                    throw new Exception('order message insert failed');
+                }
+
+                $post_commit[] = array(
+                    'seller_id' => (int)$seller_id,
+                    'message_id' => (int)$message_id,
+                    'notification_id' => (int)$notification_id,
+                );
+                $response_orders[] = array(
+                    'hash_id' => $hash_id,
+                    'seller_id' => (string)$seller_id,
+                    'message_id' => (string)$message_id,
+                );
+            }
+
+            $cart_deleted = $db->where('user_id', $buyer_id)
+                ->where('product_id', array_keys($removed_product_ids), 'IN')
+                ->delete(T_USERCARD);
+            if (!$cart_deleted) {
+                throw new Exception('could not remove ordered cart items');
+            }
+            if (!$db->commit()) {
+                throw new Exception('order commit failed');
+            }
+        } catch (Exception $exception) {
+            $db->rollback();
+            throw $exception;
+        }
+
+        foreach ($post_commit as $event) {
+            Wo_CreateUserChat($event['seller_id'], $buyer_id);
+            VNSEEA_PublishRealtimeMessageChange($event['message_id']);
+            Wo_PublishRealtimeNotification(
+                $event['seller_id'],
+                $event['notification_id'],
+                'notification'
+            );
+        }
+
+        return array(
+            'orders' => $response_orders,
+            'removed_product_ids' => array_map('strval', array_keys($removed_product_ids)),
+            'cart_count' => (int)$db->where('user_id', $buyer_id)->getValue(T_USERCARD, 'COALESCE(SUM(units), 0)'),
+        );
+    }
+}
+
+if (!function_exists('VNSEEA_ChangeMarketRequestOrderStatus')) {
+    function VNSEEA_ChangeMarketRequestOrderStatus($hash_id, $status)
+    {
+        global $wo, $db;
+
+        $actor_id = (int)$wo['user']['user_id'];
+        $db->startTransaction();
+        try {
+            $orders = $db->rawQuery(
+                'SELECT * FROM ' . T_USER_ORDERS . ' WHERE `hash_id` = ? FOR UPDATE',
+                array($hash_id)
+            );
+            if (empty($orders)) {
+                throw new Exception('order not found');
+            }
+
+            $order = $orders[0];
+            $current_status = (string)$order->status;
+            $seller_id = (int)$order->product_owner_id;
+            $buyer_id = (int)$order->user_id;
+            foreach ($orders as $row) {
+                if (
+                    (string)$row->order_flow !== 'request' ||
+                    (string)$row->status !== $current_status ||
+                    (int)$row->product_owner_id !== $seller_id ||
+                    (int)$row->user_id !== $buyer_id
+                ) {
+                    throw new Exception('order state is inconsistent');
+                }
+            }
+
+            $allowed = array();
+            if ($actor_id === $seller_id) {
+                if ($current_status === 'placed') {
+                    $allowed = array('canceled', 'accepted');
+                } elseif ($current_status === 'accepted') {
+                    $allowed = array('packed', 'shipped');
+                } elseif ($current_status === 'packed') {
+                    $allowed = array('shipped');
+                } elseif ($current_status === 'shipped') {
+                    $allowed = array('delivered');
+                }
+            } elseif ($actor_id === $buyer_id) {
+                if ($current_status === 'placed') {
+                    $allowed = array('canceled');
+                } elseif ($current_status === 'shipped') {
+                    $allowed = array('delivered');
+                }
+            }
+            if (!in_array($status, $allowed, true)) {
+                throw new Exception('order has already been processed');
+            }
+
+            $update = array('status' => $status);
+            if ($current_status === 'placed') {
+                foreach ($orders as $row) {
+                    if (!empty($row->stock_reserved)) {
+                        throw new Exception('stock has already been reserved');
+                    }
+                }
+            }
+
+            if ($status === 'accepted') {
+                $required_by_product = array();
+                foreach ($orders as $row) {
+                    $product_id = (int)$row->product_id;
+                    if (!isset($required_by_product[$product_id])) {
+                        $required_by_product[$product_id] = 0;
+                    }
+                    $required_by_product[$product_id] += max(1, (int)$row->units);
+                }
+                $product_ids = array_keys($required_by_product);
+                sort($product_ids, SORT_NUMERIC);
+                $products = $db->rawQuery(
+                    'SELECT `id`, `units`, `active`, `status` FROM ' . T_PRODUCTS .
+                    ' WHERE `id` IN (' . implode(',', $product_ids) . ') ORDER BY `id` ASC FOR UPDATE'
+                );
+                $products_by_id = array();
+                foreach ($products as $product) {
+                    $products_by_id[(int)$product->id] = $product;
+                }
+                foreach ($required_by_product as $product_id => $quantity) {
+                    $product = isset($products_by_id[$product_id]) ? $products_by_id[$product_id] : null;
+                    if (
+                        empty($product) ||
+                        (int)$product->active !== 1 ||
+                        (int)$product->status !== 0 ||
+                        (int)$product->units < $quantity
+                    ) {
+                        throw new Exception('not enough stock for product ' . $product_id);
+                    }
+                    if (!$db->where('id', $product_id)->update(
+                        T_PRODUCTS,
+                        array('units' => $db->dec($quantity))
+                    )) {
+                        throw new Exception('could not reserve stock');
+                    }
+                }
+                $update['stock_reserved'] = 1;
+            } elseif ($current_status !== 'placed') {
+                foreach ($orders as $row) {
+                    if (empty($row->stock_reserved)) {
+                        throw new Exception('stock has not been reserved');
+                    }
+                }
+            }
+
+            $updated = $db->where('hash_id', $hash_id)
+                ->where('status', $current_status)
+                ->update(T_USER_ORDERS, $update);
+            if (!$updated || !$db->commit()) {
+                throw new Exception('could not update order status');
+            }
+
+            $order->status = $status;
+            if ($status === 'accepted') {
+                $order->stock_reserved = 1;
+            }
+            return $order;
+        } catch (Exception $exception) {
+            $db->rollback();
+            throw $exception;
+        }
+    }
+}
+
+if ($_POST['type'] == 'ensure_cart') {
+    try {
+        if (empty($_POST['product_id']) || !is_numeric($_POST['product_id'])) {
+            throw new Exception('product_id can not be empty');
+        }
+        $product_id = (int)$_POST['product_id'];
+        $product = Wo_GetProduct($product_id);
+        if (empty($product) || empty($product['active']) || (int)$product['status'] !== 0 || (int)$product['units'] < 1) {
+            throw new Exception('product not found');
+        }
+        if ((int)$product['user_id'] === (int)$wo['user']['user_id']) {
+            throw new Exception('you can not add your own product');
+        }
+
+        $cart_item = $db->where('user_id', $wo['user']['user_id'])
+            ->where('product_id', $product_id)
+            ->getOne(T_USERCARD);
+        if (empty($cart_item)) {
+            $cart_id = $db->insert(T_USERCARD, array(
+                'user_id' => $wo['user']['user_id'],
+                'units' => 1,
+                'product_id' => $product_id,
+            ));
+            if (empty($cart_id)) {
+                throw new Exception('could not add product to cart');
+            }
+        }
+        $response_data = array(
+            'api_status' => 200,
+            'type' => empty($cart_item) ? 'added' : 'existing',
+            'count' => (int)$db->where('user_id', $wo['user']['user_id'])->getValue(T_USERCARD, 'COALESCE(SUM(units), 0)'),
+        );
+    } catch (Exception $e) {
+        $error_code = 5;
+        $error_message = $e->getMessage();
+    }
+}
+elseif ($_POST['type'] == 'add_cart') {
 
 	try {
 
@@ -75,6 +531,19 @@ elseif ($_POST['type'] == 'remove_cart') {
 	    $error_message = $e->getMessage();
 	}
 }
+elseif ($_POST['type'] == 'request_order') {
+    try {
+        $request_result = VNSEEA_MarketRequestOrder();
+        $response_data = array(
+            'api_status' => 200,
+            'message' => 'purchase request sent successfully',
+            'data' => $request_result,
+        );
+    } catch (Exception $e) {
+        $error_code = 5;
+        $error_message = $e->getMessage();
+    }
+}
 elseif ($_POST['type'] == 'buy') {
 
 	try {
@@ -134,6 +603,7 @@ elseif ($_POST['type'] == 'buy') {
             if (!empty($notification_id)) {
                 Wo_PublishRealtimeNotification($key, $notification_id, 'notification');
             }
+            VNSEEA_SendMarketOrderMessage($key, $hash_id, $value, $total, $wo['address']);
         }
 
         $db->where('user_id',$wo['user']['user_id'])->delete(T_USERCARD);
@@ -152,14 +622,26 @@ elseif ($_POST['type'] == 'checkout') {
 	$wo['items'] = $db->where('user_id', $wo['user']['id'])->get(T_USERCARD);
 	$wo['total'] = 0;
 	$data = [];
+	$checkout_currency_rule = Wo_GetCurrencyRule($wo['config']['currency']);
 	if (!empty($wo['items'])) {
 	    foreach ($wo['items'] as $key => $wo['item']) {
 	        $wo['product'] = Wo_GetProduct($wo['item']->product_id);
+	        $stock_units = (int) $wo['product']['units'];
+	        $product_currency_rule = Wo_GetCurrencyRule($wo['product']['currency']);
+	        $wo['product']['currency_code'] = $product_currency_rule['code'];
+	        $wo['product']['currency_symbol'] = $product_currency_rule['symbol'];
+	        $wo['product']['currency_rule'] = array(
+	            'decimals' => $product_currency_rule['decimals'],
+	            'decimal_sep' => $product_currency_rule['decimal_sep'],
+	            'thousand_sep' => $product_currency_rule['thousand_sep']
+	        );
+	        $checkout_unit_price = $wo['product']['price'];
 	        if (!empty($wo['currencies']) && !empty($wo['currencies'][$wo['product']['currency']]) && $wo['currencies'][$wo['product']['currency']]['text'] != $wo['config']['currency'] && !empty($wo['config']['exchange']) && !empty($wo['config']['exchange'][$wo['currencies'][$wo['product']['currency']]['text']])) {
-	            $wo['total'] += (($wo['product']['price'] / $wo['config']['exchange'][$wo['currencies'][$wo['product']['currency']]['text']]) * $wo['item']->units);
-	        } else {
-	            $wo['total'] += ($wo['product']['price'] * $wo['item']->units);
+	            $checkout_unit_price = ($wo['product']['price'] / $wo['config']['exchange'][$wo['currencies'][$wo['product']['currency']]['text']]);
 	        }
+	        $wo['total'] += ($checkout_unit_price * $wo['item']->units);
+	        $wo['product']['checkout_price'] = $checkout_unit_price;
+	        $wo['product']['stock_units'] = $stock_units;
 	        $wo['product']['units'] = $wo['item']->units;
 	        $data[] = $wo['product'];
 	    }
@@ -167,7 +649,14 @@ elseif ($_POST['type'] == 'checkout') {
 	$response_data = array(
         'api_status' => 200,
         'data' => $data,
-        'total' => $wo['total']
+	    'total' => $wo['total'],
+	    'currency_code' => $checkout_currency_rule['code'],
+	    'currency_symbol' => $checkout_currency_rule['symbol'],
+	    'currency_rule' => array(
+	        'decimals' => $checkout_currency_rule['decimals'],
+	        'decimal_sep' => $checkout_currency_rule['decimal_sep'],
+	        'thousand_sep' => $checkout_currency_rule['thousand_sep']
+	    )
     );
 }
 elseif ($_POST['type'] == 'purchased') {
@@ -323,12 +812,16 @@ elseif ($_POST['type'] == 'change_status') {
 	try {
 		marketChangeStatusValidation();
 
-		$status = Wo_Secure($_POST['status']);
+			$status = Wo_Secure($_POST['status']);
+			$hash_id = $wo['hash_id'];
+			$order_flow = !empty($wo['order']->order_flow) ? (string)$wo['order']->order_flow : 'prepaid';
 
-		$types = array();
+			$types = array();
         if ($wo['order']->product_owner_id == $wo['user']['user_id']) {
             if ($wo['order']->status == 'placed') {
-                $types = array('canceled','accepted','packed','shipped');
+	            $types = $order_flow === 'request'
+	                ? array('canceled', 'accepted')
+	                : array('canceled','accepted','packed','shipped');
             }
             if ($wo['order']->status == 'accepted') {
                 $types = array('packed','shipped');
@@ -341,15 +834,27 @@ elseif ($_POST['type'] == 'change_status') {
             }
         }
         elseif ($wo['order']->user_id == $wo['user']['user_id']) {
+	        if ($order_flow === 'request' && $wo['order']->status == 'placed') {
+	            $types = array('canceled');
+	        }
             if ($wo['order']->status == 'shipped') {
                 $types = array('delivered');
             }
         }
         if (in_array($status, $types)) {
+	        if ($order_flow === 'request') {
+	            $wo['order'] = VNSEEA_ChangeMarketRequestOrderStatus($hash_id, $status);
+	        } else {
+	            $updated_order = $db->where('hash_id', $hash_id)->update(
+	                T_USER_ORDERS,
+	                array('status' => $status)
+	            );
+	            if (!$updated_order) {
+	                throw new Exception('could not update order status');
+	            }
+	        }
 
-            $db->where('hash_id',$hash_id)->update(T_USER_ORDERS,array('status' => $status));
-
-            if ($status == 'delivered') {
+	        if ($status == 'delivered' && $order_flow !== 'request') {
                 $total = $db->where('hash_id',$hash_id)->getValue(T_USER_ORDERS,'SUM(final_price)');
                 $db->where('user_id',$wo['order']->product_owner_id)->update(T_USERS,array('balance' => $db->inc($total)));
 
@@ -367,17 +872,23 @@ elseif ($_POST['type'] == 'change_status') {
                     Wo_PublishRealtimeNotification($wo['order']->product_owner_id, $notification_id, 'notification');
                 }
             }
-            else{
+	        else{
+	            $status_recipient_id = (int)$wo['order']->user_id;
+	            $status_url = 'index.php?link1=customer_order&id=' . $hash_id;
+	            if ((int)$wo['user']['user_id'] === (int)$wo['order']->user_id) {
+	                $status_recipient_id = (int)$wo['order']->product_owner_id;
+	                $status_url = 'index.php?link1=orders&id=' . $hash_id;
+	            }
                 $notification_data_array = array(
                     'notifier_id' => $wo['user']['user_id'],
-                    'recipient_id' => $wo['order']->user_id,
+	                'recipient_id' => $status_recipient_id,
                     'type' => 'status_changed',
-                    'url' => 'index.php?link1=customer_order&id='.$hash_id,
+	                'url' => $status_url,
                     'time' => time()
                 );
                 $notification_id = $db->insert(T_NOTIFICATION,$notification_data_array);
                 if (!empty($notification_id)) {
-                    Wo_PublishRealtimeNotification($wo['order']->user_id, $notification_id, 'notification');
+	                Wo_PublishRealtimeNotification($status_recipient_id, $notification_id, 'notification');
                 }
             }
 

@@ -182,7 +182,13 @@ export default function OrderDetailScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator persistentScrollbar contentContainerStyle={styles.content}>
-        {order.status !== 'delivered' ? (
+        {order.orderFlow === 'request' ? (
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoText}>
+              Đây là yêu cầu mua. Bạn và người bán tự thỏa thuận phương thức thanh toán; tồn kho chỉ được giữ sau khi người bán chấp nhận.
+            </Text>
+          </View>
+        ) : order.status !== 'delivered' ? (
           <>
             <View style={styles.infoBanner}>
               <Text style={styles.infoText}>
@@ -245,7 +251,7 @@ export default function OrderDetailScreen() {
             <Text style={styles.subtotalValue}>{formatVnd(subtotal, true)}</Text>
           </View>
 
-          {refundFormVisible ? (
+          {order.orderFlow === 'prepaid' && refundFormVisible ? (
             <View style={styles.refundForm}>
               <Text style={styles.refundLabel}>Lý do hoàn tiền</Text>
               <TextInput
@@ -268,12 +274,13 @@ export default function OrderDetailScreen() {
             </View>
           ) : null}
 
-          {refundSubmitted ? (
+          {order.orderFlow === 'prepaid' && refundSubmitted ? (
             <View style={styles.pendingBanner}>
               <Text style={styles.pendingText}>Yêu cầu hoàn tiền của bạn đang chờ duyệt.</Text>
             </View>
           ) : null}
 
+          {order.orderFlow === 'prepaid' ? (
           <View style={styles.actions}>
             <TouchableOpacity style={styles.invoiceButton} activeOpacity={0.8} onPress={() => downloadInvoice(order, lines)}>
               <Download size={15} color="#ffffff" />
@@ -286,6 +293,7 @@ export default function OrderDetailScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>

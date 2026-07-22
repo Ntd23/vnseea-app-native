@@ -103,10 +103,12 @@ export function useMyProductsViewModel(targetUserId?: number) {
     setOrdersError(null);
 
     try {
-      const purchasedResponse = await ordersRepository.getPurchasedOrders({
-        limit: 50,
-      });
+      const [purchasedResponse, sellerResponse] = await Promise.all([
+        ordersRepository.getPurchasedOrders({ limit: 50 }),
+        ordersRepository.getSellerOrders({ limit: 50 }),
+      ]);
       setPurchasedOrders(purchasedResponse.items);
+      setSellerOrders(sellerResponse.items);
     } catch (caughtError) {
       setOrdersError(
         caughtError instanceof Error
@@ -165,10 +167,10 @@ export function useMyProductsViewModel(targetUserId?: number) {
 
   const orderItems = useMemo(
     () =>
-      purchasedOrders
+      sellerOrders
         .filter(item => matchesOrderQuery(item, ordersSearch))
         .filter(item => matchesOrderStatus(item, ordersStatus)),
-    [ordersSearch, ordersStatus, purchasedOrders],
+    [ordersSearch, ordersStatus, sellerOrders],
   );
 
   const deletePurchasedOrder = useCallback(async (orderId: string) => {
@@ -176,14 +178,14 @@ export function useMyProductsViewModel(targetUserId?: number) {
       const order = purchasedOrders.find(o => o.id === orderId);
       if (order && order.status === 'placed') {
         try {
-          await ordersRepository.changeOrderStatus(order.id, 'canceled');
-        } catch (e) {
-          console.warn('Could not cancel order on server:', e);
+          await ordersRepository.changeOrderStatus(order.code, 'canceled');
+        } catch {
+          console.warn('Could not cancel order on server.');
         }
       }
       setPurchasedOrders(prev => prev.filter(o => o.id !== orderId));
       Alert.alert('Thành công', 'Đã xóa đơn mua hàng thành công.');
-    } catch (err) {
+    } catch {
       Alert.alert('Thất bại', 'Không thể xóa đơn mua hàng.');
     }
   }, [purchasedOrders]);
@@ -206,7 +208,9 @@ export function useMyProductsViewModel(targetUserId?: number) {
 
   const updateOrderStatus = useCallback(async (orderId: string, status: OrderStatus) => {
     try {
-      await ordersRepository.changeOrderStatus(orderId, status);
+      const order = sellerOrders.find(item => item.id === orderId);
+      if (!order) throw new Error('Không tìm thấy đơn bán.');
+      await ordersRepository.changeOrderStatus(order.code, status);
       setSellerOrders(prev =>
         prev.map(o => {
           if (o.id === orderId) {
@@ -244,7 +248,7 @@ export function useMyProductsViewModel(targetUserId?: number) {
     } catch (err) {
       throw err;
     }
-  }, []);
+  }, [sellerOrders]);
 
   const requestRefund = useCallback(async (orderId: string, message: string) => {
     const order = purchasedOrders.find(item => item.id === orderId);

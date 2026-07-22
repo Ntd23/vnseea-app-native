@@ -65,6 +65,7 @@ const PURCHASE_COLUMNS = Dimensions.get('window').width >= 700 ? 2 : 1;
 const TABS: Array<{ key: MyProductsTab; label: string }> = [
   { key: 'products', label: 'Sản phẩm của tôi' },
   { key: 'purchased', label: 'Đã đặt' },
+  { key: 'orders', label: 'Đơn bán' },
   { key: 'marketplace', label: 'Thị trường' },
 ];
 
@@ -301,6 +302,12 @@ function OrderDetailModal({
   const nextStatuses = React.useMemo(() => {
     if (!order) return [];
     const current = order.status;
+    if (order.orderFlow === 'request' && current === 'placed') {
+      return [
+        { label: 'Chấp nhận', value: 'accepted' as const },
+        { label: 'Từ chối', value: 'canceled' as const },
+      ];
+    }
     if (current === 'placed') {
       return [
         { label: 'Chấp nhận', value: 'accepted' as const },
@@ -891,14 +898,14 @@ function MyProductsScreen() {
   const targetUserId = targetUserIdRaw ? Number(targetUserIdRaw) : undefined;
   const vm = useMyProductsViewModel(targetUserId);
   const { setActiveTab } = vm;
+  const deleteProductAction = vm.deleteProduct;
+  const updateSellerOrderStatus = vm.updateOrderStatus;
+  const [selectedSellerOrder, setSelectedSellerOrder] =
+    useState<OrdersItem | null>(null);
 
   useEffect(() => {
     if (route.params?.initialTab) {
-      setActiveTab(
-        route.params.initialTab === 'orders'
-          ? 'purchased'
-          : route.params.initialTab,
-      );
+      setActiveTab(route.params.initialTab);
     }
   }, [route.params?.initialTab, setActiveTab]);
 
@@ -939,7 +946,7 @@ function MyProductsScreen() {
             style: 'destructive',
             onPress: async () => {
               try {
-                await vm.deleteProduct(product);
+                await deleteProductAction(product);
               } catch (error) {
                 Alert.alert(
                   'Không thể xóa sản phẩm',
@@ -953,7 +960,7 @@ function MyProductsScreen() {
         ],
       );
     },
-    [vm.deleteProduct],
+    [deleteProductAction],
   );
 
   const renderProduct = useCallback(
@@ -981,6 +988,46 @@ function MyProductsScreen() {
       </View>
     ),
     [navigation],
+  );
+
+  const renderSellerOrder = useCallback(
+    ({ item }: ListRenderItemInfo<OrdersItem>) => (
+      <View style={{ flex: 1 }}>
+        <OrderCard
+          item={item}
+          isSeller
+          onViewDetail={setSelectedSellerOrder}
+        />
+      </View>
+    ),
+    [],
+  );
+
+  const handleUpdateSellerOrderStatus = useCallback(
+    async (orderId: string, status: OrderStatus) => {
+      await updateSellerOrderStatus(orderId, status);
+      setSelectedSellerOrder(current =>
+        current?.id === orderId
+          ? {
+              ...current,
+              status,
+              statusLabel:
+                status === 'accepted'
+                  ? 'Đã xác nhận'
+                  : status === 'packed'
+                    ? 'Đã đóng gói'
+                    : status === 'shipped'
+                      ? 'Đang giao'
+                      : status === 'delivered'
+                        ? 'Đã giao'
+                        : status === 'canceled'
+                          ? 'Đã hủy'
+                          : current.statusLabel,
+            }
+          : current,
+      );
+    },
+    [updateSellerOrderStatus],
   );
 
   const productFiltersActive = Boolean(
@@ -1242,6 +1289,47 @@ function MyProductsScreen() {
           />
         </>
       ) : null}
+
+      {vm.activeTab === 'orders' ? (
+        <FlatList
+          data={vm.orderItems}
+          keyExtractor={item => item.id}
+          renderItem={renderSellerOrder}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingVertical: 16,
+            paddingBottom: 40,
+          }}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            vm.isOrdersLoading ? (
+              <ActivityIndicator className="py-10" color="#0000FF" />
+            ) : (
+              <EmptyPanel
+                title={
+                  vm.ordersError
+                    ? 'Không tải được đơn bán'
+                    : 'Chưa có yêu cầu mua'
+                }
+                description={
+                  vm.ordersError ??
+                  'Yêu cầu mua từ khách hàng sẽ hiển thị ở đây.'
+                }
+                canRetry={Boolean(vm.ordersError)}
+                onRetry={vm.reload}
+              />
+            )
+          }
+        />
+      ) : null}
+
+      <OrderDetailModal
+        order={selectedSellerOrder}
+        isSeller
+        navigation={navigation}
+        onUpdateStatus={handleUpdateSellerOrderStatus}
+        onClose={() => setSelectedSellerOrder(null)}
+      />
     </SafeAreaView>
   );
 }

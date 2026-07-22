@@ -148,6 +148,7 @@ export function createMessageReplyReference(
     link: message.link,
     location: message.location,
     callEvent: message.callEvent,
+    marketplaceContext: message.marketplaceContext,
   };
 }
 
@@ -184,7 +185,13 @@ export function getMessageReplyPreviewText(reply: MessageReplyReference) {
     case 'audio_call':
       return 'Cuộc gọi thoại';
     case 'product':
-      return 'Sản phẩm';
+      return reply.marketplaceContext?.type === 'product_inquiry'
+        ? `Sản phẩm · ${reply.marketplaceContext.name}`
+        : 'Sản phẩm';
+    case 'order':
+      return reply.marketplaceContext?.type === 'order_request'
+        ? `Yêu cầu mua #${reply.marketplaceContext.orderHash}`
+        : 'Yêu cầu mua';
     case 'sticker':
       return 'Nhãn dán';
     default:

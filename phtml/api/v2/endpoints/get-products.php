@@ -17,6 +17,10 @@ $options['c_id'] = (!empty($_POST['category_id'])) ? (int) $_POST['category_id']
 $options['sub_id'] = (!empty($_POST['sub_id'])) ? (int) $_POST['sub_id'] : 0;
 $search_keyword = (!empty($_POST['keyword'])) ? trim($_POST['keyword']) : '';
 $options['keyword'] = $search_keyword;
+$options['product_id'] = (!empty($_POST['product_id']) && is_numeric($_POST['product_id'])) ? (int) $_POST['product_id'] : 0;
+if ($options['product_id'] > 0) {
+    $options['limit'] = 1;
+}
 $requested_distance = (!empty($_POST['distance']) && is_numeric($_POST['distance'])) ? (float) $_POST['distance'] : 0;
 $can_filter_distance = (
     $requested_distance > 0

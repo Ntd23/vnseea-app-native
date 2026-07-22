@@ -1,11 +1,14 @@
-// Description: Marketplace payment screen after selecting cart items.
-import React, { useCallback } from 'react';
+// Description: Creates a marketplace purchase request for selected cart items.
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -14,24 +17,35 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
+  Check,
   CheckCircle2,
-  CreditCard,
   MapPin,
   Package,
   Phone,
+  Plus,
+  Send,
   ShieldCheck,
   Truck,
-  Wallet,
+  User,
+  X,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
-import type { CheckoutItem } from '../../domain/types/checkout.types';
+import type {
+  CheckoutItem,
+  DeliveryAddress,
+} from '../../domain/types/checkout.types';
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 
 type CheckoutNav = NativeStackNavigationProp<RootStackParamList>;
 type CheckoutRoute = RouteProp<RootStackParamList, typeof ROUTES.CHECKOUT>;
+type CheckoutViewModel = ReturnType<typeof useCheckoutViewModel>;
+type SelectedPlace = Parameters<
+  React.ComponentProps<typeof AddressAutocomplete>['onSelectPlace']
+>[0];
 
 function formatMoney(value: number, symbol: string) {
   const roundedValue = Math.round(Number.isFinite(value) ? value : 0);
@@ -39,6 +53,21 @@ function formatMoney(value: number, symbol: string) {
     maximumFractionDigits: 0,
     minimumFractionDigits: 0,
   })} ${symbol}`;
+}
+
+function inferAddress(place: SelectedPlace) {
+  const address = place.description || [place.mainText, place.secondaryText]
+    .filter(Boolean)
+    .join(', ');
+  const parts = address
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+  return {
+    address,
+    city: parts.length >= 2 ? parts[parts.length - 2] : '',
+    country: parts.length ? parts[parts.length - 1] : '',
+  };
 }
 
 function OrderLine({ item }: { item: CheckoutItem }) {
@@ -70,6 +99,287 @@ function OrderLine({ item }: { item: CheckoutItem }) {
   );
 }
 
+function AddressField({
+  label,
+  value,
+  placeholder,
+  keyboardType,
+  onChangeText,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  keyboardType?: 'default' | 'phone-pad';
+  onChangeText: (value: string) => void;
+}) {
+  return (
+    <View className="mb-4">
+      <Text className="mb-2 text-sm font-bold text-slate-700">
+        {label} <Text className="text-red-500">*</Text>
+      </Text>
+      <View className="rounded-2xl border border-slate-200 bg-slate-50 px-4">
+        <TextInput
+          className="min-h-[48px] text-base font-semibold text-slate-900"
+          value={value}
+          placeholder={placeholder}
+          placeholderTextColor="#94A3B8"
+          keyboardType={keyboardType}
+          onChangeText={onChangeText}
+        />
+      </View>
+    </View>
+  );
+}
+
+function AddressOption({
+  address,
+  selected,
+  onPress,
+}: {
+  address: DeliveryAddress;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      className={`mb-3 rounded-2xl border p-4 ${
+        selected ? 'border-[#0000ff] bg-blue-50' : 'border-slate-200 bg-white'
+      }`}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      <View className="flex-row items-start">
+        <View className="h-10 w-10 items-center justify-center rounded-full bg-white">
+          <MapPin size={19} color="#0000FF" />
+        </View>
+        <View className="ml-3 flex-1">
+          <Text className="text-base font-extrabold text-slate-950">
+            {address.name}
+          </Text>
+          <Text className="mt-1 text-sm font-semibold text-slate-600">
+            {address.phone}
+          </Text>
+          <Text className="mt-1 text-sm leading-5 text-slate-500">
+            {[address.address, address.city, address.country]
+              .filter(Boolean)
+              .join(', ')}
+          </Text>
+        </View>
+        <View
+          className={`h-6 w-6 items-center justify-center rounded-full border ${
+            selected ? 'border-[#0000ff] bg-[#0000ff]' : 'border-slate-300'
+          }`}
+        >
+          {selected ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function CheckoutAddressSheet({
+  visible,
+  vm,
+  onClose,
+}: {
+  visible: boolean;
+  vm: CheckoutViewModel;
+  onClose: () => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setShowForm(vm.addresses.length === 0);
+  }, [visible, vm.addresses.length]);
+
+  const startNewAddress = useCallback(() => {
+    vm.createNewAddress();
+    setShowForm(true);
+  }, [vm]);
+
+  const selectAddress = useCallback(
+    (address: DeliveryAddress) => {
+      vm.selectAddress(address);
+      onClose();
+    },
+    [onClose, vm],
+  );
+
+  const selectPlace = useCallback(
+    (place: SelectedPlace) => {
+      const nextAddress = inferAddress(place);
+      vm.updateAddressField('address', nextAddress.address);
+      vm.updateAddressField('zip', '10000');
+      if (nextAddress.city) vm.updateAddressField('city', nextAddress.city);
+      if (nextAddress.country) {
+        vm.updateAddressField('country', nextAddress.country);
+      }
+    },
+    [vm],
+  );
+
+  const saveAddress = useCallback(async () => {
+    const saved = await vm.saveAddress();
+    if (saved) onClose();
+  }, [onClose, vm]);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View className="flex-1 justify-end bg-black/40">
+        <SafeAreaView
+          className="max-h-[88%] rounded-t-3xl bg-white"
+          edges={['bottom']}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
+          >
+            <View className="flex-row items-center border-b border-slate-100 px-4 py-3">
+              <View className="h-10 w-10" />
+              <View className="flex-1 items-center">
+                <Text className="text-lg font-extrabold text-slate-950">
+                  Địa chỉ nhận hàng
+                </Text>
+                <Text className="mt-0.5 text-xs font-semibold text-slate-500">
+                  Chọn địa chỉ đã lưu hoặc nhập địa chỉ mới
+                </Text>
+              </View>
+              <TouchableOpacity
+                className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel="Đóng"
+              >
+                <X size={20} color="#334155" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {!showForm && vm.addresses.length > 0 ? (
+                <>
+                  {vm.addresses.map(address => (
+                    <AddressOption
+                      key={address.id}
+                      address={address}
+                      selected={vm.selectedAddressId === address.id}
+                      onPress={() => selectAddress(address)}
+                    />
+                  ))}
+                  <TouchableOpacity
+                    className="mt-1 min-h-[48px] flex-row items-center justify-center rounded-full border border-blue-200 bg-blue-50"
+                    activeOpacity={0.85}
+                    onPress={startNewAddress}
+                  >
+                    <Plus size={18} color="#0000FF" />
+                    <Text className="ml-2 text-base font-extrabold text-[#0000ff]">
+                      Thêm địa chỉ mới
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <View>
+                  {vm.addresses.length > 0 ? (
+                    <TouchableOpacity
+                      className="mb-4 self-start"
+                      onPress={() => setShowForm(false)}
+                    >
+                      <Text className="text-sm font-extrabold text-[#0000ff]">
+                        Chọn địa chỉ đã lưu
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  <AddressField
+                    label="Họ và tên"
+                    value={vm.addressForm.name}
+                    placeholder="Nhập họ và tên"
+                    onChangeText={value => vm.updateAddressField('name', value)}
+                  />
+                  <AddressField
+                    label="Số điện thoại"
+                    value={vm.addressForm.phone}
+                    placeholder="Nhập số điện thoại"
+                    keyboardType="phone-pad"
+                    onChangeText={value => vm.updateAddressField('phone', value)}
+                  />
+                  <View className="mb-4">
+                    <Text className="mb-2 text-sm font-bold text-slate-700">
+                      Địa chỉ <Text className="text-red-500">*</Text>
+                    </Text>
+                    <AddressAutocomplete
+                      value={vm.addressForm.address}
+                      placeholder="Nhập địa chỉ để tìm kiếm..."
+                      onChangeText={value =>
+                        vm.updateAddressField('address', value)
+                      }
+                      onSelectPlace={selectPlace}
+                    />
+                  </View>
+                  <View className="flex-row gap-3">
+                    <View className="flex-1">
+                      <AddressField
+                        label="Quốc gia"
+                        value={vm.addressForm.country}
+                        placeholder="Quốc gia"
+                        onChangeText={value =>
+                          vm.updateAddressField('country', value)
+                        }
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <AddressField
+                        label="Thành phố"
+                        value={vm.addressForm.city}
+                        placeholder="Thành phố"
+                        onChangeText={value =>
+                          vm.updateAddressField('city', value)
+                        }
+                      />
+                    </View>
+                  </View>
+                  {vm.addressError ? (
+                    <Text className="mb-3 text-sm font-semibold text-red-500">
+                      {vm.addressError}
+                    </Text>
+                  ) : null}
+                  <TouchableOpacity
+                    className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] ${
+                      vm.isSavingAddress ? 'opacity-70' : ''
+                    }`}
+                    activeOpacity={0.9}
+                    disabled={vm.isSavingAddress}
+                    onPress={saveAddress}
+                  >
+                    {vm.isSavingAddress ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <User size={18} color="#FFFFFF" />
+                        <Text className="ml-2 text-base font-extrabold text-white">
+                          Lưu địa chỉ
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    </Modal>
+  );
+}
+
 function ConfirmPurchaseModal({
   visible,
   itemCount,
@@ -95,10 +405,11 @@ function ConfirmPurchaseModal({
             <ShieldCheck size={30} color="#0000FF" />
           </View>
           <Text className="mt-5 text-center text-xl font-extrabold text-slate-950">
-            Xác nhận đặt đơn
+            Xác nhận gửi yêu cầu mua
           </Text>
           <Text className="mt-3 text-center text-sm font-medium leading-6 text-slate-500">
-            Đơn hàng của bạn sẽ được gửi tới người bán qua tin nhắn để xác nhận giao dịch.
+            Người bán sẽ nhận đầy đủ sản phẩm và địa chỉ giao hàng qua đơn hàng
+            cùng tin nhắn. Hai bên tự thỏa thuận phương thức thanh toán.
           </Text>
           <View className="mt-6 rounded-2xl bg-slate-50 px-4 py-4">
             <View className="flex-row justify-between py-2">
@@ -107,7 +418,7 @@ function ConfirmPurchaseModal({
             </View>
             <View className="mt-2 flex-row justify-between border-t border-slate-100 pt-4">
               <Text className="text-base font-extrabold text-slate-950">
-                Tổng thanh toán
+                Tổng giá trị
               </Text>
               <Text className="text-base font-extrabold text-[#0000ff]">
                 {formatMoney(total, currencySymbol)}
@@ -135,7 +446,7 @@ function ConfirmPurchaseModal({
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text className="text-base font-extrabold text-white">
-                  Xác nhận đặt đơn
+                  Gửi yêu cầu mua
                 </Text>
               )}
             </TouchableOpacity>
@@ -146,11 +457,13 @@ function ConfirmPurchaseModal({
   );
 }
 
-function PaymentSuccessModal({
+function RequestSuccessModal({
   visible,
+  message,
   onTrackOrder,
 }: {
   visible: boolean;
+  message?: string | null;
   onTrackOrder: () => void;
 }) {
   return (
@@ -161,10 +474,11 @@ function PaymentSuccessModal({
             <CheckCircle2 size={32} color="#16A34A" />
           </View>
           <Text className="mt-5 text-center text-xl font-extrabold text-slate-950">
-            Đặt đơn hàng thành công
+            Đã gửi yêu cầu mua
           </Text>
           <Text className="mt-3 text-center text-sm font-medium leading-6 text-slate-500">
-            Đơn hàng đã được ghi nhận và gửi thông tin sản phẩm cùng thông tin của bạn tới người bán qua tin nhắn.
+            {message ||
+              'Yêu cầu đã được lưu trong Đã đặt và gửi đầy đủ tới người bán.'}
           </Text>
           <TouchableOpacity
             className="mt-6 min-h-[48px] items-center justify-center rounded-full bg-[#0000ff]"
@@ -172,7 +486,7 @@ function PaymentSuccessModal({
             onPress={onTrackOrder}
           >
             <Text className="text-base font-extrabold text-white">
-              Xem tin nhắn
+              Xem đơn đã đặt
             </Text>
           </TouchableOpacity>
         </View>
@@ -191,28 +505,31 @@ function CheckoutScreen() {
     selectedAddressId,
     initialStep: 'payment',
   });
+  const [addressSheetVisible, setAddressSheetVisible] = useState(false);
+  const didAutoOpenAddressRef = useRef(false);
+  const { createNewAddress } = vm;
+
+  useEffect(() => {
+    if (
+      vm.isLoading ||
+      vm.error ||
+      vm.addresses.length > 0 ||
+      didAutoOpenAddressRef.current
+    ) {
+      return;
+    }
+    didAutoOpenAddressRef.current = true;
+    createNewAddress();
+    setAddressSheetVisible(true);
+  }, [createNewAddress, vm.addresses.length, vm.error, vm.isLoading]);
 
   const summary = vm.selectedSummary;
-  const wallet = vm.walletBalance?.wallet ?? 0;
-  const currencySymbol =
-    summary?.currencySymbol || vm.walletBalance?.currencySymbol || 'VNSEEA';
-  const missingAmount = summary ? Math.max(0, summary.total - wallet) : 0;
-
-  const handleDeposit = useCallback(() => {
-    navigation.navigate(ROUTES.DEPOSIT, { returnTo: ROUTES.CHECKOUT });
-  }, [navigation]);
+  const currencySymbol = summary?.currencySymbol || 'VNSEEA';
 
   const handleTrackOrder = useCallback(() => {
     vm.closeSuccess();
-    navigation.navigate(ROUTES.MESSAGES);
+    navigation.navigate(ROUTES.MY_PRODUCTS, { initialTab: 'purchased' });
   }, [navigation, vm]);
-
-  const handleChangeAddress = useCallback(() => {
-    navigation.navigate(ROUTES.SHIPPING_ADDRESS, {
-      selectedProductIds,
-      selectedAddressId: vm.selectedAddressId || undefined,
-    });
-  }, [navigation, selectedProductIds, vm.selectedAddressId]);
 
   const handleBackToCart = useCallback(() => {
     navigation.navigate(ROUTES.CART);
@@ -232,9 +549,9 @@ function CheckoutScreen() {
           <ArrowLeft size={23} color="#1E293B" />
         </TouchableOpacity>
         <View className="ml-2 flex-1">
-          <Text className="text-2xl font-extrabold text-slate-950">Thanh toán</Text>
+          <Text className="text-2xl font-extrabold text-slate-950">Đặt hàng</Text>
           <Text className="mt-0.5 text-sm font-semibold text-slate-500">
-            Kiểm tra đơn hàng trước khi xác nhận
+            Kiểm tra thông tin trước khi gửi yêu cầu mua
           </Text>
         </View>
       </View>
@@ -243,7 +560,7 @@ function CheckoutScreen() {
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#0000FF" />
           <Text className="mt-3 text-sm font-semibold text-slate-500">
-            Đang tải thông tin thanh toán...
+            Đang tải thông tin đặt hàng...
           </Text>
         </View>
       ) : !summary || summary.items.length === 0 ? (
@@ -275,15 +592,21 @@ function CheckoutScreen() {
                 <Text className="text-lg font-extrabold text-slate-950">
                   Thông tin giao hàng
                 </Text>
-                <TouchableOpacity activeOpacity={0.8} onPress={handleChangeAddress}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setAddressSheetVisible(true)}
+                >
                   <Text className="text-sm font-extrabold text-[#0000ff]">
                     {vm.selectedAddress ? 'Thay đổi' : 'Thêm địa chỉ'}
                   </Text>
                 </TouchableOpacity>
               </View>
-
               {vm.selectedAddress ? (
-                <View className="mt-4 rounded-2xl bg-slate-50 p-4">
+                <TouchableOpacity
+                  className="mt-4 rounded-2xl bg-slate-50 p-4"
+                  activeOpacity={0.85}
+                  onPress={() => setAddressSheetVisible(true)}
+                >
                   <Text className="text-base font-extrabold text-slate-950">
                     {vm.selectedAddress.name}
                   </Text>
@@ -305,29 +628,24 @@ function CheckoutScreen() {
                         .join(', ')}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   activeOpacity={0.9}
-                  onPress={handleChangeAddress}
+                  onPress={() => setAddressSheetVisible(true)}
                   className="mt-4 flex-row items-center rounded-2xl border border-dashed border-blue-200 bg-blue-50 px-4 py-4"
                 >
                   <Truck size={22} color="#0000FF" />
-                  <View className="ml-3 flex-1">
-                    <Text className="text-base font-extrabold text-[#0000ff]">
-                      Thêm địa chỉ giao hàng
-                    </Text>
-                    <Text className="mt-0.5 text-sm font-medium text-slate-500">
-                      Thông tin giao hàng được quản lý ở màn riêng.
-                    </Text>
-                  </View>
+                  <Text className="ml-3 flex-1 text-base font-extrabold text-[#0000ff]">
+                    Thêm địa chỉ giao hàng
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
 
             <View className="mt-4 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
               <Text className="text-lg font-extrabold text-slate-950">
-                Sản phẩm thanh toán
+                Sản phẩm đặt mua
               </Text>
               <View className="mt-3">
                 {summary.items.map(item => (
@@ -338,7 +656,7 @@ function CheckoutScreen() {
 
             <View className="mt-4 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
               <Text className="text-lg font-extrabold text-slate-950">
-                Tóm tắt thanh toán
+                Tóm tắt yêu cầu
               </Text>
               <View className="mt-4 gap-3">
                 <View className="flex-row justify-between">
@@ -348,28 +666,26 @@ function CheckoutScreen() {
                   </Text>
                 </View>
                 <View className="flex-row justify-between">
-                  <Text className="text-sm font-semibold text-slate-500">Phí giao hàng</Text>
-                  <Text className="text-sm font-extrabold text-slate-900">
-                    {summary.shipping > 0
-                      ? formatMoney(summary.shipping, currencySymbol)
-                      : 'Miễn phí'}
+                  <Text className="text-sm font-semibold text-slate-500">
+                    Phí giao hàng
                   </Text>
-                </View>
-                <View className="flex-row justify-between">
-                  <Text className="text-sm font-semibold text-slate-500">Số dư ví</Text>
                   <Text className="text-sm font-extrabold text-slate-900">
-                    {formatMoney(wallet, currencySymbol)}
+                    Thỏa thuận với người bán
                   </Text>
                 </View>
                 <View className="mt-1 flex-row justify-between border-t border-slate-100 pt-4">
                   <Text className="text-base font-extrabold text-slate-950">
-                    Tổng thanh toán
+                    Tổng giá trị
                   </Text>
                   <Text className="text-lg font-extrabold text-[#0000ff]">
                     {formatMoney(summary.total, currencySymbol)}
                   </Text>
                 </View>
               </View>
+              <Text className="mt-4 text-xs font-medium leading-5 text-slate-500">
+                App không tự trừ VNSEEA hoặc số dư. Người mua và người bán tự
+                thống nhất phương thức thanh toán.
+              </Text>
             </View>
 
             {vm.paymentError ? (
@@ -383,12 +699,11 @@ function CheckoutScreen() {
               </Text>
             ) : null}
           </ScrollView>
-
           <View className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pb-4 pt-3 shadow-lg">
             {!vm.selectedAddress ? (
               <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={handleChangeAddress}
+                onPress={() => setAddressSheetVisible(true)}
                 className="min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] px-5"
               >
                 <Truck size={19} color="#FFFFFF" />
@@ -409,16 +724,15 @@ function CheckoutScreen() {
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <>
-                    <CreditCard size={19} color="#FFFFFF" />
+                    <Send size={19} color="#FFFFFF" />
                     <Text className="ml-2 text-base font-extrabold text-white">
-                      Đặt đơn hàng
+                      Gửi yêu cầu mua
                     </Text>
                   </>
                 )}
               </TouchableOpacity>
             )}
           </View>
-
           <ConfirmPurchaseModal
             visible={vm.confirmVisible}
             itemCount={vm.itemCount}
@@ -431,8 +745,14 @@ function CheckoutScreen() {
         </>
       )}
 
-      <PaymentSuccessModal
+      <CheckoutAddressSheet
+        visible={addressSheetVisible}
+        vm={vm}
+        onClose={() => setAddressSheetVisible(false)}
+      />
+      <RequestSuccessModal
         visible={vm.successVisible}
+        message={vm.successMessage}
         onTrackOrder={handleTrackOrder}
       />
     </SafeAreaView>

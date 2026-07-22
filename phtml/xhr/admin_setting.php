@@ -1037,6 +1037,10 @@ if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
             foreach ($_POST['ids'] as $key => $value) {
                 if (is_numeric($value) && $value > 0) {
                     $request = $db->where('id', Wo_Secure($value))->getOne(T_REFUND);
+                    if ($_POST['type'] == 'approve' && !empty($request->order_hash_id) && VNSEEA_IsMarketRequestOrderHash($request->order_hash_id)) {
+                        $db->where('id', Wo_Secure($value))->delete(T_REFUND);
+                        continue;
+                    }
                     if ($_POST['type'] == 'delete') {
                         $db->where('id', Wo_Secure($value))->delete(T_REFUND);
                         $data = array(
@@ -5443,6 +5447,13 @@ if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
         if (!empty($_GET['id'])) {
             $request = $db->where('id', Wo_Secure($_GET['id']))->getOne(T_REFUND);
             if (!empty($request)) {
+                if (!empty($request->order_hash_id) && VNSEEA_IsMarketRequestOrderHash($request->order_hash_id)) {
+                    $db->where('id', Wo_Secure($_GET['id']))->delete(T_REFUND);
+                    $data = array('status' => 200);
+                    header("Content-type: application/json");
+                    echo json_encode($data);
+                    exit();
+                }
                 if (empty($request->order_hash_id)) {
                     $price = $wo['pro_packages'][$request->pro_type]['price'];
                     $db->where('user_id', $request->user_id)->update(T_USERS, array(

@@ -36,6 +36,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductImage, ProductItem } from '../../domain/types/product.types';
+import { findRequestedProduct } from '../../application/findRequestedProduct';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { formatProductPrice } from '../components/ProductCurrency';
@@ -842,16 +843,23 @@ function ProductDetailScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    const routedProduct = findRequestedProduct(
+      productFromParams ? [productFromParams] : [],
+      productId,
+    );
 
     if (productId) {
-      if (!productFromParams) {
-        setLoading(true);
-      }
+      setProduct(routedProduct);
+      setLoading(!routedProduct);
       repository
         .getProducts({ product_id: productId })
         .then(response => {
-          if (!cancelled && response.products?.length) {
-            setProduct(response.products[0]);
+          const requestedProduct = findRequestedProduct(
+            response.products,
+            productId,
+          );
+          if (!cancelled && requestedProduct) {
+            setProduct(requestedProduct);
           }
         })
         .catch(error => {

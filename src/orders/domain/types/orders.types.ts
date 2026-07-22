@@ -28,6 +28,8 @@ export interface OrdersItem {
   addressId?: string;
   shippingAddress?: OrderShippingAddress;
   refundRequested?: boolean;
+  orderFlow: 'prepaid' | 'request';
+  stockReserved: boolean;
 }
 
 export interface OrdersPage {

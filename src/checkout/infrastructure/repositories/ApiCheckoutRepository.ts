@@ -8,7 +8,6 @@ import type {
   CheckoutSummary,
   DeliveryAddress,
   DeliveryAddressInput,
-  WalletCheckoutBalance,
 } from '../../domain/types/checkout.types';
 
 type RawProduct = {
@@ -44,20 +43,16 @@ type AddressResponse = {
   message?: string;
 };
 
-type BuyResponse = {
+type RequestOrderResponse = {
   api_status: number | string;
   message?: string;
-  data?: string;
-};
-
-type CurrentUserResponse = {
-  api_status: number | string;
-  user_data?: {
-    wallet?: unknown;
-    points_config?: {
-      display_currency_symbol?: unknown;
-      currency_symbol?: unknown;
-    };
+  data?: {
+    orders?: Array<{
+      hash_id?: unknown;
+      seller_id?: unknown;
+      message_id?: unknown;
+    }>;
+    cart_count?: unknown;
   };
 };
 
@@ -164,38 +159,9 @@ async function removeItem(productId: number): Promise<CheckoutSummary> {
   return getSummary();
 }
 
-async function removeCartProduct(productId: number) {
-  await apiBridge.post(apiRoutes.products.market, {
-    type: 'remove_cart',
-    product_id: productId,
-  });
-}
-
-async function addCartProduct(productId: number, quantity: number) {
-  await apiBridge.post(apiRoutes.products.market, {
-    type: 'add_cart',
-    product_id: productId,
-    qty: Math.max(1, quantity),
-  });
-}
-
 export function createCheckoutRepository(): CheckoutRepository {
   return {
     getSummary,
-
-    async getWalletBalance(): Promise<WalletCheckoutBalance> {
-      const response = await apiBridge.post<CurrentUserResponse>(
-        apiRoutes.auth.me,
-      );
-
-      return {
-        wallet: numberValue(response.user_data?.wallet),
-        currencySymbol:
-          stringValue(response.user_data?.points_config?.display_currency_symbol) ||
-          stringValue(response.user_data?.points_config?.currency_symbol) ||
-          'VNSEEA',
-      };
-    },
 
     getAddresses,
 
@@ -231,61 +197,43 @@ export function createCheckoutRepository(): CheckoutRepository {
 
     removeItem,
 
-    async buy(
+    async requestOrder(
       addressId: string,
-      selectedProductIds?: number[],
+      selectedProductIds: number[],
     ): Promise<CheckoutResult> {
-      const selectedIds = new Set(
-        (selectedProductIds ?? [])
-          .map(id => Number(id))
-          .filter(id => Number.isFinite(id) && id > 0),
+      const productIds = Array.from(
+        new Set(
+          selectedProductIds
+            .map(id => Number(id))
+            .filter(id => Number.isFinite(id) && id > 0),
+        ),
       );
-      const shouldBuySelectedOnly = selectedIds.size > 0;
-      const currentSummary = shouldBuySelectedOnly ? await getSummary() : null;
-      const itemsToRestore =
-        currentSummary?.items.filter(item => !selectedIds.has(item.productId)) ?? [];
-
-      if (shouldBuySelectedOnly && currentSummary) {
-        const selectedItems = currentSummary.items.filter(item =>
-          selectedIds.has(item.productId),
-        );
-        if (selectedItems.length === 0) {
-          return {
-            success: false,
-            message: 'Vui lòng chọn ít nhất một sản phẩm để thanh toán.',
-          };
-        }
-
-        await Promise.all(
-          itemsToRestore.map(item => removeCartProduct(item.productId)),
-        );
+      if (productIds.length === 0) {
+        return {
+          success: false,
+          message: 'Vui lòng chọn ít nhất một sản phẩm để đặt mua.',
+        };
       }
-
-      let response: BuyResponse;
-      try {
-        response = await apiBridge.post<BuyResponse>(
-          apiRoutes.products.market,
-          {
-            type: 'buy',
-            address_id: addressId,
-          },
-        );
-      } finally {
-        if (itemsToRestore.length > 0) {
-          await Promise.allSettled(
-            itemsToRestore.map(item =>
-              addCartProduct(item.productId, item.quantity),
-            ),
-          );
-        }
-      }
+      const response = await apiBridge.post<RequestOrderResponse>(
+        apiRoutes.products.market,
+        {
+          type: 'request_order',
+          address_id: addressId,
+          product_ids: JSON.stringify(productIds),
+        },
+      );
 
       return {
         success: response.api_status === 200 || response.api_status === '200',
         message:
           response.message ||
-          response.data ||
-          'Đơn hàng đã được xử lý thành công.',
+          'Yêu cầu mua đã được gửi tới người bán.',
+        cartCount: numberValue(response.data?.cart_count),
+        orders: (response.data?.orders ?? []).map(order => ({
+          hashId: stringValue(order.hash_id),
+          sellerUserId: stringValue(order.seller_id),
+          messageId: stringValue(order.message_id),
+        })),
       };
     },
   };
