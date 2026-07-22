@@ -73,6 +73,7 @@ import { useChatViewModel } from '../../application/view-models/useChatViewModel
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
+import { StoryReplyMessageCard } from '../components/StoryReplyMessageCard';
 import { MessageLinkPreviewCard } from '../components/MessageLinkPreviewCard';
 import { PinnedMessagesBanner } from '../components/PinnedMessagesBanner';
 import {
@@ -163,6 +164,10 @@ const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 const MAP_SHARE_CARD_WIDTH = Math.min(
   Dimensions.get('window').width * 0.76,
   340,
+);
+const ORDER_REQUEST_CARD_WIDTH = Math.min(
+  Dimensions.get('window').width - 88,
+  320,
 );
 const CHAT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['top', 'left', 'right'] : ROOT_SAFE_AREA_EDGES;
@@ -842,6 +847,9 @@ function getChatListItemType(item: ChatMessageListItem) {
   if (message.callEvent) {
     return `call-${message.callEvent.callType}-${message.callEvent.status}`;
   }
+  if (message.storyReply) {
+    return 'story-reply';
+  }
   if (message.sharedPost) {
     return 'shared-post';
   }
@@ -1378,6 +1386,8 @@ function ReplyMessageBubble({
                 <Video size={17} color="#7C3AED" />
               ) : reply.contentKind === 'audio_call' ? (
                 <Phone size={17} color="#7C3AED" />
+              ) : reply.contentKind === 'story' ? (
+                <MessageCircle size={17} color="#7C3AED" />
               ) : reply.contentKind === 'product' ||
                 reply.contentKind === 'order' ? (
                 <ShoppingBag size={17} color="#7C3AED" />
@@ -1473,17 +1483,27 @@ function OrderInquiryBubble({
   };
 
   return (
-    <View className="w-[280px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <View
-        className="flex-row items-center justify-between bg-blue-600 px-3.5 py-2.5"
-        style={{ backgroundColor: '#0000ff' }}
-      >
-        <Text className="text-[12px] font-extrabold uppercase text-white">
-          Yêu cầu mua
-        </Text>
-        <Text className="text-[11px] font-bold text-blue-100">
-          #{order.orderHash}
-        </Text>
+    <View
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      style={{ width: ORDER_REQUEST_CARD_WIDTH }}
+    >
+      <View className="flex-row items-center bg-[#0000ff] px-3.5 py-2.5">
+        <View className="min-w-0 flex-1 pr-3">
+          <Text className="text-[12px] font-extrabold uppercase text-white">
+            Yêu cầu mua
+          </Text>
+          <Text
+            className="mt-0.5 text-[11px] font-bold text-blue-100"
+            numberOfLines={1}
+            ellipsizeMode="middle"
+            accessibilityLabel={`Mã yêu cầu mua ${order.orderHash}`}
+          >
+            #{order.orderHash}
+          </Text>
+        </View>
+        <View className="h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15">
+          <ShoppingBag size={16} color="#FFFFFF" />
+        </View>
       </View>
 
       <View className="border-b border-slate-100">
@@ -1515,11 +1535,14 @@ function OrderInquiryBubble({
               >
                 {item.name}
               </Text>
-              <View className="mt-1 flex-row items-center justify-between">
-                <Text className="text-[12px] font-extrabold text-blue-600">
+              <View className="mt-1 flex-row items-center">
+                <Text
+                  className="min-w-0 flex-1 text-[12px] font-extrabold text-blue-600"
+                  numberOfLines={1}
+                >
                   {item.total}
                 </Text>
-                <Text className="text-[11px] font-medium text-slate-500">
+                <Text className="ml-2 shrink-0 text-[11px] font-medium text-slate-500">
                   x{item.quantity}
                 </Text>
               </View>
@@ -1559,6 +1582,7 @@ function OrderInquiryBubble({
 function MessageBubble({
   message,
   avatar,
+  chatName,
   showAvatar = true,
   onOpenMedia,
   onReply,
@@ -1571,6 +1595,7 @@ function MessageBubble({
 }: {
   message: MessageItem;
   avatar: string;
+  chatName: string;
   showAvatar?: boolean;
   onOpenMedia: OpenChatMedia;
   onReply?: (message: MessageItem) => void;
@@ -1598,6 +1623,7 @@ function MessageBubble({
   const productInquiry = getProductInquiryContext(message);
   const replyInfo = message.replyTo;
   const sharedPost = message.sharedPost;
+  const storyReply = message.storyReply;
   const parsedMapShare =
     sharedPost ? null : parseSharedMapMessage(message.message);
   const mapShare = message.location
@@ -1610,7 +1636,9 @@ function MessageBubble({
   const linkCaption = message.link
     ? getMessageLinkCaption(message.message)
     : '';
-  const visibleMessageText = sharedPost
+  const visibleMessageText = storyReply
+    ? ''
+    : sharedPost
     ? ''
     : orderInquiry
     ? ''
@@ -1814,7 +1842,26 @@ function MessageBubble({
           }`}
         >
           {/* Shared Post Card (renders instead of the raw URL bubble) */}
-          {sharedPost ? (
+          {storyReply ? (
+            <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}>
+              <StoryReplyMessageCard
+                reference={storyReply}
+                replyText={message.message}
+                isSentByMe={Boolean(isSentByMe)}
+                conversationName={chatName}
+                statusText={
+                  message.deliveryState === 'sending'
+                    ? 'Đang gửi...'
+                    : message.deliveryState === 'failed'
+                    ? 'Gửi thất bại'
+                    : formatMessageTime(message.time)
+                }
+                statusIsError={message.deliveryState === 'failed'}
+                onLongPress={() => onLongPress?.(message)}
+                onDoubleTap={() => onDoubleTap?.(message)}
+              />
+            </View>
+          ) : sharedPost ? (
             <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}>
               <SharedPostMessageCard
                 reference={sharedPost}
@@ -1881,7 +1928,7 @@ function MessageBubble({
             /* Order Inquiry Card (renders instead of the main text bubble) */
             <DoubleTapTouchable
               className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
-              style={{ maxWidth: 260 }}
+              style={{ width: ORDER_REQUEST_CARD_WIDTH }}
               activeOpacity={0.96}
               onLongPress={() => onLongPress?.(message)}
               onDoubleTap={() => onDoubleTap?.(message)}
@@ -2082,6 +2129,10 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.replyTo?.media === nextProps.message.replyTo?.media &&
       prevProps.message.replyTo?.thumbnail ===
         nextProps.message.replyTo?.thumbnail &&
+      prevProps.message.replyTo?.storyReply?.storyId ===
+        nextProps.message.replyTo?.storyReply?.storyId &&
+      prevProps.message.replyTo?.storyReply?.available ===
+        nextProps.message.replyTo?.storyReply?.available &&
       prevProps.message.deliveryState === nextProps.message.deliveryState &&
       prevProps.message.seen === nextProps.message.seen &&
       prevProps.message.sharedPost?.postId ===
@@ -2089,6 +2140,15 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.sharedPost?.url === nextProps.message.sharedPost?.url &&
       prevProps.message.sharedPost?.note ===
         nextProps.message.sharedPost?.note &&
+      prevProps.message.storyReply?.storyId ===
+        nextProps.message.storyReply?.storyId &&
+      prevProps.message.storyReply?.available ===
+        nextProps.message.storyReply?.available &&
+      prevProps.message.storyReply?.thumbnailUrl ===
+        nextProps.message.storyReply?.thumbnailUrl &&
+      prevProps.message.storyReply?.caption ===
+        nextProps.message.storyReply?.caption &&
+      prevProps.chatName === nextProps.chatName &&
       areMessageReactionSummariesEqual(
         prevProps.message.reactions,
         nextProps.message.reactions,
@@ -3414,6 +3474,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           <MemoizedMessageBubble
             message={item.message}
             avatar={chat.avatar}
+            chatName={chat.name}
             showAvatar={showAvatar}
             onOpenMedia={handleOpenMedia}
             onReply={setReplyingMessage}
@@ -3429,6 +3490,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     },
     [
       chat.avatar,
+      chat.name,
       highlightedMessageId,
       messageItems,
       handleOpenMedia,

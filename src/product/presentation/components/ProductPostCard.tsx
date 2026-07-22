@@ -87,6 +87,7 @@ function RatingStars({ value, size = 14 }: { value: number; size?: number }) {
 
 interface ProductPostCardProps {
   product: ProductItem;
+  showIdentityHeader?: boolean;
   onPress?: (product: ProductItem) => void;
   onMorePress?: (product: ProductItem) => void;
   /** Navigate to the seller profile (tapped on avatar/header). */
@@ -117,6 +118,7 @@ interface ProductPostCardProps {
 
 const ProductPostCard = React.memo(function ProductPostCard({
   product,
+  showIdentityHeader = true,
   onPress,
   onMorePress,
   onProfilePress,
@@ -359,7 +361,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
     <FeedCardSurface>
       {/* Header & Product Text - same padding block for vertical alignment */}
       <FeedCardContent className="pb-2">
-        <View className="flex-row items-center justify-between">
+        <View
+          className="flex-row items-center justify-between"
+          style={showIdentityHeader ? undefined : styles.hiddenIdentityHeader}
+        >
           <TouchableOpacity
             className="flex-row items-center flex-1 mr-2"
             activeOpacity={0.8}
@@ -404,7 +409,12 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
         {/* Product Description */}
         {product.description ? (
-          <Text className="text-body-primary mt-2.5 text-[#65676B] text-[13px] leading-relaxed" numberOfLines={2}>
+          <Text
+            className={`text-body-primary text-[#65676B] text-[13px] leading-relaxed ${
+              showIdentityHeader ? 'mt-2.5' : ''
+            }`}
+            numberOfLines={2}
+          >
             {product.description}
           </Text>
         ) : null}
@@ -585,6 +595,9 @@ export { ProductPostCard };
 export default ProductPostCard;
 
 const styles = StyleSheet.create({
+  hiddenIdentityHeader: {
+    display: 'none',
+  },
   marketplaceCompactContent: {
     position: 'relative',
     paddingTop: 28,

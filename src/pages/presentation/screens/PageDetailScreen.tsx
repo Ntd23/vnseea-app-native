@@ -57,6 +57,7 @@ import {
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import type {
   FeedPollPost,
@@ -1600,6 +1601,14 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     openingPhotoViewerRef.current = false;
   }, []);
 
+  const handlePhotoViewerCommentTap = useCallback(
+    (postId: string) => {
+      const post = vm.posts.find(item => item.id === postId);
+      navigateToPostComments(navigation, postId, post);
+    },
+    [navigation, vm.posts],
+  );
+
   // Open the dedicated page share sheet. Previously this jumped
   // straight to React Native's native Share dialog with a fixed
   // message, which gave the user no chance to copy the link first.
@@ -2204,7 +2213,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         state={photoViewer}
         onClose={handleClosePhotoViewer}
         onReact={vm.togglePostReaction}
-        onCommentTap={handleOpenComments}
+        onCommentTap={handlePhotoViewerCommentTap}
         onProfilePress={handleNavigateToProfile}
         onInternalShare={handleInternalSharePost}
         posts={vm.posts}

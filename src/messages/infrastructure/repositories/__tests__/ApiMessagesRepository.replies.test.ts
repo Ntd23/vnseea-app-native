@@ -44,6 +44,24 @@ function groupChat(): ChatItem {
   };
 }
 
+function directChat(): ChatItem {
+  return {
+    id: '2',
+    chatId: '77',
+    chatType: 'user',
+    participantId: '2',
+    userId: '2',
+    username: 'duong20042',
+    name: 'duong20042',
+    avatar: '',
+    lastMessage: '',
+    lastMessageTime: 0,
+    unreadCount: 0,
+    isOnline: false,
+    isVerified: false,
+  };
+}
+
 function rawMessage(
   id: string,
   overrides: Record<string, unknown> = {},
@@ -218,6 +236,38 @@ describe('ApiMessagesRepository message replies', () => {
     expect(chat.lastMessage).toBe('Tôi sẽ đến ngay');
     expect(chat.lastMessageKind).toBe('text');
     expect(chat.lastMessageIsReply).toBe(true);
+  });
+
+  it('resolves missing reply sender metadata from the direct conversation', async () => {
+    post.mockResolvedValueOnce({
+      messages: [
+        rawMessage('53', {
+          from_id: '1',
+          or_text: 'Trả lời đối phương',
+          reply_id: '21',
+          reply: rawMessage('21', {
+            from_id: '2',
+            messageUser: undefined,
+          }),
+        }),
+        rawMessage('54', {
+          from_id: '2',
+          or_text: 'Trả lời tôi',
+          reply_id: '22',
+          reply: rawMessage('22', {
+            from_id: '1',
+            messageUser: undefined,
+          }),
+        }),
+      ],
+    });
+
+    const messages = await createMessagesRepository().getMessages(directChat());
+
+    expect(messages.map(message => message.replyTo?.senderName)).toEqual([
+      'duong20042',
+      'Bạn',
+    ]);
   });
 
   it.each([

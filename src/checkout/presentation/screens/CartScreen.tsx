@@ -23,19 +23,13 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { CheckoutItem } from '../../domain/types/checkout.types';
+import { getCheckoutCurrencyTotals } from '../../domain/checkoutMoney';
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 
 type CartNav = NativeStackNavigationProp<RootStackParamList>;
-
-function formatMoney(value: number, symbol: string) {
-  const roundedValue = Math.round(Number.isFinite(value) ? value : 0);
-  return `${roundedValue.toLocaleString('vi-VN', {
-    maximumFractionDigits: 0,
-    minimumFractionDigits: 0,
-  })} ${symbol}`;
-}
 
 function CartItemRow({
   item,
@@ -82,7 +76,11 @@ function CartItemRow({
             {item.name}
           </Text>
           <Text className="mt-2 text-base font-extrabold text-[#0000ff]">
-            {formatMoney(item.price, item.currencySymbol)}
+            {formatCurrency(
+              item.price,
+              item.currencyCode,
+              item.currencySymbol,
+            )}
           </Text>
 
           <View className="mt-3 flex-row items-center justify-between">
@@ -130,7 +128,6 @@ function CartScreen() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const items = vm.summary?.items ?? [];
-  const currencySymbol = vm.summary?.currencySymbol ?? 'VNSEEA';
 
   useFocusEffect(
     useCallback(() => {
@@ -171,7 +168,10 @@ function CartScreen() {
     () => items.filter(item => selectedSet.has(item.productId)),
     [items, selectedSet],
   );
-  const selectedTotal = selectedItems.reduce((sum, item) => sum + item.total, 0);
+  const selectedCurrencyTotals = useMemo(
+    () => getCheckoutCurrencyTotals(selectedItems),
+    [selectedItems],
+  );
   const selectedCount = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
   const allSelected = items.length > 0 && selectedItems.length === items.length;
 
@@ -297,8 +297,19 @@ function CartScreen() {
                 <Text className="text-sm font-semibold text-slate-500">
                   Đã chọn {selectedCount} sản phẩm
                 </Text>
-                <Text className="mt-0.5 text-xl font-extrabold text-[#0000ff]">
-                  {formatMoney(selectedTotal, currencySymbol)}
+                <Text
+                  className="mt-0.5 max-w-[210px] text-lg font-extrabold text-[#0000ff]"
+                  numberOfLines={2}
+                >
+                  {selectedCurrencyTotals
+                    .map(total =>
+                      formatCurrency(
+                        total.amount,
+                        total.currencyCode,
+                        total.currencySymbol,
+                      ),
+                    )
+                    .join(' · ')}
                 </Text>
               </View>
               <TouchableOpacity

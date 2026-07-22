@@ -88,6 +88,9 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.sharedPost?.postId === right.sharedPost?.postId &&
     left.sharedPost?.url === right.sharedPost?.url &&
     left.sharedPost?.note === right.sharedPost?.note &&
+    left.storyReply?.storyId === right.storyReply?.storyId &&
+    left.storyReply?.available === right.storyReply?.available &&
+    left.storyReply?.thumbnailUrl === right.storyReply?.thumbnailUrl &&
     left.replyTo?.messageId === right.replyTo?.messageId &&
     left.replyTo?.senderId === right.replyTo?.senderId &&
     left.replyTo?.senderName === right.replyTo?.senderName &&
@@ -96,6 +99,9 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.replyTo?.media === right.replyTo?.media &&
     left.replyTo?.thumbnail === right.replyTo?.thumbnail &&
     left.replyTo?.sharedPost?.postId === right.replyTo?.sharedPost?.postId &&
+    left.replyTo?.storyReply?.storyId === right.replyTo?.storyReply?.storyId &&
+    left.replyTo?.storyReply?.available ===
+      right.replyTo?.storyReply?.available &&
     left.replyTo?.link?.url === right.replyTo?.link?.url &&
     left.replyTo?.location?.latitude === right.replyTo?.location?.latitude &&
     left.replyTo?.location?.longitude === right.replyTo?.location?.longitude &&
@@ -576,7 +582,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
             note: options.productInquiry.note || message || undefined,
           }
         : undefined;
-      const optimisticMessage: MessageItem = {
+          const optimisticMessage: MessageItem = {
         id: tempId,
         conversationId: '',
         fromId: sessionStorage.getSession()?.userId ?? '',
@@ -584,10 +590,15 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         message,
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
-        sharedPost: textDescriptor.sharedPost,
-        contentKind:
-          attachment?.mediaType ??
-          (marketplaceContext ? 'product' : textDescriptor.kind),
+            sharedPost: textDescriptor.sharedPost,
+            storyReply: options?.storyReply,
+            contentKind:
+              attachment?.mediaType ??
+              (options?.storyReply
+                ? 'story'
+                : marketplaceContext
+                ? 'product'
+                : textDescriptor.kind),
         link: textDescriptor.link,
         location: textDescriptor.location,
         marketplaceContext,

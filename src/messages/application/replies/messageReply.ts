@@ -149,6 +149,7 @@ export function createMessageReplyReference(
     location: message.location,
     callEvent: message.callEvent,
     marketplaceContext: message.marketplaceContext,
+    storyReply: message.storyReply,
   };
 }
 
@@ -176,6 +177,8 @@ export function getMessageReplyPreviewText(reply: MessageReplyReference) {
     }
     case 'shared_post':
       return 'Bài viết được chia sẻ';
+    case 'story':
+      return 'Tin được trả lời';
     case 'location':
       return reply.location?.title || 'Vị trí được chia sẻ';
     case 'link':

@@ -10,6 +10,7 @@ export const apiRoutes = {
     forgotPassword: 'send-reset-password-email',
     resetPassword: 'reset_password',
     confirmAccount: 'active_account_sms',
+    resendActivationCode: 'resend-activation-code',
     me: 'get-current-user',
     siteSettings: 'get-site-settings',
   },

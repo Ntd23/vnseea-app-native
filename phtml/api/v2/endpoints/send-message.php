@@ -41,7 +41,24 @@ if (empty($error_code)) {
         $error_code    = 6;
         $error_message = 'Recipient user not found';
     } else {
-        if (empty($_POST['product_id'])) {
+        $story_reply = null;
+        if (isset($_POST['story_id']) && $_POST['story_id'] !== '') {
+            if (!is_numeric($_POST['story_id']) || (int)$_POST['story_id'] < 1 || !empty($_POST['product_id'])) {
+                $error_code = 9;
+                $error_message = 'Story reply is invalid.';
+            } else {
+                $story_reply = VNSEEA_ValidateStoryReply(
+                    (int)$_POST['story_id'],
+                    (int)$wo['user']['user_id'],
+                    (int)$recipient_id
+                );
+                if (empty($story_reply)) {
+                    $error_code = 9;
+                    $error_message = 'Story is unavailable or cannot be replied to.';
+                }
+            }
+        }
+        if (empty($error_message) && empty($_POST['product_id'])) {
 
             $mediaFilename = '';
             $mediaName     = '';
@@ -121,11 +138,15 @@ if (empty($error_code)) {
             if (!empty($_POST['message_type'])) {
                 $message_data['type_two'] = Wo_Secure($_POST['message_type']);
             }
+            if (!empty($story_reply)) {
+                $message_data['story_id'] = $story_reply['story_id'];
+                $message_data['type_two'] = 'story_reply';
+            }
             if (empty($error_message)) {
                 $last_id      = Wo_RegisterMessage($message_data);
             }
         }
-        else{
+        else if (empty($error_message)) {
 	        $product_id = (int)Wo_Secure($_POST['product_id']);
 	        $product = Wo_GetProduct($product_id);
 	        if (empty($product) || (int)$product['user_id'] !== (int)$recipient_id) {
@@ -151,10 +172,6 @@ if (empty($error_code)) {
             if (!empty($_POST['reply_id']) && is_numeric($_POST['reply_id']) && $_POST['reply_id'] > 0) {
                 $reply_id = Wo_Secure($_POST['reply_id']);
                 $db->where('id',$last_id)->update(T_MESSAGES,array('reply_id' => $reply_id));
-            }
-            if (!empty($_POST['story_id']) && is_numeric($_POST['story_id']) && $_POST['story_id'] > 0) {
-                $story_id = Wo_Secure($_POST['story_id']);
-                $db->where('id',$last_id)->update(T_MESSAGES,array('story_id' => $story_id));
             }
         	$message_info = array(
                 'user_id' => $recipient_id,

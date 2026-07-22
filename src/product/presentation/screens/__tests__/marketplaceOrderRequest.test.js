@@ -60,10 +60,37 @@ describe('Marketplace mobile order request flow', () => {
   it('owns address selection and editing inside checkout', () => {
     expect(checkoutScreen).toContain('AddressAutocomplete');
     expect(checkoutScreen).toContain('addressSheetVisible');
-    expect(checkoutScreen).toContain('KeyboardAvoidingView');
+    expect(checkoutScreen).toContain('useCheckoutKeyboardInset');
     expect(checkoutScreen).toMatch(/vm\.isLoading\s*\|\|\s*vm\.error/);
     expect(checkoutScreen).not.toContain(
       'navigation.navigate(ROUTES.SHIPPING_ADDRESS',
     );
+  });
+
+  it('keeps the address sheet scrollable above the keyboard on both platforms', () => {
+    expect(checkoutScreen).toContain("style={{ height: '88%' }}");
+    expect(checkoutScreen).toContain('useCheckoutKeyboardInset');
+    expect(checkoutScreen).toContain("'keyboardWillChangeFrame'");
+    expect(checkoutScreen).toContain("'keyboardDidShow'");
+    expect(checkoutScreen).toContain('paddingBottom: keyboardInset');
+    expect(checkoutScreen).toMatch(
+      /<ScrollView[\s\S]*?className="flex-1"[\s\S]*?keyboardDismissMode=\{\s*Platform\.OS === 'ios' \? 'interactive' : 'on-drag'\s*\}/,
+    );
+    expect(checkoutScreen).toContain('paddingVertical: 0');
+    expect(checkoutScreen).toContain('lineHeight: 22');
+    expect(checkoutScreen).toContain("textAlignVertical: 'center'");
+  });
+
+  it('keeps the save-address action outside the scroll area as a keyboard-safe footer', () => {
+    expect(checkoutScreen).toMatch(
+      /<\/ScrollView>\s*\{showForm \? \([\s\S]*?onPress=\{saveAddress\}/,
+    );
+  });
+
+  it('does not convert product prices into VNSEEA for the order request summary', () => {
+    expect(checkoutRepository).not.toContain('normalizeSummaryCurrency');
+    expect(checkoutRepository).not.toContain("shouldConvert ? 'VNSEEA'");
+    expect(checkoutScreen).toContain('summary.currencyTotals');
+    expect(checkoutScreen).not.toContain("summary?.currencySymbol || 'VNSEEA'");
   });
 });

@@ -1,6 +1,7 @@
 // Description: Declares the auth repository contract used by application view models.
 import type {
   AuthResult,
+  ConfirmAccountInput,
   CurrentUserResult,
   ForgotPasswordInput,
   LoginCredentials,
@@ -10,6 +11,8 @@ import type {
 export interface AuthRepository {
   login(credentials: LoginCredentials): Promise<AuthResult>;
   register(input: RegisterInput): Promise<AuthResult>;
+  confirmAccount(input: ConfirmAccountInput): Promise<AuthResult>;
+  resendAccountCode(userId: string): Promise<void>;
   forgotPassword(input: ForgotPasswordInput): Promise<void>;
   logout(): Promise<void>;
 

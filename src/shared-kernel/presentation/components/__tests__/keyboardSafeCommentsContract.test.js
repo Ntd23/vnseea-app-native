@@ -42,6 +42,10 @@ describe('comment keyboard safety contract', () => {
     const postDetail = read(
       'src/feed/presentation/screens/PostDetailScreen.tsx',
     );
+    expect(postDetail).toContain('<KeyboardAvoidingView');
+    expect(postDetail).toContain(
+      "behavior={Platform.OS === 'ios' ? 'padding' : undefined}",
+    );
     expect(postDetail).toContain('<ReelCommentsSheet');
     expect(postDetail).toContain('presentation="inline"');
   });
@@ -51,9 +55,12 @@ describe('comment keyboard safety contract', () => {
     expect(manifest).toContain('android:windowSoftInputMode="adjustResize"');
   });
 
-  it('measures and lifts the composer only when an OEM keyboard still overlaps it', () => {
+  it('uses one keyboard owner for inline iOS and keeps manual recovery elsewhere', () => {
     const sharedSheet = read(commentSurfaces[0]);
 
+    expect(sharedSheet).toContain(
+      "const shouldOwnKeyboardAvoidance = !isInline || Platform.OS === 'android';",
+    );
     expect(sharedSheet).toContain('Keyboard.metrics?.()');
     expect(sharedSheet).toContain('INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE');
     expect(sharedSheet).toContain('effectiveKeyboardTop');
@@ -61,8 +68,27 @@ describe('comment keyboard safety contract', () => {
     expect(sharedSheet).toContain('unshiftedBottom');
     expect(sharedSheet).toContain('keyboardLiftRef.current');
     expect(sharedSheet).toContain('collapsable={false}');
+    expect(sharedSheet).toContain(
+      'shouldOwnKeyboardAvoidance && appliedKeyboardLift > 0',
+    );
+    expect(sharedSheet).toContain('if (!shouldOwnKeyboardAvoidance) return;');
+    expect(sharedSheet).toContain(
+      'enabled={visible && isScreenFocused && shouldOwnKeyboardAvoidance}',
+    );
     expect(sharedSheet).toContain('style={composerLiftStyle}');
     expect(sharedSheet).toContain('commitKeyboardLift(0)');
+  });
+
+  it('dismisses the keyboard from any comment-list touch without swallowing actions', () => {
+    const sharedSheet = read(commentSurfaces[0]);
+
+    expect(sharedSheet).toContain(
+      'const handleDismissKeyboardFromContent = useCallback',
+    );
+    expect(sharedSheet).toContain(
+      'onTouchStart={handleDismissKeyboardFromContent}',
+    );
+    expect(sharedSheet).toContain('keyboardShouldPersistTaps="always"');
   });
 
   it('bounds multiline comment composers so typed text scrolls in place', () => {

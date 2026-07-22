@@ -110,7 +110,9 @@ describe('shared post Story CTA', () => {
     expect(source).not.toContain('setSharedPostSegmentReady(false)');
     expect(source).toContain('progress.stopAnimation();');
     expect(source).toContain('if (!isSegmentProgressReady) return;');
-    expect(source).toContain('if (finished) advance();');
+    expect(source).toContain('if (finished) {');
+    expect(source).toContain('progressFractionRef.current = 1;');
+    expect(source).toContain('advance();');
     expect(source).toContain('onLongPress={handleLongPressStart}');
     expect(source).toContain('onPressOut={handlePressOut}');
     expect(source).toContain(

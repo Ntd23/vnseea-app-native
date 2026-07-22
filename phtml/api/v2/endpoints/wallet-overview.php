@@ -114,6 +114,9 @@ else {
             }
 
             $notes = !empty($transaction['notes']) ? strip_tags((string) $transaction['notes']) : '';
+            if ($kind == 'POINTS_EARNED' && !empty($extra['type']) && $extra['type'] == 'signup_bonus') {
+                $notes = 'signup_bonus';
+            }
             if (in_array($kind, array('RECEIVED', 'SENT', 'POINTS_RECEIVED', 'POINTS_SENT'), true) && !empty($extra['note'])) {
                 $notes = strip_tags((string) $extra['note']);
             }

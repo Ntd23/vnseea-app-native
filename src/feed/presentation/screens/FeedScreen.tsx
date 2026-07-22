@@ -78,6 +78,7 @@ import {
   type Edge,
 } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToPostComments } from '../../../navigation/postNavigation';
 import type {
   MainTabParamList,
   RootStackParamList,
@@ -2053,6 +2054,13 @@ function FeedScreen() {
   const handleCommentTapStable = useCallback((postId: string) => {
     openCommentsRef.current(postId);
   }, []);
+  const handlePhotoViewerCommentTap = useCallback(
+    (postId: string) => {
+      const post = feedPostsRef.current.find(item => item.id === postId);
+      navigateToPostComments(navigation, postId, post);
+    },
+    [navigation],
+  );
 
   const toggleReactionRef = useRef(vm.toggleReaction);
   toggleReactionRef.current = vm.toggleReaction;
@@ -3822,7 +3830,7 @@ function FeedScreen() {
           copy={copy}
           onClose={handleClosePhotoViewer}
           onReact={handleToggleReactionStable}
-          onCommentTap={handleCommentTapStable}
+          onCommentTap={handlePhotoViewerCommentTap}
           onProfilePress={navigateToProfile}
           onInternalShare={handleInternalSharePost}
           onShared={prependFeedPost}

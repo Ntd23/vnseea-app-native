@@ -2,8 +2,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Image,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -11,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  type KeyboardEvent,
 } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,6 +33,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
+  CheckoutCurrencyTotal,
   CheckoutItem,
   DeliveryAddress,
 } from '../../domain/types/checkout.types';
@@ -39,6 +41,7 @@ import { useCheckoutViewModel } from '../../application/view-models/useCheckoutV
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 
 type CheckoutNav = NativeStackNavigationProp<RootStackParamList>;
 type CheckoutRoute = RouteProp<RootStackParamList, typeof ROUTES.CHECKOUT>;
@@ -47,12 +50,93 @@ type SelectedPlace = Parameters<
   React.ComponentProps<typeof AddressAutocomplete>['onSelectPlace']
 >[0];
 
-function formatMoney(value: number, symbol: string) {
-  const roundedValue = Math.round(Number.isFinite(value) ? value : 0);
-  return `${roundedValue.toLocaleString('vi-VN', {
-    maximumFractionDigits: 0,
-    minimumFractionDigits: 0,
-  })} ${symbol}`;
+function formatMoney(total: CheckoutCurrencyTotal) {
+  return formatCurrency(
+    total.amount,
+    total.currencyCode,
+    total.currencySymbol,
+  );
+}
+
+const ADDRESS_INPUT_STYLE = {
+  height: 50,
+  lineHeight: 22,
+  paddingVertical: 0,
+  textAlignVertical: 'center' as const,
+};
+
+function useCheckoutKeyboardInset(visible: boolean) {
+  const sheetContentRef = useRef<View>(null);
+  const keyboardTopRef = useRef<number | null>(null);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+
+  const refreshKeyboardInset = useCallback(() => {
+    const keyboardTop = keyboardTopRef.current;
+    if (keyboardTop === null) {
+      setKeyboardInset(0);
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      sheetContentRef.current?.measureInWindow((_x, y, _width, height) => {
+        setKeyboardInset(Math.max(0, y + height - keyboardTop));
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      keyboardTopRef.current = null;
+      setKeyboardInset(0);
+      return;
+    }
+
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const handleKeyboardFrame = (event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      keyboardTopRef.current = event.endCoordinates.screenY;
+      refreshKeyboardInset();
+    };
+    const handleKeyboardHide = (event: KeyboardEvent) => {
+      Keyboard.scheduleLayoutAnimation(event);
+      keyboardTopRef.current = null;
+      setKeyboardInset(0);
+    };
+    const showSubscription = Keyboard.addListener(showEvent, handleKeyboardFrame);
+    const hideSubscription = Keyboard.addListener(hideEvent, handleKeyboardHide);
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [refreshKeyboardInset, visible]);
+
+  return { keyboardInset, refreshKeyboardInset, sheetContentRef };
+}
+
+function CurrencyTotals({
+  totals,
+  textClassName,
+}: {
+  totals: CheckoutCurrencyTotal[];
+  textClassName: string;
+}) {
+  return (
+    <View className="min-w-0 flex-1 items-end pl-3">
+      {totals.map(total => (
+        <Text
+          key={total.currencyCode}
+          className={textClassName}
+          numberOfLines={1}
+        >
+          {formatMoney(total)}
+        </Text>
+      ))}
+    </View>
+  );
 }
 
 function inferAddress(place: SelectedPlace) {
@@ -92,8 +176,11 @@ function OrderLine({ item }: { item: CheckoutItem }) {
           Số lượng: {item.quantity}
         </Text>
       </View>
-      <Text className="ml-3 text-sm font-extrabold text-slate-900">
-        {formatMoney(item.total, item.currencySymbol)}
+      <Text
+        className="ml-3 max-w-[38%] text-right text-sm font-extrabold text-slate-900"
+        numberOfLines={2}
+      >
+        {formatCurrency(item.total, item.currencyCode, item.currencySymbol)}
       </Text>
     </View>
   );
@@ -119,7 +206,8 @@ function AddressField({
       </Text>
       <View className="rounded-2xl border border-slate-200 bg-slate-50 px-4">
         <TextInput
-          className="min-h-[48px] text-base font-semibold text-slate-900"
+          className="text-base font-semibold text-slate-900"
+          style={ADDRESS_INPUT_STYLE}
           value={value}
           placeholder={placeholder}
           placeholderTextColor="#94A3B8"
@@ -187,6 +275,8 @@ function CheckoutAddressSheet({
   onClose: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const { keyboardInset, refreshKeyboardInset, sheetContentRef } =
+    useCheckoutKeyboardInset(visible);
 
   useEffect(() => {
     if (!visible) return;
@@ -234,12 +324,15 @@ function CheckoutAddressSheet({
     >
       <View className="flex-1 justify-end bg-black/40">
         <SafeAreaView
-          className="max-h-[88%] rounded-t-3xl bg-white"
+          className="rounded-t-3xl bg-white"
+          style={{ height: '88%' }}
           edges={['bottom']}
         >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={0}
+          <View
+            ref={sheetContentRef}
+            className="flex-1"
+            style={{ paddingBottom: keyboardInset }}
+            onLayout={refreshKeyboardInset}
           >
             <View className="flex-row items-center border-b border-slate-100 px-4 py-3">
               <View className="h-10 w-10" />
@@ -261,7 +354,15 @@ function CheckoutAddressSheet({
               </TouchableOpacity>
             </View>
             <ScrollView
-              contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+              className="flex-1"
+              contentContainerStyle={{
+                padding: 16,
+                paddingBottom: 28,
+                flexGrow: 1,
+              }}
+              keyboardDismissMode={
+                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+              }
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
@@ -351,29 +452,33 @@ function CheckoutAddressSheet({
                       {vm.addressError}
                     </Text>
                   ) : null}
-                  <TouchableOpacity
-                    className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] ${
-                      vm.isSavingAddress ? 'opacity-70' : ''
-                    }`}
-                    activeOpacity={0.9}
-                    disabled={vm.isSavingAddress}
-                    onPress={saveAddress}
-                  >
-                    {vm.isSavingAddress ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <User size={18} color="#FFFFFF" />
-                        <Text className="ml-2 text-base font-extrabold text-white">
-                          Lưu địa chỉ
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
                 </View>
               )}
             </ScrollView>
-          </KeyboardAvoidingView>
+            {showForm ? (
+              <View className="border-t border-slate-100 bg-white px-4 pb-3 pt-3">
+                <TouchableOpacity
+                  className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] ${
+                    vm.isSavingAddress ? 'opacity-70' : ''
+                  }`}
+                  activeOpacity={0.9}
+                  disabled={vm.isSavingAddress}
+                  onPress={saveAddress}
+                >
+                  {vm.isSavingAddress ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <User size={18} color="#FFFFFF" />
+                      <Text className="ml-2 text-base font-extrabold text-white">
+                        Lưu địa chỉ
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
         </SafeAreaView>
       </View>
     </Modal>
@@ -383,16 +488,14 @@ function CheckoutAddressSheet({
 function ConfirmPurchaseModal({
   visible,
   itemCount,
-  total,
-  currencySymbol,
+  currencyTotals,
   isPaying,
   onCancel,
   onConfirm,
 }: {
   visible: boolean;
   itemCount: number;
-  total: number;
-  currencySymbol: string;
+  currencyTotals: CheckoutCurrencyTotal[];
   isPaying: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -416,13 +519,14 @@ function ConfirmPurchaseModal({
               <Text className="text-sm font-semibold text-slate-500">Sản phẩm</Text>
               <Text className="text-sm font-extrabold text-slate-900">{itemCount}</Text>
             </View>
-            <View className="mt-2 flex-row justify-between border-t border-slate-100 pt-4">
+            <View className="mt-2 flex-row items-start justify-between border-t border-slate-100 pt-4">
               <Text className="text-base font-extrabold text-slate-950">
                 Tổng giá trị
               </Text>
-              <Text className="text-base font-extrabold text-[#0000ff]">
-                {formatMoney(total, currencySymbol)}
-              </Text>
+              <CurrencyTotals
+                totals={currencyTotals}
+                textClassName="text-base font-extrabold text-[#0000ff]"
+              />
             </View>
           </View>
           <View className="mt-6 flex-row gap-3">
@@ -524,7 +628,6 @@ function CheckoutScreen() {
   }, [createNewAddress, vm.addresses.length, vm.error, vm.isLoading]);
 
   const summary = vm.selectedSummary;
-  const currencySymbol = summary?.currencySymbol || 'VNSEEA';
 
   const handleTrackOrder = useCallback(() => {
     vm.closeSuccess();
@@ -659,11 +762,12 @@ function CheckoutScreen() {
                 Tóm tắt yêu cầu
               </Text>
               <View className="mt-4 gap-3">
-                <View className="flex-row justify-between">
+                <View className="flex-row items-start justify-between">
                   <Text className="text-sm font-semibold text-slate-500">Tạm tính</Text>
-                  <Text className="text-sm font-extrabold text-slate-900">
-                    {formatMoney(summary.subtotal, currencySymbol)}
-                  </Text>
+                  <CurrencyTotals
+                    totals={summary.currencyTotals}
+                    textClassName="text-sm font-extrabold text-slate-900"
+                  />
                 </View>
                 <View className="flex-row justify-between">
                   <Text className="text-sm font-semibold text-slate-500">
@@ -673,18 +777,19 @@ function CheckoutScreen() {
                     Thỏa thuận với người bán
                   </Text>
                 </View>
-                <View className="mt-1 flex-row justify-between border-t border-slate-100 pt-4">
+                <View className="mt-1 flex-row items-start justify-between border-t border-slate-100 pt-4">
                   <Text className="text-base font-extrabold text-slate-950">
                     Tổng giá trị
                   </Text>
-                  <Text className="text-lg font-extrabold text-[#0000ff]">
-                    {formatMoney(summary.total, currencySymbol)}
-                  </Text>
+                  <CurrencyTotals
+                    totals={summary.currencyTotals}
+                    textClassName="text-lg font-extrabold text-[#0000ff]"
+                  />
                 </View>
               </View>
               <Text className="mt-4 text-xs font-medium leading-5 text-slate-500">
-                App không tự trừ VNSEEA hoặc số dư. Người mua và người bán tự
-                thống nhất phương thức thanh toán.
+                App không tự thực hiện thanh toán hoặc trừ số dư. Người mua và
+                người bán tự thống nhất phương thức thanh toán.
               </Text>
             </View>
 
@@ -736,8 +841,7 @@ function CheckoutScreen() {
           <ConfirmPurchaseModal
             visible={vm.confirmVisible}
             itemCount={vm.itemCount}
-            total={summary.total}
-            currencySymbol={currencySymbol}
+            currencyTotals={summary.currencyTotals}
             isPaying={vm.isPaying}
             onCancel={vm.closeConfirm}
             onConfirm={vm.pay}

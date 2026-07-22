@@ -59,6 +59,7 @@ import { navigateToPostComments } from '../../../navigation/postNavigation';
 
 interface PollPostCardProps {
   post: FeedPollPost;
+  showIdentityHeader?: boolean;
   onVote?: (postId: string, optionId: string) => void;
   onPress?: (post: FeedPollPost) => void;
   onMorePress?: (post: FeedPollPost) => void;
@@ -300,6 +301,7 @@ function PollVoterRow({
 
 export const PollPostCard = React.memo(function PollPostCard({
   post,
+  showIdentityHeader = true,
   onVote,
   onPress,
   onMorePress,
@@ -466,7 +468,11 @@ export const PollPostCard = React.memo(function PollPostCard({
   return (
     <FeedCardSurface>
       {/* Publisher Header */}
-      <View className="flex-row items-center justify-between px-3 py-3 pb-2">
+      <View
+        className={`flex-row items-center justify-between px-3 py-3 pb-2 ${
+          showIdentityHeader ? '' : 'hidden'
+        }`}
+      >
         <TouchableOpacity
           className="flex-row items-center flex-1 mr-2"
           activeOpacity={0.8}
@@ -526,7 +532,7 @@ export const PollPostCard = React.memo(function PollPostCard({
         <TouchableOpacity
           activeOpacity={0.95}
           onPress={() => onPress?.(post)}
-          className="px-3 pb-3"
+          className={`px-3 pb-3 ${showIdentityHeader ? '' : 'pt-3'}`}
         >
           <Text
             className="text-body-primary font-medium text-[16px] text-[#050505]"
@@ -538,7 +544,11 @@ export const PollPostCard = React.memo(function PollPostCard({
       )}
 
       {/* Poll Options Container */}
-      <View className="px-3 pb-2">
+      <View
+        className={`px-3 pb-2 ${
+          showIdentityHeader || post.pollQuestion ? '' : 'pt-3'
+        }`}
+      >
         {post.options.map(option => (
           <PollOptionItem
             key={option.id}

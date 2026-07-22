@@ -13,8 +13,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Linking,
   Platform,
   Share,
@@ -27,11 +30,9 @@ import {
   ArrowLeft,
   Bookmark,
   Eye,
-  Globe,
   Heart,
   Link2,
   MessageCircle,
-  MoreHorizontal,
   Share2,
 } from 'lucide-react-native';
 import {
@@ -41,7 +42,10 @@ import {
   type RouteProp,
 } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  initialWindowMetrics,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {
   Gesture,
   GestureDetector,
@@ -50,6 +54,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
+  FeedPost,
   FeedPollPost,
   FeedProductPost,
   FeedTextPost,
@@ -74,8 +79,10 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import {
   TextPostCard,
   HomeVideoPostCard,
+  PostIdentityHeader,
   ReactionPickerOverlay,
   FEED_COPY,
+  formatPostTime,
   renderPostTextTokens,
 } from '../components/PostCards';
 import {
@@ -87,6 +94,8 @@ import { usePostRealtimeScope } from '../../application/realtime/usePostRealtime
 import { PollPostCard } from '../components/PollPostCard';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
+import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -139,38 +148,6 @@ const REACTION_LABEL: Record<ReactionType, string> = {
 // ────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ────────────────────────────────────────────────────────────────────────
-
-function PostHeader({
-  onBack,
-  commentCount,
-}: {
-  onBack: () => void;
-  commentCount: number;
-}) {
-  return (
-    <View className="flex-row items-center px-4 py-3 border-b border-slate-100 min-h-[56px] bg-white">
-      <TouchableOpacity
-        activeOpacity={0.8}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        onPress={onBack}
-        className="h-10 w-10 items-center justify-center rounded-full"
-        accessibilityLabel="Quay lại"
-      >
-        <ArrowLeft size={22} color="#1E293B" />
-      </TouchableOpacity>
-      <View className="ml-2 flex-1 flex-row items-center">
-        <Text className="text-[17px] font-extrabold text-[#0f172a]">
-          Bài viết
-        </Text>
-        <View className="ml-2 rounded-full bg-[#F0F2F5] px-2.5 py-1">
-          <Text className="text-[13px] font-semibold text-[#65676B]">
-            Bình luận ({commentCount})
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-}
 
 function PostBody({ post }: { post: FeedTextPost | FeedVideoPost }) {
   // Text + photo posts use `caption` + `photos[]`; video posts use
@@ -710,6 +687,15 @@ function PostActions({
 function PostDetailScreen() {
   const navigation = useNavigation<PostDetailNav>();
   const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
+  const postDetailTopInset = resolveFeedChromeTopInset(
+    insets.top,
+    initialWindowMetrics?.insets?.top,
+  );
+  const postDetailRootStyle = useMemo(
+    () => [postDetailStyles.safeArea, { paddingTop: postDetailTopInset }],
+    [postDetailTopInset],
+  );
   const route = useRoute<PostDetailRoute>();
   const {
     postId,
@@ -722,11 +708,13 @@ function PostDetailScreen() {
     post,
     isLoading,
     error,
-    likedUsers,
     toggleReaction,
     applyRealtimePost,
     markRealtimeDeleted,
     adjustCommentCount,
+    savePost,
+    reportPost,
+    deletePost,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
     postId,
@@ -769,6 +757,7 @@ function PostDetailScreen() {
     x: number;
     y: number;
   } | null>(null);
+  const [postMenuVisible, setPostMenuVisible] = useState(false);
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -799,19 +788,7 @@ function PostDetailScreen() {
     [pickerAnchor, toggleReaction],
   );
 
-  const wonderedUsers: Array<Record<string, unknown>> = [];
   const activePost = post as any;
-
-  // Best-effort total like count: prefer the breakdown if the
-  // backend returned it, otherwise fall back to `likeCount`.
-  const totalReactions = activePost
-    ? activePost.reactionBreakdown
-      ? Object.values(activePost.reactionBreakdown).reduce<number>(
-          (sum, n) => sum + ((n as number) ?? 0),
-          0,
-        )
-      : activePost.likeCount ?? 0
-    : 0;
 
   // ── Action handlers ─────────────────────────────────────────────────
   const navigateToProfile = useCallback(
@@ -825,19 +802,6 @@ function PostDetailScreen() {
   const handleProfilePress = useCallback(() => {
     navigateToProfile(activePost?.publisher?.id ?? '');
   }, [navigateToProfile, activePost]);
-
-  const handleReact = useCallback(
-    (reaction: ReactionType | null) => {
-      // TODO follow-up: wire to `feedRepository.setReaction` (already
-      // implemented in reels; the feed repo also has a setReaction
-      // method that maps the numeric wire format). For v1 we just
-      // optimistically toggle the heart color so the UI feels
-      // responsive.
-      if (!activePost) return;
-      // No-op for now — see comment above.
-    },
-    [activePost],
-  );
 
   const handleShare = useCallback(async () => {
     if (!isFeedPostShareable(activePost)) return;
@@ -855,13 +819,65 @@ function PostDetailScreen() {
     }
   }, [activePost]);
 
-  const handleSave = useCallback(() => {
-    // TODO follow-up: wire to `feedRepository.savePost`.
+  const handleOpenPostMenu = useCallback((selectedPost: FeedPost) => {
+    if (selectedPost.id !== activePost?.id) return;
+    setPostMenuVisible(true);
+  }, [activePost?.id]);
+
+  const handleClosePostMenu = useCallback(() => {
+    setPostMenuVisible(false);
   }, []);
 
-  const handleMore = useCallback(() => {
-    // TODO follow-up: post menu (save/report/delete if owner).
-  }, []);
+  const handleSavePost = useCallback(
+    async (targetPostId: string) => {
+      const result = await savePost(targetPostId);
+      Alert.alert(
+        result.saved ? copy.savedTitle : copy.unsavedTitle,
+        result.saved ? copy.savedMessage : copy.unsavedMessage,
+      );
+    },
+    [copy, savePost],
+  );
+
+  const handleReportPost = useCallback(
+    async (targetPostId: string) => {
+      const result = await reportPost(targetPostId);
+      Alert.alert(
+        result.reported ? copy.reportSentTitle : copy.reportCancelledTitle,
+        result.reported
+          ? copy.reportSentMessage
+          : copy.reportCancelledMessage,
+      );
+    },
+    [copy, reportPost],
+  );
+
+  const handleHidePost = useCallback(
+    async (_targetPostId: string) => {
+      setPostMenuVisible(false);
+      navigation.goBack();
+    },
+    [navigation],
+  );
+
+  const handleDeletePost = useCallback(
+    async (targetPostId: string) => {
+      if (
+        activePost?.id !== targetPostId ||
+        activePost.permissions?.canDelete !== true
+      ) {
+        throw new Error('Bạn không có quyền xóa bài viết này.');
+      }
+
+      const result = await deletePost(targetPostId);
+      if (!result.deleted) {
+        throw new Error('Không thể xóa bài viết này.');
+      }
+      setPostMenuVisible(false);
+      navigation.goBack();
+    },
+    [activePost, deletePost, navigation],
+  );
 
   // Open the "who reacted" bottom sheet. The sheet is mounted at the
   // bottom of this screen — it owns its own VM + tab state, so we just
@@ -881,13 +897,17 @@ function PostDetailScreen() {
     setCommentFocusSignal(current => current + 1);
   }, []);
 
+  const handleDismissKeyboardFromContent = useCallback(() => {
+    Keyboard.dismiss();
+  }, []);
+
   const handlePostDetailBack = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
 
   const canSwipeBackToPreviousPostScreen = navigation.canGoBack();
   const isPostDetailSwipeBackBlocked =
-    reactionsSheetVisible || pickerAnchor !== null;
+    reactionsSheetVisible || postMenuVisible || pickerAnchor !== null;
 
   const postDetailSwipeBackGesture = useMemo(
     () =>
@@ -1063,23 +1083,36 @@ function PostDetailScreen() {
   // ── Loading skeleton ─────────────────────────────────────────────────
   if (isLoading && !activePost) {
     return renderPostDetailSwipeBackFrame(
-      <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <FocusAwareStatusBar barStyle="dark-content" />
+      <View style={postDetailRootStyle}>
+        <FocusAwareStatusBar
+          barStyle="dark-content"
+          backgroundColor="#FFFFFF"
+        />
+        <View style={postDetailStyles.loadingIdentityHeader}>
+          <View style={postDetailStyles.loadingAvatar} />
+          <View style={postDetailStyles.loadingIdentityText}>
+            <View style={postDetailStyles.loadingName} />
+            <View style={postDetailStyles.loadingMeta} />
+          </View>
+        </View>
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color="#0000ff" />
           <Text className="mt-3 text-caption-secondary">
             Đang tải bài viết...
           </Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   // ── Not found ───────────────────────────────────────────────────────
   if (!activePost) {
     return renderPostDetailSwipeBackFrame(
-      <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <FocusAwareStatusBar barStyle="dark-content" />
+      <View style={postDetailRootStyle}>
+        <FocusAwareStatusBar
+          barStyle="dark-content"
+          backgroundColor="#FFFFFF"
+        />
         <View className="surface-topbar flex-row items-center px-4 py-3">
           <TouchableOpacity
             activeOpacity={0.8}
@@ -1113,14 +1146,9 @@ function PostDetailScreen() {
             <Text className="text-caption-primary text-inverse">Quay lại</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
-
-  const displayedCommentCount = Math.max(
-    activePost.commentCount,
-    commentVm.comments.length,
-  );
 
   const postListHeader = (
     <View style={{ marginHorizontal: -12 }}>
@@ -1135,6 +1163,7 @@ function PostDetailScreen() {
           onShare={handleShare}
           onOpenReactions={handleOpenReactions}
           navigateToProfile={navigateToProfile}
+          showIdentityHeader={false}
           isScreenFocused={true}
           isActive={true}
           gestureX={gestureX}
@@ -1151,6 +1180,7 @@ function PostDetailScreen() {
           commentNavigationMode="callback"
           onShare={handleShare}
           onProfilePress={navigateToProfile}
+          showIdentityHeader={false}
           language={language}
           gestureX={gestureX}
           gestureY={gestureY}
@@ -1171,6 +1201,7 @@ function PostDetailScreen() {
           onOpenReactions={handleOpenReactions}
           onShare={() => handleShare()}
           onProfilePress={navigateToProfile}
+          showIdentityHeader={false}
         />
       ) : (
         <TextPostCard
@@ -1184,6 +1215,7 @@ function PostDetailScreen() {
           onShare={handleShare}
           onOpenReactions={handleOpenReactions}
           navigateToProfile={navigateToProfile}
+          showIdentityHeader={false}
           gestureX={gestureX}
           gestureY={gestureY}
           gestureActive={gestureActive}
@@ -1195,46 +1227,75 @@ function PostDetailScreen() {
   );
 
   return renderPostDetailSwipeBackFrame(
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
-
-      <PostHeader
-        onBack={() => navigation.goBack()}
-        commentCount={displayedCommentCount}
+    <View style={postDetailRootStyle}>
+      <FocusAwareStatusBar
+        barStyle="dark-content"
+        backgroundColor="#FFFFFF"
       />
 
-      <ReelCommentsSheet
-        visible
-        presentation="inline"
-        listHeaderComponent={postListHeader}
-        autoFocusComposer={focusComments}
-        composerFocusSignal={commentFocusSignal}
-        comments={commentVm.comments}
-        commentCount={activePost.commentCount}
-        isLoading={commentVm.isCommentsLoading}
-        isLoadingMore={commentVm.isCommentsLoadingMore}
-        isSubmitting={commentVm.isSubmittingComment}
-        error={commentVm.commentError}
-        repliesById={commentVm.repliesById}
-        loadingRepliesIds={commentVm.loadingRepliesIds}
-        replyingTo={commentVm.replyingTo}
-        onClose={() => undefined}
-        onEndReached={commentVm.loadMoreComments}
-        onRetry={() => {
-          commentVm.openComments(postId).catch(() => undefined);
-        }}
-        onSubmit={commentVm.submitComment}
-        onSubmitReply={commentVm.submitReply}
-        onSetReaction={commentVm.setCommentReaction}
-        onDelete={commentVm.deleteComment}
-        onEdit={commentVm.editComment}
-        onLoadReplies={commentVm.loadReplies}
-        onCollapseReplies={commentVm.collapseReplies}
-        onStartReply={commentVm.startReplyTo}
-        onCancelReply={commentVm.cancelReply}
-        onRetryFailedComment={commentVm.retryFailedComment}
-        onDeleteFailedComment={commentVm.deleteFailedComment}
-      />
+      <KeyboardAvoidingView
+        style={postDetailStyles.keyboardBoundary}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        enabled={Platform.OS === 'ios'}
+        keyboardVerticalOffset={0}
+      >
+        <View
+          style={postDetailStyles.stickyIdentityHeader}
+          onTouchStart={handleDismissKeyboardFromContent}
+        >
+          <PostIdentityHeader
+            avatar={activePost.publisher?.avatarUrl}
+            name={
+              activePost.isAnonymous
+                ? copy.anonymousPrivacyLabel
+                : activePost.publisher?.name || copy.userFallback
+            }
+            time={formatPostTime(activePost.postedAt, copy)}
+            copy={copy}
+            onPress={
+              !activePost.isAnonymous && activePost.publisher?.id
+                ? handleProfilePress
+                : undefined
+            }
+            onMorePress={handleOpenPostMenu}
+            post={activePost}
+            containerClassName="flex-row items-center justify-between"
+          />
+        </View>
+
+        <ReelCommentsSheet
+          visible
+          presentation="inline"
+          listHeaderComponent={postListHeader}
+          autoFocusComposer={focusComments}
+          composerFocusSignal={commentFocusSignal}
+          comments={commentVm.comments}
+          commentCount={activePost.commentCount}
+          isLoading={commentVm.isCommentsLoading}
+          isLoadingMore={commentVm.isCommentsLoadingMore}
+          isSubmitting={commentVm.isSubmittingComment}
+          error={commentVm.commentError}
+          repliesById={commentVm.repliesById}
+          loadingRepliesIds={commentVm.loadingRepliesIds}
+          replyingTo={commentVm.replyingTo}
+          onClose={() => undefined}
+          onEndReached={commentVm.loadMoreComments}
+          onRetry={() => {
+            commentVm.openComments(postId).catch(() => undefined);
+          }}
+          onSubmit={commentVm.submitComment}
+          onSubmitReply={commentVm.submitReply}
+          onSetReaction={commentVm.setCommentReaction}
+          onDelete={commentVm.deleteComment}
+          onEdit={commentVm.editComment}
+          onLoadReplies={commentVm.loadReplies}
+          onCollapseReplies={commentVm.collapseReplies}
+          onStartReply={commentVm.startReplyTo}
+          onCancelReply={commentVm.cancelReply}
+          onRetryFailedComment={commentVm.retryFailedComment}
+          onDeleteFailedComment={commentVm.deleteFailedComment}
+        />
+      </KeyboardAvoidingView>
 
       <PostReactionsSheet
         visible={reactionsSheetVisible}
@@ -1251,11 +1312,72 @@ function PostDetailScreen() {
         gestureActive={gestureActive}
         hasDragged={hasDragged}
       />
-    </SafeAreaView>
+
+      <PostMenuActionSheet
+        visible={postMenuVisible}
+        onClose={handleClosePostMenu}
+        post={activePost}
+        canDelete={activePost.permissions?.canDelete === true}
+        onSave={handleSavePost}
+        onHide={handleHidePost}
+        onDelete={handleDeletePost}
+        onReport={handleReportPost}
+      />
+    </View>
   );
 }
 
 const postDetailStyles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  keyboardBoundary: {
+    flex: 1,
+  },
+  stickyIdentityHeader: {
+    zIndex: 20,
+    minHeight: 64,
+    justifyContent: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  loadingIdentityHeader: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  loadingAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E2E8F0',
+  },
+  loadingIdentityText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  loadingName: {
+    width: 132,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#E2E8F0',
+  },
+  loadingMeta: {
+    width: 96,
+    height: 10,
+    marginTop: 8,
+    borderRadius: 5,
+    backgroundColor: '#F1F5F9',
+  },
   gestureRoot: {
     flex: 1,
     backgroundColor: 'transparent',

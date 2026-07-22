@@ -241,6 +241,10 @@ const MESSAGE_COPY: Record<
 
     sharedLocationMe: string;
 
+    storyReply: string;
+
+    storyReplyMe: string;
+
     mePrefix: string;
 
     broadcastLabel: string;
@@ -409,6 +413,10 @@ const MESSAGE_COPY: Record<
 
     sharedLocationMe: 'Bạn đã chia sẻ một vị trí',
 
+    storyReply: 'Đã trả lời tin của bạn',
+
+    storyReplyMe: 'Bạn đã trả lời một tin',
+
     mePrefix: 'Bạn',
 
     broadcastLabel: 'Nhãn',
@@ -574,6 +582,10 @@ const MESSAGE_COPY: Record<
     sharedLocation: 'Shared a location',
 
     sharedLocationMe: 'You shared a location',
+
+    storyReply: 'Replied to your story',
+
+    storyReplyMe: 'You replied to a story',
 
     mePrefix: 'You',
 
@@ -861,6 +873,16 @@ function getMessagePreview(
         icon: <MapPin size={14} color="#dc2626" />,
 
         text: isFromMe ? copy.sharedLocationMe : copy.sharedLocation,
+
+      };
+
+    case 'story':
+
+      return {
+
+        icon: <MessageCircle size={14} color="#8b5cf6" />,
+
+        text: isFromMe ? copy.storyReplyMe : copy.storyReply,
 
       };
 

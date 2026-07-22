@@ -27,11 +27,23 @@ foreach ($required_fields as $key => $value)
 }
 if (empty($error_code))
 {
-    $confirm_code = $_POST['code'];
-    $user_id = $_POST['user_id'];
-    $user = $db->where("(`sms_code` = '{$confirm_code}' OR `email_code` = '{$confirm_code}')")->getOne(T_USERS);
+    $confirm_code = preg_replace('/\D+/', '', trim((string) $_POST['code']));
+    $user_id = (int) $_POST['user_id'];
+    $user = $db
+        ->where('user_id', $user_id)
+        ->where('active', '0')
+        ->getOne(T_USERS);
 
-    if (empty($user))
+    $is_valid_sms_code = !empty($user)
+        && preg_match('/^\d{6}$/', $confirm_code)
+        && !empty($user->sms_code)
+        && hash_equals((string) $user->sms_code, $confirm_code);
+    $is_valid_email_code = !empty($user)
+        && preg_match('/^\d{6}$/', $confirm_code)
+        && !empty($user->email_code)
+        && hash_equals((string) $user->email_code, md5($confirm_code));
+
+    if (empty($user) || (!$is_valid_sms_code && !$is_valid_email_code))
     {
         $error_code = 3;
         $error_message = 'Wrong confirmation code.';
@@ -39,7 +51,7 @@ if (empty($error_code))
     else
     {
         $db->where('user_id', $user->user_id)
-            ->update(T_USERS, ['sms_code' => '', 'email_code' => '', 'active' => '1', ]);
+            ->update(T_USERS, ['sms_code' => 0, 'email_code' => '', 'active' => '1']);
         $time = time();
         $cookie = '';
         $access_token = sha1(rand(111111111, 999999999)) . md5(microtime()) . rand(11111111, 99999999) . md5(rand(5555, 9999));
@@ -88,10 +100,10 @@ if (empty($error_code))
                 'access_token' => $access_token,
                 'user_id' => $user_id,
                 'user_platform' => $device_type,
+                'message' => 'Account verified successfully.',
             );
         }
 
     }
 
 }
-

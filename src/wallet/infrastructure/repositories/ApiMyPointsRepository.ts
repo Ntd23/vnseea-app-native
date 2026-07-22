@@ -195,6 +195,12 @@ function pointHistoryTitle(
   points: number,
 ) {
   const kind = String(transaction.kind || '').toUpperCase();
+  const pointType = String(
+    transaction.point_type || transaction.notes || '',
+  ).toLowerCase();
+  if (kind === 'POINTS_EARNED' && pointType === 'signup_bonus') {
+    return 'Thưởng đăng ký';
+  }
   if (kind === 'POINTS_SENT') {
     return `Đã gửi ${formatNumber(points)} VNSEEA đến ${
       transaction.counterparty_name || 'thành viên khác'

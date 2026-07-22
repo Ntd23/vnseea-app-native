@@ -68,12 +68,24 @@ export type ChatPreviewKind =
   | 'video_call'
   | 'product'
   | 'order'
+  | 'story'
   | 'sticker';
 
 export interface SharedPostMessageReference {
   postId: string;
   url: string;
   note: string;
+}
+
+export interface StoryReplyMessageReference {
+  storyId: string;
+  publisherId: string;
+  publisherName: string;
+  publisherAvatar?: string;
+  mediaType: 'image' | 'video' | 'shared_post';
+  thumbnailUrl?: string;
+  caption?: string;
+  available: boolean;
 }
 
 export interface MessageLinkReference {
@@ -140,6 +152,7 @@ export interface MessageReplyReference {
   location?: MessageLocationReference;
   callEvent?: MessageCallEvent;
   marketplaceContext?: MarketplaceMessageContext;
+  storyReply?: StoryReplyMessageReference;
 }
 
 export interface SendMessageOptions {
@@ -152,6 +165,7 @@ export interface SendMessageOptions {
     image?: string;
     location?: string;
   };
+  storyReply?: StoryReplyMessageReference;
 }
 
 export interface MessageSystemEvent {
@@ -179,6 +193,7 @@ export interface MessageItem {
   link?: MessageLinkReference;
   location?: MessageLocationReference;
   marketplaceContext?: MarketplaceMessageContext;
+  storyReply?: StoryReplyMessageReference;
   replyTo?: MessageReplyReference;
   reactions: MessageReactionSummary;
   time: number;

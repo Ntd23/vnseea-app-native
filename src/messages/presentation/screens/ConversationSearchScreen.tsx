@@ -36,6 +36,17 @@ function formatMessageTime(time: number) {
   });
 }
 
+function getSearchResultPreview(message: MessageItem) {
+  if (message.storyReply) {
+    return message.message
+      ? `Trả lời một tin · ${message.message}`
+      : 'Trả lời một tin';
+  }
+  if (message.message) return message.message;
+  if (message.media) return 'Tin nhắn có tệp đính kèm';
+  return 'Tin nhắn';
+}
+
 export default function ConversationSearchScreen({ navigation, route }: Props) {
   const { chat } = route.params;
   const { isDark } = useAppTheme();
@@ -186,8 +197,7 @@ export default function ConversationSearchScreen({ navigation, route }: Props) {
                 className="mt-1 text-[14px] text-slate-900 dark:text-white"
                 numberOfLines={3}
               >
-                {item.message ||
-                  (item.media ? 'Tin nhắn có tệp đính kèm' : 'Tin nhắn')}
+                {getSearchResultPreview(item)}
               </Text>
             </TouchableOpacity>
           )}

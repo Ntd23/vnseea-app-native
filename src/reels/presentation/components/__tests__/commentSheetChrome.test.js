@@ -68,11 +68,19 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toContain('scheduleReplyTargetReveal(replyTarget)');
     expect(source).toContain('viewPosition: isInline ? 0.76 : 0.58');
     expect(source).toContain('onScrollToIndexFailed');
-    expect(source).toContain('REPLY_QUICK_EMOJIS');
-    expect(source).toContain('handleInsertReplyEmoji');
-    expect(source).toContain('replyEmojiRailVisible');
-    expect(source).toContain('styles.replyEmojiRail');
     expect(source).not.toContain("copy.replyingPlaceholder.replace('{username}'");
+  });
+
+  it('does not render a quick-emoji row below the comment composer', () => {
+    const source = read(
+      'src/reels/presentation/components/ReelCommentsSheet.tsx',
+    );
+
+    expect(source).not.toContain('REPLY_QUICK_EMOJIS');
+    expect(source).not.toContain('REPLY_EMOJI_BAR_HEIGHT');
+    expect(source).not.toContain('handleInsertReplyEmoji');
+    expect(source).not.toContain('replyEmojiRailVisible');
+    expect(source).not.toContain('styles.replyEmojiRail');
   });
 
   it('puts the iOS bottom safe-area padding inside the composer dock', () => {
@@ -112,7 +120,9 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toContain(
       'style={isInline ? styles.inlineRoot : styles.modalRoot}',
     );
-    expect(source).toContain('enabled={visible && isScreenFocused}');
+    expect(source).toContain(
+      'enabled={visible && isScreenFocused && shouldOwnKeyboardAvoidance}',
+    );
     expect(source).toContain('keyboardVerticalOffset={0}');
     expect(source).not.toContain(
       "Platform.OS === 'android' && { paddingBottom: keyboardHeight }",

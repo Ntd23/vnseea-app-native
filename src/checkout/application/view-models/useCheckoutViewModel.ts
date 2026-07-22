@@ -8,6 +8,7 @@ import type {
   DeliveryAddress,
   DeliveryAddressInput,
 } from '../../domain/types/checkout.types';
+import { createCheckoutSummary } from '../../domain/checkoutMoney';
 import { setSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 const repository = createCheckoutRepository();
@@ -76,14 +77,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     if (!selectedIds.size) return summary;
 
     const items = summary.items.filter(item => selectedIds.has(item.productId));
-    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-
-    return {
-      ...summary,
-      items,
-      subtotal,
-      total: subtotal + summary.shipping,
-    };
+    return createCheckoutSummary(items, summary.shipping);
   }, [options.selectedProductIds, summary]);
 
   const canPay = Boolean(selectedSummary);

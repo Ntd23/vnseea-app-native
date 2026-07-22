@@ -52,14 +52,15 @@ describe('post comments use the full post detail screen', () => {
     expect(comments).toContain("const isInline = presentation === 'inline';");
   });
 
-  it('uses a compact header, flush post layout, and centered empty state', () => {
+  it('uses the post identity as the fixed header and keeps a centered empty state', () => {
     const detail = read('src/feed/presentation/screens/PostDetailScreen.tsx');
     const comments = read(
       'src/reels/presentation/components/ReelCommentsSheet.tsx',
     );
 
-    expect(detail).toContain('Bình luận ({commentCount})');
-    expect(detail).toContain('commentCount={displayedCommentCount}');
+    expect(detail).toContain('<PostIdentityHeader');
+    expect(detail).not.toContain('Bình luận ({commentCount})');
+    expect(detail).not.toContain('commentCount={displayedCommentCount}');
     expect(detail).not.toContain(
       'mt-2 flex-row items-center border-y border-[#E4E6EB]',
     );

@@ -101,6 +101,10 @@ export type MessageLabelsRouteParams =
 export type RootStackParamList = {
   [ROUTES.LOGIN]: undefined;
   [ROUTES.REGISTER]: undefined;
+  [ROUTES.EMAIL_VERIFICATION]: {
+    userId: string;
+    email: string;
+  };
   [ROUTES.FORGOT_PASSWORD]: undefined;
   [ROUTES.MAIN_TABS]: NavigatorScreenParams<MainTabParamList> | undefined;
   [ROUTES.REELS]:
@@ -274,6 +278,7 @@ export type RootStackParamList = {
   [ROUTES.STORY_VIEWER]: {
     stories: StoryItem[];
     initialUserIndex: number;
+    initialSegmentIndex?: number;
   };
   [ROUTES.STORIES_LIST]:
     | {
