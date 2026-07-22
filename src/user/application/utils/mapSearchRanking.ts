@@ -2,6 +2,7 @@
 export type MapSearchRankCandidate = {
   source: 'page' | 'google';
   title: string;
+  aliases?: string[];
   distanceMeters?: number;
   pinned?: boolean;
 };
@@ -22,14 +23,21 @@ export function getMapSearchMatchPriority(
   candidate: MapSearchRankCandidate,
 ) {
   const normalizedQuery = normalizeRankingText(query);
-  const normalizedTitle = normalizeRankingText(candidate.title);
+  const normalizedTitles = [candidate.title, ...(candidate.aliases ?? [])]
+    .map(normalizeRankingText)
+    .filter(Boolean);
 
   if (normalizedQuery) {
     if (candidate.source === 'page') {
-      if (normalizedTitle === normalizedQuery) return 0;
-      if (normalizedTitle.startsWith(normalizedQuery)) return 1;
-      if (normalizedTitle.includes(normalizedQuery)) return 2;
+      if (normalizedTitles.some(title => title === normalizedQuery)) return 0;
+      if (normalizedTitles.some(title => title.startsWith(normalizedQuery))) {
+        return 1;
+      }
+      if (normalizedTitles.some(title => title.includes(normalizedQuery))) {
+        return 2;
+      }
     } else {
+      const normalizedTitle = normalizedTitles[0] ?? '';
       if (normalizedTitle === normalizedQuery) return 3;
       if (normalizedTitle.startsWith(normalizedQuery)) return 4;
       if (normalizedTitle.includes(normalizedQuery)) return 5;

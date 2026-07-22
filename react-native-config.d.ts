@@ -7,6 +7,7 @@ declare module 'react-native-config' {
     REQUEST_TIMEOUT_MS?: string;
     ONESIGNAL_APP_ID?: string;
     GOOGLE_MAPS_API_KEY?: string;
+    GOOGLE_MAPS_ANDROID_CERT_SHA1?: string;
   }
 
   const Config: NativeConfig;

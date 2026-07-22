@@ -87,3 +87,23 @@ export function shouldMountReelVideoPlayer({
 }) {
   return isPlaybackRouteFocused && Math.abs(index - activeIndex) <= preloadRadius;
 }
+
+export function shouldPrefetchMoreReels({
+  visibleIndex,
+  itemCount,
+  hasMore,
+  isLoadingMore,
+  prefetchDistance = 3,
+}: {
+  visibleIndex: number;
+  itemCount: number;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  prefetchDistance?: number;
+}) {
+  if (!hasMore || isLoadingMore || itemCount <= 0 || visibleIndex < 0) {
+    return false;
+  }
+
+  return visibleIndex >= Math.max(0, itemCount - prefetchDistance);
+}

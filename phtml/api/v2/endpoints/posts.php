@@ -1063,7 +1063,22 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 			if (!empty($after_post_id)) {
 				$sql = " AND id < ".$after_post_id;
 			}
-			$posts = $db->rawQuery("SELECT id FROM ".T_POSTS."  WHERE postPrivacy = '0' ".$sql." AND (`postYoutube` <> '' OR `postVine` <> '' OR `postFacebook` <> '' OR `postDailymotion` <> '' OR `postVimeo` <> '' OR `postPlaytube` <> '' OR `postFile` LIKE '%_video%') ORDER BY id DESC LIMIT ".$limit);
+			// Native Reels can only play direct media files. The old query also
+			// returned YouTube/Vimeo/etc. embeds, so a page of 10 database rows
+			// often became only 2-3 playable reels on the phone. Fetch one extra
+			// local-video row so the response can expose an exact has_more cursor.
+			$query_limit = $limit + 1;
+			$posts = $db->rawQuery("SELECT id FROM ".T_POSTS." WHERE postPrivacy = '0' ".$sql." AND `postFile` <> '' AND (`postType` = 'reel' OR `postFile` LIKE '%_video%' OR `postFile` LIKE '%.mp4%' OR `postFile` LIKE '%.m4v%' OR `postFile` LIKE '%.mov%' OR `postFile` LIKE '%.webm%' OR `postFile` LIKE '%.mkv%') ORDER BY id DESC LIMIT ".$query_limit);
+			$has_more = count($posts) > $limit;
+			if ($has_more) {
+				$posts = array_slice($posts, 0, $limit);
+			}
+			$next_cursor = null;
+			if ($has_more && !empty($posts)) {
+				$last_post = end($posts);
+				$next_cursor = !empty($last_post->id) ? (string)$last_post->id : null;
+				reset($posts);
+			}
 			$posts_data = array();
 			if (!empty($posts)) {
 				foreach ($posts as $key => $value9) {
@@ -1150,7 +1165,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 			}
 			$response_data = array(
 			                        'api_status' => 200,
-			                        'data' => $posts_data
+			                        'data' => $posts_data,
+			                        'has_more' => $has_more,
+			                        'next_cursor' => $next_cursor
 			                    );
 
 		}

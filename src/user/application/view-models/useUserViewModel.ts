@@ -14,7 +14,7 @@ import type {
 import { createUserRepository } from '../../infrastructure/repositories/ApiUserRepository';
 
 const repository = createUserRepository();
-const MAP_SEARCH_FIRST_RESULT_DEADLINE_MS = 1500;
+const MAP_SEARCH_FIRST_RESULT_DEADLINE_MS = 1850;
 
 function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -205,6 +205,7 @@ export function useUserViewModel() {
             limit: input.limit ?? 20,
             lat: input.lat,
             lng: input.lng,
+            fast: input.fast,
           })
           .then(pages => {
             pagesSnapshot = pages;
@@ -229,6 +230,7 @@ export function useUserViewModel() {
             lat: input.lat,
             lng: input.lng,
             radius: input.radius,
+            fast: input.fast,
           })
           .then(predictions => {
             predictionsSnapshot = predictions;

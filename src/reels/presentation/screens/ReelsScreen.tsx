@@ -80,6 +80,7 @@ import {
   isNavigationRouteSelected,
   isReelItemActive,
   shouldMountReelVideoPlayer,
+  shouldPrefetchMoreReels,
 } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
@@ -613,6 +614,17 @@ export default function ReelsScreen() {
       const first = viewableItems[0];
       if (typeof first.index === 'number') {
         setActiveIndexRef.current(first.index);
+        if (
+          shouldPrefetchMoreReels({
+            visibleIndex: first.index,
+            itemCount: itemsLengthRef.current,
+            hasMore: hasMoreRef.current,
+            isLoadingMore: isLoadingMoreRef.current,
+          })
+        ) {
+          isLoadingMoreRef.current = true;
+          loadMoreRef.current();
+        }
       }
     },
   ).current;
@@ -626,6 +638,7 @@ export default function ReelsScreen() {
 
     if (index >= itemsLengthRef.current - 1) {
       if (hasMoreRef.current && !isLoadingMoreRef.current) {
+        isLoadingMoreRef.current = true;
         loadMoreRef.current();
       }
       return false;
@@ -790,10 +803,11 @@ export default function ReelsScreen() {
   );
 
   const handleEndReached = useCallback(() => {
-    if (vm.hasMore && !vm.isLoadingMore) {
-      vm.loadMore();
+    if (hasMoreRef.current && !isLoadingMoreRef.current) {
+      isLoadingMoreRef.current = true;
+      loadMoreRef.current();
     }
-  }, [vm]);
+  }, []);
 
   // ── Swipe-from-left to go back ───────────────────────────────────────
   // Facebook-style: drag the screen to the right and release past a

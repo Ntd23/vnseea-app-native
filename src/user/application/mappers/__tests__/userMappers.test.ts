@@ -215,6 +215,65 @@ describe('nearbyPlaceMapper', () => {
     });
   });
 
+  it('hydrates page id, address, and coordinates from nested page_data', () => {
+    expect(
+      mapNearbyPage(
+        {
+          page_data: {
+            page_id: '27',
+            page_title: 'Tiệm tóc nested',
+            page_name: 'tiemto nested',
+            address: 'Cầu Giấy, Hà Nội',
+            latitude: '21.035',
+            longitude: '105.79',
+          },
+        },
+        WEB_BASE_URL,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        id: 'page:27',
+        pageId: '27',
+        name: 'Tiệm tóc nested',
+        location: 'Cầu Giấy, Hà Nội',
+        coordinate: {
+          latitude: 21.035,
+          longitude: 105.79,
+        },
+      }),
+    );
+  });
+
+  it('prefers top-level coordinates and rejects invalid page coordinates', () => {
+    expect(
+      mapNearbyPage(
+        {
+          id: '28',
+          title: 'Top level wins',
+          lat: '21.02',
+          lng: '105.8',
+          page_data: {
+            lat: '999',
+            lng: '999',
+          },
+        },
+        WEB_BASE_URL,
+      )?.coordinate,
+    ).toEqual({ latitude: 21.02, longitude: 105.8 });
+
+    expect(
+      mapNearbyPage(
+        {
+          id: '29',
+          title: 'Invalid coordinate',
+          lat: '91',
+          lng: '105.8',
+        },
+        WEB_BASE_URL,
+      )?.coordinate,
+    ).toBeUndefined();
+  });
+
   it('maps a nearby shop page and product location', () => {
     expect(
       mapNearbyPlace(

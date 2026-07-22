@@ -165,7 +165,9 @@ export type NearbyPlacesInput = Pick<
 export type NearbyPagesInput = Pick<
   NearbyUsersInput,
   'distance' | 'keyword' | 'limit' | 'lat' | 'lng'
->;
+> & {
+  fast?: boolean;
+};
 
 export type MapPlacePrediction = {
   source: 'google';

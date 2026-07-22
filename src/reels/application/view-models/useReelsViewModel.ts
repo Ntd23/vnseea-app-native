@@ -58,7 +58,7 @@ const mapFeedVideoToReel = (post: FeedVideoPost): ReelsItem => {
   };
 };
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 const COMMENT_PAGE_SIZE = 20;
 
 type LoadPhase = 'idle' | 'initial' | 'refreshing' | 'loading-more';
@@ -363,9 +363,10 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     inFlightRef.current = true;
     setPhase('loading-more');
     try {
+      const requestedCursor = cursorRef.current;
       const page = await repository.fetchReels({
         limit: PAGE_SIZE,
-        cursor: cursorRef.current,
+        cursor: requestedCursor,
       });
 
       setItems(prev => {
@@ -379,7 +380,9 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
       });
 
       cursorRef.current = page.nextCursor;
-      setHasMore(page.nextCursor !== null);
+      setHasMore(
+        page.nextCursor !== null && page.nextCursor !== requestedCursor,
+      );
     } catch {
       // Soft fail — let user try again by scrolling. Don't flip the error
       // banner here because they still have items to watch.

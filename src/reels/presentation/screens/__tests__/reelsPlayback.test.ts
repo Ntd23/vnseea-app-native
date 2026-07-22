@@ -2,6 +2,7 @@ import {
   isNavigationRouteSelected,
   isReelItemActive,
   shouldMountReelVideoPlayer,
+  shouldPrefetchMoreReels,
 } from '../reelsPlayback';
 
 describe('reels playback state', () => {
@@ -77,5 +78,27 @@ describe('reels playback state', () => {
         preloadRadius: 1,
       }),
     ).toBe(true);
+  });
+
+  it('prefetches before the viewer reaches the final reel', () => {
+    expect(
+      shouldPrefetchMoreReels({
+        visibleIndex: 17,
+        itemCount: 20,
+        hasMore: true,
+        isLoadingMore: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not start a duplicate reel prefetch', () => {
+    expect(
+      shouldPrefetchMoreReels({
+        visibleIndex: 19,
+        itemCount: 20,
+        hasMore: true,
+        isLoadingMore: true,
+      }),
+    ).toBe(false);
   });
 });

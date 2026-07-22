@@ -28,6 +28,20 @@ describe('map search ranking', () => {
     expect(result[0]?.source).toBe('page');
   });
 
+  it('matches a VNSEEA Page username alias before Google places', () => {
+    const result = rank('tiem-toc', [
+      { source: 'google', title: 'Tiệm tóc', distanceMeters: 40 },
+      {
+        source: 'page',
+        title: 'Dịch vụ Đức Huy',
+        aliases: ['tiem-toc'],
+        distanceMeters: 900,
+      },
+    ]);
+
+    expect(result[0]?.source).toBe('page');
+  });
+
   it('uses pinned status and distance only after name relevance', () => {
     expect(
       getMapSearchMatchPriority('tiệm tóc', {

@@ -13,19 +13,37 @@ import type {
   NearbyPlaceKind,
 } from '../../domain/types/user.types';
 
-function mapCoordinate(record: RawApiRecord | undefined) {
-  const latitude = asNumber(record?.lat);
-  const longitude = asNumber(record?.lng);
+function mapCoordinate(...records: Array<RawApiRecord | undefined>) {
+  for (const record of records) {
+    if (!record) continue;
 
-  if (
-    latitude === undefined ||
-    longitude === undefined ||
-    (latitude === 0 && longitude === 0)
-  ) {
-    return undefined;
+    const latitude =
+      asNumber(record.lat) ??
+      asNumber(record.latitude) ??
+      asNumber(record.page_lat);
+    const longitude =
+      asNumber(record.lng) ??
+      asNumber(record.longitude) ??
+      asNumber(record.page_lng);
+
+    if (
+      latitude === undefined ||
+      longitude === undefined ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180 ||
+      (latitude === 0 && longitude === 0)
+    ) {
+      continue;
+    }
+
+    return { latitude, longitude };
   }
 
-  return { latitude, longitude };
+  return undefined;
 }
 
 function removeMentionPrefix(value: string | undefined) {
@@ -220,7 +238,9 @@ export function mapNearbyPage(
 ): NearbyPlace | null {
   const page = asRecord(record.page_data);
   const records = [record, page];
-  const pageId = firstEntityId(record, ['id', 'page_id']);
+  const pageId =
+    firstEntityId(record, ['id', 'page_id']) ??
+    (page ? firstEntityId(page, ['id', 'page_id']) : undefined);
   const name = firstStringFromRecords(records, ['title', 'page_title', 'name']);
   const mapPinStatus = normalizeMapPinStatus(
     firstStringFromRecords(records, [
@@ -290,6 +310,6 @@ export function mapNearbyPage(
     mapPinStatus,
     mapPinApproved: isPinApproved,
     isPinned: isPinApproved,
-    coordinate: mapCoordinate(record),
+    coordinate: mapCoordinate(record, page),
   };
 }

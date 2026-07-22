@@ -36,10 +36,13 @@ describe('map and place discovery performance contracts', () => {
     expect(source).toContain('placePredictionsCache.getOrLoad');
     expect(source).toContain('placeDetailsCache.getOrLoad');
     expect(source).toContain('const firstResult = await Promise.race([');
-    expect(source).toContain('const DIRECT_GOOGLE_TIMEOUT_MS = 1400;');
-    expect(source).toContain('const MAP_SEARCH_RESPONSE_BUDGET_MS = 1750;');
+    expect(source).toContain('const DIRECT_GOOGLE_TIMEOUT_MS = 1700;');
+    expect(source).toContain("'X-Android-Package'");
+    expect(source).toContain("'X-Android-Cert'");
+    expect(source).toContain('const MAP_SEARCH_RESPONSE_BUDGET_MS = 1800;');
     expect(source).toContain('isGoogleNearbyCategoryType(categoryType)');
     expect(source).toContain('category: input.category,');
+    expect(source).toContain('prefer_address: input.category ? undefined : 1,');
     expect(source).toContain('warmNearbyPageMapPinStatuses(hydratedPages)');
     expect(source).not.toContain('hydrateNearbyPageMapPinStatus');
   });
@@ -63,7 +66,26 @@ describe('map and place discovery performance contracts', () => {
     expect(screenSource).toContain('result.predictions.length === 0');
     expect(viewModelSource).toContain('setNearbyPlaces(pages);');
     expect(viewModelSource).toContain('setPlacePredictions(predictions);');
-    expect(viewModelSource).toContain('MAP_SEARCH_FIRST_RESULT_DEADLINE_MS = 1500');
+    expect(viewModelSource).toContain('MAP_SEARCH_FIRST_RESULT_DEADLINE_MS = 1850');
+  });
+
+  it('keeps the fast backend path inside the interactive search budget', () => {
+    const repositorySource = read(
+      'src/user/infrastructure/repositories/ApiUserRepository.ts',
+    );
+    const backendSource = read('phtml/api/v2/endpoints/map_discovery.php');
+
+    expect(repositorySource).toContain('fast: input.fast ? 1 : undefined');
+    expect(backendSource).toContain(
+      '$google_timeout_ms = $fast ? 1500 : 20000;',
+    );
+    expect(backendSource).toContain(
+      'while (!$fast && $next_page_token !== \'\'',
+    );
+    expect(backendSource).toContain(
+      "$select_fields = $fast ? '*' : '`page_id`';",
+    );
+    expect(backendSource).not.toContain('search_debug.log');
   });
 
   it('commits only the latest discovery request and keeps loading true for concurrent actions', () => {

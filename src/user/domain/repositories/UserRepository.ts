@@ -30,6 +30,7 @@ export interface UserRepository {
     lat?: number;
     lng?: number;
     radius?: number;
+    fast?: boolean;
   }): Promise<MapPlacePrediction[]>;
   getPlaceDetails(placeId: string): Promise<NearbyPlace | null>;
   getRoute(input: MapRouteInput): Promise<MapRoute>;
