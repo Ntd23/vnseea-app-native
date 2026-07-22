@@ -39,6 +39,8 @@ export interface ProductItem {
   location: string;
   lat?: string;
   lng?: string;
+  /** Distance from the viewer to the product location, normalized to km. */
+  distance?: number;
   type: number; // 0 = normal, 1 = sell
   units?: number;
   rating?: number | string;
@@ -62,7 +64,12 @@ export interface ProductsResponse {
   api_status: number;
   products: ProductItem[];
   products_categories: Record<string, ProductSubCategory[]>;
-  distance_filter_available: boolean | number;
+  distance_filter_available?: boolean | number;
+  distance_origin_source?: 'device' | 'profile';
+  distance_origin?: {
+    lat: number;
+    lng: number;
+  } | null;
   currencies?: Record<string, { text: string; symbol: string } | string>;
 }
 
@@ -107,6 +114,8 @@ export interface GetProductsInput {
   sub_id?: number;
   keyword?: string;
   distance?: number;
+  lat?: number;
+  lng?: number;
   order_by?: 'price_low' | 'price_high';
   product_id?: number;
 }

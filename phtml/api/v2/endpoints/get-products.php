@@ -22,16 +22,37 @@ if ($options['product_id'] > 0) {
     $options['limit'] = 1;
 }
 $requested_distance = (!empty($_POST['distance']) && is_numeric($_POST['distance'])) ? (float) $_POST['distance'] : 0;
+$request_lat = (isset($_POST['lat']) && $_POST['lat'] !== '' && is_numeric($_POST['lat'])) ? (float) $_POST['lat'] : null;
+$request_lng = (isset($_POST['lng']) && $_POST['lng'] !== '' && is_numeric($_POST['lng'])) ? (float) $_POST['lng'] : null;
+$has_request_origin = (
+    $request_lat !== null
+    && $request_lng !== null
+    && $request_lat >= -90
+    && $request_lat <= 90
+    && $request_lng >= -180
+    && $request_lng <= 180
+    && !($request_lat == 0 && $request_lng == 0)
+);
+$profile_lat = (!empty($wo['user']['lat']) && is_numeric($wo['user']['lat'])) ? (float) $wo['user']['lat'] : null;
+$profile_lng = (!empty($wo['user']['lng']) && is_numeric($wo['user']['lng'])) ? (float) $wo['user']['lng'] : null;
+$filter_lat = $has_request_origin ? $request_lat : $profile_lat;
+$filter_lng = $has_request_origin ? $request_lng : $profile_lng;
 $can_filter_distance = (
     $requested_distance > 0
     && !empty($wo['loggedin'])
-    && !empty($wo['user']['lat'])
-    && !empty($wo['user']['lng'])
-    && is_numeric($wo['user']['lat'])
-    && is_numeric($wo['user']['lng'])
+    && $filter_lat !== null
+    && $filter_lng !== null
 );
 $options['length'] = $can_filter_distance ? $requested_distance : '';
 $options['order_by'] = (!empty($_POST['order_by']) && in_array($_POST['order_by'], array('price_low', 'price_high'))) ? $_POST['order_by'] : '';
+
+if ($can_filter_distance) {
+    // Wo_GetProducts calculates product distance from the logged-in user's
+    // lat/lng in the global context. Prefer the fresh device coordinates sent
+    // by the app, then fall back to profile coordinates for older clients.
+    $wo['user']['lat'] = $filter_lat;
+    $wo['user']['lng'] = $filter_lng;
+}
 
 function Wo_ProductSearchNormalizeText($value) {
     $value = html_entity_decode((string) $value, ENT_QUOTES, 'UTF-8');
@@ -141,5 +162,10 @@ $response_data = array(
     'products_categories' => $wo['products_categories'],
     'products_sub_categories' => $wo['products_sub_categories'],
     'distance_filter_available' => $can_filter_distance ? 1 : 0,
+    'distance_origin_source' => $has_request_origin ? 'device' : 'profile',
+    'distance_origin' => $can_filter_distance ? array(
+        'lat' => $filter_lat,
+        'lng' => $filter_lng
+    ) : null,
     'currencies' => !empty($wo['currencies']) ? $wo['currencies'] : null
 );

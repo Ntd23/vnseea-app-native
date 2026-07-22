@@ -10,6 +10,7 @@ describe('map search category matching', () => {
     ['barber shop', 'hair_care'],
     ['salon tóc nữ', 'hair_care'],
     ['quán cà phê', 'cafe'],
+    ['caf', 'cafe'],
     ['nhà hàng gần đây', 'restaurant'],
     ['nhà thuốc', 'pharmacy'],
     ['cây xăng', 'gas_station'],

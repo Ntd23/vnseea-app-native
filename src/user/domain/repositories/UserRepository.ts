@@ -7,6 +7,7 @@ import type {
   NearbyPagesInput,
   NearbyPlacesInput,
   MapPlacePrediction,
+  MapPlacePredictionsInput,
   MapRoute,
   MapRouteInput,
   NearbyUsersInput,
@@ -24,14 +25,9 @@ export interface UserRepository {
   getNearbyUsers(input?: NearbyUsersInput): Promise<UserProfile[]>;
   getNearbyPlaces(input?: NearbyPlacesInput): Promise<NearbyPlace[]>;
   getNearbyPages(input?: NearbyPagesInput): Promise<NearbyPlace[]>;
-  getPlacePredictions(input: {
-    query: string;
-    category?: string;
-    lat?: number;
-    lng?: number;
-    radius?: number;
-    fast?: boolean;
-  }): Promise<MapPlacePrediction[]>;
+  getPlacePredictions(
+    input: MapPlacePredictionsInput,
+  ): Promise<MapPlacePrediction[]>;
   getPlaceDetails(placeId: string): Promise<NearbyPlace | null>;
   getRoute(input: MapRouteInput): Promise<MapRoute>;
   getRoutes(input: MapRouteInput): Promise<MapRoute[]>;
