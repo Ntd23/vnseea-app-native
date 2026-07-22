@@ -75,7 +75,7 @@ export function getGoogleCategorySearchQuery(
     return 'restaurant';
   }
 
-  if (/\b(cafe|ca phe|coffee|tra sua|do uong)\b/.test(normalized)) {
+  if (/\b(caf|cafe|ca phe|coffee|tra sua|do uong)\b/.test(normalized)) {
     return 'cafe';
   }
 

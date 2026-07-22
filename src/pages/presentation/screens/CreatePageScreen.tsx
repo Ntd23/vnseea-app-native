@@ -56,6 +56,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { usePagesViewModel } from '../../application/view-models/usePagesViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -671,6 +672,29 @@ function CreatePageScreen() {
     [pagesVm],
   );
 
+  const handlePlaceSelected = useCallback(
+    (place: {
+      description: string;
+      placeId: string;
+      lat?: number;
+      lng?: number;
+    }) => {
+      const coordinate = parseMapCoordinate(place.lat, place.lng);
+      setDraft(prev => ({
+        ...prev,
+        pageAddress: place.description,
+        placeId: place.placeId,
+        lat: coordinate?.latitude,
+        lng: coordinate?.longitude,
+      }));
+      setLocalError(null);
+      pagesVm.clearError();
+      // Selecting a suggestion should immediately continue to exact pin placement.
+      setIsLocationPickerVisible(true);
+    },
+    [pagesVm],
+  );
+
   const handleLocationConfirm = useCallback(
     (selection: PageLocationSelection) => {
       setDraft(prev => ({
@@ -896,12 +920,18 @@ function CreatePageScreen() {
     CALL_ACTION_OPTIONS.find(option => option.id === draft.callActionType) ||
     CALL_ACTION_OPTIONS[0];
   const pageLocationCoordinate = useMemo(
-    () =>
-      draft.lat !== undefined && draft.lng !== undefined
-        ? { latitude: draft.lat, longitude: draft.lng }
-        : undefined,
+    () => parseMapCoordinate(draft.lat, draft.lng) || undefined,
     [draft.lat, draft.lng],
   );
+
+  useEffect(() => {
+    if (
+      (draft.lat !== undefined || draft.lng !== undefined) &&
+      !pageLocationCoordinate
+    ) {
+      setDraft(prev => ({ ...prev, lat: undefined, lng: undefined }));
+    }
+  }, [draft.lat, draft.lng, pageLocationCoordinate]);
 
   useEffect(() => {
     if (!isEditing || activeEditTab !== 'users' || !editingPage?.pageId) {
@@ -1727,17 +1757,7 @@ function CreatePageScreen() {
               placeholder="Địa điểm"
               preferAddressSearch
               onChangeText={handleAddressChange}
-              onSelectPlace={place => {
-                setDraft(prev => ({
-                  ...prev,
-                  pageAddress: place.description,
-                  placeId: place.placeId,
-                  lat: place.lat,
-                  lng: place.lng,
-                }));
-                setLocalError(null);
-                pagesVm.clearError();
-              }}
+              onSelectPlace={handlePlaceSelected}
             />
             <TouchableOpacity
               activeOpacity={0.84}
@@ -1760,9 +1780,10 @@ function CreatePageScreen() {
                 Chọn vị trí chính xác trên bản đồ
               </Text>
             </TouchableOpacity>
-            {draft.lat !== undefined && draft.lng !== undefined ? (
+            {pageLocationCoordinate ? (
               <Text style={{ marginTop: 7, color: '#64748b', fontSize: 12, fontWeight: '600' }}>
-                Đã ghim tọa độ: {draft.lat.toFixed(5)}, {draft.lng.toFixed(5)}
+                Đã ghim tọa độ: {pageLocationCoordinate.latitude.toFixed(5)},{' '}
+                {pageLocationCoordinate.longitude.toFixed(5)}
               </Text>
             ) : null}
           </View>

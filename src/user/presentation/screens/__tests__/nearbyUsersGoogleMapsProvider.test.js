@@ -30,7 +30,8 @@ describe('iOS Google Maps provider for nearby address search', () => {
     expect(source).toContain('const insets = useSafeAreaInsets();');
     expect(source).toContain('exploreTopControlsStyle');
     expect(source).toContain('routePreviewCardStyle');
-    expect(source).toContain('suggestionPanelStyle');
+    expect(source).toContain('typeaheadOverlayStyle');
+    expect(source).toContain('styles.typeaheadOverlay');
     expect(source).toContain('navigationBannerStyle');
     expect(source).toContain('top: insets.top +');
     expect(source).not.toContain("top: Platform.OS === 'android' ? 26 : 10");

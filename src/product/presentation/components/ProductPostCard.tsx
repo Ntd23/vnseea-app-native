@@ -48,6 +48,24 @@ function formatTimeAgo(timestamp: number | string): string {
   if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
   return new Date(numTimestamp * 1000).toLocaleDateString('vi-VN');
 }
+
+function formatProductDistance(
+  distanceKm: number | undefined,
+  distanceLimitKm?: number,
+) {
+  if (distanceKm !== undefined && Number.isFinite(distanceKm) && distanceKm >= 0) {
+    if (distanceKm < 0.1) return 'Ngay gần bạn';
+    if (distanceKm < 1) return `Cách bạn ${Math.max(100, Math.round(distanceKm * 1000))} m`;
+    const rounded = distanceKm < 10
+      ? Math.round(distanceKm * 10) / 10
+      : Math.round(distanceKm);
+    return `Cách bạn ${String(rounded).replace('.', ',')} km`;
+  }
+  return distanceLimitKm === undefined
+    ? null
+    : `Trong phạm vi ${distanceLimitKm} km`;
+}
+
 function RatingStars({ value, size = 14 }: { value: number; size?: number }) {
   const rounded = Math.round(value);
 
@@ -83,6 +101,7 @@ interface ProductPostCardProps {
   isDeleting?: boolean;
   compact?: boolean;
   marketplaceFloatingActions?: boolean;
+  distanceLimitKm?: number;
 
   // New props for post reactions and comments
   postId?: string;
@@ -109,6 +128,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
   isDeleting = false,
   compact,
   marketplaceFloatingActions = false,
+  distanceLimitKm,
   postId,
   likeCount,
   commentCount,
@@ -121,6 +141,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
   const navigation = useNavigation<any>();
   const imageUrl = product.images?.[0]?.image;
   const canShowOrderRequest = !product.is_owner && Boolean(onOrderRequest);
+  const distanceLabel = formatProductDistance(product.distance, distanceLimitKm);
+  const compactLocationLabel = [distanceLabel, product.location]
+    .filter(Boolean)
+    .join(' • ');
 
   const handlePress = useCallback(() => {
     onPress?.(product);
@@ -266,11 +290,16 @@ const ProductPostCard = React.memo(function ProductPostCard({
           <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
             {product.name}
           </Text>
-          {product.location ? (
+          {compactLocationLabel ? (
             <View className="flex-row items-center mt-1">
-              <MapPin size={10.5} color="#94A3B8" />
-              <Text className="ml-1 text-[11px] text-slate-400 font-medium" numberOfLines={1}>
-                {product.location}
+              <MapPin size={10.5} color={distanceLabel ? '#0F56FB' : '#94A3B8'} />
+              <Text
+                className={`ml-1 text-[11px] font-semibold ${
+                  distanceLabel ? 'text-[#0F56FB]' : 'text-slate-400'
+                }`}
+                numberOfLines={1}
+              >
+                {compactLocationLabel}
               </Text>
             </View>
           ) : null}
@@ -417,9 +446,9 @@ const ProductPostCard = React.memo(function ProductPostCard({
         </View>
 
         {/* Location */}
-        {product.location ? (
-          <Text className="text-[13px] text-slate-500 font-semibold leading-5 mb-2.5" numberOfLines={1} style={{ color: '#64748B', marginBottom: 10 }}>
-            {product.location}
+        {compactLocationLabel ? (
+          <Text className="text-[13px] text-slate-500 font-semibold leading-5 mb-2.5" numberOfLines={1} style={{ color: distanceLabel ? '#0F56FB' : '#64748B', marginBottom: 10 }}>
+            {compactLocationLabel}
           </Text>
         ) : null}
 

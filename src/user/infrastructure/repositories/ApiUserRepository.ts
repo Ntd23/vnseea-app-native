@@ -16,7 +16,9 @@ import type {
   FriendsInput,
   FriendsResult,
   GetUserProfileInput,
+  MapPlaceReview,
   MapPlacePrediction,
+  MapPlacePredictionsInput,
   MapRoute,
   MapRoutePoint,
   MapRouteStep,
@@ -223,9 +225,7 @@ function googleRequestHeaders(): Record<string, string> {
 
 function coordinateCachePart(value: unknown, precision = 3) {
   const numericValue = Number(value);
-  return Number.isFinite(numericValue)
-    ? numericValue.toFixed(precision)
-    : '';
+  return Number.isFinite(numericValue) ? numericValue.toFixed(precision) : '';
 }
 
 function currentSessionCacheKey() {
@@ -271,17 +271,11 @@ function nearbyPagesCacheKey(input?: NearbyPagesInput) {
     coordinateCachePart(input?.lat),
     coordinateCachePart(input?.lng),
     input?.fast ? 'fast' : 'full',
+    input?.globalSearch ? 'global' : 'nearby',
   ].join('|');
 }
 
-function placePredictionCacheKey(input: {
-  query: string;
-  category?: string;
-  lat?: number;
-  lng?: number;
-  radius?: number;
-  fast?: boolean;
-}) {
+function placePredictionCacheKey(input: MapPlacePredictionsInput) {
   return [
     normalizeCacheText(input.query),
     normalizeCacheText(input.category),
@@ -289,6 +283,7 @@ function placePredictionCacheKey(input: {
     coordinateCachePart(input.lng),
     input.radius ?? '',
     input.fast ? 'fast' : 'full',
+    input.globalSearch ? 'global' : 'nearby',
   ].join('|');
 }
 
@@ -406,8 +401,14 @@ async function requestNearbyPages(input?: NearbyPagesInput) {
       origin_lat: input?.lat,
       origin_lng: input?.lng,
       fast: input?.fast ? 1 : undefined,
+      global_search: input?.globalSearch ? 1 : undefined,
     },
-    input?.keyword ? { timeout: MAP_SEARCH_RESPONSE_BUDGET_MS } : undefined,
+    input?.keyword || input?.signal
+      ? {
+          timeout: input?.keyword ? MAP_SEARCH_RESPONSE_BUDGET_MS : undefined,
+          signal: input?.signal,
+        }
+      : undefined,
   );
 
   const pages = (response.items ?? [])
@@ -418,10 +419,21 @@ async function requestNearbyPages(input?: NearbyPagesInput) {
 }
 
 async function fetchNearbyPages(input?: NearbyPagesInput) {
-  const pages = await nearbyPagesCache.getOrLoad(
-    nearbyPagesCacheKey(input),
-    () => requestNearbyPages(input),
-  );
+  const cacheKey = nearbyPagesCacheKey(input);
+  const cachedPages = nearbyPagesCache.get(cacheKey);
+  const pages =
+    cachedPages !== undefined
+      ? cachedPages
+      : input?.signal
+      ? await requestNearbyPages(input).then(result => {
+          if (!input.signal?.aborted) {
+            nearbyPagesCache.set(cacheKey, result);
+          }
+          return result;
+        })
+      : await nearbyPagesCache.getOrLoad(cacheKey, () =>
+          requestNearbyPages(input),
+        );
   const hydratedPages = applyCachedNearbyPageMapPinStatus(pages);
 
   // Map pins are supplementary metadata. Warm a small bounded set in the
@@ -441,13 +453,9 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
   if (!placeId || !description) return null;
 
   const rawLat =
-    record.lat !== undefined && record.lat !== null
-      ? Number(record.lat)
-      : NaN;
+    record.lat !== undefined && record.lat !== null ? Number(record.lat) : NaN;
   const rawLng =
-    record.lng !== undefined && record.lng !== null
-      ? Number(record.lng)
-      : NaN;
+    record.lng !== undefined && record.lng !== null ? Number(record.lng) : NaN;
   const hasCoordinate = isValidGeoCoordinate(rawLat, rawLng);
 
   let types: string[] | undefined;
@@ -457,17 +465,17 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
   const photoUrls = Array.isArray(record.photo_urls)
     ? record.photo_urls.map(String).filter(Boolean).slice(0, 3)
     : Array.isArray(record.photo_references) && apiConfig.googleMapsApiKey
-      ? record.photo_references
-          .map(String)
-          .filter(Boolean)
-          .slice(0, 3)
-          .map(
-            reference =>
-              `https://maps.googleapis.com/maps/api/place/photo?maxwidth=720&photo_reference=${encodeURIComponent(
-                reference,
-              )}&key=${encodeURIComponent(apiConfig.googleMapsApiKey)}`,
-          )
-      : undefined;
+    ? record.photo_references
+        .map(String)
+        .filter(Boolean)
+        .slice(0, 3)
+        .map(
+          reference =>
+            `https://maps.googleapis.com/maps/api/place/photo?maxwidth=720&photo_reference=${encodeURIComponent(
+              reference,
+            )}&key=${encodeURIComponent(apiConfig.googleMapsApiKey)}`,
+        )
+    : undefined;
 
   return {
     source: 'google',
@@ -478,9 +486,19 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
     types,
     lat: hasCoordinate ? rawLat : undefined,
     lng: hasCoordinate ? rawLng : undefined,
-    distanceMeters: record.distance_meters !== undefined && record.distance_meters !== null ? Number(record.distance_meters) : undefined,
-    icon: record.icon !== undefined && record.icon !== null ? String(record.icon) : undefined,
-    iconBackgroundColor: record.icon_background_color !== undefined && record.icon_background_color !== null ? String(record.icon_background_color) : undefined,
+    distanceMeters:
+      record.distance_meters !== undefined && record.distance_meters !== null
+        ? Number(record.distance_meters)
+        : undefined,
+    icon:
+      record.icon !== undefined && record.icon !== null
+        ? String(record.icon)
+        : undefined,
+    iconBackgroundColor:
+      record.icon_background_color !== undefined &&
+      record.icon_background_color !== null
+        ? String(record.icon_background_color)
+        : undefined,
     rating:
       record.rating !== undefined && record.rating !== null
         ? Number(record.rating)
@@ -490,8 +508,7 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
       record.user_ratings_total !== null
         ? Number(record.user_ratings_total)
         : undefined,
-    openNow:
-      typeof record.open_now === 'boolean' ? record.open_now : undefined,
+    openNow: typeof record.open_now === 'boolean' ? record.open_now : undefined,
     photoUrls,
   };
 }
@@ -591,52 +608,52 @@ function mapGoogleNearbyPrediction(
   };
 }
 
-function mergePlacePredictions(
-  primary: MapPlacePrediction[],
-  secondary: MapPlacePrediction[],
-) {
-  const seen = new Set<string>();
-  const merged: MapPlacePrediction[] = [];
-
-  [...primary, ...secondary].forEach(item => {
-    if (seen.has(item.placeId)) return;
-    seen.add(item.placeId);
-    merged.push(item);
-  });
-
-  return merged;
+function canUseDirectGoogleNearbyPredictions(input: MapPlacePredictionsInput) {
+  return Boolean(
+    apiConfig.googleMapsApiKey &&
+      input.query.trim().length >= 2 &&
+      typeof input.lat === 'number' &&
+      typeof input.lng === 'number' &&
+      googleRequestHeaders()['X-Android-Cert'],
+  );
 }
 
-async function getDirectGoogleNearbyPredictions(input: {
-  query: string;
-  category?: string;
-  lat?: number;
-  lng?: number;
-  radius?: number;
-}) {
+async function getDirectGoogleNearbyPredictions(
+  input: MapPlacePredictionsInput,
+) {
   const categoryType = normalizeCacheText(input.category);
-  if (
-    !apiConfig.googleMapsApiKey ||
-    !isGoogleNearbyCategoryType(categoryType) ||
-    typeof input.lat !== 'number' ||
-    typeof input.lng !== 'number'
-  ) {
+  if (!canUseDirectGoogleNearbyPredictions(input)) {
     return [];
   }
 
+  const latitude = input.lat as number;
+  const longitude = input.lng as number;
   const headers = googleRequestHeaders();
   if (!headers['X-Android-Cert']) return [];
 
-  const origin = { latitude: input.lat, longitude: input.lng };
+  const origin = { latitude, longitude };
+  const normalizedKeyword = normalizeCacheText(input.query);
+  const hasCategory = isGoogleNearbyCategoryType(categoryType);
   const params = new URLSearchParams({
-    location: `${input.lat.toFixed(6)},${input.lng.toFixed(6)}`,
-    radius: String(Math.min(Math.max(input.radius ?? 3000, 1), 3000)),
-    type: categoryType,
-    keyword: input.query.trim(),
+    location: `${latitude.toFixed(6)},${longitude.toFixed(6)}`,
+    radius: String(Math.min(Math.max(input.radius ?? 3000, 1), 50000)),
+    keyword:
+      hasCategory && normalizedKeyword.length <= 3
+        ? categoryType
+        : input.query.trim(),
     language: 'vi',
     key: apiConfig.googleMapsApiKey,
   });
+  if (hasCategory) {
+    params.set('type', categoryType);
+  }
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (input.signal?.aborted) {
+    controller.abort();
+  } else {
+    input.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  }
   const timeout = setTimeout(
     () => controller.abort(),
     DIRECT_GOOGLE_TIMEOUT_MS,
@@ -675,12 +692,16 @@ async function getDirectGoogleNearbyPredictions(input: {
       .map(record => mapGoogleNearbyPrediction(record, origin))
       .filter(Boolean) as MapPlacePrediction[];
   } catch (error) {
+    if (input.signal?.aborted) {
+      throw error;
+    }
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
       console.debug('[mapDiscovery] direct nearby unavailable', String(error));
     }
     return [];
   } finally {
     clearTimeout(timeout);
+    input.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
@@ -692,7 +713,8 @@ async function getDirectGooglePlaceDetails(placeId: string) {
 
   const params = new URLSearchParams({
     place_id: placeId,
-    fields: 'place_id,name,formatted_address,geometry,types,icon',
+    fields:
+      'place_id,name,formatted_address,geometry,types,icon,icon_background_color,url,rating,user_ratings_total,opening_hours,photos,reviews,editorial_summary,formatted_phone_number,international_phone_number,website,business_status,price_level',
     language: 'vi',
     key: apiConfig.googleMapsApiKey,
   });
@@ -744,6 +766,37 @@ async function getDirectGooglePlaceDetails(placeId: string) {
   }
 }
 
+function mapGooglePlaceReview(value: unknown): MapPlaceReview | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const authorName = String(
+    record.author_name || record.authorName || 'Người dùng Google',
+  ).trim();
+  const text = String(record.text || '').trim();
+  const relativeTimeDescription = String(
+    record.relative_time_description || record.relativeTimeDescription || '',
+  ).trim();
+  const rawRating =
+    record.rating !== undefined && record.rating !== null
+      ? Number(record.rating)
+      : Number.NaN;
+  const rawTime =
+    record.time !== undefined && record.time !== null
+      ? Number(record.time)
+      : Number.NaN;
+
+  if (!authorName && !text && !Number.isFinite(rawRating)) return null;
+
+  return {
+    authorName: authorName || 'Người dùng Google',
+    rating: Number.isFinite(rawRating) ? rawRating : undefined,
+    relativeTimeDescription: relativeTimeDescription || undefined,
+    text: text || undefined,
+    time: Number.isFinite(rawTime) ? rawTime : undefined,
+  };
+}
+
 function mapGooglePlace(record: RawApiRecord | undefined): NearbyPlace | null {
   if (!record) return null;
   const placeId = String(record.place_id ?? '');
@@ -753,6 +806,45 @@ function mapGooglePlace(record: RawApiRecord | undefined): NearbyPlace | null {
   if (!placeId || !name || !isValidGeoCoordinate(latitude, longitude)) {
     return null;
   }
+
+  const types = Array.isArray(record.types)
+    ? record.types.map(String).filter(Boolean)
+    : undefined;
+  const openingHours = asRecord(record.opening_hours);
+  const editorialSummary = asRecord(record.editorial_summary);
+  const photoReferences = Array.isArray(record.photo_references)
+    ? record.photo_references
+    : Array.isArray(record.photos)
+    ? record.photos
+        .map(photo => asRecord(photo)?.photo_reference)
+        .filter(Boolean)
+    : [];
+  const photoUrls = Array.isArray(record.photo_urls)
+    ? record.photo_urls.map(String).filter(Boolean).slice(0, 6)
+    : apiConfig.googleMapsApiKey
+    ? photoReferences
+        .map(String)
+        .filter(Boolean)
+        .slice(0, 6)
+        .map(
+          reference =>
+            `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1080&photo_reference=${encodeURIComponent(
+              reference,
+            )}&key=${encodeURIComponent(apiConfig.googleMapsApiKey)}`,
+        )
+    : [];
+  const reviews = Array.isArray(record.reviews)
+    ? (record.reviews
+        .map(mapGooglePlaceReview)
+        .filter(Boolean)
+        .slice(0, 5) as MapPlaceReview[])
+    : [];
+  const rawWeekdayText = Array.isArray(openingHours?.weekday_text)
+    ? openingHours.weekday_text
+    : Array.isArray(record.weekday_text)
+    ? record.weekday_text
+    : [];
+  const weekdayText = rawWeekdayText.map(String).filter(Boolean).slice(0, 7);
 
   return {
     id: `google:${placeId}`,
@@ -766,8 +858,48 @@ function mapGooglePlace(record: RawApiRecord | undefined): NearbyPlace | null {
       latitude,
       longitude,
     },
-    icon: record.icon !== undefined && record.icon !== null ? String(record.icon) : undefined,
-    iconBackgroundColor: record.icon_background_color !== undefined && record.icon_background_color !== null ? String(record.icon_background_color) : undefined,
+    types,
+    icon:
+      record.icon !== undefined && record.icon !== null
+        ? String(record.icon)
+        : undefined,
+    iconBackgroundColor:
+      record.icon_background_color !== undefined &&
+      record.icon_background_color !== null
+        ? String(record.icon_background_color)
+        : undefined,
+    rating:
+      record.rating !== undefined && record.rating !== null
+        ? Number(record.rating)
+        : undefined,
+    ratingsTotal:
+      record.user_ratings_total !== undefined &&
+      record.user_ratings_total !== null
+        ? Number(record.user_ratings_total)
+        : undefined,
+    openNow:
+      typeof openingHours?.open_now === 'boolean'
+        ? openingHours.open_now
+        : typeof record.open_now === 'boolean'
+        ? record.open_now
+        : undefined,
+    photoUrls,
+    reviews,
+    editorialSummary:
+      String(editorialSummary?.overview || '').trim() || undefined,
+    phoneNumber:
+      String(
+        record.formatted_phone_number ||
+          record.international_phone_number ||
+          '',
+      ).trim() || undefined,
+    website: String(record.website || '').trim() || undefined,
+    weekdayText,
+    businessStatus: String(record.business_status || '').trim() || undefined,
+    priceLevel:
+      record.price_level !== undefined && record.price_level !== null
+        ? Number(record.price_level)
+        : undefined,
   };
 }
 
@@ -802,7 +934,9 @@ function mapBooleanFlag(value: unknown): boolean | undefined {
 }
 
 function mapRouteStep(step: RawRouteStep): MapRouteStep | null {
-  const startLocation = mapRoutePoint(step.startLocation ?? step.start_location);
+  const startLocation = mapRoutePoint(
+    step.startLocation ?? step.start_location,
+  );
   const endLocation = mapRoutePoint(step.endLocation ?? step.end_location);
   const path = (step.path ?? [])
     .map(mapRoutePoint)
@@ -856,18 +990,15 @@ function mapRouteRecord(route: RouteResponse['route'], index = 0): MapRoute {
           0,
       ) || undefined,
     trafficDelaySeconds:
-      Number(
-        route.trafficDelaySeconds ??
-          route.traffic_delay_seconds ??
-          0,
-      ) || undefined,
+      Number(route.trafficDelaySeconds ?? route.traffic_delay_seconds ?? 0) ||
+      undefined,
     trafficLevel: mapTrafficLevel(route.trafficLevel ?? route.traffic_level),
     trafficLabel:
       route.trafficLabel !== undefined && route.trafficLabel !== null
         ? String(route.trafficLabel)
         : route.traffic_label !== undefined && route.traffic_label !== null
-          ? String(route.traffic_label)
-          : undefined,
+        ? String(route.traffic_label)
+        : undefined,
     trafficAvailable: mapBooleanFlag(
       route.trafficAvailable ?? route.traffic_available,
     ),
@@ -1014,35 +1145,41 @@ export function createUserRepository(): UserRepository {
     },
 
     async getNearbyUsers(input?: NearbyUsersInput) {
-      return nearbyUsersCache.getOrLoad(nearbyUsersCacheKey(input), async () => {
-        const response = await apiBridge.post<NearbyUsersResponse>(
-          apiRoutes.user.nearby,
-          toNearbyUsersPayload(input),
-        );
+      return nearbyUsersCache.getOrLoad(
+        nearbyUsersCacheKey(input),
+        async () => {
+          const response = await apiBridge.post<NearbyUsersResponse>(
+            apiRoutes.user.nearby,
+            toNearbyUsersPayload(input),
+          );
 
-        return mapUserList(response.nearby_users);
-      });
+          return mapUserList(response.nearby_users);
+        },
+      );
     },
 
     async getNearbyPlaces(input?: NearbyPlacesInput) {
-      return nearbyPlacesCache.getOrLoad(nearbyPlacesCacheKey(input), async () => {
-        const payload = toNearbyPlacesPayload(input);
-        const [shopsResponse, businessesResponse] = await Promise.all([
-          apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
-            ...payload,
-            type: 'shops',
-          }),
-          apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
-            ...payload,
-            type: 'businesses',
-          }),
-        ]);
+      return nearbyPlacesCache.getOrLoad(
+        nearbyPlacesCacheKey(input),
+        async () => {
+          const payload = toNearbyPlacesPayload(input);
+          const [shopsResponse, businessesResponse] = await Promise.all([
+            apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
+              ...payload,
+              type: 'shops',
+            }),
+            apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
+              ...payload,
+              type: 'businesses',
+            }),
+          ]);
 
-        return [
-          ...mapNearbyPlaces(shopsResponse.data, 'shop'),
-          ...mapNearbyPlaces(businessesResponse.data, 'business'),
-        ];
-      });
+          return [
+            ...mapNearbyPlaces(shopsResponse.data, 'shop'),
+            ...mapNearbyPlaces(businessesResponse.data, 'business'),
+          ];
+        },
+      );
     },
 
     async getNearbyPages(input?: NearbyPagesInput) {
@@ -1051,101 +1188,67 @@ export function createUserRepository(): UserRepository {
 
     async getPlacePredictions(input) {
       const trimmedQuery = input.query.trim();
-      if (trimmedQuery.length < 3) return [];
+      if (trimmedQuery.length < 2) return [];
       const cacheKey = placePredictionCacheKey({
         ...input,
         query: trimmedQuery,
       });
+      const cachedPredictions = placePredictionsCache.get(cacheKey);
+      if (cachedPredictions !== undefined) {
+        return cachedPredictions;
+      }
 
-      return placePredictionsCache.getOrLoad(
-        cacheKey,
-        async () => {
-          type PredictionSourceResult = {
-            source: 'backend' | 'direct';
-            predictions: MapPlacePrediction[];
-            error?: unknown;
-          };
-
-          const backendPromise: Promise<PredictionSourceResult> = apiBridge
-            .post<PlaceAutocompleteResponse>(
-              apiRoutes.user.mapDiscovery,
-              {
-                type: 'place_autocomplete',
-                query: trimmedQuery,
-                category: input.category,
-                origin_lat: input.lat,
-                origin_lng: input.lng,
-                radius: input.radius,
-                prefer_address: input.category ? undefined : 1,
-                fast: input.fast ? 1 : undefined,
-              },
-              { timeout: MAP_SEARCH_RESPONSE_BUDGET_MS },
-            )
-            .then(response => ({
-              source: 'backend' as const,
-              predictions: (response.predictions ?? [])
-                .map(mapPlacePrediction)
-                .filter(Boolean) as MapPlacePrediction[],
-            }))
-            .catch(error => ({
-              source: 'backend' as const,
-              predictions: [],
-              error,
-            }));
-          const directPromise: Promise<PredictionSourceResult> =
-            getDirectGoogleNearbyPredictions({
-              ...input,
-              query: trimmedQuery,
-            })
-              .then(predictions => ({
-                source: 'direct' as const,
-                predictions,
-              }))
-              .catch(error => ({
-                source: 'direct' as const,
-                predictions: [],
-                error,
-              }));
-
-          const firstResult = await Promise.race([
-            backendPromise,
-            directPromise,
-          ]);
-          const remainingPromise =
-            firstResult.source === 'backend' ? directPromise : backendPromise;
-
-          if (firstResult.predictions.length > 0) {
-            remainingPromise.then(remainingResult => {
-              if (remainingResult.predictions.length === 0) return;
-              const directPredictions =
-                firstResult.source === 'direct'
-                  ? firstResult.predictions
-                  : remainingResult.predictions;
-              const backendPredictions =
-                firstResult.source === 'backend'
-                  ? firstResult.predictions
-                  : remainingResult.predictions;
-              const merged = mergePlacePredictions(
-                directPredictions,
-                backendPredictions,
-              );
-              setTimeout(() => placePredictionsCache.set(cacheKey, merged), 0);
-            });
-            return firstResult.predictions;
+      const searchInput = { ...input, query: trimmedQuery };
+      const loadPredictions = async () => {
+        if (canUseDirectGoogleNearbyPredictions(searchInput)) {
+          const directPredictions = await getDirectGoogleNearbyPredictions(
+            searchInput,
+          );
+          if (directPredictions.length > 0) {
+            return directPredictions;
           }
+        }
 
-          const remainingResult = await remainingPromise;
-          if (remainingResult.predictions.length > 0) {
-            return remainingResult.predictions;
-          }
+        const response = await apiBridge.post<PlaceAutocompleteResponse>(
+          apiRoutes.user.mapDiscovery,
+          {
+            type: 'place_autocomplete',
+            query: trimmedQuery,
+            category: input.category,
+            origin_lat: input.lat,
+            origin_lng: input.lng,
+            radius: input.radius,
+            // Generic terms such as “tiệm” should return businesses like
+            // Google Maps, not only street/address completions.
+            prefer_address:
+              input.category ||
+              /\b(tiem|shop|salon|barber|cafe|quan|cua hang|store)\b/.test(
+                normalizeCacheText(trimmedQuery),
+              )
+                ? undefined
+                : 1,
+            fast: input.fast ? 1 : undefined,
+            global_search: input.globalSearch ? 1 : undefined,
+          },
+          {
+            timeout: MAP_SEARCH_RESPONSE_BUDGET_MS,
+            signal: input.signal,
+          },
+        );
+        return (response.predictions ?? [])
+          .map(mapPlacePrediction)
+          .filter(Boolean) as MapPlacePrediction[];
+      };
 
-          if (firstResult.error && remainingResult.error) {
-            throw firstResult.error;
-          }
+      if (input.signal) {
+        const predictions = await loadPredictions();
+        if (!input.signal.aborted) {
+          placePredictionsCache.set(cacheKey, predictions);
+        }
+        return predictions;
+      }
 
-          return [];
-        },
-      );
+      return placePredictionsCache.getOrLoad(cacheKey, loadPredictions);
     },
 
     async getPlaceDetails(placeId: string) {
@@ -1159,15 +1262,14 @@ export function createUserRepository(): UserRepository {
           .then(response => mapGooglePlace(response.place))
           .catch(() => null);
         const directPromise = getDirectGooglePlaceDetails(placeId);
-        const firstResult = await Promise.race([
-          backendPromise,
-          directPromise,
-        ]);
+        const firstResult = await Promise.race([backendPromise, directPromise]);
 
         if (firstResult) {
-          Promise.all([backendPromise, directPromise]).then(([backend, direct]) => {
-            placeDetailsCache.set(placeId, backend || direct || firstResult);
-          });
+          Promise.all([backendPromise, directPromise]).then(
+            ([backend, direct]) => {
+              placeDetailsCache.set(placeId, backend || direct || firstResult);
+            },
+          );
           return firstResult;
         }
 

@@ -25,6 +25,28 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function optionalNonNegativeNumber(value: unknown) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function normalizeProductDistance(product: ProductsResponse['products'][number]) {
+  const record = product as unknown as Record<string, unknown>;
+  const distanceKm =
+    optionalNonNegativeNumber(record.distance) ??
+    optionalNonNegativeNumber(record.distance_km) ??
+    optionalNonNegativeNumber(record.product_distance);
+  const distanceMeters = optionalNonNegativeNumber(record.distance_meters);
+  const normalizedDistance =
+    distanceKm ??
+    (distanceMeters === undefined ? undefined : distanceMeters / 1000);
+
+  return normalizedDistance === undefined
+    ? product
+    : { ...product, distance: normalizedDistance };
+}
+
 async function getCartProducts() {
   const response = await apiBridge.post<CartCheckoutResponse>(
     apiRoutes.products.market,
@@ -41,7 +63,9 @@ function isAlreadyInCartError(error: unknown) {
 function normalizeProductsResponse(response: ProductsResponse): ProductsResponse {
   return {
     ...response,
-    products: Array.isArray(response.products) ? response.products : [],
+    products: Array.isArray(response.products)
+      ? response.products.map(normalizeProductDistance)
+      : [],
     products_categories:
       response.products_categories && typeof response.products_categories === 'object'
         ? response.products_categories
@@ -112,6 +136,8 @@ export function createProductRepository(): ProductRepository {
           sub_id: input?.sub_id,
           keyword: input?.keyword,
           distance: input?.distance,
+          lat: input?.lat,
+          lng: input?.lng,
           order_by: input?.order_by,
           product_id: input?.product_id,
         },

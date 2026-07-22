@@ -17,6 +17,8 @@ import { MapPin, X, ChevronRight } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { apiRoutes } from '../../application/constants/route-registry';
 import { createAsyncResourceCache } from '../../application/utils/asyncResourceCache';
+import { filterAddressPredictions } from '../../application/utils/addressPredictionRelevance';
+import { parseMapCoordinate } from '../../application/utils/mapCoordinate';
 import { apiBridge } from '../../infrastructure/api/apiBridge';
 import { useAppLanguage } from '../../application/hooks/useAppLanguage';
 
@@ -56,6 +58,7 @@ const addressDetailsCache = createAsyncResourceCache<PlaceDetailsResponse>({
   ttlMs: 10 * 60 * 1000,
   maxEntries: 160,
 });
+const MIN_AUTOCOMPLETE_CHARS = 2;
 
 function addressPredictionCacheKey(
   language: string,
@@ -90,14 +93,14 @@ const AUTOCOMPLETE_COPY = {
   vi: {
     title: 'Tìm địa điểm',
     placeholder: 'Nhập địa điểm cần tìm...',
-    minChars: 'Nhập ít nhất 3 ký tự để tìm địa điểm.',
+    minChars: 'Nhập ít nhất 2 ký tự để tìm địa điểm.',
     empty: 'Không có gợi ý địa chỉ phù hợp.',
     error: 'Không tải được gợi ý địa chỉ.',
   },
   en: {
     title: 'Search Location',
     placeholder: 'Enter location to search...',
-    minChars: 'Enter at least 3 characters to search.',
+    minChars: 'Enter at least 2 characters to search.',
     empty: 'No matching address suggestions.',
     error: 'Failed to load address suggestions.',
   },
@@ -126,6 +129,7 @@ export function AddressAutocomplete({
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestQueryRef = useRef(value);
+  const searchRequestIdRef = useRef(0);
   const isModalOpenRef = useRef(false);
   const modalInputRef = useRef<TextInput>(null);
 
@@ -142,6 +146,7 @@ export function AddressAutocomplete({
   useEffect(
     () => () => {
       isModalOpenRef.current = false;
+      searchRequestIdRef.current += 1;
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -162,10 +167,15 @@ export function AddressAutocomplete({
   const fetchPredictions = useCallback(
     async (input: string) => {
       const trimmedInput = input.trim();
-      if (!trimmedInput || trimmedInput.length < 3) {
-        if (latestQueryRef.current.trim().length < 3) {
+      const requestId = ++searchRequestIdRef.current;
+      if (!trimmedInput || trimmedInput.length < MIN_AUTOCOMPLETE_CHARS) {
+        if (
+          requestId === searchRequestIdRef.current &&
+          latestQueryRef.current.trim().length < MIN_AUTOCOMPLETE_CHARS
+        ) {
           setPredictions([]);
           setErrorMessage('');
+          setIsLoading(false);
         }
         return;
       }
@@ -177,9 +187,18 @@ export function AddressAutocomplete({
       );
       const cachedPredictions = addressPredictionCache.get(cacheKey);
       if (cachedPredictions !== undefined) {
-        if (input === latestQueryRef.current && isModalOpenRef.current) {
-          setPredictions(cachedPredictions);
-          setErrorMessage(cachedPredictions.length === 0 ? copy.empty : '');
+        const visibleCachedPredictions = preferAddressSearch
+          ? filterAddressPredictions(trimmedInput, cachedPredictions)
+          : cachedPredictions;
+        if (
+          requestId === searchRequestIdRef.current &&
+          input === latestQueryRef.current &&
+          isModalOpenRef.current
+        ) {
+          setPredictions(visibleCachedPredictions);
+          setErrorMessage(
+            visibleCachedPredictions.length === 0 ? copy.empty : '',
+          );
           setIsLoading(false);
         }
         return;
@@ -201,25 +220,42 @@ export function AddressAutocomplete({
                 prefer_address: preferAddressSearch ? 1 : undefined,
               },
             );
-            return Array.isArray(data.predictions) ? data.predictions : [];
+            const receivedPredictions = Array.isArray(data.predictions)
+              ? data.predictions
+              : [];
+            return preferAddressSearch
+              ? filterAddressPredictions(trimmedInput, receivedPredictions)
+              : receivedPredictions;
           },
         );
 
         // Prevent race condition: only update state if this matches the latest typed input
-        if (input !== latestQueryRef.current || !isModalOpenRef.current) {
+        if (
+          requestId !== searchRequestIdRef.current ||
+          input !== latestQueryRef.current ||
+          !isModalOpenRef.current
+        ) {
           return;
         }
 
         setPredictions(nextPredictions);
         setErrorMessage(nextPredictions.length === 0 ? copy.empty : '');
       } catch (error) {
-        if (input !== latestQueryRef.current || !isModalOpenRef.current) {
+        if (
+          requestId !== searchRequestIdRef.current ||
+          input !== latestQueryRef.current ||
+          !isModalOpenRef.current
+        ) {
           return;
         }
         setPredictions([]);
         setErrorMessage(getErrorMessage(error));
       } finally {
-        if (input === latestQueryRef.current && isModalOpenRef.current) {
+        if (
+          requestId === searchRequestIdRef.current &&
+          input === latestQueryRef.current &&
+          isModalOpenRef.current
+        ) {
           setIsLoading(false);
         }
       }
@@ -229,17 +265,21 @@ export function AddressAutocomplete({
 
   const openModal = useCallback(() => {
     isModalOpenRef.current = true;
+    searchRequestIdRef.current += 1;
     latestQueryRef.current = value;
     setModalQuery(value);
+    setPredictions([]);
     setIsModalVisible(true);
+    setIsLoading(false);
     setErrorMessage('');
-    if (value.trim().length >= 3) {
+    if (value.trim().length >= MIN_AUTOCOMPLETE_CHARS) {
       fetchPredictions(value);
     }
   }, [fetchPredictions, value]);
 
   const closeModal = useCallback(() => {
     isModalOpenRef.current = false;
+    searchRequestIdRef.current += 1;
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
@@ -248,6 +288,7 @@ export function AddressAutocomplete({
     }
     setIsModalVisible(false);
     setIsLoading(false);
+    setPredictions([]);
     Keyboard.dismiss();
   }, []);
 
@@ -256,10 +297,20 @@ export function AddressAutocomplete({
       setModalQuery(text);
       onChangeText(text);
       latestQueryRef.current = text;
+      searchRequestIdRef.current += 1;
+      setPredictions([]);
+      setErrorMessage('');
 
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
+
+      if (text.trim().length < MIN_AUTOCOMPLETE_CHARS) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
 
       debounceTimerRef.current = setTimeout(() => {
         fetchPredictions(text);
@@ -270,22 +321,23 @@ export function AddressAutocomplete({
 
   const handleSelectPrediction = useCallback(
     async (prediction: PlacePrediction) => {
+      searchRequestIdRef.current += 1;
       const placeId = prediction.place_id || prediction.placeId || '';
       const mainText =
         prediction.main_text || prediction.mainText || prediction.description;
       const secondaryText =
         prediction.secondary_text || prediction.secondaryText || '';
+      const predictionCoordinate = parseMapCoordinate(
+        prediction.lat,
+        prediction.lng,
+      );
       let selected = {
         description: prediction.description,
         placeId,
         mainText,
         secondaryText,
-        lat: Number.isFinite(Number(prediction.lat))
-          ? Number(prediction.lat)
-          : undefined,
-        lng: Number.isFinite(Number(prediction.lng))
-          ? Number(prediction.lng)
-          : undefined,
+        lat: predictionCoordinate?.latitude,
+        lng: predictionCoordinate?.longitude,
       };
 
       if (placeId && (selected.lat === undefined || selected.lng === undefined)) {
@@ -304,14 +356,13 @@ export function AddressAutocomplete({
               ),
           );
           const place = details.place;
-          const lat = Number(place?.lat);
-          const lng = Number(place?.lng);
+          const detailsCoordinate = parseMapCoordinate(place?.lat, place?.lng);
           selected = {
             ...selected,
             description: place?.address || selected.description,
             mainText: place?.name || selected.mainText,
-            lat: Number.isFinite(lat) ? lat : undefined,
-            lng: Number.isFinite(lng) ? lng : undefined,
+            lat: detailsCoordinate?.latitude,
+            lng: detailsCoordinate?.longitude,
           };
         } catch (error) {
           console.warn('[AddressAutocomplete] place details failed', error);
@@ -333,6 +384,7 @@ export function AddressAutocomplete({
 
   const handleClear = useCallback(() => {
     isModalOpenRef.current = false;
+    searchRequestIdRef.current += 1;
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
@@ -413,7 +465,8 @@ export function AddressAutocomplete({
             </View>
           </View>
 
-          {modalQuery.trim().length > 0 && modalQuery.trim().length < 3 ? (
+          {modalQuery.trim().length > 0 &&
+          modalQuery.trim().length < MIN_AUTOCOMPLETE_CHARS ? (
             <Text style={styles.helperText}>
               {copy.minChars}
             </Text>

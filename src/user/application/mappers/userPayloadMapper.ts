@@ -96,6 +96,7 @@ export function toNearbyPagesQuery(input?: NearbyPagesInput) {
   putIfDefined(query, 'limit', input?.limit);
   putIfDefined(query, 'origin_lat', input?.lat);
   putIfDefined(query, 'origin_lng', input?.lng);
+  putIfDefined(query, 'global_search', input?.globalSearch ? 1 : undefined);
   return query;
 }
 

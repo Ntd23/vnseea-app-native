@@ -121,6 +121,14 @@ export type NearbyUsersInput = {
 
 export type NearbyPlaceKind = 'page' | 'shop' | 'business';
 
+export type MapPlaceReview = {
+  authorName: string;
+  rating?: number;
+  relativeTimeDescription?: string;
+  text?: string;
+  time?: number;
+};
+
 export type NearbyPlace = {
   id: string;
   pageId?: string;
@@ -153,8 +161,20 @@ export type NearbyPlace = {
     latitude: number;
     longitude: number;
   };
+  types?: string[];
   icon?: string;
   iconBackgroundColor?: string;
+  rating?: number;
+  ratingsTotal?: number;
+  openNow?: boolean;
+  photoUrls?: string[];
+  reviews?: MapPlaceReview[];
+  editorialSummary?: string;
+  phoneNumber?: string;
+  website?: string;
+  weekdayText?: string[];
+  businessStatus?: string;
+  priceLevel?: number;
 };
 
 export type NearbyPlacesInput = Pick<
@@ -167,6 +187,19 @@ export type NearbyPagesInput = Pick<
   'distance' | 'keyword' | 'limit' | 'lat' | 'lng'
 > & {
   fast?: boolean;
+  globalSearch?: boolean;
+  signal?: AbortSignal;
+};
+
+export type MapPlacePredictionsInput = {
+  query: string;
+  category?: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+  fast?: boolean;
+  globalSearch?: boolean;
+  signal?: AbortSignal;
 };
 
 export type MapPlacePrediction = {

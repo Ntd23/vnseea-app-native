@@ -26,6 +26,8 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
+import { filterAddressPredictions } from '../../../shared-kernel/application/utils/addressPredictionRelevance';
+import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
 
 export type PageLocationCoordinate = {
   latitude: number;
@@ -78,6 +80,11 @@ const DEFAULT_DELTAS = {
   latitudeDelta: 0.025,
   longitudeDelta: 0.025,
 };
+const SELECTED_PLACE_DELTAS = {
+  latitudeDelta: 0.0008,
+  longitudeDelta: 0.0008,
+};
+const MIN_SEARCH_CHARS = 2;
 const SEARCH_DEBOUNCE_MS = 320;
 const REVERSE_GEOCODE_DEBOUNCE_MS = 620;
 
@@ -87,38 +94,37 @@ const COPY = {
     searchPlaceholder: 'Tìm địa chỉ, tên đường, tòa nhà...',
     useCurrent: 'Vị trí của tôi',
     confirm: 'Xác nhận vị trí này',
-    resolving: 'Đang xác định địa chỉ...',
+    resolving: 'Đang tìm vị trí gần ghim...',
     dragHint: 'Kéo bản đồ để ghim vào đúng vị trí',
+    enteredAddress: 'Địa chỉ đã nhập',
+    nearbyLocation: 'Vị trí gần ghim',
+    pinCoordinates: 'Tọa độ ghim chính xác',
+    coordinateOnly: 'Đã lấy tọa độ ghim; chưa tìm được tên vị trí gần đó.',
     empty: 'Không tìm thấy địa chỉ phù hợp.',
     searchError: 'Không tải được gợi ý địa chỉ.',
-    reverseError: 'Chưa xác định được địa chỉ tại ghim này. Hãy kéo nhẹ đến vị trí gần hơn.',
     locationError: 'Không lấy được vị trí hiện tại. Bạn vẫn có thể tự kéo bản đồ.',
-    addressError: 'Hãy chọn hoặc kéo đến một địa chỉ hợp lệ trước khi xác nhận.',
+    addressError: 'Hãy nhập địa chỉ và chọn tọa độ ghim trước khi xác nhận.',
   },
   en: {
     title: 'Choose page location',
     searchPlaceholder: 'Search address, street, building...',
     useCurrent: 'My location',
     confirm: 'Confirm this location',
-    resolving: 'Resolving address...',
+    resolving: 'Finding a nearby location...',
     dragHint: 'Drag the map to place the pin exactly',
+    enteredAddress: 'Entered address',
+    nearbyLocation: 'Near the pin',
+    pinCoordinates: 'Exact pin coordinates',
+    coordinateOnly: 'The pin coordinates are ready; no nearby location name was found.',
     empty: 'No matching address found.',
     searchError: 'Unable to load address suggestions.',
-    reverseError: 'Could not resolve this pin to an address. Move it slightly and try again.',
     locationError: 'Unable to get your location. You can still move the map manually.',
-    addressError: 'Choose or move to a valid address before confirming.',
+    addressError: 'Enter an address and choose pin coordinates before confirming.',
   },
 } as const;
 
 function isValidCoordinate(latitude: number, longitude: number) {
-  return (
-    Number.isFinite(latitude) &&
-    Number.isFinite(longitude) &&
-    latitude >= -90 &&
-    latitude <= 90 &&
-    longitude >= -180 &&
-    longitude <= 180
-  );
+  return parseMapCoordinate(latitude, longitude) !== null;
 }
 
 function toRegion(coordinate: PageLocationCoordinate, deltas = DEFAULT_DELTAS): Region {
@@ -131,11 +137,7 @@ function toRegion(coordinate: PageLocationCoordinate, deltas = DEFAULT_DELTAS): 
 }
 
 function toCoordinate(latitude: unknown, longitude: unknown): PageLocationCoordinate | null {
-  const nextLatitude = Number(latitude);
-  const nextLongitude = Number(longitude);
-  return isValidCoordinate(nextLatitude, nextLongitude)
-    ? { latitude: nextLatitude, longitude: nextLongitude }
-    : null;
+  return parseMapCoordinate(latitude, longitude);
 }
 
 function mapPrediction(record: PlacePrediction, index: number) {
@@ -165,12 +167,18 @@ export default function PageLocationPickerModal({
   const copy = COPY[language] || COPY.vi;
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView | null>(null);
+  const mapReadyRef = useRef(false);
+  const mapGestureRef = useRef(false);
   const regionRef = useRef<Region>(
     toRegion(
       initialCoordinate &&
         isValidCoordinate(initialCoordinate.latitude, initialCoordinate.longitude)
         ? initialCoordinate
         : DEFAULT_COORDINATE,
+      initialCoordinate &&
+        isValidCoordinate(initialCoordinate.latitude, initialCoordinate.longitude)
+        ? SELECTED_PLACE_DELTAS
+        : DEFAULT_DELTAS,
     ),
   );
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,28 +187,84 @@ export default function PageLocationPickerModal({
   const reverseRequestIdRef = useRef(0);
   const sessionIdRef = useRef(0);
   const latestQueryRef = useRef(initialAddress);
-  const skipNextSearchRef = useRef(false);
-  const hasResolvedAddressRef = useRef(
-    Boolean(initialAddress.trim() && initialCoordinate),
-  );
+  const primaryAddressRef = useRef(initialAddress.trim());
+  const suppressedSearchQueryRef = useRef<string | null>(null);
+  const initialPlaceRequestIdRef = useRef(0);
   const [region, setRegion] = useState<Region>(regionRef.current);
   const [query, setQuery] = useState(initialAddress);
   const [predictions, setPredictions] = useState<MappedPrediction[]>([]);
   const [selectedAddress, setSelectedAddress] = useState(initialAddress);
   const [selectedPlaceId, setSelectedPlaceId] = useState(initialPlaceId);
+  const [nearbyAddress, setNearbyAddress] = useState('');
+  const [hasPinnedCoordinate, setHasPinnedCoordinate] = useState(
+    Boolean(
+      initialCoordinate &&
+        isValidCoordinate(initialCoordinate.latitude, initialCoordinate.longitude),
+    ),
+  );
+  const [reverseLookupFailed, setReverseLookupFailed] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const animateToCoordinate = useCallback(
-    (coordinate: PageLocationCoordinate, deltas = DEFAULT_DELTAS) => {
-      const nextRegion = toRegion(coordinate, deltas);
-      regionRef.current = nextRegion;
-      setRegion(nextRegion);
-      mapRef.current?.animateToRegion(nextRegion, 450);
+  const cancelPendingReverseGeocode = useCallback(() => {
+    reverseRequestIdRef.current += 1;
+    if (reverseTimerRef.current) {
+      clearTimeout(reverseTimerRef.current);
+      reverseTimerRef.current = null;
+    }
+    setIsResolving(false);
+  }, []);
+
+  const prepareManualPinMove = useCallback(() => {
+    setSelectedPlaceId(undefined);
+    setNearbyAddress('');
+    setReverseLookupFailed(false);
+    searchRequestIdRef.current += 1;
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    setPredictions([]);
+    setIsSearching(false);
+  }, []);
+
+  const applyPrimaryAddress = useCallback(
+    (address: string, placeId?: string) => {
+      primaryAddressRef.current = address;
+      suppressedSearchQueryRef.current = address;
+      latestQueryRef.current = address;
+      setQuery(address);
+      setSelectedAddress(address);
+      setSelectedPlaceId(placeId);
+      setNearbyAddress('');
+      setReverseLookupFailed(false);
+      setErrorMessage('');
     },
     [],
   );
+
+  const animateToCoordinate = useCallback(
+    (coordinate: PageLocationCoordinate, deltas = DEFAULT_DELTAS) => {
+      cancelPendingReverseGeocode();
+      mapGestureRef.current = false;
+      const nextRegion = toRegion(coordinate, deltas);
+      regionRef.current = nextRegion;
+      setRegion(nextRegion);
+      setHasPinnedCoordinate(true);
+      if (mapReadyRef.current) {
+        mapRef.current?.animateToRegion(nextRegion, 450);
+      }
+    },
+    [cancelPendingReverseGeocode],
+  );
+
+  const handleMapReady = useCallback(() => {
+    mapReadyRef.current = true;
+    // Modal content and MapView can become ready on different frames. Reapply
+    // the latest region here so the map never remains on the default city.
+    mapRef.current?.animateToRegion(regionRef.current, 250);
+  }, []);
 
   const reverseGeocode = useCallback(
     async (coordinate: PageLocationCoordinate, sessionId: number) => {
@@ -224,26 +288,28 @@ export default function PageLocationPickerModal({
           return;
         }
         const place = response.place;
-        const resolvedCoordinate = toCoordinate(place?.lat, place?.lng);
         const address = String(place?.address || place?.name || '').trim();
-        if (resolvedCoordinate) {
-          regionRef.current = {
-            ...regionRef.current,
-            ...resolvedCoordinate,
-          };
-          setRegion(current => ({ ...current, ...resolvedCoordinate }));
+        if (!address) {
+          setNearbyAddress('');
+          setReverseLookupFailed(true);
+          return;
         }
-        setSelectedAddress(address);
-        setSelectedPlaceId(String(place?.place_id || '') || undefined);
-        hasResolvedAddressRef.current = Boolean(address);
-        setErrorMessage('');
+        const placeId = String(place?.place_id || '') || undefined;
+        const primaryAddress = primaryAddressRef.current.trim();
+        if (!primaryAddress) {
+          applyPrimaryAddress(address, placeId);
+        } else {
+          setNearbyAddress(address === primaryAddress ? '' : address);
+          setReverseLookupFailed(false);
+          setErrorMessage('');
+        }
       } catch {
         if (
           sessionId === sessionIdRef.current &&
           requestId === reverseRequestIdRef.current
         ) {
-          setErrorMessage(copy.reverseError);
-          hasResolvedAddressRef.current = false;
+          setNearbyAddress('');
+          setReverseLookupFailed(true);
         }
       } finally {
         if (
@@ -254,7 +320,7 @@ export default function PageLocationPickerModal({
         }
       }
     },
-    [copy.reverseError, language],
+    [applyPrimaryAddress, language],
   );
 
   const scheduleReverseGeocode = useCallback(
@@ -262,7 +328,7 @@ export default function PageLocationPickerModal({
       // Invalidate an in-flight request immediately when the user moves the
       // map, so a slower response for the previous center cannot overwrite
       // the address currently under the pin.
-      reverseRequestIdRef.current += 1;
+      const scheduledRequestId = ++reverseRequestIdRef.current;
       if (reverseTimerRef.current) {
         clearTimeout(reverseTimerRef.current);
       }
@@ -270,8 +336,16 @@ export default function PageLocationPickerModal({
         latitude: nextRegion.latitude,
         longitude: nextRegion.longitude,
       };
+      setErrorMessage('');
       setIsResolving(true);
       reverseTimerRef.current = setTimeout(() => {
+        reverseTimerRef.current = null;
+        if (
+          sessionId !== sessionIdRef.current ||
+          scheduledRequestId !== reverseRequestIdRef.current
+        ) {
+          return;
+        }
         reverseGeocode(coordinate, sessionId);
       }, REVERSE_GEOCODE_DEBOUNCE_MS);
     },
@@ -281,7 +355,7 @@ export default function PageLocationPickerModal({
   const fetchPredictions = useCallback(
     async (searchText: string, sessionId: number) => {
       const trimmed = searchText.trim();
-      if (trimmed.length < 3) {
+      if (trimmed.length < MIN_SEARCH_CHARS) {
         setPredictions([]);
         setIsSearching(false);
         return;
@@ -308,7 +382,10 @@ export default function PageLocationPickerModal({
         ) {
           return;
         }
-        const nextPredictions = (response.predictions || [])
+        const nextPredictions = filterAddressPredictions(
+          trimmed,
+          response.predictions || [],
+        )
           .map(mapPrediction)
           .filter(Boolean) as MappedPrediction[];
         setPredictions(nextPredictions);
@@ -337,29 +414,117 @@ export default function PageLocationPickerModal({
     [copy.empty, copy.searchError, language],
   );
 
+  const resolveInitialPlace = useCallback(
+    async (placeId: string, fallbackAddress: string, sessionId: number) => {
+      const requestId = ++initialPlaceRequestIdRef.current;
+      setIsResolving(true);
+      try {
+        const response = await apiBridge.post<PlaceDetailsResponse>(
+          apiRoutes.user.mapDiscovery,
+          {
+            type: 'place_details',
+            place_id: placeId,
+            language,
+            country: language === 'vi' ? 'vn' : undefined,
+          },
+        );
+        if (
+          sessionId !== sessionIdRef.current ||
+          requestId !== initialPlaceRequestIdRef.current
+        ) {
+          return;
+        }
+
+        const coordinate = toCoordinate(response.place?.lat, response.place?.lng);
+        if (!coordinate) {
+          setSelectedPlaceId(undefined);
+          setHasPinnedCoordinate(false);
+          setErrorMessage(copy.searchError);
+          return;
+        }
+
+        const address = String(
+          fallbackAddress || response.place?.address || response.place?.name,
+        ).trim();
+        if (!address) {
+          setSelectedAddress('');
+          setSelectedPlaceId(undefined);
+          primaryAddressRef.current = '';
+          setHasPinnedCoordinate(false);
+          setErrorMessage(copy.searchError);
+          return;
+        }
+        const resolvedPlaceId =
+          String(response.place?.place_id || placeId) || undefined;
+        applyPrimaryAddress(address, resolvedPlaceId);
+        animateToCoordinate(coordinate, {
+          ...SELECTED_PLACE_DELTAS,
+        });
+      } catch {
+        if (
+          sessionId === sessionIdRef.current &&
+          requestId === initialPlaceRequestIdRef.current
+        ) {
+          setSelectedPlaceId(undefined);
+          setHasPinnedCoordinate(false);
+          setErrorMessage(copy.searchError);
+        }
+      } finally {
+        if (
+          sessionId === sessionIdRef.current &&
+          requestId === initialPlaceRequestIdRef.current
+        ) {
+          setIsResolving(false);
+        }
+      }
+    },
+    [animateToCoordinate, applyPrimaryAddress, copy.searchError, language],
+  );
+
   useEffect(() => {
     if (!visible) return;
     const sessionId = ++sessionIdRef.current;
+    initialPlaceRequestIdRef.current += 1;
+    cancelPendingReverseGeocode();
+    mapGestureRef.current = false;
     const coordinate =
       initialCoordinate &&
       isValidCoordinate(initialCoordinate.latitude, initialCoordinate.longitude)
         ? initialCoordinate
         : null;
-    const nextRegion = toRegion(coordinate || DEFAULT_COORDINATE);
+    const nextRegion = toRegion(
+      coordinate || DEFAULT_COORDINATE,
+      coordinate ? SELECTED_PLACE_DELTAS : DEFAULT_DELTAS,
+    );
     regionRef.current = nextRegion;
     setRegion(nextRegion);
     setQuery(initialAddress);
+    primaryAddressRef.current = initialAddress.trim();
     latestQueryRef.current = initialAddress;
-    skipNextSearchRef.current = false;
+    suppressedSearchQueryRef.current =
+      initialAddress.trim() && (coordinate || initialPlaceId)
+        ? initialAddress
+        : null;
     setSelectedAddress(initialAddress);
     setSelectedPlaceId(initialPlaceId);
-    hasResolvedAddressRef.current = Boolean(initialAddress.trim() && coordinate);
+    setNearbyAddress('');
+    setReverseLookupFailed(false);
+    setHasPinnedCoordinate(Boolean(coordinate));
     setPredictions([]);
     setErrorMessage('');
     setIsResolving(false);
     if (coordinate) {
-      mapRef.current?.animateToRegion(nextRegion, 250);
-      scheduleReverseGeocode(nextRegion, sessionId);
+      if (mapReadyRef.current) {
+        mapRef.current?.animateToRegion(nextRegion, 250);
+      }
+      // Keep the selected suggestion visible. Reverse geocoding is needed
+      // after the user pans, but would unnecessarily replace this address
+      // while the picker is opening.
+      if (!initialAddress.trim()) {
+        scheduleReverseGeocode(nextRegion, sessionId);
+      }
+    } else if (initialPlaceId) {
+      resolveInitialPlace(initialPlaceId, initialAddress, sessionId);
     }
 
     return () => {
@@ -371,6 +536,8 @@ export default function PageLocationPickerModal({
     initialAddress,
     initialCoordinate,
     initialPlaceId,
+    cancelPendingReverseGeocode,
+    resolveInitialPlace,
     scheduleReverseGeocode,
     visible,
   ]);
@@ -381,17 +548,18 @@ export default function PageLocationPickerModal({
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     latestQueryRef.current = query;
     searchRequestIdRef.current += 1;
-    if (skipNextSearchRef.current) {
-      skipNextSearchRef.current = false;
-      setPredictions([]);
+    setPredictions([]);
+    setErrorMessage('');
+    if (suppressedSearchQueryRef.current === query) {
+      suppressedSearchQueryRef.current = null;
       setIsSearching(false);
       return;
     }
-    if (query.trim().length < 3) {
-      setPredictions([]);
+    if (query.trim().length < MIN_SEARCH_CHARS) {
       setIsSearching(false);
       return;
     }
+    setIsSearching(true);
     searchTimerRef.current = setTimeout(() => {
       fetchPredictions(query, sessionId);
     }, SEARCH_DEBOUNCE_MS);
@@ -400,24 +568,63 @@ export default function PageLocationPickerModal({
     };
   }, [fetchPredictions, query, visible]);
 
+  const handleRegionChangeStart = useCallback(
+    (_nextRegion: Region, details?: { isGesture?: boolean }) => {
+      if (details?.isGesture === true) {
+        initialPlaceRequestIdRef.current += 1;
+        cancelPendingReverseGeocode();
+        prepareManualPinMove();
+        mapGestureRef.current = true;
+        setErrorMessage('');
+      }
+    },
+    [cancelPendingReverseGeocode, prepareManualPinMove],
+  );
+
+  const handlePanDrag = useCallback(() => {
+    if (!mapGestureRef.current) {
+      initialPlaceRequestIdRef.current += 1;
+      cancelPendingReverseGeocode();
+      prepareManualPinMove();
+    }
+    mapGestureRef.current = true;
+    setErrorMessage('');
+    Keyboard.dismiss();
+  }, [cancelPendingReverseGeocode, prepareManualPinMove]);
+
   const handleRegionChangeComplete = useCallback(
-    (nextRegion: Region) => {
+    (nextRegion: Region, details?: { isGesture?: boolean }) => {
       regionRef.current = nextRegion;
       setRegion(nextRegion);
-      hasResolvedAddressRef.current = false;
-      setSelectedAddress('');
-      setSelectedPlaceId(undefined);
+      const movedByUser =
+        mapGestureRef.current || details?.isGesture === true;
+      mapGestureRef.current = false;
+      if (!movedByUser) {
+        return;
+      }
+      // The user-entered address and the exact pin are separate fields. Keep
+      // the text, but detach the old Google place ID from the new coordinate.
+      prepareManualPinMove();
+      setHasPinnedCoordinate(true);
       scheduleReverseGeocode(nextRegion, sessionIdRef.current);
     },
-    [scheduleReverseGeocode],
+    [prepareManualPinMove, scheduleReverseGeocode],
   );
 
   const handleSelectPrediction = useCallback(
     async (prediction: MappedPrediction) => {
       Keyboard.dismiss();
+      cancelPendingReverseGeocode();
+      initialPlaceRequestIdRef.current += 1;
+      searchRequestIdRef.current += 1;
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = null;
+      }
       setPredictions([]);
       setErrorMessage('');
-      skipNextSearchRef.current = true;
+      suppressedSearchQueryRef.current = prediction.description;
+      latestQueryRef.current = prediction.description;
       setQuery(prediction.description);
       const sessionId = sessionIdRef.current;
       let coordinate = prediction.coordinate;
@@ -443,25 +650,35 @@ export default function PageLocationPickerModal({
       }
 
       if (
-        !coordinate ||
         sessionId !== sessionIdRef.current ||
         prediction.description !== latestQueryRef.current
       ) {
-        setSelectedAddress(address);
-        setSelectedPlaceId(placeId);
-        hasResolvedAddressRef.current = false;
         return;
       }
 
-      setSelectedAddress(address);
-      setSelectedPlaceId(placeId);
-      hasResolvedAddressRef.current = Boolean(address);
+      if (!coordinate || !address) {
+        primaryAddressRef.current = address;
+        setSelectedAddress(address);
+        setSelectedPlaceId(undefined);
+        setNearbyAddress('');
+        setReverseLookupFailed(false);
+        setHasPinnedCoordinate(false);
+        setErrorMessage(copy.searchError);
+        return;
+      }
+
+      applyPrimaryAddress(address, placeId);
       animateToCoordinate(coordinate, {
-        latitudeDelta: 0.008,
-        longitudeDelta: 0.008,
+        ...SELECTED_PLACE_DELTAS,
       });
     },
-    [animateToCoordinate, language],
+    [
+      animateToCoordinate,
+      applyPrimaryAddress,
+      cancelPendingReverseGeocode,
+      copy.searchError,
+      language,
+    ],
   );
 
   const handleUseCurrentLocation = useCallback(async () => {
@@ -472,8 +689,7 @@ export default function PageLocationPickerModal({
         latitude: current.latitude,
         longitude: current.longitude,
       };
-      hasResolvedAddressRef.current = false;
-      setSelectedAddress('');
+      prepareManualPinMove();
       animateToCoordinate(coordinate, {
         latitudeDelta: 0.006,
         longitudeDelta: 0.006,
@@ -482,21 +698,37 @@ export default function PageLocationPickerModal({
     } catch {
       setErrorMessage(copy.locationError);
     }
-  }, [animateToCoordinate, copy.locationError, scheduleReverseGeocode]);
+  }, [
+    animateToCoordinate,
+    copy.locationError,
+    prepareManualPinMove,
+    scheduleReverseGeocode,
+  ]);
 
-  const handleQueryChange = useCallback((text: string) => {
-    skipNextSearchRef.current = false;
-    latestQueryRef.current = text;
-    setQuery(text);
-  }, []);
+  const handleQueryChange = useCallback(
+    (text: string) => {
+      cancelPendingReverseGeocode();
+      suppressedSearchQueryRef.current = null;
+      initialPlaceRequestIdRef.current += 1;
+      primaryAddressRef.current = text;
+      latestQueryRef.current = text;
+      setQuery(text);
+      setSelectedAddress(text);
+      setSelectedPlaceId(undefined);
+      setNearbyAddress('');
+      setReverseLookupFailed(false);
+      setErrorMessage('');
+    },
+    [cancelPendingReverseGeocode],
+  );
 
   const handleConfirm = useCallback(() => {
     const currentRegion = regionRef.current;
     const address = selectedAddress.trim();
     if (
+      !hasPinnedCoordinate ||
       !isValidCoordinate(currentRegion.latitude, currentRegion.longitude) ||
-      !address ||
-      !hasResolvedAddressRef.current
+      !address
     ) {
       setErrorMessage(copy.addressError);
       return;
@@ -508,7 +740,18 @@ export default function PageLocationPickerModal({
       lng: currentRegion.longitude,
     });
     Keyboard.dismiss();
-  }, [copy.addressError, onConfirm, selectedAddress, selectedPlaceId]);
+  }, [
+    copy.addressError,
+    hasPinnedCoordinate,
+    onConfirm,
+    selectedAddress,
+    selectedPlaceId,
+  ]);
+
+  const canConfirm =
+    hasPinnedCoordinate &&
+    isValidCoordinate(region.latitude, region.longitude) &&
+    Boolean(selectedAddress.trim());
 
   return (
     <Modal
@@ -516,6 +759,7 @@ export default function PageLocationPickerModal({
       animationType="slide"
       onRequestClose={onClose}
       statusBarTranslucent
+      navigationBarTranslucent={Platform.OS === 'android'}
     >
       <View style={styles.root}>
         <MapView
@@ -523,8 +767,10 @@ export default function PageLocationPickerModal({
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_GOOGLE}
           initialRegion={region}
+          onMapReady={handleMapReady}
+          onRegionChangeStart={handleRegionChangeStart}
           onRegionChangeComplete={handleRegionChangeComplete}
-          onPanDrag={Keyboard.dismiss}
+          onPanDrag={handlePanDrag}
           showsUserLocation={false}
           showsMyLocationButton={false}
           toolbarEnabled={false}
@@ -603,18 +849,37 @@ export default function PageLocationPickerModal({
               <MapPin size={19} color="#002fff" />
             </View>
             <View style={styles.addressCopy}>
+              <Text style={styles.addressLabel}>{copy.enteredAddress}</Text>
+              <Text style={styles.addressText} numberOfLines={3}>
+                {selectedAddress || copy.dragHint}
+              </Text>
               {isResolving ? (
                 <View style={styles.resolvingRow}>
                   <ActivityIndicator size="small" color="#002fff" />
                   <Text style={styles.resolvingText}>{copy.resolving}</Text>
                 </View>
-              ) : (
-                <Text style={styles.addressText} numberOfLines={3}>
-                  {selectedAddress || query || copy.dragHint}
+              ) : nearbyAddress ? (
+                <View style={styles.nearbyRow}>
+                  <Text style={styles.nearbyLabel}>{copy.nearbyLocation}: </Text>
+                  <Text style={styles.nearbyText} numberOfLines={2}>
+                    {nearbyAddress}
+                  </Text>
+                </View>
+              ) : reverseLookupFailed && hasPinnedCoordinate ? (
+                <Text style={styles.coordinateStatusText}>
+                  {copy.coordinateOnly}
                 </Text>
-              )}
+              ) : null}
             </View>
           </View>
+          {hasPinnedCoordinate ? (
+            <View style={styles.coordinateBox}>
+              <Text style={styles.coordinateLabel}>{copy.pinCoordinates}</Text>
+              <Text style={styles.coordinateValue}>
+                {region.latitude.toFixed(6)}, {region.longitude.toFixed(6)}
+              </Text>
+            </View>
+          ) : null}
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
           <View style={styles.actionsRow}>
             <TouchableOpacity
@@ -628,8 +893,8 @@ export default function PageLocationPickerModal({
             <TouchableOpacity
               activeOpacity={0.86}
               onPress={handleConfirm}
-              disabled={isResolving}
-              style={[styles.confirmButton, isResolving ? styles.confirmButtonDisabled : null]}
+              disabled={!canConfirm}
+              style={[styles.confirmButton, !canConfirm ? styles.confirmButtonDisabled : null]}
             >
               <Check size={18} color="#ffffff" strokeWidth={2.8} />
               <Text style={styles.confirmText}>{copy.confirm}</Text>
@@ -809,6 +1074,13 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 2,
   },
+  addressLabel: {
+    marginBottom: 2,
+    color: '#64748b',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
   addressText: {
     color: '#0f172a',
     fontSize: 15,
@@ -825,6 +1097,54 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 13,
     fontWeight: '600',
+  },
+  nearbyRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  nearbyLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+  nearbyText: {
+    flex: 1,
+    color: '#475569',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  coordinateStatusText: {
+    marginTop: 6,
+    color: '#475569',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  coordinateBox: {
+    marginTop: 9,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  coordinateLabel: {
+    color: '#64748b',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
+  coordinateValue: {
+    marginTop: 2,
+    color: '#1d4ed8',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
   errorText: {
     marginTop: 6,

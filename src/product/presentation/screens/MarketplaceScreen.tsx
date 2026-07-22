@@ -60,7 +60,7 @@ const MARKETPLACE_HEADER_ELEVATION_STYLE =
   Platform.OS === 'android'
     ? { zIndex: 30, elevation: 12 }
     : { zIndex: 30 };
-const FILTER_PANEL_FULL_HEIGHT = 264;
+const FILTER_PANEL_FULL_HEIGHT = 232;
 const FILTER_PANEL_COLLAPSED_HEIGHT = 72;
 const FILTER_COLLAPSE_THRESHOLD = 132;
 const FILTER_EXPAND_THRESHOLD = 72;
@@ -405,12 +405,14 @@ function MarketplaceScreen() {
     scrollIndicatorBottomInset,
   } = useMainTabContentInsets();
   const vm = useMarketplaceViewModel();
+  const setMarketplaceDistance = vm.setDistance;
   const nativeTabScrollPublisherStateRef = useRef(
     createNativeTabScrollPublisherState(),
   );
   const filterPanelProgress = useRef(new Animated.Value(0)).current;
   const filterAnimationRef = useRef<ReturnType<typeof Animated.timing> | null>(null);
   const hasActiveFilters = Boolean(vm.categoryId || vm.distance || vm.orderBy);
+  const nearbyProductsActive = vm.distance === 15 && !vm.distanceFilterError;
 
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -507,12 +509,12 @@ function MarketplaceScreen() {
   }, [vm.distance]);
 
   const handleNearbyStoresToggle = useCallback(() => {
-    if (vm.distance === 15) {
-      vm.setDistance(undefined);
+    if (nearbyProductsActive) {
+      setMarketplaceDistance(undefined);
     } else {
-      vm.setDistance(15);
+      setMarketplaceDistance(15);
     }
-  }, [vm]);
+  }, [nearbyProductsActive, setMarketplaceDistance]);
 
   const categoryOptions = useMemo(() => {
     return [
@@ -691,6 +693,7 @@ function MarketplaceScreen() {
           compact
           marketplaceFloatingActions
           product={item}
+          distanceLimitKm={vm.distanceFilterError ? undefined : vm.distance}
           onPress={handleProductPress}
           onContactSeller={handleContactSeller}
           onOrderRequest={ensureProductInCart}
@@ -698,7 +701,14 @@ function MarketplaceScreen() {
         />
       </View>
     ),
-    [ensureProductInCart, handleProductPress, handleContactSeller, orderingProductId],
+    [
+      ensureProductInCart,
+      handleProductPress,
+      handleContactSeller,
+      orderingProductId,
+      vm.distance,
+      vm.distanceFilterError,
+    ],
   );
  
   const handleMarketplaceScroll = useCallback(
@@ -865,45 +875,58 @@ function MarketplaceScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Row 3: Distance Dropdown */}
-        <TouchableOpacity
-          className={`flex-row items-center justify-between rounded-2xl border px-3.5 py-3 ${
-            vm.distance !== undefined
-              ? 'border-blue-200 bg-blue-50/60'
-              : 'border-slate-200/50 bg-slate-50/50'
-          }`}
-          activeOpacity={0.8}
-          onPress={() => setDistanceModalVisible(true)}
-        >
-          <View className="flex-row items-center gap-2">
-            <MapPin size={15} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
-            <Text
-              className={`text-sm font-semibold ${
-                vm.distance !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
-              }`}
-            >
-              {currentDistanceLabel}
-            </Text>
-          </View>
-          <ChevronDown size={14} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
-        </TouchableOpacity>
+        {/* Row 3: Distance and nearby products in one line. */}
+        <View className="flex-row gap-2.5">
+          <TouchableOpacity
+            className={`min-h-[62px] flex-1 flex-row items-center justify-between rounded-2xl border px-3 py-2.5 ${
+              vm.distance !== undefined
+                ? 'border-blue-200 bg-blue-50/60'
+                : 'border-slate-200/50 bg-slate-50/50'
+            }`}
+            activeOpacity={0.8}
+            onPress={() => setDistanceModalVisible(true)}
+          >
+            <View className="mr-1 flex-1 flex-row items-center gap-2">
+              <MapPin size={15} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
+              <Text
+                className={`flex-1 text-[13px] font-semibold ${
+                  vm.distance !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
+                }`}
+                numberOfLines={2}
+              >
+                {currentDistanceLabel}
+              </Text>
+            </View>
+            <ChevronDown size={14} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
+          </TouchableOpacity>
 
-        {/* Row 4: Cửa hàng lân cận (Go to Map) */}
-        <TouchableOpacity
-          className="flex-row items-center justify-between rounded-2xl border border-[#5252ff]/20 bg-[#5252ff]/5 px-3.5 py-3 mt-1.5"
-          activeOpacity={0.8}
-          onPress={() => navigate(ROUTES.NEARBY_USERS)}
-        >
-          <View className="flex-row items-center gap-2">
-            <Compass size={15} color="#5252ff" />
-            <Text className="text-sm font-bold text-[#5252ff]">
-              Cửa hàng lân cận
-            </Text>
-          </View>
-          <Text className="text-xs font-bold text-[#5252ff] bg-white px-2.5 py-1 rounded-full border border-[#5252ff]/10">
-            Xem bản đồ
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            className={`min-h-[62px] flex-1 flex-row items-center rounded-2xl border px-3 py-2.5 ${
+              nearbyProductsActive
+                ? 'border-[#0F56FB] bg-blue-50'
+                : 'border-[#5252ff]/20 bg-[#5252ff]/5'
+            }`}
+            activeOpacity={0.8}
+            onPress={handleNearbyStoresToggle}
+            accessibilityRole="button"
+            accessibilityState={{ selected: nearbyProductsActive }}
+          >
+            <Compass size={16} color={nearbyProductsActive ? '#0F56FB' : '#5252ff'} />
+            <View className="ml-2 flex-1">
+              <Text className="text-[13px] font-bold text-[#5252ff]" numberOfLines={1}>
+                Cửa hàng lân cận
+              </Text>
+              <Text
+                className={`mt-0.5 text-[10px] font-semibold ${
+                  vm.distanceFilterError ? 'text-red-500' : 'text-slate-500'
+                }`}
+                numberOfLines={1}
+              >
+                {vm.distanceFilterError ?? vm.distanceFilterStatus ?? (nearbyProductsActive ? 'Đang hiển thị' : 'Xem sản phẩm')}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -1087,7 +1110,10 @@ function MarketplaceScreen() {
           vm.isLoading ? (
             <MarketplaceSkeleton />
           ) : (
-            <EmptyState error={vm.error} onRetry={vm.reload} />
+            <EmptyState
+              error={vm.error ?? vm.distanceFilterError ?? vm.distanceFilterStatus}
+              onRetry={vm.reload}
+            />
           )
         }
         ListFooterComponent={
@@ -1117,7 +1143,7 @@ function MarketplaceScreen() {
       <DistancePickerModal
         visible={distanceModalVisible}
         value={vm.distance}
-        error={vm.distanceFilterError}
+        error={vm.distanceFilterError ?? vm.distanceFilterStatus}
         onChange={vm.setDistance}
         onClose={() => setDistanceModalVisible(false)}
       />

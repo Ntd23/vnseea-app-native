@@ -8,6 +8,7 @@ $response_data = array(
 $action = !empty($_POST['type']) ? Wo_Secure($_POST['type']) : '';
 $valid_actions = array('page_suggestions', 'place_autocomplete', 'place_details', 'reverse_geocode', 'route');
 define('WO_API_MAP_DISCOVERY_RADIUS_METERS', 3000);
+define('WO_API_MAP_DISCOVERY_MAX_RADIUS_METERS', 50000);
 
 function Wo_ApiMapDiscoveryError($error_id, $error_text, $api_status = 400) {
     return array(
@@ -105,10 +106,13 @@ function Wo_ApiMapDiscoveryRadiusMeters() {
         return WO_API_MAP_DISCOVERY_RADIUS_METERS;
     }
 
-    return min($radius, WO_API_MAP_DISCOVERY_RADIUS_METERS);
+    return min($radius, WO_API_MAP_DISCOVERY_MAX_RADIUS_METERS);
 }
 
 function Wo_ApiMapDiscoveryNormalizeSearchInput($input) {
+    static $transliterator_initialized = false;
+    static $transliterator = null;
+
     $clean = trim((string) $input);
     if ($clean === '') {
         return '';
@@ -121,7 +125,10 @@ function Wo_ApiMapDiscoveryNormalizeSearchInput($input) {
     }
 
     if (class_exists('Transliterator')) {
-        $transliterator = Transliterator::create('NFD; [:Nonspacing Mark:] Remove; NFC; Latin-ASCII');
+        if (!$transliterator_initialized) {
+            $transliterator = Transliterator::create('NFD; [:Nonspacing Mark:] Remove; NFC; Latin-ASCII');
+            $transliterator_initialized = true;
+        }
         if ($transliterator) {
             $clean = $transliterator->transliterate($clean);
         }
@@ -136,6 +143,81 @@ function Wo_ApiMapDiscoveryNormalizeSearchInput($input) {
     $clean = strtolower($clean);
     $clean = preg_replace('/[^a-z0-9]+/', ' ', $clean);
     return trim(preg_replace('/\s+/', ' ', $clean));
+}
+
+function Wo_ApiMapDiscoveryEscapeLike($input) {
+    global $sqlConnect;
+
+    $escaped = str_replace(array('=', '%', '_'), array('==', '=%', '=_'), (string) $input);
+    return mysqli_real_escape_string($sqlConnect, $escaped);
+}
+
+function Wo_ApiMapDiscoveryPageFulltextQuery($input) {
+    $normalized = Wo_ApiMapDiscoveryNormalizeSearchInput($input);
+    if ($normalized === '') {
+        return '';
+    }
+
+    $tokens = array_values(array_filter(explode(' ', $normalized), function ($token) {
+        return strlen($token) >= 2;
+    }));
+    if (empty($tokens)) {
+        return '';
+    }
+
+    $tokens = array_slice($tokens, 0, 8);
+    return '+' . implode('* +', $tokens) . '*';
+}
+
+function Wo_ApiMapDiscoveryPageFulltextAvailable() {
+    global $sqlConnect;
+    static $available = null;
+
+    if ($available !== null) {
+        return $available;
+    }
+
+    $cache_key = 'vnseea:map-page-fulltext:' . md5(T_PAGES);
+    if (function_exists('apcu_fetch')) {
+        $cache_hit = false;
+        $cached = apcu_fetch($cache_key, $cache_hit);
+        if ($cache_hit) {
+            $available = (bool) $cached;
+            return $available;
+        }
+    }
+
+    $index_name = 'idx_pages_map_search_fulltext';
+    $index_result = mysqli_query(
+        $sqlConnect,
+        "SHOW INDEX FROM " . T_PAGES . " WHERE `Key_name` = '" . $index_name . "' AND `Index_type` = 'FULLTEXT'"
+    );
+    $available = $index_result && mysqli_num_rows($index_result) >= 3;
+    if ($index_result) {
+        mysqli_free_result($index_result);
+    }
+
+    if (function_exists('apcu_store')) {
+        apcu_store($cache_key, $available ? 1 : 0, 300);
+    }
+    return $available;
+}
+
+function Wo_ApiMapDiscoveryFastPageCacheKey($query, $limit, $origin_lat, $origin_lng, $distance, $global_search = false) {
+    if (!function_exists('apcu_fetch') || !function_exists('apcu_store')) {
+        return '';
+    }
+
+    return 'vnseea:map-page-suggestions:' . md5(json_encode(array(
+        Wo_ApiMapDiscoveryNormalizeSearchInput($query),
+        (int) $limit,
+        // About 11 metres at the equator: stable across ordinary GPS jitter,
+        // while still keeping cached Page results local to the user.
+        is_numeric($origin_lat) ? number_format((float) $origin_lat, 4, '.', '') : '',
+        is_numeric($origin_lng) ? number_format((float) $origin_lng, 4, '.', '') : '',
+        is_numeric($distance) ? number_format((float) $distance, 1, '.', '') : '',
+        $global_search ? 'global' : 'nearby'
+    )));
 }
 
 function Wo_ApiMapDiscoveryGoogleKey() {
@@ -212,7 +294,7 @@ function Wo_ApiMapDiscoveryNormalizeUrl($url) {
 }
 
 function Wo_ApiMapDiscoveryPageSuggestions() {
-    global $sqlConnect, $wo;
+    global $sqlConnect;
 
     $fast = Wo_ApiMapDiscoveryFastRequest();
     if (!$fast && function_exists('Wo_EnsurePageMapPinColumns')) {
@@ -220,28 +302,43 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
     }
 
     $query = !empty($_POST['query']) ? trim($_POST['query']) : '';
-    $keyword = Wo_Secure($query);
+    if (function_exists('mb_substr')) {
+        $query = mb_substr($query, 0, 120, 'UTF-8');
+    } else {
+        $query = substr($query, 0, 120);
+    }
+    $keyword = mysqli_real_escape_string($sqlConnect, $query);
+    $like_keyword = Wo_ApiMapDiscoveryEscapeLike($query);
     $limit = !empty($_POST['limit']) && is_numeric($_POST['limit']) ? (int) $_POST['limit'] : 20;
     $limit = max(1, min($limit, 80));
     $origin_lat = Wo_ApiMapDiscoveryNumber('origin_lat');
     $origin_lng = Wo_ApiMapDiscoveryNumber('origin_lng');
+    $global_search = !empty($_POST['global_search']) && (string) $_POST['global_search'] !== '0';
     $has_origin = ($origin_lat !== null && $origin_lng !== null && !($origin_lat == 0 && $origin_lng == 0));
     $candidate_limit = $fast
         ? min(max($limit * 2, $limit), 60)
         : min(max($limit * 6, $limit), 160);
     $normalized_query = Wo_ApiMapDiscoveryNormalizeSearchInput($query);
     $max_distance_meters = 0;
-    if ($fast && $has_origin) {
+    if ($fast && $has_origin && !$global_search) {
         $distance_km = !empty($_POST['distance']) && is_numeric($_POST['distance'])
             ? (float) $_POST['distance']
             : 3;
         $max_distance_meters = max(250, min($distance_km * 1000, 50000));
     }
 
-    $where = " WHERE `active` = '1' AND `address` <> '' AND `lat` <> '' AND `lng` <> '' AND `lat` <> '0' AND `lng` <> '0'";
-    if ($keyword !== '') {
-        $where .= " AND (`page_name` LIKE '%{$keyword}%' OR `page_title` LIKE '%{$keyword}%' OR `address` LIKE '%{$keyword}%')";
+    $cache_key = $fast
+        ? Wo_ApiMapDiscoveryFastPageCacheKey($query, $limit, $origin_lat, $origin_lng, $max_distance_meters, $global_search)
+        : '';
+    if ($cache_key !== '') {
+        $cache_hit = false;
+        $cached_response = apcu_fetch($cache_key, $cache_hit);
+        if ($cache_hit && is_array($cached_response)) {
+            return $cached_response;
+        }
     }
+
+    $base_where = " WHERE `active` = '1' AND `address` <> '' AND `lat` <> '' AND `lng` <> '' AND `lat` <> '0' AND `lng` <> '0'";
     if ($max_distance_meters > 0) {
         $lat_delta = $max_distance_meters / 111320;
         $lng_delta = $max_distance_meters / max(111320 * cos(deg2rad($origin_lat)), 1);
@@ -249,18 +346,43 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
         $lat_max = number_format($origin_lat + $lat_delta, 7, '.', '');
         $lng_min = number_format($origin_lng - $lng_delta, 7, '.', '');
         $lng_max = number_format($origin_lng + $lng_delta, 7, '.', '');
-        $where .= " AND CAST(`lat` AS DECIMAL(10,7)) BETWEEN {$lat_min} AND {$lat_max} AND CAST(`lng` AS DECIMAL(10,7)) BETWEEN {$lng_min} AND {$lng_max}";
+        $base_where .= " AND CAST(`lat` AS DECIMAL(10,7)) BETWEEN {$lat_min} AND {$lat_max} AND CAST(`lng` AS DECIMAL(10,7)) BETWEEN {$lng_min} AND {$lng_max}";
     }
 
     $distance_order = $has_origin
         ? "(POW((`lat` - " . number_format($origin_lat, 7, '.', '') . "), 2) + POW((`lng` - " . number_format($origin_lng, 7, '.', '') . "), 2)) ASC,"
         : '';
     $order = $keyword !== ''
-        ? "(`page_title` = '{$keyword}') DESC, (`page_name` = '{$keyword}') DESC, (`page_title` LIKE '{$keyword}%') DESC, (`page_name` LIKE '{$keyword}%') DESC, (`address` LIKE '{$keyword}%') DESC,{$distance_order}"
+        ? "(`page_title` = '{$keyword}') DESC, (`page_name` = '{$keyword}') DESC, (`page_title` LIKE '{$like_keyword}%' ESCAPE '=') DESC, (`page_name` LIKE '{$like_keyword}%' ESCAPE '=') DESC, (`address` LIKE '{$like_keyword}%' ESCAPE '=') DESC,{$distance_order}"
         : $distance_order;
-    $select_fields = $fast ? '*' : '`page_id`';
-    $sql = "SELECT {$select_fields} FROM " . T_PAGES . $where . " ORDER BY {$order} `page_id` DESC LIMIT {$candidate_limit}";
-    $query_result = mysqli_query($sqlConnect, $sql);
+    $select_fields = $fast
+        ? '`page_id`, `page_name`, `page_title`, `page_description`, `address`, `avatar`, `cover`, `place_id`, `lat`, `lng`'
+        : '`page_id`';
+    $legacy_search_where = $keyword !== ''
+        ? " AND (`page_name` LIKE '%{$like_keyword}%' ESCAPE '=' OR `page_title` LIKE '%{$like_keyword}%' ESCAPE '=' OR `address` LIKE '%{$like_keyword}%' ESCAPE '=')"
+        : '';
+    $fulltext_query = $keyword !== '' ? Wo_ApiMapDiscoveryPageFulltextQuery($query) : '';
+    $query_result = false;
+
+    if ($fulltext_query !== '' && Wo_ApiMapDiscoveryPageFulltextAvailable()) {
+        $fulltext_keyword = mysqli_real_escape_string($sqlConnect, $fulltext_query);
+        $fulltext_match = "MATCH(`page_name`, `page_title`, `address`) AGAINST ('{$fulltext_keyword}' IN BOOLEAN MODE)";
+        $fulltext_sql = "SELECT {$select_fields} FROM " . T_PAGES . $base_where . " AND {$fulltext_match} ORDER BY {$order} {$fulltext_match} DESC, `page_id` DESC LIMIT {$candidate_limit}";
+        $query_result = mysqli_query($sqlConnect, $fulltext_sql);
+
+        // FULLTEXT token-size and stop-word settings differ between hosts.
+        // Preserve complete legacy behavior when the optional index cannot
+        // serve a short query or is temporarily unavailable.
+        if ($query_result && mysqli_num_rows($query_result) === 0) {
+            mysqli_free_result($query_result);
+            $query_result = false;
+        }
+    }
+
+    if (!$query_result) {
+        $legacy_sql = "SELECT {$select_fields} FROM " . T_PAGES . $base_where . $legacy_search_where . " ORDER BY {$order} `page_id` DESC LIMIT {$candidate_limit}";
+        $query_result = mysqli_query($sqlConnect, $legacy_sql);
+    }
     $items = array();
 
     if ($query_result && mysqli_num_rows($query_result) > 0) {
@@ -279,10 +401,6 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
                 $page['url'] = !empty($page['page_name'])
                     ? Wo_SeoLink('index.php?link1=timeline&u=' . $page['page_name'])
                     : '';
-                $page['category'] = '';
-                if (!empty($wo['page_categories'][$page['page_category']])) {
-                    $page['category'] = $wo['page_categories'][$page['page_category']];
-                }
             }
             else {
                 $page = Wo_PageData($row['page_id']);
@@ -370,10 +488,14 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
     }
     unset($result_item);
 
-    return array(
+    $response = array(
         'api_status' => 200,
         'items' => $result_items
     );
+    if ($cache_key !== '') {
+        apcu_store($cache_key, $response, 15);
+    }
+    return $response;
 }
 
 function Wo_ApiMapDiscoveryAddPrediction(&$predictions, &$seen_place_ids, $place_id, $description, $main_text, $secondary_text, $types = array(), $lat = null, $lng = null, $icon = null, $icon_background_color = null, $rating = null, $ratings_total = null, $open_now = null, $photo_references = array()) {
@@ -444,7 +566,7 @@ function Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input) {
     if (preg_match('/\b(quan an|nha hang|do an|an uong|food|restaurant|com|pho|bun|lau|nuong|buffet)\b/', $normalized_input)) {
         return 'restaurant';
     }
-    if (preg_match('/\b(cafe|ca phe|coffee|tra sua|tra|nuoc|do uong|uong)\b/', $normalized_input)) {
+    if (preg_match('/\b(caf|cafe|ca phe|coffee|tra sua|tra|nuoc|do uong|uong)\b/', $normalized_input)) {
         return 'cafe';
     }
 
@@ -467,7 +589,7 @@ function Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input) {
     if (strpos($clean, 'an') !== false || strpos($clean, 'hang') !== false || strpos($clean, 'food') !== false || strpos($clean, 'restaurant') !== false || strpos($clean, 'com') !== false || strpos($clean, 'pho') !== false || strpos($clean, 'bun') !== false || strpos($clean, 'lau') !== false || strpos($clean, 'nuong') !== false || strpos($clean, 'buffet') !== false) {
         return 'restaurant';
     }
-    if (strpos($clean, 'cafe') !== false || strpos($clean, 'phe') !== false || strpos($clean, 'coffee') !== false || strpos($clean, 'tra') !== false || strpos($clean, 'sua') !== false || strpos($clean, 'nuoc') !== false || strpos($clean, 'uong') !== false) {
+    if (strpos($clean, 'caf') !== false || strpos($clean, 'phe') !== false || strpos($clean, 'coffee') !== false || strpos($clean, 'tra') !== false || strpos($clean, 'sua') !== false || strpos($clean, 'nuoc') !== false || strpos($clean, 'uong') !== false) {
         return 'cafe';
     }
     if (strpos($clean, 'toc') !== false || strpos($clean, 'salon') !== false || strpos($clean, 'barber') !== false || strpos($clean, 'spa') !== false || strpos($clean, 'lam dep') !== false) {
@@ -511,7 +633,8 @@ function Wo_ApiMapDiscoveryRequestedGoogleType() {
 
 function Wo_ApiMapDiscoveryAutocomplete() {
     $input = !empty($_POST['query']) ? trim($_POST['query']) : (!empty($_POST['input']) ? trim($_POST['input']) : '');
-    if (mb_strlen($input, 'UTF-8') < 3) {
+    $input_length = function_exists('mb_strlen') ? mb_strlen($input, 'UTF-8') : strlen($input);
+    if ($input_length < 2) {
         return array('api_status' => 200, 'predictions' => array());
     }
 
@@ -520,8 +643,16 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     $radius = Wo_ApiMapDiscoveryRadiusMeters();
     $language = Wo_ApiMapDiscoveryLanguage();
     $country = Wo_ApiMapDiscoveryCountry();
-    $prefer_address = !empty($_POST['prefer_address']) && (string) $_POST['prefer_address'] !== '0';
+    // Only force address mode for address-shaped queries. The map search
+    // client may omit a category for generic words such as "tiệm"; treating
+    // those as addresses suppresses Nearby/Text Search and leaves no place
+    // suggestions even though Google can autocomplete them.
+    $prefer_address =
+        !empty($_POST['prefer_address']) &&
+        (string) $_POST['prefer_address'] !== '0' &&
+        Wo_ApiMapDiscoveryIsAddressQuery($input);
     $fast = Wo_ApiMapDiscoveryFastRequest();
+    $global_search = !empty($_POST['global_search']) && (string) $_POST['global_search'] !== '0';
     $google_timeout_ms = $fast ? 1500 : 20000;
     $google_connect_timeout_ms = $fast ? 700 : 10000;
 
@@ -530,16 +661,20 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     $places_results = array();
     $nearby_search = array();
     $text_search = array();
-    $detected_type = Wo_ApiMapDiscoveryRequestedGoogleType();
-    if ($detected_type === null) {
-        $detected_type = Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input);
+    $geocode_search = array();
+    $detected_type = null;
+    if (!$prefer_address) {
+        $detected_type = Wo_ApiMapDiscoveryRequestedGoogleType();
+        if ($detected_type === null) {
+            $detected_type = Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input);
+        }
     }
 
     // Address forms should show Google's textual address matches first. This
     // avoids a nearby business/category result outranking the exact street
     // address the user typed.
     $google = array('status' => 'NOT_CALLED');
-    if ($prefer_address) {
+    if ($prefer_address && !$global_search) {
         $autocomplete_query = array(
             'input' => $input,
             'language' => $language,
@@ -569,8 +704,48 @@ function Wo_ApiMapDiscoveryAutocomplete() {
         }
     }
 
+    // If Places Autocomplete cannot resolve an address, use Geocoding rather
+    // than Places Text Search. Text Search may return popular restaurants or
+    // shops that have nothing to do with the street address the user typed.
+    if (!$global_search && $prefer_address && count($predictions) === 0) {
+        $geocode_search = Wo_ApiMapDiscoveryGoogleGet('geocode/json', array(
+            'address' => $input,
+            'components' => 'country:' . strtoupper($country),
+            'language' => $language,
+            'region' => $country
+        ), $google_timeout_ms, $google_connect_timeout_ms);
+
+        if (empty($geocode_search['errors']) && (($geocode_search['status'] ?? '') === 'OK' || ($geocode_search['status'] ?? '') === 'ZERO_RESULTS')) {
+            foreach (($geocode_search['results'] ?? array()) as $result) {
+                $formatted_address = !empty($result['formatted_address']) ? trim($result['formatted_address']) : '';
+                $address_parts = array_values(array_filter(array_map('trim', explode(',', $formatted_address))));
+                $main_text = !empty($address_parts) ? array_shift($address_parts) : $formatted_address;
+                $secondary_text = !empty($address_parts) ? implode(', ', $address_parts) : '';
+                $loc = !empty($result['geometry']['location']) ? $result['geometry']['location'] : array();
+
+                Wo_ApiMapDiscoveryAddPrediction(
+                    $predictions,
+                    $seen_place_ids,
+                    !empty($result['place_id']) ? $result['place_id'] : '',
+                    $formatted_address,
+                    $main_text,
+                    $secondary_text,
+                    !empty($result['types']) && is_array($result['types']) ? $result['types'] : array(),
+                    isset($loc['lat']) ? (float)$loc['lat'] : null,
+                    isset($loc['lng']) ? (float)$loc['lng'] : null
+                );
+            }
+        }
+    }
+
     // 1. Fetch from Nearby Search (strict radius + category type bias)
-    if ($origin_lat !== null && $origin_lng !== null && (!$fast || !$prefer_address || count($predictions) === 0)) {
+    if (
+        !$global_search &&
+        !$prefer_address &&
+        $origin_lat !== null &&
+        $origin_lng !== null &&
+        (!$fast || $detected_type !== null)
+    ) {
         $nearby_query = array(
             'location' => number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', ''),
             'radius' => $radius,
@@ -603,15 +778,13 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     }
 
     // 2. Fallback / Merge with Text Search for wider coverage (gets places like "quán ăn" matching textually)
-    $should_run_text_search = $fast
-        ? (!$prefer_address && $detected_type !== null && count($places_results) === 0)
-        : (
-            (!$prefer_address && ($detected_type === null || count($places_results) < 8)) ||
-            ($prefer_address && count($predictions) === 0)
-        );
+    $should_run_text_search =
+        $global_search ||
+        ($fast && !$prefer_address && $detected_type !== null && count($places_results) === 0) ||
+        (!$fast && !$prefer_address && ($detected_type === null || count($places_results) < 8));
     if ($should_run_text_search) {
         $text_search_query = array(
-            'query' => (!$prefer_address && $detected_type !== null) ? $detected_type : $input,
+            'query' => $global_search ? $input : ((!$prefer_address && $detected_type !== null) ? $detected_type : $input),
             'language' => $language,
             'region' => $country
         );
@@ -659,15 +832,21 @@ function Wo_ApiMapDiscoveryAutocomplete() {
 
     // 3. Autocomplete is useful for named places, but generic categories should stay type-based.
     if (
-        !$prefer_address &&
-        $detected_type === null &&
-        (!$fast || (count($predictions) === 0 && count($places_results) === 0))
+        (!$prefer_address || $global_search) &&
+        (
+            ($global_search && count($places_results) === 0 && count($predictions) === 0) ||
+            (!$global_search && !$fast && $detected_type === null) ||
+            (!$global_search && $fast && ($detected_type === null || $origin_lat === null || $origin_lng === null))
+        )
     ) {
         $query = array(
             'input' => $input,
             'language' => $language,
             'components' => 'country:' . $country
         );
+        if ($global_search && Wo_ApiMapDiscoveryIsAddressQuery($input)) {
+            $query['types'] = 'address';
+        }
         if ($origin_lat !== null && $origin_lng !== null) {
             $query['location'] = number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', '');
             $query['radius'] = $radius;
@@ -696,14 +875,16 @@ function Wo_ApiMapDiscoveryAutocomplete() {
             }
         }
 
-        usort($predictions, function($left, $right) {
-            $left_distance = isset($left['distance_meters']) && is_numeric($left['distance_meters']) ? (float) $left['distance_meters'] : PHP_FLOAT_MAX;
-            $right_distance = isset($right['distance_meters']) && is_numeric($right['distance_meters']) ? (float) $right['distance_meters'] : PHP_FLOAT_MAX;
-            if ($left_distance == $right_distance) {
-                return strnatcasecmp((string) ($left['main_text'] ?? ''), (string) ($right['main_text'] ?? ''));
-            }
-            return ($left_distance < $right_distance) ? -1 : 1;
-        });
+        if (!$global_search) {
+            usort($predictions, function($left, $right) {
+                $left_distance = isset($left['distance_meters']) && is_numeric($left['distance_meters']) ? (float) $left['distance_meters'] : PHP_FLOAT_MAX;
+                $right_distance = isset($right['distance_meters']) && is_numeric($right['distance_meters']) ? (float) $right['distance_meters'] : PHP_FLOAT_MAX;
+                if ($left_distance == $right_distance) {
+                    return strnatcasecmp((string) ($left['main_text'] ?? ''), (string) ($right['main_text'] ?? ''));
+                }
+                return ($left_distance < $right_distance) ? -1 : 1;
+            });
+        }
     }
 
     return array(
@@ -714,7 +895,10 @@ function Wo_ApiMapDiscoveryAutocomplete() {
         'debug_detected_type' => $detected_type,
         'debug_nearby_count' => count($places_results),
         'debug_autocomplete_status' => $google['status'] ?? 'NOT_CALLED',
-        'debug_autocomplete_error' => $google['error_message'] ?? ''
+        'debug_autocomplete_error' => $google['error_message'] ?? '',
+        'debug_geocode_status' => $geocode_search['status'] ?? 'NOT_CALLED',
+        'debug_geocode_error' => $geocode_search['error_message'] ?? '',
+        'debug_global_search' => $global_search ? 1 : 0
     );
 }
 
@@ -727,7 +911,7 @@ function Wo_ApiMapDiscoveryPlaceDetails() {
     $google = Wo_ApiMapDiscoveryGoogleGet('place/details/json', array(
         'place_id' => $place_id,
         'language' => 'vi',
-        'fields' => 'place_id,name,formatted_address,geometry,url,icon,icon_background_color'
+        'fields' => 'place_id,name,formatted_address,geometry,url,icon,icon_background_color,types,rating,user_ratings_total,opening_hours,photos,reviews,editorial_summary,formatted_phone_number,international_phone_number,website,business_status,price_level'
     ));
     if (!empty($google['errors'])) {
         return $google;
@@ -738,6 +922,26 @@ function Wo_ApiMapDiscoveryPlaceDetails() {
 
     $result = $google['result'];
     $location = $result['geometry']['location'] ?? array();
+    $photo_references = array();
+    if (!empty($result['photos']) && is_array($result['photos'])) {
+        foreach (array_slice($result['photos'], 0, 6) as $photo) {
+            if (!empty($photo['photo_reference'])) {
+                $photo_references[] = $photo['photo_reference'];
+            }
+        }
+    }
+    $reviews = array();
+    if (!empty($result['reviews']) && is_array($result['reviews'])) {
+        foreach (array_slice($result['reviews'], 0, 5) as $review) {
+            $reviews[] = array(
+                'author_name' => !empty($review['author_name']) ? $review['author_name'] : 'Người dùng Google',
+                'rating' => isset($review['rating']) ? (float) $review['rating'] : null,
+                'relative_time_description' => !empty($review['relative_time_description']) ? $review['relative_time_description'] : '',
+                'text' => !empty($review['text']) ? $review['text'] : '',
+                'time' => isset($review['time']) ? (int) $review['time'] : null
+            );
+        }
+    }
     return array(
         'api_status' => 200,
         'place' => array(
@@ -749,7 +953,22 @@ function Wo_ApiMapDiscoveryPlaceDetails() {
             'lat' => isset($location['lat']) ? (float) $location['lat'] : null,
             'lng' => isset($location['lng']) ? (float) $location['lng'] : null,
             'icon' => !empty($result['icon']) ? $result['icon'] : '',
-            'icon_background_color' => !empty($result['icon_background_color']) ? $result['icon_background_color'] : ''
+            'icon_background_color' => !empty($result['icon_background_color']) ? $result['icon_background_color'] : '',
+            'types' => !empty($result['types']) && is_array($result['types']) ? array_values($result['types']) : array(),
+            'rating' => isset($result['rating']) ? (float) $result['rating'] : null,
+            'user_ratings_total' => isset($result['user_ratings_total']) ? (int) $result['user_ratings_total'] : null,
+            'open_now' => isset($result['opening_hours']['open_now']) ? (bool) $result['opening_hours']['open_now'] : null,
+            'photo_references' => $photo_references,
+            'reviews' => $reviews,
+            'editorial_summary' => array(
+                'overview' => !empty($result['editorial_summary']['overview']) ? $result['editorial_summary']['overview'] : ''
+            ),
+            'formatted_phone_number' => !empty($result['formatted_phone_number']) ? $result['formatted_phone_number'] : '',
+            'international_phone_number' => !empty($result['international_phone_number']) ? $result['international_phone_number'] : '',
+            'website' => !empty($result['website']) ? $result['website'] : '',
+            'weekday_text' => !empty($result['opening_hours']['weekday_text']) && is_array($result['opening_hours']['weekday_text']) ? array_values($result['opening_hours']['weekday_text']) : array(),
+            'business_status' => !empty($result['business_status']) ? $result['business_status'] : '',
+            'price_level' => isset($result['price_level']) ? (int) $result['price_level'] : null
         )
     );
 }

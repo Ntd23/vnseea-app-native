@@ -1,5 +1,5 @@
 // Description: Coordinates user profile and discovery state with the user repository.
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   GetUserProfileInput,
   MapPlacePrediction,
@@ -24,6 +24,16 @@ function toErrorMessage(error: unknown) {
   return String(error);
 }
 
+function isAbortError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: string; name?: string };
+  return (
+    candidate.name === 'AbortError' ||
+    candidate.name === 'CanceledError' ||
+    candidate.code === 'ERR_CANCELED'
+  );
+}
+
 export function useUserViewModel() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [profileResult, setProfileResult] = useState<UserProfileResult | null>(
@@ -35,10 +45,21 @@ export function useUserViewModel() {
   const [placePredictions, setPlacePredictions] = useState<
     MapPlacePrediction[]
   >([]);
+  const [placePredictionsQuery, setPlacePredictionsQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isMapSearchLoading, setIsMapSearchLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeActionCountRef = useRef(0);
-  const nearbyContentRequestIdRef = useRef(0);
+  const discoveryRequestIdRef = useRef(0);
+  const mapSearchRequestIdRef = useRef(0);
+  const mapSearchAbortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      mapSearchAbortControllerRef.current?.abort();
+    },
+    [],
+  );
 
   const runUserAction = useCallback(
     async <TResult>(action: () => Promise<TResult>) => {
@@ -108,7 +129,7 @@ export function useUserViewModel() {
 
   const loadNearbyDiscovery = useCallback(
     (input?: NearbyUsersInput) => {
-      const requestId = ++nearbyContentRequestIdRef.current;
+      const requestId = ++discoveryRequestIdRef.current;
       return runUserAction(async () => {
         const [users, places, pages] = await Promise.all([
           repository.getNearbyUsers(input),
@@ -117,7 +138,7 @@ export function useUserViewModel() {
         ]);
         const discoveryPlaces = [...pages, ...places];
 
-        if (requestId === nearbyContentRequestIdRef.current) {
+        if (requestId === discoveryRequestIdRef.current) {
           setNearbyUsers(users);
           setNearbyPlaces(discoveryPlaces);
         }
@@ -130,7 +151,7 @@ export function useUserViewModel() {
 
   const loadNearbyPages = useCallback(
     (input?: { lat?: number; lng?: number; limit?: number }) => {
-      const requestId = ++nearbyContentRequestIdRef.current;
+      const requestId = ++discoveryRequestIdRef.current;
       return runUserAction(async () => {
         const pages = await repository.getNearbyPages({
           distance: 3,
@@ -138,7 +159,7 @@ export function useUserViewModel() {
           lat: input?.lat,
           lng: input?.lng,
         });
-        if (requestId === nearbyContentRequestIdRef.current) {
+        if (requestId === discoveryRequestIdRef.current) {
           setNearbyUsers([]);
           setNearbyPlaces(pages);
         }
@@ -157,22 +178,33 @@ export function useUserViewModel() {
       limit?: number;
       radius?: number;
       fast?: boolean;
+      globalSearch?: boolean;
+      waitForAllSources?: boolean;
+      onPartialResults?: (result: {
+        pages: NearbyPlace[];
+        predictions: MapPlacePrediction[];
+      }) => void;
     }) => {
-      const requestId = ++nearbyContentRequestIdRef.current;
-      return runUserAction(async () => {
-        if (input.query.trim().length < 3) {
-          if (requestId === nearbyContentRequestIdRef.current) {
-            setNearbyPlaces([]);
-            setPlacePredictions([]);
-          }
-          return { pages: [], predictions: [] };
-        }
+      mapSearchAbortControllerRef.current?.abort();
+      const abortController = new AbortController();
+      mapSearchAbortControllerRef.current = abortController;
+      const requestId = ++mapSearchRequestIdRef.current;
+      const trimmedQuery = input.query.trim();
 
-        if (requestId === nearbyContentRequestIdRef.current) {
-          setNearbyUsers([]);
-          setPlacePredictions([]);
-        }
+      if (trimmedQuery.length < 2) {
+        setIsMapSearchLoading(false);
+        return Promise.resolve({ pages: [], predictions: [] });
+      }
 
+      // Search and discovery have independent request sequences, but both
+      // publish into nearbyPlaces. Prevent an older discovery response from
+      // replacing the active typeahead Page results.
+      discoveryRequestIdRef.current += 1;
+      setIsMapSearchLoading(true);
+      setError(null);
+      setNearbyUsers([]);
+
+      return (async () => {
         let pagesSnapshot: NearbyPlace[] = [];
         let predictionsSnapshot: MapPlacePrediction[] = [];
         let pagesError: unknown;
@@ -197,26 +229,50 @@ export function useUserViewModel() {
           firstUsefulResolved = true;
           resolveFirstUseful();
         };
+        const isLatestRequest = () =>
+          requestId === mapSearchRequestIdRef.current &&
+          !abortController.signal.aborted;
+        const publishPartialResults = () => {
+          if (!isLatestRequest() || !input.onPartialResults) return;
+          try {
+            input.onPartialResults({
+              pages: pagesSnapshot,
+              predictions: predictionsSnapshot,
+            });
+          } catch {
+            // A screen update must never turn a successful source into a
+            // failed network request.
+          }
+        };
+        const pageDistanceKm =
+          typeof input.radius === 'number' && Number.isFinite(input.radius)
+            ? Math.max(0.001, input.radius / 1000)
+            : 3;
 
         const pagesPromise = repository
           .getNearbyPages({
-            keyword: input.query,
-            distance: 3,
+            keyword: trimmedQuery,
+            distance: pageDistanceKm,
             limit: input.limit ?? 20,
             lat: input.lat,
             lng: input.lng,
             fast: input.fast,
+            globalSearch: input.globalSearch,
+            signal: abortController.signal,
           })
           .then(pages => {
             pagesSnapshot = pages;
-            if (requestId === nearbyContentRequestIdRef.current) {
+            if (isLatestRequest()) {
               setNearbyPlaces(pages);
             }
+            publishPartialResults();
             resolveWhenUseful();
             return pages;
           })
           .catch(caughtError => {
-            pagesError = caughtError;
+            if (!isAbortError(caughtError)) {
+              pagesError = caughtError;
+            }
             return [];
           })
           .finally(() => {
@@ -225,23 +281,29 @@ export function useUserViewModel() {
           });
         const predictionsPromise = repository
           .getPlacePredictions({
-            query: input.query,
+            query: trimmedQuery,
             category: input.googleQuery,
             lat: input.lat,
             lng: input.lng,
             radius: input.radius,
             fast: input.fast,
+            globalSearch: input.globalSearch,
+            signal: abortController.signal,
           })
           .then(predictions => {
             predictionsSnapshot = predictions;
-            if (requestId === nearbyContentRequestIdRef.current) {
+            if (isLatestRequest()) {
               setPlacePredictions(predictions);
+              setPlacePredictionsQuery(trimmedQuery);
             }
+            publishPartialResults();
             resolveWhenUseful();
             return predictions;
           })
           .catch(caughtError => {
-            predictionsError = caughtError;
+            if (!isAbortError(caughtError)) {
+              predictionsError = caughtError;
+            }
             return [];
           })
           .finally(() => {
@@ -249,7 +311,25 @@ export function useUserViewModel() {
             resolveWhenUseful();
           });
 
-        if (input.fast) {
+        const allSourcesSettled = Promise.all([
+          pagesPromise,
+          predictionsPromise,
+        ]).then(() => {
+          if (isLatestRequest()) {
+            setIsMapSearchLoading(false);
+            mapSearchAbortControllerRef.current = null;
+            const searchError = predictionsError ?? pagesError;
+            if (
+              searchError &&
+              pagesSnapshot.length === 0 &&
+              predictionsSnapshot.length === 0
+            ) {
+              setError(toErrorMessage(searchError));
+            }
+          }
+        });
+
+        if (input.fast && !input.waitForAllSources) {
           let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
             firstUsefulPromise,
@@ -268,7 +348,7 @@ export function useUserViewModel() {
           };
         }
 
-        await Promise.all([pagesPromise, predictionsPromise]);
+        await allSourcesSettled;
 
         if (pagesError && predictionsError) {
           throw predictionsError ?? pagesError;
@@ -284,9 +364,9 @@ export function useUserViewModel() {
           pages: pagesSnapshot,
           predictions: predictionsSnapshot,
         };
-      });
+      })();
     },
-    [runUserAction],
+    [],
   );
 
   const getPlaceDetails = useCallback(
@@ -305,15 +385,24 @@ export function useUserViewModel() {
   );
 
   const clearNearbyDiscovery = useCallback(() => {
-    nearbyContentRequestIdRef.current += 1;
+    discoveryRequestIdRef.current += 1;
+    mapSearchRequestIdRef.current += 1;
+    mapSearchAbortControllerRef.current?.abort();
+    mapSearchAbortControllerRef.current = null;
+    setIsMapSearchLoading(false);
     setNearbyUsers([]);
     setNearbyPlaces([]);
     setPlacePredictions([]);
+    setPlacePredictionsQuery('');
   }, []);
 
   const clearPlacePredictions = useCallback(() => {
-    nearbyContentRequestIdRef.current += 1;
+    mapSearchRequestIdRef.current += 1;
+    mapSearchAbortControllerRef.current?.abort();
+    mapSearchAbortControllerRef.current = null;
+    setIsMapSearchLoading(false);
     setPlacePredictions([]);
+    setPlacePredictionsQuery('');
   }, []);
 
   const updateCurrentUser = useCallback(
@@ -329,7 +418,9 @@ export function useUserViewModel() {
     nearbyUsers,
     nearbyPlaces,
     placePredictions,
+    placePredictionsQuery,
     isLoading,
+    isMapSearchLoading,
     error,
     loadCurrentUser,
     loadUserProfile,
