@@ -348,6 +348,10 @@ export function PhotoViewerModal({
   const interactionUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const pendingCommentPostIdRef = useRef<string | null>(null);
+  const pendingCommentFrameRef = useRef<
+    ReturnType<typeof requestAnimationFrame> | null
+  >(null);
   const transitionLockRef = useRef(false);
 
   const [pickerAnchor, setPickerAnchor] = useState<{
@@ -442,8 +446,43 @@ export function PhotoViewerModal({
         clearTimeout(interactionUnlockTimeoutRef.current);
         interactionUnlockTimeoutRef.current = null;
       }
+      if (pendingCommentFrameRef.current !== null) {
+        cancelAnimationFrame(pendingCommentFrameRef.current);
+        pendingCommentFrameRef.current = null;
+      }
+      pendingCommentPostIdRef.current = null;
     };
   }, []);
+
+  const openPendingPostComments = useCallback(() => {
+    const postId = pendingCommentPostIdRef.current;
+    if (!postId) return;
+
+    pendingCommentPostIdRef.current = null;
+    onCommentTap(postId);
+  }, [onCommentTap]);
+
+  const handleModalDismiss = useCallback(() => {
+    openPendingPostComments();
+  }, [openPendingPostComments]);
+
+  useEffect(() => {
+    if (Platform.OS === 'ios' || state || !pendingCommentPostIdRef.current) {
+      return;
+    }
+
+    pendingCommentFrameRef.current = requestAnimationFrame(() => {
+      pendingCommentFrameRef.current = null;
+      openPendingPostComments();
+    });
+
+    return () => {
+      if (pendingCommentFrameRef.current !== null) {
+        cancelAnimationFrame(pendingCommentFrameRef.current);
+        pendingCommentFrameRef.current = null;
+      }
+    };
+  }, [openPendingPostComments, state]);
 
   const animateClose = useCallback(() => {
     // Snappy close: opacity fade fast + scale-down
@@ -610,8 +649,9 @@ export function PhotoViewerModal({
     if (transitionLockRef.current) return;
     lockInteractionBriefly();
     setPickerAnchor(null);
-    onCommentTap(livePost.id);
-  }, [livePost, lockInteractionBriefly, onCommentTap]);
+    pendingCommentPostIdRef.current = livePost.id;
+    animateClose();
+  }, [animateClose, livePost, lockInteractionBriefly]);
 
   const handleSharePress = useCallback(() => {
     if (!livePost) return;
@@ -760,6 +800,7 @@ export function PhotoViewerModal({
         transparent
         animationType="none"
         onRequestClose={handleClose}
+        onDismiss={handleModalDismiss}
         statusBarTranslucent
         presentationStyle="overFullScreen"
         hardwareAccelerated
@@ -841,6 +882,7 @@ export function PhotoViewerModal({
       transparent
       animationType="none"
       onRequestClose={handleClose}
+      onDismiss={handleModalDismiss}
       statusBarTranslucent
       presentationStyle="overFullScreen"
       hardwareAccelerated

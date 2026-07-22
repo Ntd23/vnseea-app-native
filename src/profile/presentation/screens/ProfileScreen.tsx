@@ -95,6 +95,7 @@ import Svg, {
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { useDeferredVisiblePostIds } from '../../../feed/application/realtime/useDeferredVisiblePostIds';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
@@ -2711,6 +2712,14 @@ function ProfileScreen() {
     }
   }, []);
 
+  const handlePhotoViewerCommentTap = useCallback(
+    (postId: string) => {
+      const post = posts.find(item => item.id === postId);
+      navigateToPostComments(navigation, postId, post);
+    },
+    [navigation, posts],
+  );
+
   const handlePhotoViewerFollowChange = useCallback(
     (publisherId: string, isFollowing: boolean) => {
       if (!publisherId) return;
@@ -5307,7 +5316,7 @@ function ProfileScreen() {
             state={photoViewer}
             onClose={handleClosePhotoViewer}
             onReact={handleSetPostReaction}
-            onCommentTap={commentVm.openComments}
+            onCommentTap={handlePhotoViewerCommentTap}
             onProfilePress={handleNavigateToProfile}
             onInternalShare={handleInternalSharePost}
             onFollowChange={handlePhotoViewerFollowChange}

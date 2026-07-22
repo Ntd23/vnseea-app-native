@@ -252,8 +252,6 @@ const COMMENT_IMAGE_MAX_HEIGHT = 210;
 const COMMENT_IMAGE_FALLBACK_WIDTH = 180;
 const COMMENT_IMAGE_FALLBACK_HEIGHT = 140;
 const COMMENT_DELETE_ANIMATION_MS = 220;
-const REPLY_EMOJI_BAR_HEIGHT = 46;
-const REPLY_QUICK_EMOJIS = ['😂', '😍', '🥰', '👍', '❤️', '🙏', '😢', '🔥'];
 const SHEET_OPEN_SPRING = {
   damping: 24,
   stiffness: 360,
@@ -441,6 +439,7 @@ function ReelCommentsSheetBase({
   sheetHeight = '72%',
 }: Props) {
   const isInline = presentation === 'inline';
+  const shouldOwnKeyboardAvoidance = !isInline || Platform.OS === 'android';
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
   const navigation = useNavigation<any>();
@@ -460,7 +459,6 @@ function ReelCommentsSheetBase({
       : Math.max(insets.bottom, 14);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isKeyboardVisible = keyboardHeight > 0;
-  const replyEmojiRailVisible = isKeyboardVisible;
   const activeSheetHeight =
     Platform.OS === 'android' && isKeyboardVisible ? '100%' : sheetHeight;
   const sheetBottomPadding =
@@ -476,10 +474,7 @@ function ReelCommentsSheetBase({
   } = wavRecorder;
   const [draft, setDraft] = useState('');
   const [keyboardLift, setKeyboardLift] = useState(0);
-  const appliedKeyboardLift = Math.max(
-    0,
-    keyboardLift - (replyEmojiRailVisible ? REPLY_EMOJI_BAR_HEIGHT : 0),
-  );
+  const appliedKeyboardLift = keyboardLift;
   const inputRef = useRef<TextInput>(null);
   const composerMeasureRef = useRef<View>(null);
   const commentsListRef = useRef<FlatList<ReelComment>>(null);
@@ -535,6 +530,7 @@ function ReelCommentsSheetBase({
   );
 
   const measureComposerAgainstKeyboard = useCallback(() => {
+    if (!shouldOwnKeyboardAvoidance) return;
     const keyboardTop = keyboardTopRef.current;
     const composer = composerMeasureRef.current;
     if (keyboardTop === null || !composer) return;
@@ -556,14 +552,19 @@ function ReelCommentsSheetBase({
         : overlap;
       commitKeyboardLift(Math.min(overlap, maxLift));
     });
-  }, [commitKeyboardLift, isInline]);
+  }, [commitKeyboardLift, isInline, shouldOwnKeyboardAvoidance]);
 
   const scheduleKeyboardMeasurements = useCallback(() => {
+    if (!shouldOwnKeyboardAvoidance) return;
     clearKeyboardMeasureTimers();
     keyboardMeasureTimeoutsRef.current = [0, 80, 220].map(delay =>
       setTimeout(measureComposerAgainstKeyboard, delay),
     );
-  }, [clearKeyboardMeasureTimers, measureComposerAgainstKeyboard]);
+  }, [
+    clearKeyboardMeasureTimers,
+    measureComposerAgainstKeyboard,
+    shouldOwnKeyboardAvoidance,
+  ]);
 
   const handleComposerLayout = useCallback(() => {
     if (keyboardTopRef.current === null) return;
@@ -572,11 +573,15 @@ function ReelCommentsSheetBase({
 
   const composerLiftStyle = useMemo(
     () =>
-      appliedKeyboardLift > 0
+      shouldOwnKeyboardAvoidance && appliedKeyboardLift > 0
         ? { marginBottom: appliedKeyboardLift }
         : undefined,
-    [appliedKeyboardLift],
+    [appliedKeyboardLift, shouldOwnKeyboardAvoidance],
   );
+
+  const handleDismissKeyboardFromContent = useCallback(() => {
+    Keyboard.dismiss();
+  }, []);
 
   useEffect(() => {
     if (!visible || (!autoFocusComposer && composerFocusSignal <= 0)) return;
@@ -862,16 +867,6 @@ function ReelCommentsSheetBase({
       requestAnimationFrame(() => inputRef.current?.focus());
     },
     [handleCancelEdit, language, onStartReply, scheduleReplyTargetReveal],
-  );
-
-  const handleInsertReplyEmoji = useCallback(
-    (emoji: string) => {
-      if (!replyingTo) return;
-      setDraft(current => `${current}${emoji}`);
-      scheduleReplyTargetReveal(replyingTo);
-      requestAnimationFrame(() => inputRef.current?.focus());
-    },
-    [replyingTo, scheduleReplyTargetReveal],
   );
 
   const handleSubmit = useCallback(() => {
@@ -1303,7 +1298,7 @@ function ReelCommentsSheetBase({
     >
       <KeyboardSafeView
         style={isInline ? styles.inlineRoot : styles.modalRoot}
-        enabled={visible && isScreenFocused}
+        enabled={visible && isScreenFocused && shouldOwnKeyboardAvoidance}
         keyboardVerticalOffset={0}
       >
         {!isInline ? (
@@ -1439,8 +1434,9 @@ function ReelCommentsSheetBase({
               keyExtractor={keyExtractor}
               renderItem={renderThread}
               style={styles.commentsList}
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              onTouchStart={handleDismissKeyboardFromContent}
               showsVerticalScrollIndicator={false}
               scrollEnabled={scrollEnabled}
               initialNumToRender={10}
@@ -1723,23 +1719,6 @@ function ReelCommentsSheetBase({
               </TouchableOpacity>
               </CommentSheetComposerDock>
             </View>
-            {replyEmojiRailVisible ? (
-              <View style={styles.replyEmojiRail}>
-                {REPLY_QUICK_EMOJIS.map(emoji => (
-                  <TouchableOpacity
-                    key={emoji}
-                    activeOpacity={0.72}
-                    onPress={() => handleInsertReplyEmoji(emoji)}
-                    style={styles.replyEmojiButton}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Thêm biểu tượng ${emoji}`}
-                    hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                  >
-                    <Text style={styles.replyEmojiText}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : null}
           </View>
         </SheetSurface>
       </KeyboardSafeView>
@@ -3631,29 +3610,6 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 14,
     includeFontPadding: false,
-  },
-  replyEmojiRail: {
-    height: REPLY_EMOJI_BAR_HEIGHT,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 4,
-    paddingBottom: 6,
-    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#fff',
-  },
-  replyEmojiButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-    backgroundColor:
-      Platform.OS === 'ios' ? 'rgba(241, 245, 249, 0.72)' : '#f1f5f9',
-  },
-  replyEmojiText: {
-    fontSize: 21,
-    lineHeight: 25,
   },
   sendButton: {
     width: 40,

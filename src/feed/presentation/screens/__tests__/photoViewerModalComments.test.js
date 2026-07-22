@@ -9,19 +9,54 @@ describe('PhotoViewerModal comment transition', () => {
     ),
     'utf8',
   );
+  const feedScreenSource = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'src/feed/presentation/screens/FeedScreen.tsx',
+    ),
+    'utf8',
+  );
+  const profileScreenSource = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'src/profile/presentation/screens/ProfileScreen.tsx',
+    ),
+    'utf8',
+  );
+  const pageDetailSource = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'src/pages/presentation/screens/PageDetailScreen.tsx',
+    ),
+    'utf8',
+  );
 
-  test('keeps photo comments in the shared popup instead of navigating away', () => {
+  test('closes the photo viewer before opening post detail comments', () => {
     expect(photoViewerSource).toContain('handleCommentPress');
-    expect(photoViewerSource).toContain('onCommentTap(livePost.id)');
+    expect(photoViewerSource).toContain('pendingCommentPostIdRef');
+    expect(photoViewerSource).toContain(
+      'pendingCommentPostIdRef.current = livePost.id',
+    );
+    expect(photoViewerSource).toContain('handleModalDismiss');
+    expect(photoViewerSource).toContain('onDismiss={handleModalDismiss}');
+    expect(photoViewerSource).toContain('animateClose();');
     expect(photoViewerSource).toContain('visible={Boolean(state && livePost)}');
-    expect(photoViewerSource).not.toContain('pendingCommentPostIdRef');
-    expect(photoViewerSource).not.toContain('pendingCommentPostRef');
-    expect(photoViewerSource).not.toContain('handleModalDismiss');
-    expect(photoViewerSource).not.toContain('onDismiss={handleModalDismiss}');
-    expect(photoViewerSource).not.toContain('navigateToPostComments(');
+    expect(photoViewerSource).not.toContain('onCommentTap(livePost.id)');
     expect(photoViewerSource).not.toContain('PHOTO_VIEWER_COMMENT_SHEET_DELAY_MS');
     expect(photoViewerSource).not.toContain('commentOpenTimeoutRef');
-    expect(photoViewerSource).not.toContain('onCommentTap(pendingCommentPostId)');
+  });
+
+  test('routes photo comments through the same post detail flow as feed cards', () => {
+    for (const source of [
+      feedScreenSource,
+      profileScreenSource,
+      pageDetailSource,
+    ]) {
+      expect(source).toContain('navigateToPostComments(');
+      expect(source).toContain(
+        'onCommentTap={handlePhotoViewerCommentTap}',
+      );
+    }
   });
 
   test('sizes photos within the visible viewport instead of behind the bottom panel', () => {

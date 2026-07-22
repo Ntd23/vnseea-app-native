@@ -241,6 +241,24 @@ export function usePostDetailViewModel({
     });
   }, []);
 
+  const savePost = useCallback(
+    (targetPostId: string) => feedRepository.savePost(targetPostId),
+    [],
+  );
+
+  const reportPost = useCallback(
+    (targetPostId: string) => feedRepository.reportPost(targetPostId),
+    [],
+  );
+
+  const deletePost = useCallback(async (targetPostId: string) => {
+    const result = await feedRepository.deletePost(targetPostId);
+    if (result.deleted) {
+      setPost(undefined);
+    }
+    return result;
+  }, []);
+
   const refreshRealtimeComments = useCallback(async () => {
     try {
       const result = await feedRepository.getPostById(postId, {
@@ -268,6 +286,9 @@ export function usePostDetailViewModel({
     applyRealtimePost,
     markRealtimeDeleted,
     adjustCommentCount,
+    savePost,
+    reportPost,
+    deletePost,
     refreshRealtimeComments,
   };
 }

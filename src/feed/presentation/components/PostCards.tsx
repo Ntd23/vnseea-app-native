@@ -1766,6 +1766,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   hasDragged,
   navigateToProfile,
   onOpenPostMenu,
+  showIdentityHeader = true,
   keepPreparedVideoMounted = false,
   commentNavigationMode = 'detail',
 }: {
@@ -1792,6 +1793,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   hasDragged?: any;
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
+  showIdentityHeader?: boolean;
   keepPreparedVideoMounted?: boolean;
   commentNavigationMode?: 'detail' | 'callback';
 }) {
@@ -2227,21 +2229,25 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   return (
     <FeedCardSurface>
       <FeedCardContent>
-        <PostHeader
-          avatar={post.publisher.avatarUrl}
-          name={
-            post.isAnonymous
-              ? copy.anonymousPrivacyLabel
-              : post.publisher.name
-          }
-          time={formatPostTime(post.postedAt, copy)}
-          copy={copy}
-          onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
-          onMorePress={onOpenPostMenu}
-          post={post}
-        />
+        {showIdentityHeader ? (
+          <PostIdentityHeader
+            avatar={post.publisher.avatarUrl}
+            name={
+              post.isAnonymous
+                ? copy.anonymousPrivacyLabel
+                : post.publisher.name
+            }
+            time={formatPostTime(post.postedAt, copy)}
+            copy={copy}
+            onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
+            onMorePress={onOpenPostMenu}
+            post={post}
+          />
+        ) : null}
         {post.sharedFrom && !post.sharedPost ? (
-          <Text className="-mt-3 mb-3 text-caption-secondary">
+          <Text
+            className={`${showIdentityHeader ? '-mt-3 ' : ''}mb-3 text-caption-secondary`}
+          >
             {copy.sharedPostLabel(
               post.sharedFrom.isAnonymous
                 ? copy.anonymousPrivacyLabel
@@ -2523,7 +2529,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 }, areHomeVideoPostCardPropsEqual);
 
 // â”€â”€ PostHeader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const PostHeader = React.memo(function PostHeader({
+export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   avatar,
   name,
   time,
@@ -2533,6 +2539,7 @@ const PostHeader = React.memo(function PostHeader({
   onMorePress,
   onDetailPress,
   post,
+  containerClassName = 'mb-4 flex-row items-center justify-between',
 }: {
   avatar?: string;
   name: string;
@@ -2543,6 +2550,7 @@ const PostHeader = React.memo(function PostHeader({
   onMorePress?: (post: FeedPost) => void;
   onDetailPress?: (post: FeedPost) => void;
   post?: FeedPost;
+  containerClassName?: string;
 }) {
   const handleMorePress = useCallback(() => {
     if (post) {
@@ -2560,9 +2568,9 @@ const PostHeader = React.memo(function PostHeader({
   const PrivacyIcon = privacyMeta.Icon;
 
   return (
-    <View className="mb-4 flex-row items-center justify-between">
+    <View className={containerClassName}>
       <TouchableOpacity
-        className="flex-row items-center"
+        className="min-w-0 flex-1 flex-row items-center"
         activeOpacity={0.8}
         onPress={onPress}
         disabled={!onPress}
@@ -2574,9 +2582,11 @@ const PostHeader = React.memo(function PostHeader({
             <ShoppingBag size={20} color="#FFFFFF" />
           </View>
         )}
-        <View className="ml-3">
+        <View className="ml-3 min-w-0 flex-1">
           <View className="flex-row items-center">
-            <Text className="text-title-primary">{name}</Text>
+            <Text className="min-w-0 flex-shrink text-title-primary" numberOfLines={1}>
+              {name}
+            </Text>
             {badge ? (
               <Text className="surface-muted ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand">
                 {badge}
@@ -2957,6 +2967,7 @@ function areCommonCardPropsEqual(previous: any, next: any) {
     previous.hasDragged === next.hasDragged &&
     previous.navigateToProfile === next.navigateToProfile &&
     previous.onOpenPostMenu === next.onOpenPostMenu &&
+    previous.showIdentityHeader === next.showIdentityHeader &&
     previous.commentNavigationMode === next.commentNavigationMode
   );
 }
@@ -3009,6 +3020,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   navigateToProfile,
   onOpenPostMenu,
   onPostPress,
+  showIdentityHeader = true,
   commentNavigationMode = 'detail',
 }: {
   post: FeedTextPost;
@@ -3036,6 +3048,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   hasDragged?: any;
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
+  showIdentityHeader?: boolean;
   /**
    * Tapping the post header / body opens the dedicated PostDetail
    * screen. We intentionally keep this separate from `onCommentTap`
@@ -3153,24 +3166,28 @@ export const TextPostCard = React.memo(function TextPostCard({
   return (
     <FeedCardSurface>
       <FeedCardContent>
-        <PostHeader
-          avatar={post.publisher.avatarUrl}
-          name={
-            post.isAnonymous
-              ? copy.anonymousPrivacyLabel
-              : post.publisher.name
-          }
-          time={`${formatPostTime(post.postedAt, copy)} (${copy.photoCount(
-            totalPhotos,
-          )})`}
-          copy={copy}
-          onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
-          onMorePress={onOpenPostMenu}
-          onDetailPress={onPostPress}
-          post={post}
-        />
+        {showIdentityHeader ? (
+          <PostIdentityHeader
+            avatar={post.publisher.avatarUrl}
+            name={
+              post.isAnonymous
+                ? copy.anonymousPrivacyLabel
+                : post.publisher.name
+            }
+            time={`${formatPostTime(post.postedAt, copy)} (${copy.photoCount(
+              totalPhotos,
+            )})`}
+            copy={copy}
+            onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
+            onMorePress={onOpenPostMenu}
+            onDetailPress={onPostPress}
+            post={post}
+          />
+        ) : null}
         {post.sharedFrom && !post.sharedPost ? (
-          <Text className="-mt-3 mb-3 text-caption-secondary">
+          <Text
+            className={`${showIdentityHeader ? '-mt-3 ' : ''}mb-3 text-caption-secondary`}
+          >
             {copy.sharedPostLabel(
               post.sharedFrom.isAnonymous
                 ? copy.anonymousPrivacyLabel
