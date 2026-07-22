@@ -717,6 +717,12 @@ if ($f == 'products') {
             $status = Wo_Secure($_POST['status']);
             $order = $db->where('hash_id',$hash_id)->getOne(T_USER_ORDERS);
             if (!empty($order)) {
+                if (VNSEEA_IsMarketRequestOrderHash($hash_id)) {
+                    $data['message'] = $wo['lang']['please_check_details'];
+                    header("Content-type: application/json");
+                    echo json_encode($data);
+                    exit();
+                }
                 $types = array();
                 if ($order->product_owner_id == $wo['user']['user_id']) {
                     if ($order->status == 'placed') {
@@ -796,7 +802,7 @@ if ($f == 'products') {
             $hash = Wo_Secure($_POST['hash_order']);
             $message = Wo_Secure($_POST['message'],1);
             $order = $db->where('hash_id',$hash)->where('user_id',$wo['user']['user_id'])->getOne(T_USER_ORDERS);
-            if (!empty($order)) {
+            if (!empty($order) && !VNSEEA_IsMarketRequestOrderHash($hash)) {
                 $db->insert(T_REFUND,array('order_hash_id' => $hash,
                                           'user_id' => $wo['user']['user_id'],
                                           'description' => $message,

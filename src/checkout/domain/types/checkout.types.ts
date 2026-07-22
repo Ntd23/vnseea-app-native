@@ -48,4 +48,10 @@ export interface WalletCheckoutBalance {
 export interface CheckoutResult {
   success: boolean;
   message: string;
+  cartCount?: number;
+  orders?: Array<{
+    hashId: string;
+    sellerUserId: string;
+    messageId: string;
+  }>;
 }

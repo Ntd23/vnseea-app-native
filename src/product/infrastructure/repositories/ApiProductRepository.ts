@@ -145,6 +145,13 @@ export function createProductRepository(): ProductRepository {
       }
     },
 
+    async ensureProductInCart(productId) {
+      return apiBridge.post<AddToCartResponse>(apiRoutes.products.market, {
+        type: 'ensure_cart',
+        product_id: productId,
+      });
+    },
+
     async getCartCount() {
       const cartProducts = await getCartProducts();
       return cartProducts.reduce(

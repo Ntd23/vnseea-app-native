@@ -565,6 +565,17 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         message,
         apiConfig.webBaseUrl,
       );
+      const marketplaceContext = options?.productInquiry
+        ? {
+            type: 'product_inquiry' as const,
+            productId: options.productInquiry.productId,
+            name: options.productInquiry.name || 'Sản phẩm',
+            price: options.productInquiry.price,
+            image: options.productInquiry.image,
+            location: options.productInquiry.location,
+            note: options.productInquiry.note || message || undefined,
+          }
+        : undefined;
       const optimisticMessage: MessageItem = {
         id: tempId,
         conversationId: '',
@@ -574,9 +585,12 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
         sharedPost: textDescriptor.sharedPost,
-        contentKind: attachment?.mediaType ?? textDescriptor.kind,
+        contentKind:
+          attachment?.mediaType ??
+          (marketplaceContext ? 'product' : textDescriptor.kind),
         link: textDescriptor.link,
         location: textDescriptor.location,
+        marketplaceContext,
         replyTo: options?.replyTo,
         reactions: createEmptyMessageReactionSummary(),
         time: Math.floor(Date.now() / 1000),

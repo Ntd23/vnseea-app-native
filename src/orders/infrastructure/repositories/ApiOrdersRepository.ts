@@ -31,6 +31,8 @@ type RawSubOrder = {
   final_price?: unknown;
   units?: unknown;
   address_id?: unknown;
+  order_flow?: unknown;
+  stock_reserved?: unknown;
   address?: {
     name?: unknown;
     phone?: unknown;
@@ -57,6 +59,7 @@ type RawMarketOrder = {
   data?: {
     name?: unknown;
   };
+  address?: RawSubOrder['address'];
   orders?: RawSubOrder[];
 };
 
@@ -112,17 +115,19 @@ function productImage(product?: RawOrderProduct) {
   return stringValue(image?.image) || stringValue(image?.image_org) || undefined;
 }
 
-function shippingAddress(order?: RawSubOrder): OrderShippingAddress | undefined {
-  if (!order?.address) return undefined;
+function shippingAddress(
+  address?: RawSubOrder['address'],
+): OrderShippingAddress | undefined {
+  if (!address) return undefined;
 
   return {
-    name: stringValue(order.address.name),
-    phone: stringValue(order.address.phone),
-    address: stringValue(order.address.address),
-    city: stringValue(order.address.city),
-    state: stringValue(order.address.state),
-    country: stringValue(order.address.country),
-    zip: stringValue(order.address.zip),
+    name: stringValue(address.name),
+    phone: stringValue(address.phone),
+    address: stringValue(address.address),
+    city: stringValue(address.city),
+    state: stringValue(address.state),
+    country: stringValue(address.country),
+    zip: stringValue(address.zip),
   };
 }
 
@@ -156,6 +161,8 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
   const firstOrder = raw.orders?.[0];
   const status = statusValue(firstOrder?.status);
   const code = stringValue(raw.order_hash_id) || stringValue(firstOrder?.hash_id);
+  const orderFlow =
+    stringValue(firstOrder?.order_flow) === 'request' ? 'request' : 'prepaid';
   const lines = (raw.orders ?? []).map((order, index) => {
     const lineStatus = statusValue(order.status);
     const lineShop = stringValue(order.product?.user_data?.name) || stringValue(order.product?.user_data?.username) || 'Shop';
@@ -179,7 +186,7 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
   const buyerAvatar = stringValue((firstOrder as any)?.buyer?.avatar) || undefined;
 
   return {
-    id: stringValue(raw.id) || code,
+    id: code || stringValue(raw.id),
     code: code ? `#${code}` : '#',
     shop: shopName(raw, mode),
     product: productTitle(raw),
@@ -194,7 +201,10 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
     buyerUsername,
     buyerAvatar,
     addressId: stringValue(firstOrder?.address_id) || undefined,
-    shippingAddress: shippingAddress(firstOrder),
+    shippingAddress: shippingAddress(firstOrder?.address ?? raw.address),
+    orderFlow,
+    stockReserved:
+      orderFlow === 'prepaid' || numberValue(firstOrder?.stock_reserved) === 1,
   };
 }
 
@@ -227,9 +237,10 @@ export function createOrdersRepository(): OrdersRepository {
       return getMarketOrders('orders', input);
     },
     async changeOrderStatus(hashId, status) {
+      const orderHash = hashId.replace(/^#/, '');
       await apiBridge.post(apiRoutes.products.market, {
         type: 'change_status',
-        hash_id: hashId,
+        hash_id: orderHash,
         status,
       });
     },

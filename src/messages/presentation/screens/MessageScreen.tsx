@@ -70,6 +70,8 @@ import {
 
   Send,
 
+  ShoppingBag,
+
   Tag,
 
   UserPlus,
@@ -214,6 +216,14 @@ const MESSAGE_COPY: Record<
     sentProduct: string;
 
     sentProductMe: string;
+
+    productInquiry: string;
+
+    productInquiryMe: string;
+
+    orderRequest: string;
+
+    orderRequestMe: string;
 
     sentSticker: string;
 
@@ -375,6 +385,14 @@ const MESSAGE_COPY: Record<
 
     sentProductMe: 'Bạn đã gửi sản phẩm',
 
+    productInquiry: 'Hỏi về',
+
+    productInquiryMe: 'Bạn đã hỏi về',
+
+    orderRequest: 'Yêu cầu mua mới',
+
+    orderRequestMe: 'Bạn đã gửi yêu cầu mua',
+
     sentSticker: 'Đã gửi nhãn dán',
 
     sentStickerMe: 'Bạn đã gửi nhãn dán',
@@ -532,6 +550,14 @@ const MESSAGE_COPY: Record<
     sentProduct: 'Sent a product',
 
     sentProductMe: 'You sent a product',
+
+    productInquiry: 'Asked about',
+
+    productInquiryMe: 'You asked about',
+
+    orderRequest: 'New purchase request',
+
+    orderRequestMe: 'You sent purchase request',
 
     sentSticker: 'Sent a sticker',
 
@@ -762,15 +788,37 @@ function getMessagePreview(
 
       };
 
-    case 'product':
+    case 'product': {
+
+      const productName = lastMessage.replace(/^Hỏi về\s*/i, '').trim();
 
       return {
 
-        icon: <MessageCircle size={14} color="#64748b" />,
+        icon: <ShoppingBag size={14} color="#64748b" />,
 
-        text: isFromMe ? copy.sentProductMe : copy.sentProduct,
+        text: `${
+          isFromMe ? copy.productInquiryMe : copy.productInquiry
+        }${productName ? ` ${productName}` : ''}`,
 
       };
+
+    }
+
+    case 'order': {
+
+      const orderHash = lastMessage.match(/#([^\s]+)$/)?.[1];
+
+      return {
+
+        icon: <ShoppingBag size={14} color="#2563eb" />,
+
+        text: `${
+          isFromMe ? copy.orderRequestMe : copy.orderRequest
+        }${orderHash ? ` #${orderHash}` : ''}`,
+
+      };
+
+    }
 
     case 'sticker':
 
@@ -815,8 +863,6 @@ function getMessagePreview(
         text: isFromMe ? copy.sharedLocationMe : copy.sharedLocation,
 
       };
-
-    case 'text':
 
     default:
 

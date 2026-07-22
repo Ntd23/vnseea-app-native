@@ -2,14 +2,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createCheckoutRepository } from '../../infrastructure/repositories/ApiCheckoutRepository';
 import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
-import { createProductRepository } from '../../../product/infrastructure/repositories/ApiProductRepository';
-import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import type { UserProfile } from '../../../user/domain/types/user.types';
 import type {
   CheckoutSummary,
   DeliveryAddress,
   DeliveryAddressInput,
-  WalletCheckoutBalance,
 } from '../../domain/types/checkout.types';
 import { setSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
@@ -46,8 +43,6 @@ function countSummaryItems(summary: CheckoutSummary | null) {
 
 export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
   const [summary, setSummary] = useState<CheckoutSummary | null>(null);
-  const [walletBalance, setWalletBalance] =
-    useState<WalletCheckoutBalance | null>(null);
   const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
   const [addressForm, setAddressForm] =
@@ -104,17 +99,15 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     setPaymentError(null);
 
     try {
-      const [nextSummary, nextAddresses, nextWalletBalance, nextUserProfile] =
+      const [nextSummary, nextAddresses, nextUserProfile] =
         await Promise.all([
           repository.getSummary(),
           repository.getAddresses(),
-          repository.getWalletBalance(),
           userRepository.getCurrentUser().catch(() => null),
       ]);
       setSummary(nextSummary);
       setSyncedCartCount(countSummaryItems(nextSummary));
       setAddresses(nextAddresses);
-      setWalletBalance(nextWalletBalance);
       setCurrentUserProfile(nextUserProfile);
 
       const nextSelectedAddress =
@@ -149,10 +142,6 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
   useEffect(() => {
     load().catch(() => undefined);
   }, [load]);
-
-  const refreshWallet = useCallback(async () => {
-    setWalletBalance(await repository.getWalletBalance());
-  }, []);
 
   const updateAddressField = useCallback(
     (field: keyof DeliveryAddressInput, value: string) => {
@@ -222,7 +211,6 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
         setSelectedAddressId(savedAddress.id);
         setAddressForm(savedAddress);
       }
-      await refreshWallet();
       setStep('payment');
       return true;
     } catch (caughtError) {
@@ -231,7 +219,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     } finally {
       setIsSavingAddress(false);
     }
-  }, [addressForm, refreshWallet]);
+  }, [addressForm]);
 
   const changeQuantity = useCallback(
     async (productId: number, quantity: number) => {
@@ -243,7 +231,6 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
         const nextSummary = await repository.changeQuantity(productId, quantity);
         setSummary(nextSummary);
         setSyncedCartCount(countSummaryItems(nextSummary));
-        await refreshWallet();
       } catch (caughtError) {
         setPaymentError(
           messageFromError(caughtError, 'Không thể cập nhật số lượng.'),
@@ -252,13 +239,13 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
         setIsUpdatingQuantity(false);
       }
     },
-    [isUpdatingQuantity, refreshWallet],
+    [isUpdatingQuantity],
   );
 
   const openConfirm = useCallback(() => {
     const addressId = selectedAddressId || selectedAddress?.id;
     if (!addressId) {
-      setPaymentError('Bạn cần lưu địa chỉ giao hàng trước khi thanh toán.');
+      setPaymentError('Bạn cần lưu địa chỉ giao hàng trước khi gửi yêu cầu mua.');
       setStep('confirm');
       return;
     }
@@ -268,7 +255,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
   const pay = useCallback(async () => {
     const addressId = selectedAddressId || selectedAddress?.id;
     if (!addressId) {
-      setPaymentError('Bạn cần lưu địa chỉ giao hàng trước khi thanh toán.');
+      setPaymentError('Bạn cần lưu địa chỉ giao hàng trước khi gửi yêu cầu mua.');
       setStep('confirm');
       return false;
     }
@@ -282,77 +269,18 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     setSuccessMessage(null);
 
     try {
-      const productRepository = createProductRepository();
-      const messagesRepository = createMessagesRepository();
-
-      // 1. Fetch product details to get seller information
-      const itemsWithSellers = await Promise.all(
-        selectedSummary.items.map(async (item) => {
-          if (item.sellerUserId) {
-            return { item, sellerUserId: item.sellerUserId };
-          }
-          try {
-            const productRes = await productRepository.getProducts({ product_id: item.productId });
-            const product = productRes.products?.[0];
-            const sellerUserId = product?.user_id || product?.seller?.user_id;
-            return { item, sellerUserId };
-          } catch (e) {
-            console.warn(`Failed to fetch seller for product ${item.productId}:`, e);
-            return { item, sellerUserId: null };
-          }
-        })
+      const result = await repository.requestOrder(
+        addressId,
+        selectedSummary.items.map(item => item.productId),
       );
-
-      // Validate that we found at least one seller to contact
-      const validOrders = itemsWithSellers.filter(x => x.sellerUserId);
-      if (validOrders.length === 0) {
-        throw new Error('Không thể tìm thấy thông tin người bán cho các sản phẩm này.');
+      if (!result.success) {
+        throw new Error(result.message);
       }
 
-      // 2. Send messages to sellers
-      const addressString = [
-        selectedAddress?.address,
-        selectedAddress?.city,
-        selectedAddress?.country,
-      ]
-        .filter(Boolean)
-        .join(', ');
-
-      await Promise.all(
-        validOrders.map(async ({ item, sellerUserId }) => {
-          const moneyFormatted = `${Math.round(item.price).toLocaleString('vi-VN')} ${item.currencySymbol}`;
-          const messageText = `Tôi muốn đặt mua sản phẩm:\n👉 *${item.name}*\n💰 Giá: *${moneyFormatted}*\n📦 Số lượng: *${item.quantity}*\n🆔 ID: *${item.productId}*\n📷 Ảnh: ${item.image || ''}\n\nThông tin người mua:\n👤 Tên: *${selectedAddress?.name || ''}*\n📞 SĐT: *${selectedAddress?.phone || ''}*\n📍 Địa chỉ: *${addressString}*`;
-
-          // Skip sending direct chat message to self to avoid WoWonder 400 "Something went wrong" error
-          if (currentUserProfile?.id && String(sellerUserId) === String(currentUserProfile.id)) {
-            console.log(`Skipping sending order chat to self (userId: ${sellerUserId})`);
-            return;
-          }
-
-          try {
-            await messagesRepository.sendMessage(String(sellerUserId), messageText);
-          } catch (chatError) {
-            console.warn(`Failed to send order chat message to seller ${sellerUserId}:`, chatError);
-            // Ignore sending failure to ensure order proceeds
-          }
-        })
-      );
-
-      // 3. Remove items from the cart sequentially to avoid concurrent API lock/session conflicts
-      for (const item of selectedSummary.items) {
-        try {
-          await repository.removeItem(item.productId);
-        } catch (removeError) {
-          console.warn(`Failed to remove item ${item.productId} from cart:`, removeError);
-          // If removal fails, do not block the success UX
-        }
-      }
-
-      // 4. Update UI state
       setConfirmVisible(false);
-      setSuccessMessage('Đơn hàng đã được đặt thành công và gửi thông tin đến người bán.');
+      setSuccessMessage(result.message);
       setSuccessVisible(true);
-      setSyncedCartCount(undefined, -itemCount);
+      setSyncedCartCount(result.cartCount, -itemCount);
 
       await load();
       setStep('payment');
@@ -370,7 +298,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     } finally {
       setIsPaying(false);
     }
-  }, [load, options.selectedProductIds, selectedAddress, selectedAddressId, selectedSummary, itemCount]);
+  }, [itemCount, load, selectedAddress, selectedAddressId, selectedSummary]);
 
   return {
     addressError,
@@ -392,7 +320,6 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     successMessage,
     successVisible,
     summary,
-    walletBalance,
     changeQuantity,
     closeConfirm: () => setConfirmVisible(false),
     closeSuccess: () => setSuccessVisible(false),

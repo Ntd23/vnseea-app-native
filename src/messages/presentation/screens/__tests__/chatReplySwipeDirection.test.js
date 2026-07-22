@@ -35,7 +35,7 @@ describe('ChatScreen reply swipe direction', () => {
     expect(source).toContain("reply.contentKind === 'video_call'");
     expect(source).toContain("reply.contentKind === 'audio_call'");
     expect(source).toContain('createMessageReplyReference(');
-    expect(source).toContain('replyTo ? { replyTo } : undefined');
+    expect(source).toContain('...(replyTo ? { replyTo } : {})');
     expect(source).not.toContain('META_MEDIA_TYPE:');
     expect(source).not.toContain('nextText = `↪️ *Trả lời tin nhắn:*');
     expect(source).toContain('replyCueTranslateX');

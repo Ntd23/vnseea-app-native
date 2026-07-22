@@ -67,6 +67,7 @@ export type ChatPreviewKind =
   | 'audio_call'
   | 'video_call'
   | 'product'
+  | 'order'
   | 'sticker';
 
 export interface SharedPostMessageReference {
@@ -90,6 +91,32 @@ export interface MessageLocationReference {
   address?: string;
 }
 
+export type MarketplaceMessageContext =
+  | {
+      type: 'product_inquiry';
+      productId: string;
+      name: string;
+      price?: string;
+      image?: string;
+      location?: string;
+      note?: string;
+    }
+  | {
+      type: 'order_request';
+      orderHash: string;
+      buyerName: string;
+      buyerPhone: string;
+      buyerAddress: string;
+      items: Array<{
+        productId: string;
+        name: string;
+        image?: string;
+        quantity: number;
+        total: string;
+      }>;
+      total: string;
+    };
+
 export interface MessageReactionSummary {
   total: number;
   myReaction: ReactionType | null;
@@ -112,10 +139,19 @@ export interface MessageReplyReference {
   link?: MessageLinkReference;
   location?: MessageLocationReference;
   callEvent?: MessageCallEvent;
+  marketplaceContext?: MarketplaceMessageContext;
 }
 
 export interface SendMessageOptions {
   replyTo?: MessageReplyReference;
+  productInquiry?: {
+    productId: string;
+    note?: string;
+    name?: string;
+    price?: string;
+    image?: string;
+    location?: string;
+  };
 }
 
 export interface MessageSystemEvent {
@@ -142,6 +178,7 @@ export interface MessageItem {
   contentKind?: ChatPreviewKind;
   link?: MessageLinkReference;
   location?: MessageLocationReference;
+  marketplaceContext?: MarketplaceMessageContext;
   replyTo?: MessageReplyReference;
   reactions: MessageReactionSummary;
   time: number;

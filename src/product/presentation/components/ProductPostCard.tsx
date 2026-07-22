@@ -15,6 +15,7 @@ import {
   MapPin,
   MoreHorizontal,
   ShoppingBag,
+  ShoppingCart,
   MessageCircle,
   Share2,
   Star,
@@ -29,8 +30,6 @@ import { formatProductPrice } from './ProductCurrency';
 import {
   FeedCardContent,
   FeedCardSurface,
-  FeedGlassActionBar,
-  FeedGlassActionButton,
   FeedMediaFrame,
 } from '../../../feed/presentation/components/FeedCardChrome';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
@@ -76,6 +75,9 @@ interface ProductPostCardProps {
   onProfilePress?: (userId: string) => void;
   /** Open a chat thread with the seller (tapped on Nhắn tin button). */
   onContactSeller?: (product: ProductItem) => void;
+  /** Ensure this product is in cart, then open checkout for it. */
+  onOrderRequest?: (product: ProductItem) => void;
+  isOrderRequesting?: boolean;
   onShare?: (product: ProductItem) => void;
   onDelete?: (product: ProductItem) => void;
   isDeleting?: boolean;
@@ -100,6 +102,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onMorePress,
   onProfilePress,
   onContactSeller,
+  onOrderRequest,
+  isOrderRequesting = false,
   onShare,
   onDelete,
   isDeleting = false,
@@ -112,11 +116,11 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onReact,
   onCommentTap,
   commentNavigationMode = 'detail',
-  onOpenReactions,
   post,
 }: ProductPostCardProps) {
   const navigation = useNavigation<any>();
   const imageUrl = product.images?.[0]?.image;
+  const canShowOrderRequest = !product.is_owner && Boolean(onOrderRequest);
 
   const handlePress = useCallback(() => {
     onPress?.(product);
@@ -148,7 +152,13 @@ const ProductPostCard = React.memo(function ProductPostCard({
   const handleContactSeller = useCallback(() => {
     if (!product.can_contact_seller || !product.seller?.user_id) return;
     onContactSeller?.(product);
-  }, [onContactSeller, product, product.can_contact_seller, product.seller?.user_id]);
+  }, [onContactSeller, product]);
+
+  const handleOrderRequest = useCallback((event: GestureResponderEvent) => {
+    event.stopPropagation();
+    if (!onOrderRequest || !product.can_add_to_cart || isOrderRequesting) return;
+    onOrderRequest(product);
+  }, [isOrderRequesting, onOrderRequest, product]);
 
   const handleSharePress = useCallback(() => {
     onShare?.(product);
@@ -226,6 +236,31 @@ const ProductPostCard = React.memo(function ProductPostCard({
                   strokeWidth={2.4}
                 />
               </TouchableOpacity>
+              {canShowOrderRequest ? (
+                <TouchableOpacity
+                  style={[
+                    styles.marketplaceActionButton,
+                    styles.marketplaceCartButton,
+                    !product.can_add_to_cart && styles.marketplaceActionDisabled,
+                  ]}
+                  activeOpacity={0.75}
+                  disabled={!product.can_add_to_cart || isOrderRequesting}
+                  onPress={handleOrderRequest}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Đặt mua sản phẩm"
+                >
+                  {isOrderRequesting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <ShoppingCart
+                      size={20}
+                      color={product.can_add_to_cart ? '#FFFFFF' : '#cbd5e1'}
+                      strokeWidth={2.4}
+                    />
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : null}
           <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
@@ -260,6 +295,28 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 >
                   <MessageCircle size={15} color={product.can_contact_seller ? "#0F56FB" : "#CBD5E1"} />
                 </TouchableOpacity>
+                {canShowOrderRequest ? (
+                  <TouchableOpacity
+                    className={`h-8 w-8 items-center justify-center rounded-full ${
+                      product.can_add_to_cart ? 'bg-blue-600' : 'bg-slate-50'
+                    }`}
+                    activeOpacity={0.7}
+                    disabled={!product.can_add_to_cart || isOrderRequesting}
+                    onPress={handleOrderRequest}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Đặt mua sản phẩm"
+                  >
+                    {isOrderRequesting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <ShoppingCart
+                        size={15}
+                        color={product.can_add_to_cart ? '#FFFFFF' : '#CBD5E1'}
+                      />
+                    )}
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -528,6 +585,9 @@ const styles = StyleSheet.create({
   },
   marketplaceMessageButton: {
     backgroundColor: '#eef2f7',
+  },
+  marketplaceCartButton: {
+    backgroundColor: '#0f56fb',
   },
   marketplaceActionDisabled: {
     backgroundColor: '#f1f5f9',
