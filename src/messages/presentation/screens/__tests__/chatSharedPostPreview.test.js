@@ -27,9 +27,9 @@ describe('ChatScreen shared post preview', () => {
       'src/messages/application/view-models/useChatViewModel.ts',
     );
 
-    expect(source).toContain('parseSharedPostMessage');
+    expect(source).toContain('describeMessageTextContent');
     expect(source).toContain(
-      'sharedPost: parseSharedPostMessage(message, apiConfig.webBaseUrl)',
+      'sharedPost: textDescriptor.sharedPost',
     );
   });
 

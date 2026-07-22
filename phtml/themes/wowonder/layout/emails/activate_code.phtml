@@ -1,0 +1,13 @@
+<?php
+$data = $db->where('name', 'activate_code')->getOne(T_HTML_EMAILS);
+$html = !empty($data->value) ? $data->value : '<p>Xin chào {{USERNAME}},</p><p>Mã kích hoạt tài khoản {{SITE_NAME}} của bạn là:</p><h1>{{CODE}}</h1>';
+$replaces = array(
+    'USERNAME' => trim(($wo['user']['first_name'] ?? '') . ' ' . ($wo['user']['last_name'] ?? '')),
+    'SITE_URL' => trim($wo['config']['site_url'] ?? ''),
+    'EMAIL' => $wo['user']['email'],
+    'CODE' => $wo['code'],
+    'SITE_NAME' => $wo['config']['siteName'],
+);
+$html = Wo_ReplaceText($html, $replaces);
+echo $html;
+?>

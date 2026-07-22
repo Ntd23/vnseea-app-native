@@ -71,6 +71,7 @@ const BALANCE_COPY = {
     sendBtn: 'Gửi VNSEEA',
     qrBtn: 'Mã QR nhận VNSEEA',
     transactionsTitle: 'Lịch sử giao dịch',
+    signupBonusHistoryTitle: 'Thưởng đăng ký',
     dateLabel: 'Ngày giao dịch',
     amountLabel: 'Số VNSEEA',
     loading: 'Đang tải...',
@@ -103,6 +104,7 @@ const BALANCE_COPY = {
     sendBtn: 'Send VNSEEA',
     qrBtn: 'Receive VNSEEA QR Code',
     transactionsTitle: 'Transactions',
+    signupBonusHistoryTitle: 'Registration bonus',
     dateLabel: 'Date',
     amountLabel: 'Amount',
     loading: 'Loading...',
@@ -770,6 +772,11 @@ function MyBalanceScreen() {
         renderItem={({ item }) => {
           const isSent = ['SENT', 'PURCHASE', 'POINTS_SENT', 'POINTS_DEDUCT'].includes(item.kind);
           const isReceived = ['RECEIVED', 'WALLET', 'POINTS_RECEIVED', 'POINTS_EARNED'].includes(item.kind);
+          const pointType = String(item.pointType || item.notes || '').toLowerCase();
+          const transactionTitle =
+            item.kind === 'POINTS_EARNED' && pointType === 'signup_bonus'
+              ? copy.signupBonusHistoryTitle
+              : item.notes || (isSent ? 'Đã gửi VNSEEA' : isReceived ? 'Nhận VNSEEA' : item.kind);
           const sign = isSent ? '-' : isReceived ? '+' : '';
           const amountColor = isSent ? '#ef4444' : isReceived ? '#22c55e' : '#0f172a';
           const transactionPoints = item.points > 0 ? item.points : item.amount;
@@ -786,7 +793,7 @@ function MyBalanceScreen() {
             >
               {/* Transaction Title */}
               <Text className="text-[15px] font-bold text-slate-800 leading-tight mb-1">
-                {item.notes || (isSent ? 'Đã gửi VNSEEA' : isReceived ? 'Nhận VNSEEA' : item.kind)}
+                {transactionTitle}
               </Text>
 
               {/* Counterparty */}

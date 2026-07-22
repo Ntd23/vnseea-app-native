@@ -40,14 +40,18 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -73,6 +77,7 @@ import {
   Flag,
   ExternalLink,
   MoreHorizontal,
+  Send,
   Trash2,
   UserCircle,
   X,
@@ -95,6 +100,8 @@ import {
 import { parseSharedPostIdFromStoryDescription } from './storySharedPostLink';
 import { SharedPostStorySegment } from '../components/SharedPostStorySegment';
 import { calculateSharedPostStoryAvailableHeight } from '../../application/sharing/sharedPostStoryLayout';
+import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
+import type { StoryReplyMessageReference } from '../../../messages/domain/types/messages.types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = NativeStackScreenProps<RootStackParamList, 'StoryViewer'>;
@@ -104,8 +111,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'StoryViewer'>;
 // missing from the metadata.
 const IMAGE_SEGMENT_MS = 5000;
 const VIDEO_FALLBACK_MS = 15000;
+const REPLY_SWIPE_THRESHOLD = 72;
+const REPLY_SWIPE_VELOCITY = -700;
 
 const repository = createStoriesRepository();
+const messagesRepository = createMessagesRepository();
 
 type ReactionBurstItem = {
   id: string;
@@ -179,9 +189,20 @@ function StoryViewerScreen({ route }: Props) {
       );
     }
   }, [stories, passedStories]);
-  const [segmentIndex, setSegmentIndex] = useState(0);
+  const [segmentIndex, setSegmentIndex] = useState(() => {
+    const initialStory = stories[userIndexRef.current];
+    const requestedIndex = route.params?.initialSegmentIndex ?? 0;
+    return Math.max(
+      0,
+      Math.min(requestedIndex, Math.max(0, (initialStory?.media.length ?? 1) - 1)),
+    );
+  });
   const [isPaused, setIsPaused] = useState(false);
   const [isOptionsSheetVisible, setIsOptionsSheetVisible] = useState(false);
+  const [isReplyComposerOpen, setIsReplyComposerOpen] = useState(false);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+  const replyInputRef = useRef<TextInput>(null);
   const pauseForNavigationRef = useRef(false);
   const [reactionBurst, setReactionBurst] = useState<ReactionBurstItem[]>([]);
   const reactionBurstId = useRef(0);
@@ -220,7 +241,12 @@ function StoryViewerScreen({ route }: Props) {
       currentSegment?.description ?? currentStory?.description,
     );
   }, [currentSegment, currentStory?.description]);
-  const shouldPausePlayback = isPaused || !isStoryViewerFocused || isOptionsSheetVisible;
+  const shouldPausePlayback =
+    isPaused ||
+    !isStoryViewerFocused ||
+    isOptionsSheetVisible ||
+    isReplyComposerOpen ||
+    isSendingReply;
 
   // Effective duration for the current segment. For video we wait on
   // `onLoad` (videoDurationMs becomes a number), then animate over that.
@@ -248,13 +274,18 @@ function StoryViewerScreen({ route }: Props) {
   // One Animated.Value drives the FILL on the active segment bar. Inactive
   // bars are rendered as either fully empty (future) or fully filled (past).
   const progress = useRef(new Animated.Value(0)).current;
+  const progressFractionRef = useRef(0);
 
   // Reset video duration when segment changes so we re-wait on onLoad
   // for the next video.
   useEffect(() => {
     setVideoDurationMs(null);
     progress.stopAnimation();
+    progressFractionRef.current = 0;
     progress.setValue(0);
+    setReplyDraft('');
+    setIsReplyComposerOpen(false);
+    Keyboard.dismiss();
   }, [progress, segmentPlaybackKey]);
 
   useFocusEffect(
@@ -305,20 +336,29 @@ function StoryViewerScreen({ route }: Props) {
     if (!isSegmentProgressReady) return;
     if (shouldPausePlayback) return;
 
-    progress.setValue(0);
+    const remainingDuration = Math.max(
+      1,
+      segmentMs * (1 - progressFractionRef.current),
+    );
+    progress.setValue(progressFractionRef.current);
     const anim = Animated.timing(progress, {
       toValue: 1,
-      duration: segmentMs,
+      duration: remainingDuration,
       // We animate a width value — must use the JS driver since width
       // isn't supported by the native driver in RN.
       useNativeDriver: false,
     });
     anim.start(({ finished }) => {
       // `finished` is false when we abort via .stop() (effect cleanup).
-      if (finished) advance();
+      if (finished) {
+        progressFractionRef.current = 1;
+        advance();
+      }
     });
     return () => {
-      anim.stop();
+      progress.stopAnimation(value => {
+        progressFractionRef.current = Math.max(0, Math.min(1, value));
+      });
     };
   }, [
     currentSegment,
@@ -567,6 +607,80 @@ function StoryViewerScreen({ route }: Props) {
     navigation.navigate(ROUTES.POST_DETAIL, { postId: sharedPostId });
   }, [navigation, sharedPostId]);
 
+  const openReplyComposer = useCallback(() => {
+    if (!currentStory || currentStory.isOwner) return;
+    setIsReplyComposerOpen(true);
+    setIsPaused(false);
+    requestAnimationFrame(() => replyInputRef.current?.focus());
+  }, [currentStory]);
+
+  const closeReplyComposer = useCallback(() => {
+    Keyboard.dismiss();
+    setIsReplyComposerOpen(false);
+    setIsPaused(false);
+  }, []);
+
+  const sendStoryReply = useCallback(async () => {
+    const text = replyDraft.trim();
+    if (
+      !text ||
+      isSendingReply ||
+      !currentStory ||
+      !currentSegment ||
+      currentStory.isOwner
+    ) {
+      return;
+    }
+
+    const story_id = currentSegment.storyId || currentStory.id;
+    const storyReply: StoryReplyMessageReference = {
+      storyId: story_id,
+      publisherId: currentStory.publisher.userId,
+      publisherName: currentStory.publisher.name,
+      publisherAvatar: currentStory.publisher.avatarUrl,
+      mediaType: currentSegment.type,
+      thumbnailUrl:
+        currentSegment.type === 'image'
+          ? currentSegment.url
+          : currentStory.thumbnailUrl,
+      caption:
+        currentSegment.description ??
+        currentSegment.title ??
+        currentStory.description ??
+        currentStory.title,
+      available: true,
+    };
+
+    setIsSendingReply(true);
+    try {
+      await messagesRepository.sendMessage(
+        currentStory.publisher.userId,
+        text,
+        undefined,
+        { storyReply: storyReply },
+      );
+      setReplyDraft('');
+      closeReplyComposer();
+      showSnackbar({ message: 'Đã trả lời tin', type: 'success' });
+    } catch (caught) {
+      showSnackbar({
+        message:
+          caught instanceof Error
+            ? caught.message
+            : 'Không thể trả lời tin. Vui lòng thử lại.',
+        type: 'error',
+      });
+    } finally {
+      setIsSendingReply(false);
+    }
+  }, [
+    closeReplyComposer,
+    currentSegment,
+    currentStory,
+    isSendingReply,
+    replyDraft,
+  ]);
+
   const handleDeleteFromOptions = useCallback(() => {
     setIsOptionsSheetVisible(false);
     onDelete();
@@ -587,17 +701,14 @@ function StoryViewerScreen({ route }: Props) {
   const handleLongPressStart = useCallback(() => setIsPaused(true), []);
   const handlePressOut = useCallback(() => setIsPaused(false), []);
 
-  // ── Swipe-down-to-dismiss gesture ──────────────────────────────────
+  // ── Vertical Story gesture ─────────────────────────────────────────
   // All gesture-related hooks (useSharedValue, useAnimatedStyle,
   // useMemo) MUST live ABOVE the early-return below to satisfy the
   // Rules of Hooks. The early-return is only allowed to live BELOW
   // the last hook call in the render body.
   //
-  // We mirror the photo viewer feel: dragging down translates the whole
-  // sheet and fades the background, releasing past the threshold (or
-  // with enough downward velocity) dismisses the viewer. Otherwise it
-  // springs back to centre. Horizontal swipes are intentionally ignored
-  // so they don't fight the tap-to-advance zones.
+  // Down dismisses the viewer; up opens the inline reply composer. Horizontal
+  // movement is intentionally ignored so it does not fight Story navigation.
   const dismissThreshold = Math.max(140, viewportHeight * 0.35);
   const dismissVelocity = 800;
 
@@ -642,9 +753,6 @@ function StoryViewerScreen({ route }: Props) {
     opacity: 1 - swipeProgress.value,
   }));
 
-  // Build the pan gesture once. We re-create it when the dismissal
-  // primitives change (e.g. `setIsPaused` reference, dismiss threshold)
-  // so the worklet captures stay current.
   const swipeGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -657,9 +765,10 @@ function StoryViewerScreen({ route }: Props) {
           runOnJS(setIsPaused)(true);
         })
         .onUpdate(event => {
-          // Only honour downward drags; allow a tiny upward rubber-band
-          // so the gesture feels natural.
-          const translation = Math.max(-40, event.translationY);
+          const translation = Math.max(
+            -REPLY_SWIPE_THRESHOLD,
+            event.translationY,
+          );
           swipeTranslateY.value = translation;
           // Map distance to a 0..1 progress, clamped at 1 so the
           // background can fade fully out.
@@ -669,6 +778,26 @@ function StoryViewerScreen({ route }: Props) {
           );
         })
         .onEnd(event => {
+          const passedReplyThreshold =
+            event.translationY < -REPLY_SWIPE_THRESHOLD ||
+            event.velocityY < REPLY_SWIPE_VELOCITY;
+          if (passedReplyThreshold && !currentStory?.isOwner) {
+            swipeTranslateY.value = withSpring(0);
+            swipeProgress.value = withSpring(0);
+            runOnJS(openReplyComposer)();
+            return;
+          }
+
+          if (
+            isReplyComposerOpen &&
+            (event.translationY > 36 || event.velocityY > 500)
+          ) {
+            swipeTranslateY.value = withSpring(0);
+            swipeProgress.value = withSpring(0);
+            runOnJS(closeReplyComposer)();
+            return;
+          }
+
           const passedThreshold =
             swipeTranslateY.value > dismissThreshold ||
             event.velocityY > dismissVelocity;
@@ -727,11 +856,17 @@ function StoryViewerScreen({ route }: Props) {
           // wins the race) make sure we don't leave isPaused stuck on.
           runOnJS(setIsPaused)(false);
         }),
-    // The gesture closes over stable refs/setters only; we deliberately
-    // exclude the changing values below so the worklet isn't rebuilt on
-    // every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [
+      closeReplyComposer,
+      currentStory?.isOwner,
+      dismissThreshold,
+      handleDismiss,
+      isReplyComposerOpen,
+      openReplyComposer,
+      swipeProgress,
+      swipeTranslateY,
+      viewportHeight,
+    ],
   );
 
   // ── Early-out when no stories ───────────────────────────────────────
@@ -793,7 +928,10 @@ function StoryViewerScreen({ route }: Props) {
           </View>
 
           {/* ── Tap zones (transparent overlays over the media) ────────── */}
-          <View style={styles.tapZones} pointerEvents="box-none">
+          <View
+            style={styles.tapZones}
+            pointerEvents={isReplyComposerOpen ? 'none' : 'box-none'}
+          >
             <Pressable
               style={styles.tapZoneLeft}
               onPress={goBack}
@@ -931,7 +1069,7 @@ function StoryViewerScreen({ route }: Props) {
             </View>
           </View>
 
-          {sharedPostId ? (
+          {sharedPostId && !isReplyComposerOpen ? (
             <View
               pointerEvents="box-none"
               style={[
@@ -990,42 +1128,101 @@ function StoryViewerScreen({ route }: Props) {
             ))}
           </View>
 
-          <View style={styles.bottomOverlay} pointerEvents="box-none">
-            {/* Solid black bottom bar */}
-            <View style={styles.bottomBarContainer}>
-              <View style={styles.inputRow}>
-                {/* Quick Reactions */}
-                <Animated.View style={[styles.quickReactions, { transform: [{ scale: reactionScale }] }]}>
-                  {FEED_REACTION_TYPES.map(type => {
-                    const isActive = currentStory.myReaction === type;
-                    return (
-                      <TouchableOpacity
-                        key={type}
-                        onPress={() => {
-                          console.log('[StoryViewer] Reaction button pressed:', type);
-                          onReact(type);
-                        }}
-                        activeOpacity={0.5}
-                        style={[
-                          styles.quickReactionBtn,
-                          isActive ? styles.reactionBtnActive : null,
-                        ]}
-                      >
-                        <Image
-                          source={FEED_REACTION_IMAGES[type]}
-                          style={[
-                            styles.quickReactionImage,
-                            { opacity: isActive ? 1 : 0.65 },
-                          ]}
-                          resizeMode="contain"
-                        />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </Animated.View>
+          <KeyboardAvoidingView
+            style={styles.bottomOverlay}
+            pointerEvents="box-none"
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
+          >
+            {isReplyComposerOpen ? (
+              <View
+                style={[
+                  styles.replyComposer,
+                  {
+                    paddingBottom: Math.max(storySafeAreaInsets.bottom, 12),
+                  },
+                ]}
+              >
+                <TextInput
+                  ref={replyInputRef}
+                  value={replyDraft}
+                  onChangeText={setReplyDraft}
+                  placeholder={`Trả lời ${currentStory.publisher.name}...`}
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  maxLength={1000}
+                  editable={!isSendingReply}
+                  style={styles.replyInput}
+                  returnKeyType="default"
+                />
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Gửi trả lời tin"
+                  activeOpacity={0.82}
+                  disabled={!replyDraft.trim() || isSendingReply}
+                  onPress={sendStoryReply}
+                  style={[
+                    styles.replySendButton,
+                    !replyDraft.trim() || isSendingReply
+                      ? styles.replySendButtonDisabled
+                      : null,
+                  ]}
+                >
+                  {isSendingReply ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Send size={20} color="#FFFFFF" />
+                  )}
+                </TouchableOpacity>
               </View>
-            </View>
-          </View>
+            ) : (
+              <View style={styles.bottomBarContainer}>
+                {!currentStory.isOwner ? (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={openReplyComposer}
+                    style={styles.replyHintButton}
+                  >
+                    <Text style={styles.replyHintText}>
+                      Vuốt lên để trả lời
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                <View style={styles.inputRow}>
+                  <Animated.View
+                    style={[
+                      styles.quickReactions,
+                      { transform: [{ scale: reactionScale }] },
+                    ]}
+                  >
+                    {FEED_REACTION_TYPES.map(type => {
+                      const isActive = currentStory.myReaction === type;
+                      return (
+                        <TouchableOpacity
+                          key={type}
+                          onPress={() => onReact(type)}
+                          activeOpacity={0.5}
+                          style={[
+                            styles.quickReactionBtn,
+                            isActive ? styles.reactionBtnActive : null,
+                          ]}
+                        >
+                          <Image
+                            source={FEED_REACTION_IMAGES[type]}
+                            style={[
+                              styles.quickReactionImage,
+                              { opacity: isActive ? 1 : 0.65 },
+                            ]}
+                            resizeMode="contain"
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </Animated.View>
+                </View>
+              </View>
+            )}
+          </KeyboardAvoidingView>
           <Modal
             visible={isOptionsSheetVisible}
             transparent
@@ -1545,6 +1742,52 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  replyHintButton: {
+    minHeight: 28,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    marginBottom: 4,
+  },
+  replyHintText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  replyComposer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    backgroundColor: '#000000',
+  },
+  replyInput: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 116,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 11 : 9,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 9,
+    color: '#0F172A',
+    backgroundColor: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 21,
+    textAlignVertical: 'center',
+  },
+  replySendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    backgroundColor: '#2563EB',
+  },
+  replySendButtonDisabled: {
+    opacity: 0.45,
   },
   inputRow: {
     flexDirection: 'row',

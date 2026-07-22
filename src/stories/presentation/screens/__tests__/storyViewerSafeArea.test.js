@@ -38,7 +38,10 @@ describe('StoryViewer iOS header safe area', () => {
     expect(source).toContain('const isStoryViewerFocused = useIsFocused();');
     expect(source).toContain('const [isOptionsSheetVisible, setIsOptionsSheetVisible] = useState(false);');
     expect(source).toContain('const pauseForNavigationRef = useRef(false);');
-    expect(source).toContain('const shouldPausePlayback = isPaused || !isStoryViewerFocused || isOptionsSheetVisible;');
+    expect(source).toContain('const shouldPausePlayback =');
+    expect(source).toContain('!isStoryViewerFocused ||');
+    expect(source).toContain('isOptionsSheetVisible ||');
+    expect(source).toContain('isReplyComposerOpen ||');
     expect(source).toContain('setIsOptionsSheetVisible(true);');
     expect(source).toContain('const handleOpenPublisherProfile = useCallback');
     expect(source).toContain('pauseForNavigationRef.current = true;');

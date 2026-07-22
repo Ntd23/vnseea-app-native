@@ -497,7 +497,10 @@ function RegisterScreen() {
         return;
       }
 
-      Alert.alert(copy.verificationTitle, result.message);
+      navigation.replace(ROUTES.EMAIL_VERIFICATION, {
+        userId: result.userId,
+        email: email.trim(),
+      });
     } catch {
       // The view model exposes the message for inline rendering.
     }
@@ -509,7 +512,6 @@ function RegisterScreen() {
     copy.termsAlertTitle,
     copy.validationPassword,
     copy.validationUsername,
-    copy.verificationTitle,
     email,
     gender,
     hasExistingStorefront,

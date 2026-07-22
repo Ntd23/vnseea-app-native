@@ -32,6 +32,8 @@ function rawMessage(id: string, overrides: Record<string, unknown> = {}) {
     from_id: '2',
     to_id: '1',
     or_text: `Tin nhắn ${id}`,
+    story_id: '0',
+    story: [],
     time: 100 + Number(id),
     seen: 1,
     ...overrides,

@@ -2,6 +2,7 @@
 export const ROUTES = {
   LOGIN: 'Login',
   REGISTER: 'Register',
+  EMAIL_VERIFICATION: 'EmailVerification',
   FORGOT_PASSWORD: 'ForgotPassword',
   MAIN_TABS: 'MainTabs',
   FEED: 'Feed',

@@ -973,7 +973,7 @@ function Wo_LastSeen($user_id, $type = '')
     }
 }
 
-function Wo_RegisterUser($registration_data, $invited = false)
+function Wo_RegisterUser($registration_data, $invited = false, $options = array())
 {
     global $wo, $sqlConnect;
     if (empty($registration_data)) {
@@ -1007,20 +1007,57 @@ function Wo_RegisterUser($registration_data, $invited = false)
         }
     }
     $registration_data['order_posts_by'] = $wo['config']['order_posts_by'];
+    $signup_points_bonus = !empty($options['signup_points_bonus'])
+        ? min(2147483647, max(0, (int)$options['signup_points_bonus']))
+        : 0;
+    if ($signup_points_bonus > 0 && !mysqli_begin_transaction($sqlConnect)) {
+        return false;
+    }
+
     $fields = '`' . implode('`,`', array_keys($registration_data)) . '`';
     $data = '\'' . implode('\', \'', $registration_data) . '\'';
     $query = mysqli_query($sqlConnect, "INSERT INTO " . T_USERS . " ({$fields}) VALUES ({$data})");
-    $user_id = mysqli_insert_id($sqlConnect);
-    $query_2 = mysqli_query($sqlConnect, "INSERT INTO " . T_USERS_FIELDS . " (`user_id`) VALUES ({$user_id})");
-    if ($query) {
-        if ($invited) {
-            @Wo_DeleteAdminInvitation('code', $invited);
-            Wo_AddInvitedUser($user_id, $invited);
+    if (!$query) {
+        if ($signup_points_bonus > 0) {
+            mysqli_rollback($sqlConnect);
         }
-        return true;
-    } else {
         return false;
     }
+    $user_id = mysqli_insert_id($sqlConnect);
+    $query_2 = mysqli_query($sqlConnect, "INSERT INTO " . T_USERS_FIELDS . " (`user_id`) VALUES ({$user_id})");
+    if (!$query_2) {
+        if ($signup_points_bonus > 0) {
+            mysqli_rollback($sqlConnect);
+        }
+        return false;
+    }
+
+    if ($signup_points_bonus > 0) {
+        $credit_query = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `points` = `points` + {$signup_points_bonus} WHERE `user_id` = {$user_id}");
+        $bonus_extra = mysqli_real_escape_string($sqlConnect, json_encode(array(
+            'points' => $signup_points_bonus,
+            'action' => '+',
+            'type' => 'signup_bonus',
+            'description' => 'signup_bonus',
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $history_query = $credit_query
+            ? mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`, `extra`) VALUES ({$user_id}, 'POINTS_EARNED', 0, 'signup_bonus', '{$bonus_extra}')")
+            : false;
+        if (!$credit_query || !$history_query) {
+            mysqli_rollback($sqlConnect);
+            return false;
+        }
+        if (!mysqli_commit($sqlConnect)) {
+            mysqli_rollback($sqlConnect);
+            return false;
+        }
+    }
+
+    if ($invited) {
+        @Wo_DeleteAdminInvitation('code', $invited);
+        Wo_AddInvitedUser($user_id, $invited);
+    }
+    return true;
 }
 
 function Wo_ActivateUser($email, $code)
@@ -4515,10 +4552,120 @@ function VNSEEA_AttachMarketplaceMessageContext($message)
     return $message;
 }
 
+function VNSEEA_ValidateStoryReply($story_id, $sender_id, $recipient_id)
+{
+    global $sqlConnect;
+
+    $story_id = (int)$story_id;
+    $sender_id = (int)$sender_id;
+    $recipient_id = (int)$recipient_id;
+    if ($story_id < 1 || $sender_id < 1 || $recipient_id < 1 || $sender_id === $recipient_id) {
+        return false;
+    }
+
+    $query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `id` = {$story_id} LIMIT 1");
+    if (!$query || mysqli_num_rows($query) !== 1) {
+        return false;
+    }
+
+    $story = mysqli_fetch_assoc($query);
+    if ((int)$story['user_id'] !== $recipient_id ||
+        (!empty($story['expire']) && (int)$story['expire'] <= time()) ||
+        !empty($story['ad_id']) ||
+        !VNSEEA_CanViewStory($story, $sender_id) ||
+        !VNSEEA_CanViewSharedPostStory($story, $sender_id)) {
+        return false;
+    }
+
+    return array('story_id' => $story_id, 'story' => $story);
+}
+
+function VNSEEA_GetMessageStorySnapshot($story_id, $viewer_id = 0)
+{
+    global $sqlConnect;
+
+    $story_id = (int)$story_id;
+    $viewer_id = (int)$viewer_id;
+    if ($story_id < 1) {
+        return null;
+    }
+
+    $query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `id` = {$story_id} LIMIT 1");
+    if (!$query || mysqli_num_rows($query) !== 1) {
+        return null;
+    }
+
+    $story = mysqli_fetch_assoc($query);
+    if ((!empty($story['expire']) && (int)$story['expire'] <= time()) ||
+        !VNSEEA_CanViewStory($story, $viewer_id) ||
+        !VNSEEA_CanViewSharedPostStory($story, $viewer_id)) {
+        return null;
+    }
+
+    $images = Wo_GetStoryMedia($story_id, 'image');
+    $videos = Wo_GetStoryMedia($story_id, 'video');
+    $user = Wo_UserData((int)$story['user_id']);
+    $publisher = array(
+        'user_id' => (int)$story['user_id'],
+        'username' => !empty($user['username']) ? (string)$user['username'] : '',
+        'name' => !empty($user['name']) ? (string)$user['name'] : (!empty($user['username']) ? (string)$user['username'] : ''),
+        'avatar' => !empty($user['avatar']) ? (string)$user['avatar'] : '',
+        'url' => !empty($user['url']) ? (string)$user['url'] : '',
+        'verified' => !empty($user['verified']) ? 1 : 0,
+    );
+
+    $thumbnail = '';
+    if (!empty($story['thumbnail'])) {
+        $thumbnail = Wo_GetMedia($story['thumbnail']);
+    } elseif (!empty($images[0]['filename'])) {
+        $thumbnail = $images[0]['filename'];
+    } elseif (!empty($publisher['avatar'])) {
+        $thumbnail = $publisher['avatar'];
+    }
+
+    return array(
+        'id' => (int)$story['id'],
+        'user_id' => (int)$story['user_id'],
+        'title' => !empty($story['title']) ? (string)$story['title'] : '',
+        'description' => !empty($story['description']) ? (string)$story['description'] : '',
+        'posted' => !empty($story['posted']) ? (int)$story['posted'] : 0,
+        'expire' => !empty($story['expire']) ? (int)$story['expire'] : 0,
+        'story_type' => !empty($story['story_type']) ? (string)$story['story_type'] : 'media',
+        'source_post_id' => !empty($story['source_post_id']) ? (int)$story['source_post_id'] : 0,
+        'thumbnail' => $thumbnail,
+        'images' => $images,
+        'videos' => $videos,
+        'user_data' => $publisher,
+    );
+}
+
+function VNSEEA_AttachMessageStoryContext($message)
+{
+    global $wo;
+
+    $message = is_object($message) ? (array)$message : $message;
+    if (!is_array($message)) {
+        return $message;
+    }
+
+    $story_id = !empty($message['story_id']) ? (int)$message['story_id'] : 0;
+    if ($story_id < 1) {
+        return $message;
+    }
+
+    $viewer_id = !empty($wo['user']['user_id']) ? (int)$wo['user']['user_id'] : 0;
+    $snapshot = VNSEEA_GetMessageStorySnapshot($story_id, $viewer_id);
+    $message['story_available'] = !empty($snapshot);
+    $message['story'] = !empty($snapshot) ? $snapshot : array();
+    return $message;
+}
+
 function VNSEEA_AttachCanonicalMessageContext($message)
 {
-    return VNSEEA_AttachMarketplaceMessageContext(
-        VNSEEA_AttachMessageSystemEvent($message)
+    return VNSEEA_AttachMessageStoryContext(
+        VNSEEA_AttachMarketplaceMessageContext(
+            VNSEEA_AttachMessageSystemEvent($message)
+        )
     );
 }
 

@@ -31,6 +31,12 @@ export type RegisterInput = {
   hasExistingStorefront?: boolean;
 };
 
+export type ConfirmAccountInput = {
+  userId: string;
+  code: string;
+  timezone?: string;
+};
+
 export type ForgotPasswordInput = {
   email: string;
 };

@@ -15,6 +15,7 @@ import type {
   AuthResult,
   AuthSession,
   AuthUser,
+  ConfirmAccountInput,
   CurrentUserResult,
   LoginCredentials,
   RegisterInput,
@@ -163,6 +164,25 @@ export function createAuthRepository(): AuthRepository {
       );
       console.log('[ApiAuthRepository] Register response:', response);
       return mapAuthResponse(response);
+    },
+
+    async confirmAccount(input: ConfirmAccountInput) {
+      const response = await apiBridge.post<AuthResponse>(
+        apiRoutes.auth.confirmAccount,
+        {
+          user_id: input.userId,
+          code: input.code.trim(),
+          timezone: input.timezone || 'UTC',
+          device_type: AUTH_DEVICE_TYPE,
+        },
+      );
+      return mapAuthResponse(response);
+    },
+
+    async resendAccountCode(userId: string) {
+      await apiBridge.post(apiRoutes.auth.resendActivationCode, {
+        user_id: userId,
+      });
     },
 
     async forgotPassword(input) {

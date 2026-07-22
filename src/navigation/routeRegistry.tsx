@@ -11,7 +11,12 @@ import {
 } from 'lucide-react-native';
 import { ROUTES } from './constants/routes';
 import type { MainTabRouteName, RootStackRouteName } from './types';
-import { ForgotPasswordScreen, LoginScreen, RegisterScreen } from '../auth';
+import {
+  EmailVerificationScreen,
+  ForgotPasswordScreen,
+  LoginScreen,
+  RegisterScreen,
+} from '../auth';
 import {
   CreatePostScreen,
   FeedScreen,
@@ -195,6 +200,7 @@ export function createStackRoutes(
   return [
     { name: ROUTES.LOGIN, component: LoginScreen },
     { name: ROUTES.REGISTER, component: RegisterScreen },
+    { name: ROUTES.EMAIL_VERIFICATION, component: EmailVerificationScreen },
     { name: ROUTES.FORGOT_PASSWORD, component: ForgotPasswordScreen },
     { name: ROUTES.MAIN_TABS, component: MainTabsComponent },
     { name: ROUTES.REELS, component: ReelsScreen },

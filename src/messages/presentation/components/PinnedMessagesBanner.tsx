@@ -18,6 +18,7 @@ type Props = {
 };
 
 function getPinnedMessageText(message: PinnedMessageItem) {
+  if (message.storyReply) return 'Trả lời một tin';
   if (message.sharedPost) return 'Bài viết được chia sẻ';
   if (message.callEvent) return 'Cuộc gọi';
   if (message.message.trim()) return message.message.trim();

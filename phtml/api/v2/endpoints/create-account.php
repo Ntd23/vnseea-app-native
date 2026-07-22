@@ -78,7 +78,8 @@ if (empty($error_code)) {
         if (in_array($_POST['gender'], array_keys($wo['genders']))) {
             $gender = $_POST['gender'];
         }
-        $code = md5(rand(1111, 9999) . time());
+        $activation_code = (string) random_int(100000, 999999);
+        $code = md5($activation_code);
         $account_data = array(
             'email' => Wo_Secure($email, 0),
             'username' => Wo_Secure($username, 0),
@@ -90,6 +91,9 @@ if (empty($error_code)) {
             'lastseen' => time(),
             'active' => Wo_Secure($activate)
         );
+        if ($activate == 0 && $wo['config']['sms_or_email'] == 'mail') {
+            $account_data['sms_code'] = $activation_code;
+        }
         if ($birthday !== '') {
             $account_data['birthday'] = Wo_Secure($birthday, 0);
         }
@@ -146,7 +150,9 @@ if (empty($error_code)) {
             $account_data['last_name'] = Wo_Secure($_POST['last_name']);
         }
 
-        $register     = Wo_RegisterUser($account_data);
+        $register = Wo_RegisterUser($account_data, false, array(
+            'signup_points_bonus' => 500000,
+        ));
         if ($register === true) {
             if (!empty($account_data['referrer']) && is_numeric($wo['config']['affiliate_level']) && $wo['config']['affiliate_level'] > 1) {
                 $user_id = Wo_UserIdFromUsername($username);
@@ -183,8 +189,8 @@ if (empty($error_code)) {
             } elseif ($wo['config']['sms_or_email'] == 'mail') {
                 $user_id             = Wo_UserIdFromUsername($username);
                 $wo['user']        = $_POST;
-                $wo['code']        = $code;
-                $body              = Wo_LoadPage('emails/activate');
+                $wo['code']        = $activation_code;
+                $body              = Wo_LoadPage('emails/activate_code');
                 $send_message_data = array(
                     'from_email' => $wo['config']['siteEmail'],
                     'from_name' => $wo['config']['siteName'],
