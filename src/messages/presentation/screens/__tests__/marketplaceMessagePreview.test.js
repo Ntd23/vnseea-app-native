@@ -29,4 +29,16 @@ describe('marketplace message previews', () => {
     expect(source).toContain('Yêu cầu mua mới');
     expect(source).toContain('Bạn đã gửi yêu cầu mua');
   });
+
+  it('keeps long order hashes from changing the order card dimensions', () => {
+    const source = fs.readFileSync(CHAT_SCREEN, 'utf8');
+
+    expect(source).toContain('ORDER_REQUEST_CARD_WIDTH');
+    expect(source).toContain('ellipsizeMode="middle"');
+    expect(source).toMatch(
+      /<Text[\s\S]*?numberOfLines=\{1\}[\s\S]*?order\.orderHash/,
+    );
+    expect(source).not.toContain('className="w-[280px]');
+    expect(source).not.toContain('style={{ maxWidth: 260 }}');
+  });
 });

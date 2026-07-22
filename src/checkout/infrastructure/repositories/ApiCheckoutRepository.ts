@@ -9,6 +9,7 @@ import type {
   DeliveryAddress,
   DeliveryAddressInput,
 } from '../../domain/types/checkout.types';
+import { createCheckoutSummary } from '../../domain/checkoutMoney';
 
 type RawProduct = {
   id?: unknown;
@@ -16,8 +17,11 @@ type RawProduct = {
   name?: unknown;
   price?: unknown;
   units?: unknown;
+  currency?: unknown;
   currency_symbol?: unknown;
   currency_code?: unknown;
+  user_id?: unknown;
+  seller?: { user_id?: unknown };
   images?: Array<{ image?: unknown }>;
 };
 
@@ -83,7 +87,15 @@ function mapCheckoutItem(raw: RawProduct): CheckoutItem {
   const quantity = Math.max(1, numberValue(raw.units) || 1);
   const price = numberValue(raw.price);
   const productId = numberValue(raw.product_id) || numberValue(raw.id);
-  const sellerUserId = numberValue((raw as any).user_id) || numberValue((raw as any).seller?.user_id) || undefined;
+  const sellerUserId =
+    numberValue(raw.user_id) || numberValue(raw.seller?.user_id) || undefined;
+  const rawCurrency = stringValue(raw.currency).trim();
+  const currencyCode =
+    stringValue(raw.currency_code).trim().toUpperCase() ||
+    (/^\d+$/.test(rawCurrency) ? '' : rawCurrency.toUpperCase()) ||
+    'VND';
+  const currencySymbol =
+    stringValue(raw.currency_symbol).trim() || currencyCode;
 
   return {
     id: String(productId),
@@ -93,30 +105,10 @@ function mapCheckoutItem(raw: RawProduct): CheckoutItem {
     price,
     quantity,
     total: price * quantity,
-    currencySymbol:
-      stringValue(raw.currency_symbol) || stringValue(raw.currency_code) || 'VNSEEA',
+    currencyCode,
+    currencySymbol,
     sellerUserId,
   };
-}
-
-function normalizeSummaryCurrency(
-  items: CheckoutItem[],
-  convertedTotal: number,
-) {
-  const rawTotal = items.reduce((sum, item) => sum + item.total, 0);
-  const shouldConvert = convertedTotal > 0 && rawTotal > 0;
-  const ratio = shouldConvert ? convertedTotal / rawTotal : 1;
-  const currencySymbol = shouldConvert ? 'VNSEEA' : items[0]?.currencySymbol || 'VNSEEA';
-
-  return items.map(item => {
-    const price = item.price * ratio;
-    return {
-      ...item,
-      price,
-      total: price * item.quantity,
-      currencySymbol,
-    };
-  });
 }
 
 async function getAddresses() {
@@ -133,22 +125,7 @@ async function getSummary(): Promise<CheckoutSummary> {
     apiRoutes.products.market,
     { type: 'checkout' },
   );
-  const convertedTotal = numberValue(response.total);
-  const items = normalizeSummaryCurrency(
-    (response.data ?? []).map(mapCheckoutItem),
-    convertedTotal,
-  );
-  const subtotal =
-    convertedTotal || items.reduce((sum, item) => sum + item.total, 0);
-  const currencySymbol = items[0]?.currencySymbol || 'VNSEEA';
-
-  return {
-    items,
-    subtotal,
-    shipping: 0,
-    total: subtotal,
-    currencySymbol,
-  };
+  return createCheckoutSummary((response.data ?? []).map(mapCheckoutItem));
 }
 
 async function removeItem(productId: number): Promise<CheckoutSummary> {

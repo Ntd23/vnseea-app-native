@@ -164,6 +164,10 @@ const MAP_SHARE_CARD_WIDTH = Math.min(
   Dimensions.get('window').width * 0.76,
   340,
 );
+const ORDER_REQUEST_CARD_WIDTH = Math.min(
+  Dimensions.get('window').width - 88,
+  320,
+);
 const CHAT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['top', 'left', 'right'] : ROOT_SAFE_AREA_EDGES;
 const PRODUCT_INQUIRY_QUICK_OPTIONS = [
@@ -1473,17 +1477,27 @@ function OrderInquiryBubble({
   };
 
   return (
-    <View className="w-[280px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <View
-        className="flex-row items-center justify-between bg-blue-600 px-3.5 py-2.5"
-        style={{ backgroundColor: '#0000ff' }}
-      >
-        <Text className="text-[12px] font-extrabold uppercase text-white">
-          Yêu cầu mua
-        </Text>
-        <Text className="text-[11px] font-bold text-blue-100">
-          #{order.orderHash}
-        </Text>
+    <View
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      style={{ width: ORDER_REQUEST_CARD_WIDTH }}
+    >
+      <View className="flex-row items-center bg-[#0000ff] px-3.5 py-2.5">
+        <View className="min-w-0 flex-1 pr-3">
+          <Text className="text-[12px] font-extrabold uppercase text-white">
+            Yêu cầu mua
+          </Text>
+          <Text
+            className="mt-0.5 text-[11px] font-bold text-blue-100"
+            numberOfLines={1}
+            ellipsizeMode="middle"
+            accessibilityLabel={`Mã yêu cầu mua ${order.orderHash}`}
+          >
+            #{order.orderHash}
+          </Text>
+        </View>
+        <View className="h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15">
+          <ShoppingBag size={16} color="#FFFFFF" />
+        </View>
       </View>
 
       <View className="border-b border-slate-100">
@@ -1515,11 +1529,14 @@ function OrderInquiryBubble({
               >
                 {item.name}
               </Text>
-              <View className="mt-1 flex-row items-center justify-between">
-                <Text className="text-[12px] font-extrabold text-blue-600">
+              <View className="mt-1 flex-row items-center">
+                <Text
+                  className="min-w-0 flex-1 text-[12px] font-extrabold text-blue-600"
+                  numberOfLines={1}
+                >
                   {item.total}
                 </Text>
-                <Text className="text-[11px] font-medium text-slate-500">
+                <Text className="ml-2 shrink-0 text-[11px] font-medium text-slate-500">
                   x{item.quantity}
                 </Text>
               </View>
@@ -1881,7 +1898,7 @@ function MessageBubble({
             /* Order Inquiry Card (renders instead of the main text bubble) */
             <DoubleTapTouchable
               className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
-              style={{ maxWidth: 260 }}
+              style={{ width: ORDER_REQUEST_CARD_WIDTH }}
               activeOpacity={0.96}
               onLongPress={() => onLongPress?.(message)}
               onDoubleTap={() => onDoubleTap?.(message)}

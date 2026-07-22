@@ -8,8 +8,15 @@ export interface CheckoutItem {
   price: number;
   quantity: number;
   total: number;
+  currencyCode: string;
   currencySymbol: string;
   sellerUserId?: number;
+}
+
+export interface CheckoutCurrencyTotal {
+  currencyCode: string;
+  currencySymbol: string;
+  amount: number;
 }
 
 export interface DeliveryAddress {
@@ -37,7 +44,9 @@ export interface CheckoutSummary {
   subtotal: number;
   shipping: number;
   total: number;
+  currencyCode: string;
   currencySymbol: string;
+  currencyTotals: CheckoutCurrencyTotal[];
 }
 
 export interface WalletCheckoutBalance {
