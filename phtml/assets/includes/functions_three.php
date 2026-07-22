@@ -904,6 +904,10 @@ function Wo_GetProducts($filter_data = array())
 	global $wo, $sqlConnect;
 	$data      = array();
 	$query_one = " SELECT `id`, `user_id` FROM " . T_PRODUCTS . " WHERE status <> '1'";
+	if (!empty($filter_data['product_id'])) {
+		$product_id = Wo_Secure($filter_data['product_id']);
+		$query_one .= " AND `id` = '{$product_id}'";
+	}
 	if (!empty($filter_data['c_id'])) {
 		$category = $filter_data['c_id'];
 		$query_one .= " AND `category` = '{$category}'";
@@ -939,6 +943,10 @@ function Wo_GetProducts($filter_data = array())
 		$unit      = 6371;
 		$query_one = " AND status <> '1'";
 		$distance  = Wo_Secure($filter_data['length']);
+		if (!empty($filter_data['product_id'])) {
+			$product_id = Wo_Secure($filter_data['product_id']);
+			$query_one .= " AND `id` = '{$product_id}'";
+		}
 		if (!empty($filter_data['c_id'])) {
 			$category = $filter_data['c_id'];
 			$query_one .= " AND `category` = '{$category}'";
