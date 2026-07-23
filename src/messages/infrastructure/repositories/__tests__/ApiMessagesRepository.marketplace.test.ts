@@ -68,6 +68,56 @@ describe('ApiMessagesRepository marketplace contexts', () => {
     });
   });
 
+  it('maps a Nuxt encoded product inquiry without leaking its marker or encoded URL', async () => {
+    const productMessage = [
+      `__VNSEEA_PRODUCT__:${encodeURIComponent(
+        JSON.stringify({
+          id: '40',
+          title: 'Áo khoác mùa đông',
+          imageUrl: 'https://v2.vnseea.vn/upload/photos/coat.jpg',
+          price: '200.000 VND',
+          href: '/product/40',
+        }),
+      )}`,
+      'Tôi muốn tìm hiểu thêm về sản phẩm này.',
+    ].join('\n');
+
+    post
+      .mockResolvedValueOnce({
+        messages: [rawMessage({ or_text: productMessage })],
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            chat_type: 'user',
+            chat_id: '2',
+            user_data: { user_id: '2', name: 'Người bán' },
+            last_message: rawMessage({ or_text: productMessage }),
+          },
+        ],
+      });
+
+    const [message] = await createMessagesRepository().getMessages('2');
+    const [chat] = await createMessagesRepository().getChats({
+      includeDiscovery: false,
+      latestOnly: true,
+    });
+
+    expect(message.contentKind).toBe('product');
+    expect(message.message).toBe('Tôi muốn tìm hiểu thêm về sản phẩm này.');
+    expect(message.link).toBeUndefined();
+    expect(message.marketplaceContext).toEqual({
+      type: 'product_inquiry',
+      productId: '40',
+      name: 'Áo khoác mùa đông',
+      price: '200.000 VND',
+      image: 'https://v2.vnseea.vn/upload/photos/coat.jpg',
+      note: 'Tôi muốn tìm hiểu thêm về sản phẩm này.',
+    });
+    expect(chat.lastMessageKind).toBe('product');
+    expect(chat.lastMessage).toBe('Hỏi về Áo khoác mùa đông');
+  });
+
   it('maps a canonical order request and marks the preview as order', async () => {
     post.mockResolvedValueOnce({
       data: [

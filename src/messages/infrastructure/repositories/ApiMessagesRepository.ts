@@ -65,6 +65,7 @@ const DISCOVERY_BATCH_SIZE = 12;
 const CHAT_PAGE_SIZE = 50;
 const MAX_CACHED_CHAT_PAGES = 5;
 const RECALLED_MESSAGE_PREFIX = '__VNSEEA_MESSAGE_RECALLED__';
+const NUXT_PRODUCT_MESSAGE_PREFIX = '__VNSEEA_PRODUCT__:';
 const GROUP_VOICE_MESSAGE_MARKER = '\u200b\u200c\u200d\u2060';
 let discoveryCache:
   | {
@@ -543,6 +544,11 @@ function mapMarketplaceMessageContext(
     };
   }
 
+  const nuxtProduct = mapNuxtProductInquiryContext(messageText);
+  if (nuxtProduct) {
+    return nuxtProduct;
+  }
+
   const legacyOrder = mapLegacyOrderRequestContext(messageText);
   if (legacyOrder) {
     return legacyOrder;
@@ -561,6 +567,55 @@ function mapMarketplaceMessageContext(
       location: messageText.match(/📍\s*Địa điểm:\s*\*(.*?)\*/)?.[1],
       note: messageText.match(/💬\s*Lời nhắn:\s*([\s\S]+)$/)?.[1]?.trim(),
     };
+  }
+
+  return undefined;
+}
+
+function mapNuxtProductInquiryContext(
+  messageText: string,
+): Extract<MarketplaceMessageContext, { type: 'product_inquiry' }> | undefined {
+  if (!messageText.startsWith(NUXT_PRODUCT_MESSAGE_PREFIX)) {
+    return undefined;
+  }
+
+  const payloadStart = NUXT_PRODUCT_MESSAGE_PREFIX.length;
+  let payloadEnd = messageText.indexOf('%7D', payloadStart);
+
+  while (payloadEnd >= 0) {
+    const encodedPayload = messageText.slice(payloadStart, payloadEnd + 3);
+    try {
+      const payload = asRecord(
+        JSON.parse(decodeURIComponent(encodedPayload)) as unknown,
+      );
+      if (payload) {
+        const href = readString(payload, 'href', 'url');
+        const productId =
+          readString(payload, 'id', 'product_id', 'productId') ||
+          href.match(/\/product\/([^/?#\s]+)/i)?.[1] ||
+          '';
+        const name = readString(payload, 'title', 'name');
+
+        if (productId && name) {
+          const note = messageText.slice(payloadEnd + 3).trim();
+          return {
+            type: 'product_inquiry',
+            productId,
+            name,
+            price: readString(payload, 'price') || undefined,
+            image:
+              normalizeRawUrl(
+                readString(payload, 'imageUrl', 'image_url', 'image'),
+                apiConfig.webBaseUrl,
+              ) || undefined,
+            note: note || undefined,
+          };
+        }
+      }
+    } catch {
+      // A JSON string may contain an encoded closing brace. Try the next one.
+    }
+    payloadEnd = messageText.indexOf('%7D', payloadEnd + 3);
   }
 
   return undefined;
@@ -1280,20 +1335,27 @@ function mapMessage(
   const marketplaceContext = systemEvent
     ? undefined
     : mapMarketplaceMessageContext(raw, displayMessage);
+  const semanticMessage =
+    marketplaceContext?.type === 'product_inquiry'
+      ? marketplaceContext.note ?? ''
+      : displayMessage;
   const storyReply = systemEvent
     ? undefined
     : mapStoryReplyReference(raw);
   const textDescriptor =
     callEvent || systemEvent
       ? { kind: 'text' as const }
-      : describeMessageTextContent(displayMessage, apiConfig.webBaseUrl);
+      : describeMessageTextContent(semanticMessage, apiConfig.webBaseUrl);
   const sharedPost = textDescriptor.sharedPost;
   const location =
     textDescriptor.location ??
     (callEvent || systemEvent || sharedPost
       ? undefined
       : readRawMessageLocation(raw));
-  const link = location ? undefined : textDescriptor.link;
+  const link =
+    location || marketplaceContext?.type === 'product_inquiry'
+      ? undefined
+      : textDescriptor.link;
   const mediaType = readMediaType(raw, decodedMessage);
   let contentKind: ChatPreviewKind = textDescriptor.kind;
   if (storyReply) {
@@ -1344,7 +1406,7 @@ function mapMessage(
     senderName: getRawUserName(messageUser),
     senderAvatar:
       readString(messageUser, 'avatar', 'profile_picture') || undefined,
-    message: callEvent ? '' : displayMessage,
+    message: callEvent ? '' : semanticMessage,
     callEvent,
     systemEvent,
     sharedPost,
