@@ -45,6 +45,8 @@ import { useCheckoutViewModel } from '../../application/view-models/useCheckoutV
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
+import AddressSearchContent from '../../../shared-kernel/presentation/components/AddressSearchContent';
+import type { ResolvedAddress } from '../../../shared-kernel/domain/types/addressSearch.types';
 
 type CheckoutNav = NativeStackNavigationProp<RootStackParamList>;
 type CheckoutRoute = RouteProp<RootStackParamList, typeof ROUTES.CHECKOUT>;
@@ -313,23 +315,27 @@ function CheckoutAddressSheet({
   onClose: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [addressSearchVisible, setAddressSearchVisible] = useState(false);
   const { keyboardInset, refreshKeyboardInset, sheetContentRef } =
     useCheckoutKeyboardInset(visible);
 
   useEffect(() => {
     if (!visible) return;
     setShowForm(vm.addresses.length === 0);
+    setAddressSearchVisible(false);
   }, [visible, vm.addresses.length]);
 
   const startNewAddress = useCallback(() => {
     vm.createNewAddress();
     setShowForm(true);
+    setAddressSearchVisible(false);
   }, [vm]);
 
   const editAddress = useCallback(
     (address: DeliveryAddress) => {
       vm.editAddress(address);
       setShowForm(true);
+      setAddressSearchVisible(false);
     },
     [vm],
   );
@@ -369,13 +375,33 @@ function CheckoutAddressSheet({
     if (saved) onClose();
   }, [onClose, vm]);
 
+  const handleResolvedAddress = useCallback(
+    (address: ResolvedAddress) => {
+      vm.updateAddressField('address', address.formattedAddress);
+      if (address.city || address.district) {
+        vm.updateAddressField('city', address.city || address.district || '');
+      }
+      if (address.country) {
+        vm.updateAddressField('country', address.country);
+      }
+      setAddressSearchVisible(false);
+    },
+    [vm],
+  );
+
   return (
     <Modal
       transparent
       visible={visible}
       animationType="slide"
       statusBarTranslucent
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        if (addressSearchVisible) {
+          setAddressSearchVisible(false);
+          return;
+        }
+        onClose();
+      }}
     >
       <View className="flex-1 justify-end bg-black/40">
         <SafeAreaView
@@ -390,13 +416,26 @@ function CheckoutAddressSheet({
             onLayout={refreshKeyboardInset}
           >
             <View className="flex-row items-center border-b border-slate-100 px-4 py-3">
-              <View className="h-10 w-10" />
+              {addressSearchVisible ? (
+                <TouchableOpacity
+                  className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+                  onPress={() => setAddressSearchVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quay lại form địa chỉ"
+                >
+                  <ArrowLeft size={20} color="#334155" />
+                </TouchableOpacity>
+              ) : (
+                <View className="h-10 w-10" />
+              )}
               <View className="flex-1 items-center">
                 <Text className="text-lg font-extrabold text-slate-950">
-                  Địa chỉ nhận hàng
+                  {addressSearchVisible ? 'Tìm địa chỉ' : 'Địa chỉ nhận hàng'}
                 </Text>
                 <Text className="mt-0.5 text-xs font-semibold text-slate-500">
-                  Chọn địa chỉ đã lưu hoặc nhập địa chỉ mới
+                  {addressSearchVisible
+                    ? 'Tìm theo số nhà, ngõ, đường hoặc phường/xã'
+                    : 'Chọn địa chỉ đã lưu hoặc nhập địa chỉ mới'}
                 </Text>
               </View>
               <TouchableOpacity
@@ -408,19 +447,30 @@ function CheckoutAddressSheet({
                 <X size={20} color="#334155" />
               </TouchableOpacity>
             </View>
-            <ScrollView
-              className="flex-1"
-              contentContainerStyle={{
-                padding: 16,
-                paddingBottom: 28,
-                flexGrow: 1,
-              }}
-              keyboardDismissMode={
-                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-              }
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
+            {addressSearchVisible ? (
+              <AddressSearchContent
+                initialQuery={vm.addressForm.address}
+                showHeader={false}
+                onQueryChange={value =>
+                  vm.updateAddressField('address', value)
+                }
+                onResolvedAddress={handleResolvedAddress}
+              />
+            ) : (
+              <>
+                <ScrollView
+                  className="flex-1"
+                  contentContainerStyle={{
+                    padding: 16,
+                    paddingBottom: 28,
+                    flexGrow: 1,
+                  }}
+                  keyboardDismissMode={
+                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                  }
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
               {!showForm && vm.addresses.length > 0 ? (
                 <>
                   {vm.addresses.map(address => (
@@ -470,15 +520,29 @@ function CheckoutAddressSheet({
                     keyboardType="phone-pad"
                     onChangeText={value => vm.updateAddressField('phone', value)}
                   />
-                  <AddressField
-                    label="Địa chỉ"
-                    value={vm.addressForm.address}
-                    placeholder="Nhập số nhà, tên đường, phường/xã..."
-                    multiline
-                    onChangeText={value =>
-                      vm.updateAddressField('address', value)
-                    }
-                  />
+                  <View className="mb-4">
+                    <Text className="mb-2 text-sm font-bold text-slate-700">
+                      Địa chỉ <Text className="text-red-500">*</Text>
+                    </Text>
+                    <TouchableOpacity
+                      className="min-h-[76px] flex-row items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                      activeOpacity={0.85}
+                      onPress={() => setAddressSearchVisible(true)}
+                    >
+                      <MapPin size={19} color={APP_BRAND_COLOR} />
+                      <Text
+                        className={`ml-3 flex-1 text-base font-semibold ${
+                          vm.addressForm.address
+                            ? 'text-slate-900'
+                            : 'text-slate-400'
+                        }`}
+                        numberOfLines={3}
+                      >
+                        {vm.addressForm.address ||
+                          'Tìm số nhà, tên đường, phường/xã...'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                   <View className="flex-row gap-3">
                     <View className="flex-1">
                       <AddressField
@@ -508,32 +572,34 @@ function CheckoutAddressSheet({
                   ) : null}
                 </View>
               )}
-            </ScrollView>
-            {showForm ? (
-              <View className="border-t border-slate-100 bg-white px-4 pb-3 pt-3">
-                <TouchableOpacity
-                  className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand ${
-                    vm.isSavingAddress ? 'opacity-70' : ''
-                  }`}
-                  activeOpacity={0.9}
-                  disabled={vm.isSavingAddress}
-                  onPress={saveAddress}
-                >
-                  {vm.isSavingAddress ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <User size={18} color="#FFFFFF" />
-                      <Text className="ml-2 text-base font-extrabold text-white">
-                        {vm.addressForm.id
-                          ? 'Lưu thay đổi'
-                          : 'Lưu địa chỉ'}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ) : null}
+                </ScrollView>
+                {showForm ? (
+                  <View className="border-t border-slate-100 bg-white px-4 pb-3 pt-3">
+                    <TouchableOpacity
+                      className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand ${
+                        vm.isSavingAddress ? 'opacity-70' : ''
+                      }`}
+                      activeOpacity={0.9}
+                      disabled={vm.isSavingAddress}
+                      onPress={saveAddress}
+                    >
+                      {vm.isSavingAddress ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <User size={18} color="#FFFFFF" />
+                          <Text className="ml-2 text-base font-extrabold text-white">
+                            {vm.addressForm.id
+                              ? 'Lưu thay đổi'
+                              : 'Lưu địa chỉ'}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </>
+            )}
           </View>
         </SafeAreaView>
       </View>

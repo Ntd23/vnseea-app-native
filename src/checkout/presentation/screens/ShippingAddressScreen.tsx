@@ -28,6 +28,7 @@ import type { DeliveryAddress } from '../../domain/types/checkout.types';
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 
 type ShippingAddressNav = NativeStackNavigationProp<RootStackParamList>;
 type ShippingAddressRoute = RouteProp<RootStackParamList, typeof ROUTES.SHIPPING_ADDRESS>;
@@ -245,16 +246,30 @@ function ShippingAddressScreen() {
                 keyboardType="phone-pad"
                 onChangeText={value => vm.updateAddressField('phone', value)}
               />
-              <Field
-                label="Địa chỉ"
-                required
-                multiline
-                value={vm.addressForm.address}
-                placeholder="Nhập số nhà, tên đường, phường/xã..."
-                onChangeText={value =>
-                  vm.updateAddressField('address', value)
-                }
-              />
+              <View className="mb-4">
+                <Text className="mb-2 text-sm font-bold text-slate-700">
+                  Địa chỉ <Text className="text-red-500">*</Text>
+                </Text>
+                <AddressAutocomplete
+                  value={vm.addressForm.address}
+                  placeholder="Tìm số nhà, tên đường, phường/xã..."
+                  onChangeText={value =>
+                    vm.updateAddressField('address', value)
+                  }
+                  onSelectPlace={place => {
+                    vm.updateAddressField('address', place.description);
+                    if (place.city || place.district) {
+                      vm.updateAddressField(
+                        'city',
+                        place.city || place.district || '',
+                      );
+                    }
+                    if (place.country) {
+                      vm.updateAddressField('country', place.country);
+                    }
+                  }}
+                />
+              </View>
               <View className="flex-row gap-3">
                 <View className="flex-1">
                   <Field

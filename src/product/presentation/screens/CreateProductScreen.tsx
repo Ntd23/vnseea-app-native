@@ -57,6 +57,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -896,6 +897,9 @@ export default function CreateProductScreen() {
             <AddressAutocomplete
               value={formData.product_location}
               placeholder="Địa điểm"
+              locationBias={
+                parseMapCoordinate(formData.lat, formData.lng) || undefined
+              }
               onChangeText={handleLocationChange}
               onSelectPlace={handleLocationSelect}
               customInputContainerStyle={{

@@ -27,8 +27,13 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
-import { filterAddressPredictions } from '../../../shared-kernel/application/utils/addressPredictionRelevance';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
+import type { AddressSuggestion } from '../../../shared-kernel/domain/types/addressSearch.types';
+import {
+  createAddressSearchRepository,
+  createAddressSessionToken,
+  resolveAddressLocationBias,
+} from '../../../shared-kernel/infrastructure/address/ApiAddressSearchRepository';
 
 export type PageLocationCoordinate = {
   latitude: number;
@@ -49,15 +54,6 @@ type PageLocationPickerModalProps = {
   initialCoordinate?: PageLocationCoordinate;
   onClose: () => void;
   onConfirm: (selection: PageLocationSelection) => void;
-};
-
-type PlacePrediction = {
-  place_id?: string;
-  description?: string;
-  main_text?: string;
-  secondary_text?: string;
-  lat?: number | string | null;
-  lng?: number | string | null;
 };
 
 type PlaceDetailsResponse = {
@@ -88,6 +84,7 @@ const SELECTED_PLACE_DELTAS = {
 const MIN_SEARCH_CHARS = 2;
 const SEARCH_DEBOUNCE_MS = 320;
 const REVERSE_GEOCODE_DEBOUNCE_MS = 620;
+const addressSearchRepository = createAddressSearchRepository();
 
 const COPY = {
   vi: {
@@ -103,6 +100,7 @@ const COPY = {
     coordinateOnly: 'Đã lấy tọa độ ghim; chưa tìm được tên vị trí gần đó.',
     empty: 'Không tìm thấy địa chỉ phù hợp.',
     searchError: 'Không tải được gợi ý địa chỉ.',
+    googleAttribution: 'Google Maps',
     locationError: 'Không lấy được vị trí hiện tại. Bạn vẫn có thể tự kéo bản đồ.',
     addressError: 'Hãy nhập địa chỉ và chọn tọa độ ghim trước khi xác nhận.',
   },
@@ -119,6 +117,7 @@ const COPY = {
     coordinateOnly: 'The pin coordinates are ready; no nearby location name was found.',
     empty: 'No matching address found.',
     searchError: 'Unable to load address suggestions.',
+    googleAttribution: 'Google Maps',
     locationError: 'Unable to get your location. You can still move the map manually.',
     addressError: 'Enter an address and choose pin coordinates before confirming.',
   },
@@ -141,16 +140,16 @@ function toCoordinate(latitude: unknown, longitude: unknown): PageLocationCoordi
   return parseMapCoordinate(latitude, longitude);
 }
 
-function mapPrediction(record: PlacePrediction, index: number) {
+function mapPrediction(record: AddressSuggestion, index: number) {
   const description = String(record.description || '').trim();
   if (!description) return null;
   return {
-    id: String(record.place_id || `${description}-${index}`),
-    placeId: String(record.place_id || ''),
+    id: String(record.placeId || `${description}-${index}`),
+    placeId: String(record.placeId || ''),
     description,
-    mainText: String(record.main_text || description),
-    secondaryText: String(record.secondary_text || ''),
-    coordinate: toCoordinate(record.lat, record.lng),
+    mainText: String(record.mainText || description),
+    secondaryText: String(record.secondaryText || ''),
+    coordinate: toCoordinate(record.latitude, record.longitude),
   };
 }
 
@@ -187,6 +186,10 @@ export default function PageLocationPickerModal({
   const searchRequestIdRef = useRef(0);
   const reverseRequestIdRef = useRef(0);
   const sessionIdRef = useRef(0);
+  const addressSessionTokenRef = useRef(createAddressSessionToken());
+  const addressLocationBiasRef = useRef<PageLocationCoordinate | undefined>(
+    resolveAddressLocationBias(initialCoordinate),
+  );
   const latestQueryRef = useRef(initialAddress);
   const primaryAddressRef = useRef(initialAddress.trim());
   const suppressedSearchQueryRef = useRef<string | null>(null);
@@ -251,6 +254,7 @@ export default function PageLocationPickerModal({
       mapGestureRef.current = false;
       const nextRegion = toRegion(coordinate, deltas);
       regionRef.current = nextRegion;
+      addressLocationBiasRef.current = coordinate;
       setRegion(nextRegion);
       setHasPinnedCoordinate(true);
       if (mapReadyRef.current) {
@@ -366,16 +370,15 @@ export default function PageLocationPickerModal({
       setIsSearching(true);
       setErrorMessage('');
       try {
-        const response = await apiBridge.post<{
-          api_status?: number | string;
-          predictions?: PlacePrediction[];
-        }>(apiRoutes.user.mapDiscovery, {
-          type: 'place_autocomplete',
+        const input = {
           query: trimmed,
-          language,
-          country: language === 'vi' ? 'vn' : undefined,
-          prefer_address: 1,
-        });
+          language: language === 'en' ? 'en' as const : 'vi' as const,
+          country: 'vn' as const,
+          locationBias: addressLocationBiasRef.current,
+          sessionToken: addressSessionTokenRef.current,
+        };
+        const suggestions =
+          await addressSearchRepository.searchAddresses(input);
         if (
           sessionId !== sessionIdRef.current ||
           requestId !== searchRequestIdRef.current ||
@@ -383,10 +386,7 @@ export default function PageLocationPickerModal({
         ) {
           return;
         }
-        const nextPredictions = filterAddressPredictions(
-          trimmed,
-          response.predictions || [],
-        )
+        const nextPredictions = suggestions
           .map(mapPrediction)
           .filter(Boolean) as MappedPrediction[];
         setPredictions(nextPredictions);
@@ -420,13 +420,18 @@ export default function PageLocationPickerModal({
       const requestId = ++initialPlaceRequestIdRef.current;
       setIsResolving(true);
       try {
-        const response = await apiBridge.post<PlaceDetailsResponse>(
-          apiRoutes.user.mapDiscovery,
+        const resolved = await addressSearchRepository.resolveAddressSuggestion(
           {
-            type: 'place_details',
-            place_id: placeId,
-            language,
-            country: language === 'vi' ? 'vn' : undefined,
+            placeId,
+            description: fallbackAddress,
+            mainText: fallbackAddress,
+            secondaryText: '',
+            source: 'autocomplete',
+          },
+          {
+            language: language === 'en' ? 'en' : 'vi',
+            country: 'vn',
+            sessionToken: addressSessionTokenRef.current,
           },
         );
         if (
@@ -436,7 +441,7 @@ export default function PageLocationPickerModal({
           return;
         }
 
-        const coordinate = toCoordinate(response.place?.lat, response.place?.lng);
+        const coordinate = toCoordinate(resolved.latitude, resolved.longitude);
         if (!coordinate) {
           setSelectedPlaceId(undefined);
           setHasPinnedCoordinate(false);
@@ -445,7 +450,7 @@ export default function PageLocationPickerModal({
         }
 
         const address = String(
-          fallbackAddress || response.place?.address || response.place?.name,
+          resolved.formattedAddress || fallbackAddress,
         ).trim();
         if (!address) {
           setSelectedAddress('');
@@ -456,7 +461,7 @@ export default function PageLocationPickerModal({
           return;
         }
         const resolvedPlaceId =
-          String(response.place?.place_id || placeId) || undefined;
+          String(resolved.placeId || placeId) || undefined;
         applyPrimaryAddress(address, resolvedPlaceId);
         animateToCoordinate(coordinate, {
           ...SELECTED_PLACE_DELTAS,
@@ -485,6 +490,7 @@ export default function PageLocationPickerModal({
   useEffect(() => {
     if (!visible) return;
     const sessionId = ++sessionIdRef.current;
+    addressSessionTokenRef.current = createAddressSessionToken();
     initialPlaceRequestIdRef.current += 1;
     cancelPendingReverseGeocode();
     mapGestureRef.current = false;
@@ -498,6 +504,9 @@ export default function PageLocationPickerModal({
       coordinate ? SELECTED_PLACE_DELTAS : DEFAULT_DELTAS,
     );
     regionRef.current = nextRegion;
+    addressLocationBiasRef.current = resolveAddressLocationBias(
+      coordinate || undefined,
+    );
     setRegion(nextRegion);
     setQuery(initialAddress);
     primaryAddressRef.current = initialAddress.trim();
@@ -607,6 +616,10 @@ export default function PageLocationPickerModal({
       // the text, but detach the old Google place ID from the new coordinate.
       prepareManualPinMove();
       setHasPinnedCoordinate(true);
+      addressLocationBiasRef.current = {
+        latitude: nextRegion.latitude,
+        longitude: nextRegion.longitude,
+      };
       scheduleReverseGeocode(nextRegion, sessionIdRef.current);
     },
     [prepareManualPinMove, scheduleReverseGeocode],
@@ -616,7 +629,7 @@ export default function PageLocationPickerModal({
     async (prediction: MappedPrediction) => {
       Keyboard.dismiss();
       cancelPendingReverseGeocode();
-      initialPlaceRequestIdRef.current += 1;
+      const detailsRequestId = ++initialPlaceRequestIdRef.current;
       searchRequestIdRef.current += 1;
       if (searchTimerRef.current) {
         clearTimeout(searchTimerRef.current);
@@ -632,26 +645,38 @@ export default function PageLocationPickerModal({
       let address = prediction.description;
       let placeId = prediction.placeId || undefined;
 
-      if (!coordinate && placeId) {
+      if (placeId) {
         try {
-          const details = await apiBridge.post<PlaceDetailsResponse>(
-            apiRoutes.user.mapDiscovery,
-            {
-              type: 'place_details',
-              place_id: placeId,
-              language,
-            },
-          );
-          coordinate = toCoordinate(details.place?.lat, details.place?.lng);
-          address = String(details.place?.address || details.place?.name || address).trim();
-          placeId = String(details.place?.place_id || placeId) || undefined;
+          const details =
+            await addressSearchRepository.resolveAddressSuggestion(
+              {
+                placeId,
+                description: prediction.description,
+                mainText: prediction.mainText,
+                secondaryText: prediction.secondaryText,
+                source: 'autocomplete',
+                latitude: prediction.coordinate?.latitude,
+                longitude: prediction.coordinate?.longitude,
+              },
+              {
+                language: language === 'en' ? 'en' : 'vi',
+                country: 'vn',
+                sessionToken: addressSessionTokenRef.current,
+              },
+            );
+          coordinate = toCoordinate(details.latitude, details.longitude);
+          address = details.formattedAddress || address;
+          placeId = details.placeId || placeId;
         } catch {
-          // Keep the visible suggestion; the user can still refine it by panning.
+          coordinate = null;
         }
+      } else {
+        coordinate = null;
       }
 
       if (
         sessionId !== sessionIdRef.current ||
+        detailsRequestId !== initialPlaceRequestIdRef.current ||
         prediction.description !== latestQueryRef.current
       ) {
         return;
@@ -809,11 +834,16 @@ export default function PageLocationPickerModal({
 
           {predictions.length > 0 ? (
             <View style={styles.predictionPanel}>
-              <FlatList
-                data={predictions}
-                keyExtractor={item => item.id}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => (
+                  <FlatList
+                    data={predictions}
+                    keyExtractor={item => item.id}
+                    keyboardShouldPersistTaps="handled"
+                    ListFooterComponent={
+                      <Text style={styles.googleAttribution}>
+                        {copy.googleAttribution}
+                      </Text>
+                    }
+                    renderItem={({ item }) => (
                   <TouchableOpacity
                     activeOpacity={0.78}
                     style={styles.predictionRow}
@@ -1011,6 +1041,14 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 12,
     lineHeight: 17,
+  },
+  googleAttribution: {
+    paddingVertical: 8,
+    textAlign: 'center',
+    color: '#5e5e5e',
+    fontSize: 12,
+    fontWeight: '400',
+    letterSpacing: 0,
   },
   centerPin: {
     position: 'absolute',

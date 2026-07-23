@@ -21,13 +21,14 @@ describe('checkout delivery address management', () => {
     'src/checkout/application/view-models/useCheckoutViewModel.ts',
   );
 
-  it('uses direct text entry instead of Google Places in both address flows', () => {
-    expect(checkout).not.toContain('AddressAutocomplete');
-    expect(checkout).not.toContain('inferAddress(');
-    expect(shipping).not.toContain('AddressAutocomplete');
-    expect(shipping).not.toContain('inferCityCountryFromPlace(');
-    expect(checkout).toContain('multiline');
-    expect(shipping).toContain('multiline');
+  it('uses the address pipeline without stacking another native modal in checkout', () => {
+    expect(checkout).toContain('AddressSearchContent');
+    expect(checkout).not.toContain('<AddressAutocomplete');
+    expect(checkout).toContain('setAddressSearchVisible(true)');
+    expect(checkout).toContain('onResolvedAddress');
+    expect(checkout).toContain('if (addressSearchVisible)');
+    expect(shipping).toContain('AddressAutocomplete');
+    expect(shipping).toContain('onSelectPlace');
   });
 
   it('exposes edit and delete controls for saved checkout addresses', () => {

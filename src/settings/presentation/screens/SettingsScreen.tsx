@@ -2062,9 +2062,18 @@ function DeliveryAddressCard() {
           value={form.address}
           placeholder="Tìm địa chỉ trên Google Maps"
           onChangeText={value => updateField('address', value)}
-          onSelectPlace={place =>
-            updateField('address', place.description || place.mainText)
-          }
+          onSelectPlace={place => {
+            updateField('address', place.description || place.mainText);
+            if (place.city || place.district) {
+              updateField('city', place.city || place.district || '');
+            }
+            if (place.country) {
+              const nextCountryId = countryIdFromAddressCountry(place.country);
+              if (nextCountryId) {
+                updateField('countryId', nextCountryId);
+              }
+            }
+          }}
           customInputContainerStyle={{
             height: 40,
             borderRadius: 8,

@@ -13,14 +13,22 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ArrowLeft, Pencil, Plus, Trash2, X } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  MapPin,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import AddressSearchContent from '../../../shared-kernel/presentation/components/AddressSearchContent';
+import type { ResolvedAddress } from '../../../shared-kernel/domain/types/addressSearch.types';
 import {
   APP_BRAND_COLOR,
   APP_COLORS,
@@ -38,10 +46,6 @@ interface DeliveryAddress {
   address: string;
 }
 
-type SelectedPlace = Parameters<
-  React.ComponentProps<typeof AddressAutocomplete>['onSelectPlace']
->[0];
-
 const ADDRESS_COPY = {
   vi: {
     header: 'Địa chỉ của tôi',
@@ -58,6 +62,9 @@ const ADDRESS_COPY = {
     zipPlaceholder: 'Nhập mã bưu chính',
     streetAddress: 'Địa chỉ nhà',
     streetPlaceholder: 'Nhập địa chỉ nhà hoặc tìm kiếm...',
+    searchTitle: 'Tìm địa chỉ',
+    searchHint: 'Tìm theo số nhà, ngõ, đường hoặc phường/xã',
+    backToForm: 'Quay lại form địa chỉ',
     addBtn: 'Thêm',
     saveBtn: 'Lưu',
     cancelBtn: 'Hủy',
@@ -86,6 +93,9 @@ const ADDRESS_COPY = {
     zipPlaceholder: 'Enter zip code',
     streetAddress: 'Address',
     streetPlaceholder: 'Enter street address or search...',
+    searchTitle: 'Search address',
+    searchHint: 'Search by house number, street, ward, or district',
+    backToForm: 'Back to address form',
     addBtn: 'Add',
     saveBtn: 'Save',
     cancelBtn: 'Cancel',
@@ -112,6 +122,7 @@ function AddressScreen() {
 
   // Modal State
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isAddressSearchVisible, setIsAddressSearchVisible] = useState(false);
   const [editingAddress, setEditingAddress] = useState<DeliveryAddress | null>(null);
 
   // Form Field States
@@ -164,6 +175,7 @@ function AddressScreen() {
     setCity('');
     setZip('');
     setAddress('');
+    setIsAddressSearchVisible(false);
     setIsModalVisible(true);
   }, []);
 
@@ -176,6 +188,7 @@ function AddressScreen() {
     setCity(addr.city);
     setZip(addr.zip);
     setAddress(addr.address);
+    setIsAddressSearchVisible(false);
     setIsModalVisible(true);
   }, []);
 
@@ -211,23 +224,16 @@ function AddressScreen() {
     [copy, isVi, loadAddresses],
   );
 
-  // Address Autocomplete selection handler
-  const handleSelectAddressPlace = useCallback((place: SelectedPlace) => {
-    const rawAddress = place.description || [place.mainText, place.secondaryText]
-      .filter(Boolean)
-      .join(', ');
-    const parts = rawAddress
-      .split(',')
-      .map(part => part.trim())
-      .filter(Boolean);
+  const closeAddressModal = useCallback(() => {
+    setIsAddressSearchVisible(false);
+    setIsModalVisible(false);
+  }, []);
 
-    setAddress(rawAddress);
-    if (parts.length >= 2) {
-      setCity(parts[parts.length - 2]);
-    }
-    if (parts.length >= 1) {
-      setCountry(parts[parts.length - 1]);
-    }
+  const handleResolvedAddress = useCallback((resolved: ResolvedAddress) => {
+    setAddress(resolved.formattedAddress);
+    setCity(resolved.city || resolved.district || '');
+    setCountry(resolved.country || '');
+    setIsAddressSearchVisible(false);
   }, []);
 
   // Save/Create address handler
@@ -254,7 +260,7 @@ function AddressScreen() {
         isVi ? 'Thành công' : 'Success',
         editingAddress ? copy.editSuccess : copy.addSuccess,
       );
-      setIsModalVisible(false);
+      closeAddressModal();
       loadAddresses();
     } catch (error) {
       Alert.alert(
@@ -264,7 +270,19 @@ function AddressScreen() {
     } finally {
       setIsSaving(false);
     }
-  }, [name, phone, address, country, city, zip, editingAddress, copy, isVi, loadAddresses]);
+  }, [
+    name,
+    phone,
+    address,
+    country,
+    city,
+    zip,
+    editingAddress,
+    copy,
+    isVi,
+    closeAddressModal,
+    loadAddresses,
+  ]);
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
@@ -349,7 +367,13 @@ function AddressScreen() {
         visible={isModalVisible}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setIsModalVisible(false)}
+        onRequestClose={() => {
+          if (isAddressSearchVisible) {
+            setIsAddressSearchVisible(false);
+            return;
+          }
+          closeAddressModal();
+        }}
       >
         <SafeAreaView className="flex-1 bg-white">
           {/* Top Drag Handle for Modal presentation */}
@@ -357,22 +381,56 @@ function AddressScreen() {
 
           {/* Modal Header */}
           <View className="flex-row items-center justify-between px-5 py-3 border-b border-slate-100">
-            <Text className="text-xl font-bold text-slate-900">
-              {editingAddress ? copy.editTitle : copy.addTitle}
-            </Text>
+            {isAddressSearchVisible ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setIsAddressSearchVisible(false)}
+                className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
+                accessibilityRole="button"
+                accessibilityLabel={copy.backToForm}
+              >
+                <ArrowLeft size={20} color="#64748b" />
+              </TouchableOpacity>
+            ) : null}
+            <View className="flex-1">
+              <Text
+                className={`text-xl font-bold text-slate-900 ${
+                  isAddressSearchVisible ? 'text-center' : ''
+                }`}
+              >
+                {isAddressSearchVisible
+                  ? copy.searchTitle
+                  : editingAddress
+                  ? copy.editTitle
+                  : copy.addTitle}
+              </Text>
+              {isAddressSearchVisible ? (
+                <Text className="mt-0.5 text-center text-xs font-semibold text-slate-500">
+                  {copy.searchHint}
+                </Text>
+              ) : null}
+            </View>
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() => setIsModalVisible(false)}
+              onPress={closeAddressModal}
               className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
             >
               <X size={20} color="#64748b" />
             </TouchableOpacity>
           </View>
 
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            className="flex-1"
-          >
+          {isAddressSearchVisible ? (
+            <AddressSearchContent
+              initialQuery={address}
+              showHeader={false}
+              onQueryChange={setAddress}
+              onResolvedAddress={handleResolvedAddress}
+            />
+          ) : (
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              className="flex-1"
+            >
             <ScrollView
               className="flex-1 px-5 pt-5"
               showsVerticalScrollIndicator={false}
@@ -465,12 +523,21 @@ function AddressScreen() {
                 <Text className="mb-2 text-sm font-bold text-slate-700">
                   {copy.streetAddress} <Text className="text-red-500">*</Text>
                 </Text>
-                <AddressAutocomplete
-                  value={address}
-                  placeholder={copy.streetPlaceholder}
-                  onChangeText={setAddress}
-                  onSelectPlace={handleSelectAddressPlace}
-                />
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setIsAddressSearchVisible(true)}
+                  className="min-h-[64px] flex-row items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <MapPin size={19} color={APP_BRAND_COLOR} />
+                  <Text
+                    className={`ml-3 flex-1 text-base font-semibold ${
+                      address ? 'text-slate-900' : 'text-slate-400'
+                    }`}
+                    numberOfLines={3}
+                  >
+                    {address || copy.streetPlaceholder}
+                  </Text>
+                </TouchableOpacity>
                 {(!city && !country) ? (
                   <Text className="mt-2 text-xs font-semibold text-slate-400">
                     {isVi
@@ -504,7 +571,8 @@ function AddressScreen() {
                 </TouchableOpacity>
               </View>
             </ScrollView>
-          </KeyboardAvoidingView>
+            </KeyboardAvoidingView>
+          )}
         </SafeAreaView>
       </Modal>
     </SafeAreaView>

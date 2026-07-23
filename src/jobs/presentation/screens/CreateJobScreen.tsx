@@ -267,8 +267,7 @@ function CreateJobScreen() {
               value={location}
               onChangeText={setLocation}
               onSelectPlace={(place) => {
-                // When user selects a place, update the location
-                setLocation(place.mainText);
+                setLocation(place.description);
               }}
               placeholder={language === "vi" ? "VD: Quận 1, TP. HCM" : "e.g. District 1, HCMC"}
             />
