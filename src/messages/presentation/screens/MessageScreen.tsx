@@ -138,6 +138,7 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { useNotificationBadgeViewModel } from '../../../notifications';
 
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
+import { feedLogoEvents } from '../../../feed/application/events/feedLogoEvents';
 import { sortMessageUserChats } from '../utils/messageListOrdering';
 import {
   isMessageRealtimeConnected,
@@ -2179,6 +2180,8 @@ function MessageScreen() {
 
   const handlePressLogo = useCallback(() => {
 
+    feedLogoEvents.emitScrollToTop();
+
     navigation.navigate(ROUTES.MAIN_TABS, {
 
       screen: ROUTES.FEED,
@@ -2797,6 +2800,10 @@ function MessageScreen() {
               activeOpacity={0.7}
 
               onPress={handlePressLogo}
+
+              accessibilityRole="button"
+
+              accessibilityLabel="home"
 
               style={styles.brandRow}
 

@@ -1,6 +1,7 @@
 // Stories domain barrel exports
 export * from './domain/types/stories.types';
 export * from './domain/repositories/StoriesRepository';
+export * from './domain/policies/storyExpiration';
 export { createStoriesRepository } from './infrastructure/repositories/ApiStoriesRepository';
 export { useStoriesViewModel } from './application/view-models/useStoriesViewModel';
 export { useCreateStoryViewModel } from './application/view-models/useCreateStoryViewModel';

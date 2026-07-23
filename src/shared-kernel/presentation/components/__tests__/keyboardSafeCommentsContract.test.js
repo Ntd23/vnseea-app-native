@@ -55,14 +55,19 @@ describe('comment keyboard safety contract', () => {
     expect(manifest).toContain('android:windowSoftInputMode="adjustResize"');
   });
 
-  it('uses one keyboard owner for inline iOS and keeps manual recovery elsewhere', () => {
+  it('keeps inline keyboard recovery separate from the dedicated sheet composer modal', () => {
     const sharedSheet = read(commentSurfaces[0]);
+    const composerModal = read(
+      'src/reels/presentation/components/ReelCommentComposerModal.tsx',
+    );
 
     expect(sharedSheet).toContain(
-      "const shouldOwnKeyboardAvoidance = !isInline || Platform.OS === 'android';",
+      "const shouldOwnKeyboardAvoidance = isInline && Platform.OS === 'android';",
     );
     expect(sharedSheet).toContain('Keyboard.metrics?.()');
-    expect(sharedSheet).toContain('INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE');
+    expect(sharedSheet).toContain(
+      'INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE',
+    );
     expect(sharedSheet).toContain('effectiveKeyboardTop');
     expect(sharedSheet).toContain('measureInWindow');
     expect(sharedSheet).toContain('unshiftedBottom');
@@ -72,9 +77,14 @@ describe('comment keyboard safety contract', () => {
       'shouldOwnKeyboardAvoidance && appliedKeyboardLift > 0',
     );
     expect(sharedSheet).toContain('if (!shouldOwnKeyboardAvoidance) return;');
-    expect(sharedSheet).toContain(
-      'enabled={visible && isScreenFocused && shouldOwnKeyboardAvoidance}',
-    );
+    expect(sharedSheet).toContain('isInline &&');
+    expect(sharedSheet).toContain('<ReelCommentComposerModal');
+    expect(composerModal).not.toContain('KeyboardSafeView');
+    expect(composerModal).toContain('className="flex-1 justify-end"');
+    expect(composerModal).toContain('Keyboard.metrics?.()');
+    expect(composerModal).toContain('panelTranslateY');
+    expect(composerModal).toContain('panelOpacity');
+    expect(sharedSheet).toContain('top: activeSheetTop');
     expect(sharedSheet).toContain('style={composerLiftStyle}');
     expect(sharedSheet).toContain('commitKeyboardLift(0)');
   });

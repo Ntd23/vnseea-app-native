@@ -40,6 +40,7 @@ import {
   audienceFromWire,
   audienceToWire,
 } from '../../../shared-kernel/domain/types/contentAudience';
+import { filterActiveStories } from '../../domain/policies/storyExpiration';
 
 // ── Generic readers (mirror the reels repository) ─────────────────────────
 //
@@ -428,7 +429,7 @@ export function createStoriesRepository(): StoriesRepository {
         'stories'
       );
 
-      return Array.from(grouped.values());
+      return filterActiveStories(Array.from(grouped.values()));
     },
 
     async getUserStories() {
@@ -489,7 +490,7 @@ export function createStoriesRepository(): StoriesRepository {
         'stories'
       );
 
-      return Array.from(grouped.values());
+      return filterActiveStories(Array.from(grouped.values()));
     },
 
     async createStory(draft: CreateStoryDraft): Promise<CreateStoryResult> {

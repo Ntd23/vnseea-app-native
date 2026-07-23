@@ -20,6 +20,7 @@ import type {
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
+import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
@@ -76,6 +77,13 @@ export const FeedHeader = React.memo(function FeedHeader() {
     return () => clearTimeout(warmMountTimer);
   }, []);
 
+  const handlePressLogo = useCallback(() => {
+    feedLogoEvents.emitScrollToTop();
+    navigation.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.FEED,
+    });
+  }, [navigation]);
+
   const handleOpenFutureDrawer = useCallback(() => {
     setHasOpenedMenu(true);
     setMenuVisible(true);
@@ -98,6 +106,9 @@ export const FeedHeader = React.memo(function FeedHeader() {
           <View style={styles.brandRow}>
             <TouchableOpacity
               activeOpacity={0.82}
+              onPress={handlePressLogo}
+              accessibilityRole="button"
+              accessibilityLabel="home"
               style={styles.brandLogoTouchable}
             >
               <View style={styles.logoPill}>

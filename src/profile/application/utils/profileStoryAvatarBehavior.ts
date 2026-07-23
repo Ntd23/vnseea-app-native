@@ -2,25 +2,15 @@ import type {
   StoryItem,
   StoryMedia,
 } from '../../../stories/domain/types/stories.types';
-
-const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
-
-function isFreshProfileStory(story: StoryItem, nowSeconds: number) {
-  const postedAt = story.postedAt ?? 0;
-  if (postedAt <= 0) return false;
-  if (nowSeconds - postedAt > PROFILE_STORY_MAX_AGE_SECONDS) return false;
-  if (story.expiresAt > 0 && story.expiresAt <= nowSeconds) return false;
-  return true;
-}
+import { filterActiveStories } from '../../../stories/domain/policies/storyExpiration';
 
 export function mergeStoriesForProfile(
   stories: StoryItem[],
   targetUserId: string,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): StoryItem | null {
-  const userStories = stories
+  const userStories = filterActiveStories(stories, nowSeconds)
     .filter(story => String(story.publisher.userId) === String(targetUserId))
-    .filter(story => isFreshProfileStory(story, nowSeconds))
     .sort((a, b) => (a.postedAt ?? 0) - (b.postedAt ?? 0));
 
   if (userStories.length === 0) {

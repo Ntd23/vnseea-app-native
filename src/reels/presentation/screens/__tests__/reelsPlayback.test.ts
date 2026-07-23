@@ -1,16 +1,23 @@
 import {
+  getVideoPlaybackTime,
   isNavigationRouteSelected,
   isReelItemActive,
+  resolveReelsViewportHeight,
+  setVideoPlaybackTime,
   shouldMountReelVideoPlayer,
   shouldPrefetchMoreReels,
+  videoPlaybackTimes,
 } from '../reelsPlayback';
 
 describe('reels playback state', () => {
+  beforeEach(() => {
+    videoPlaybackTimes.clear();
+  });
+
   it('keeps reels paused when the Video tab is mounted but not focused', () => {
     expect(
       isReelItemActive({
         isScreenFocused: false,
-        isCommentsOpen: false,
         index: 0,
         activeIndex: 0,
       }),
@@ -21,11 +28,28 @@ describe('reels playback state', () => {
     expect(
       isReelItemActive({
         isScreenFocused: true,
-        isCommentsOpen: true,
         index: 0,
         activeIndex: 0,
       }),
     ).toBe(true);
+  });
+
+  it('keeps the Reel pager height stable while the comment keyboard resizes Android', () => {
+    expect(
+      resolveReelsViewportHeight({
+        currentHeight: 900,
+        nextHeight: 520,
+        commentsOpen: true,
+      }),
+    ).toBe(900);
+
+    expect(
+      resolveReelsViewportHeight({
+        currentHeight: 900,
+        nextHeight: 820,
+        commentsOpen: false,
+      }),
+    ).toBe(820);
   });
 
   it('does not mount reel video players while the native iOS Video tab is background-mounted', () => {
@@ -100,5 +124,15 @@ describe('reels playback state', () => {
         isLoadingMore: true,
       }),
     ).toBe(false);
+  });
+
+  it('bounds remembered playback positions during long Reel sessions', () => {
+    for (let index = 0; index < 205; index += 1) {
+      setVideoPlaybackTime(`reel-${index}`, index);
+    }
+
+    expect(videoPlaybackTimes.size).toBe(200);
+    expect(getVideoPlaybackTime('reel-0', 999)).toBe(999);
+    expect(getVideoPlaybackTime('reel-204')).toBe(204);
   });
 });

@@ -1,4 +1,5 @@
 export const videoPlaybackTimes = new Map<string, number>();
+const MAX_REMEMBERED_REEL_PLAYBACK_TIMES = 200;
 
 function toPlaybackKey(postId: string | number | null | undefined) {
   if (postId === null || postId === undefined) return null;
@@ -31,7 +32,15 @@ export function setVideoPlaybackTime(
 ) {
   const key = toPlaybackKey(postId);
   if (!key) return;
+  if (videoPlaybackTimes.has(key)) {
+    videoPlaybackTimes.delete(key);
+  }
   videoPlaybackTimes.set(key, normalizeVideoPlaybackTime(time));
+  while (videoPlaybackTimes.size > MAX_REMEMBERED_REEL_PLAYBACK_TIMES) {
+    const oldestKey = videoPlaybackTimes.keys().next().value;
+    if (typeof oldestKey !== 'string') break;
+    videoPlaybackTimes.delete(oldestKey);
+  }
 }
 
 export function isReelItemActive({
@@ -40,11 +49,36 @@ export function isReelItemActive({
   activeIndex,
 }: {
   isScreenFocused: boolean;
-  isCommentsOpen: boolean;
   index: number;
   activeIndex: number;
 }) {
   return isScreenFocused && index === activeIndex;
+}
+
+export function resolveReelsViewportHeight({
+  currentHeight,
+  nextHeight,
+  commentsOpen,
+}: {
+  currentHeight: number;
+  nextHeight: number;
+  commentsOpen: boolean;
+}) {
+  const normalizedCurrent =
+    Number.isFinite(currentHeight) && currentHeight > 0
+      ? Math.round(currentHeight)
+      : 0;
+  const normalizedNext =
+    Number.isFinite(nextHeight) && nextHeight > 0
+      ? Math.round(nextHeight)
+      : normalizedCurrent;
+
+  // Android's adjustResize reports a shorter root layout while the comment
+  // keyboard is visible. Changing the pager's item height at that moment
+  // changes every snap offset and can expose the next (paused) Reel.
+  return commentsOpen && normalizedCurrent > 0
+    ? normalizedCurrent
+    : normalizedNext;
 }
 
 type NavigationRouteLike = {

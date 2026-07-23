@@ -15,7 +15,7 @@
 //         memory bounded without detaching the native video surface.
 //
 //   viewabilityConfig
-//     `itemVisiblePercentThreshold: 80` means a row only becomes "active"
+//     The active row is selected once it is clearly dominant on screen.
 //     after the user has nearly fully snapped to it — prevents the wrong
 //     video from briefly playing while the user is mid-swipe.
 //
@@ -46,6 +46,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -59,12 +61,11 @@ import {
 import { useEffect } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing as ReanimatedEasing,
   interpolate,
   runOnJS,
-  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { ArrowUp, ChevronLeft, RotateCcw, ChevronsDown, VolumeX, Volume2 } from 'lucide-react-native';
@@ -80,6 +81,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import {
   isNavigationRouteSelected,
   isReelItemActive,
+  resolveReelsViewportHeight,
   shouldMountReelVideoPlayer,
   shouldPrefetchMoreReels,
 } from './reelsPlayback';
@@ -93,8 +95,8 @@ import { isReelShareable } from '../../domain/policies/reelPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 
 const VIEWABILITY_CONFIG = {
-  itemVisiblePercentThreshold: 80,
-  minimumViewTime: 80, // ms — avoids flicker during fast swipes
+  itemVisiblePercentThreshold: 70,
+  minimumViewTime: 40,
 };
 
 const PRELOAD_RADIUS = 1; // mount video for current ± this many neighbors
@@ -103,16 +105,26 @@ const REELS_NEW_VIDEO_PROBE_LIMIT = 6;
 const REELS_HEADER_TOP_GAP = 10;
 const REELS_NEW_BUTTON_HEADER_GAP = 50;
 const REELS_HEADER_LAYER_Z = 10030;
+const REELS_COMMENTS_PREVIEW_RATIO = 0.36;
 
 // Screen width — used by the swipe-back gesture to compute the dismiss
 // threshold and target translation.
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const BACK_GESTURE_START_X = Platform.OS === 'android' ? 18 : 0;
-const BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 82 : 12;
-const BACK_GESTURE_ACTIVE_OFFSET_X = Platform.OS === 'android' ? 8 : 15;
-const BACK_GESTURE_FAIL_OFFSET_Y = Platform.OS === 'android' ? 18 : 15;
+const BACK_GESTURE_START_X = 0;
+const BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 44 : 12;
+const BACK_GESTURE_ACTIVE_OFFSET_X = Platform.OS === 'android' ? 10 : 15;
+const BACK_GESTURE_FAIL_OFFSET_Y = Platform.OS === 'android' ? 10 : 12;
+const BACK_GESTURE_RETURN_MIN_DURATION_MS = 90;
+const BACK_GESTURE_RETURN_MAX_DURATION_MS = 180;
+const BACK_GESTURE_RETURN_EASING = ReanimatedEasing.bezier(
+  0.22,
+  1,
+  0.36,
+  1,
+);
+const HEADER_EDGE_HIT_SLOP = { top: 12, bottom: 12, left: 10, right: 8 };
+const HEADER_ACTION_HIT_SLOP = { top: 12, bottom: 12, left: 3, right: 3 };
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 function getReelTimestamp(item?: ReelsItem | null) {
@@ -288,15 +300,25 @@ export default function ReelsScreen() {
     [], // intentional: only seed once on first mount
   );
   const vm = useReelsViewModel(seededInitial);
+  const openReelComments = vm.openComments;
+  const closeReelComments = vm.closeComments;
   const activeIndexRef = useRef(vm.activeIndex);
   const itemsLengthRef = useRef(vm.items.length);
   const hasMoreRef = useRef(vm.hasMore);
   const isLoadingMoreRef = useRef(vm.isLoadingMore);
   const isCommentsOpenRef = useRef(vm.isCommentsOpen);
+  const autoAdvanceFrameRef = useRef<number | null>(null);
+  const isUserDraggingRef = useRef(false);
+  const scrollReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigationActionInFlightRef = useRef(false);
   const isShareSheetOpenRef = useRef(false);
+  const isPublisherOverlayOpenRef = useRef(false);
   const loadMoreRef = useRef(vm.loadMore);
   const setReelsActiveIndexRef = useRef(vm.setActiveIndex);
   const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [isCommentsPreviewVisible, setIsCommentsPreviewVisible] = useState(
+    vm.isCommentsOpen,
+  );
   const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
   const [hasNewReels, setHasNewReels] = useState(false);
   const pendingNewReelsRef = useRef<ReelsItem[]>([]);
@@ -312,7 +334,6 @@ export default function ReelsScreen() {
     itemsLengthRef.current = vm.items.length;
     hasMoreRef.current = vm.hasMore;
     isLoadingMoreRef.current = vm.isLoadingMore;
-    isCommentsOpenRef.current = vm.isCommentsOpen;
     loadMoreRef.current = vm.loadMore;
     setReelsActiveIndexRef.current = vm.setActiveIndex;
     isReelsFocusedRef.current = isFocusedScreen;
@@ -325,7 +346,6 @@ export default function ReelsScreen() {
     isFocusedScreen,
     vm.activeIndex,
     vm.hasMore,
-    vm.isCommentsOpen,
     vm.isInitialLoading,
     vm.isLoadingMore,
     vm.isRefreshing,
@@ -333,6 +353,24 @@ export default function ReelsScreen() {
     vm.loadMore,
     vm.setActiveIndex,
   ]);
+
+  useEffect(() => {
+    isCommentsOpenRef.current = vm.isCommentsOpen;
+    if (!vm.isCommentsOpen) {
+      setIsCommentsPreviewVisible(false);
+    }
+  }, [vm.isCommentsOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceFrameRef.current !== null) {
+        cancelAnimationFrame(autoAdvanceFrameRef.current);
+      }
+      if (scrollReleaseTimerRef.current !== null) {
+        clearTimeout(scrollReleaseTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     isShareSheetOpenRef.current = shareModalVisible;
@@ -415,6 +453,14 @@ export default function ReelsScreen() {
 
   const checkForRemoteNewReels = useCallback(async () => {
     if (!isReelsFocusedRef.current) return;
+    if (
+      isUserDraggingRef.current ||
+      isCommentsOpenRef.current ||
+      isShareSheetOpenRef.current ||
+      isPublisherOverlayOpenRef.current
+    ) {
+      return;
+    }
     if (!hasReelsLoadedOnceRef.current || isReelsLoadingRef.current) return;
     if (AppState.currentState !== 'active') return;
     if (isCheckingLatestReelsRef.current) return;
@@ -438,10 +484,10 @@ export default function ReelsScreen() {
     if (!isFocusedScreen) return undefined;
 
     const firstProbe = setTimeout(() => {
-      void checkForRemoteNewReels();
+      checkForRemoteNewReels().catch(() => undefined);
     }, 1200);
     const interval = setInterval(() => {
-      void checkForRemoteNewReels();
+      checkForRemoteNewReels().catch(() => undefined);
     }, REELS_NEW_VIDEO_PROBE_INTERVAL_MS);
 
     return () => {
@@ -454,7 +500,7 @@ export default function ReelsScreen() {
     const subscription = AppState.addEventListener('change', nextState => {
       setIsAppActive(nextState === 'active');
       if (nextState === 'active') {
-        void checkForRemoteNewReels();
+        checkForRemoteNewReels().catch(() => undefined);
       }
     });
 
@@ -550,6 +596,7 @@ export default function ReelsScreen() {
   const [viewportHeight, setViewportHeight] = useState(
     () => Dimensions.get('window').height,
   );
+  const viewportHeightRef = useRef(viewportHeight);
   const [hasMeasuredViewport, setHasMeasuredViewport] = useState(false);
   const [isLaunchCoverVisible, setIsLaunchCoverVisible] = useState(
     () => Boolean(launchCoverUri),
@@ -571,16 +618,6 @@ export default function ReelsScreen() {
   const dragX = useSharedValue(0);
   const screenDismissX = useSharedValue(0);
 
-  const scrollY = useSharedValue(0);
-
-  const handleScroll = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      if (event && event.contentOffset) {
-        scrollY.value = event.contentOffset.y;
-      }
-    },
-  });
-
   // Also resets the swipe-back transform to 0. Without this, the second
   // visit to Reels renders blank: a successful dismiss leaves dragX at
   // SCREEN_WIDTH, so when the screen regains focus the whole content is
@@ -588,6 +625,12 @@ export default function ReelsScreen() {
   // background.
   useFocusEffect(
     useCallback(() => {
+      navigationActionInFlightRef.current = false;
+      isUserDraggingRef.current = false;
+      if (scrollReleaseTimerRef.current !== null) {
+        clearTimeout(scrollReleaseTimerRef.current);
+        scrollReleaseTimerRef.current = null;
+      }
       dragX.value = 0;
       screenDismissX.value = 0;
       if (isTabRoute) {
@@ -611,10 +654,14 @@ export default function ReelsScreen() {
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (isCommentsOpenRef.current) return;
       if (viewableItems.length === 0) return;
       const first = viewableItems[0];
-      if (typeof first.index === 'number') {
-        setActiveIndexRef.current(first.index);
+      if (first.isViewable !== false && typeof first.index === 'number') {
+        if (first.index !== activeIndexRef.current) {
+          activeIndexRef.current = first.index;
+          setActiveIndexRef.current(first.index);
+        }
         if (
           shouldPrefetchMoreReels({
             visibleIndex: first.index,
@@ -632,10 +679,61 @@ export default function ReelsScreen() {
 
   const handleToggleMute = useCallback(() => setIsMuted(m => !m), []);
 
+  const lockActiveReelPosition = useCallback(() => {
+    const height = viewportHeightRef.current;
+    if (height <= 0 || activeIndexRef.current < 0) return;
+    flatListRef.current?.scrollToOffset({
+      offset: activeIndexRef.current * height,
+      animated: false,
+    });
+  }, []);
+
+  const cancelPendingAutoAdvance = useCallback(() => {
+    if (autoAdvanceFrameRef.current === null) return;
+    cancelAnimationFrame(autoAdvanceFrameRef.current);
+    autoAdvanceFrameRef.current = null;
+  }, []);
+
+  const handleOpenComments = useCallback((postId: string) => {
+    cancelPendingAutoAdvance();
+    isCommentsOpenRef.current = true;
+    if (scrollReleaseTimerRef.current !== null) {
+      clearTimeout(scrollReleaseTimerRef.current);
+      scrollReleaseTimerRef.current = null;
+    }
+    isUserDraggingRef.current = false;
+    lockActiveReelPosition();
+    requestAnimationFrame(() => {
+      if (isCommentsOpenRef.current) lockActiveReelPosition();
+    });
+    openReelComments(postId).catch(() => undefined);
+  }, [cancelPendingAutoAdvance, lockActiveReelPosition, openReelComments]);
+
+  const handleCommentsOpenStart = useCallback(() => {
+    setIsCommentsPreviewVisible(true);
+  }, []);
+
+  const handleCommentsCloseStart = useCallback(() => {
+    setIsCommentsPreviewVisible(false);
+  }, []);
+
+  const handleCloseComments = useCallback(() => {
+    setIsCommentsPreviewVisible(false);
+    closeReelComments();
+    isCommentsOpenRef.current = false;
+  }, [closeReelComments]);
+
   const handleVideoEnd = useCallback((index: number) => {
+    if (
+      isCommentsOpenRef.current ||
+      isShareSheetOpenRef.current ||
+      isPublisherOverlayOpenRef.current ||
+      isUserDraggingRef.current
+    ) {
+      return false;
+    }
     if (!autoScrollEnabledRef.current) return false;
     if (index !== activeIndexRef.current) return false;
-    if (isCommentsOpenRef.current || isShareSheetOpenRef.current) return false;
 
     if (index >= itemsLengthRef.current - 1) {
       if (hasMoreRef.current && !isLoadingMoreRef.current) {
@@ -646,9 +744,18 @@ export default function ReelsScreen() {
     }
 
     const nextIndex = index + 1;
-    activeIndexRef.current = nextIndex;
-    setReelsActiveIndexRef.current(nextIndex);
-    requestAnimationFrame(() => {
+    autoAdvanceFrameRef.current = requestAnimationFrame(() => {
+      autoAdvanceFrameRef.current = null;
+      if (
+        isCommentsOpenRef.current ||
+        isShareSheetOpenRef.current ||
+        isPublisherOverlayOpenRef.current ||
+        isUserDraggingRef.current ||
+        !autoScrollEnabledRef.current ||
+        activeIndexRef.current !== index
+      ) {
+        return;
+      }
       flatListRef.current?.scrollToIndex({
         index: nextIndex,
         animated: true,
@@ -657,19 +764,88 @@ export default function ReelsScreen() {
     return true;
   }, []);
 
+  const commitActiveIndexFromOffset = useCallback((offsetY: number) => {
+    if (isCommentsOpenRef.current) return;
+    if (itemHeight <= 0 || itemsLengthRef.current <= 0) return;
+    const nextIndex = Math.max(
+      0,
+      Math.min(
+        itemsLengthRef.current - 1,
+        Math.round(offsetY / itemHeight),
+      ),
+    );
+    if (nextIndex === activeIndexRef.current) return;
+    activeIndexRef.current = nextIndex;
+    setReelsActiveIndexRef.current(nextIndex);
+  }, [itemHeight]);
+
+  const handleReelScrollBeginDrag = useCallback(() => {
+    isUserDraggingRef.current = true;
+    cancelPendingAutoAdvance();
+    if (scrollReleaseTimerRef.current !== null) {
+      clearTimeout(scrollReleaseTimerRef.current);
+      scrollReleaseTimerRef.current = null;
+    }
+  }, [cancelPendingAutoAdvance]);
+
+  const handleReelMomentumScrollBegin = useCallback(() => {
+    isUserDraggingRef.current = true;
+    if (scrollReleaseTimerRef.current !== null) {
+      clearTimeout(scrollReleaseTimerRef.current);
+      scrollReleaseTimerRef.current = null;
+    }
+  }, []);
+
+  const handleReelScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      if (scrollReleaseTimerRef.current !== null) {
+        clearTimeout(scrollReleaseTimerRef.current);
+      }
+      scrollReleaseTimerRef.current = setTimeout(() => {
+        scrollReleaseTimerRef.current = null;
+        isUserDraggingRef.current = false;
+        commitActiveIndexFromOffset(offsetY);
+      }, 180);
+    },
+    [commitActiveIndexFromOffset],
+  );
+
+  const handleReelMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (scrollReleaseTimerRef.current !== null) {
+        clearTimeout(scrollReleaseTimerRef.current);
+        scrollReleaseTimerRef.current = null;
+      }
+      isUserDraggingRef.current = false;
+      commitActiveIndexFromOffset(event.nativeEvent.contentOffset.y);
+    },
+    [commitActiveIndexFromOffset],
+  );
+
   const handleOpenProfile = useCallback((userId: string) => {
+    cancelPendingAutoAdvance();
+    isPublisherOverlayOpenRef.current = true;
     setSelectedPublisherId(userId);
+  }, [cancelPendingAutoAdvance]);
+
+  const handleClosePublisherOverlay = useCallback(() => {
+    isPublisherOverlayOpenRef.current = false;
+    setSelectedPublisherId(null);
   }, []);
 
   const handleOpenShareReel = useCallback((item: ReelsItem) => {
     if (!isReelShareable(item)) return;
     const post = mapReelToFeedVideoPost(item);
     if (!isFeedPostShareable(post)) return;
+    cancelPendingAutoAdvance();
+    isShareSheetOpenRef.current = true;
     setSharingPost(post);
     setShareModalVisible(true);
-  }, []);
+  }, [cancelPendingAutoAdvance]);
 
   const handleCloseShareModal = useCallback(() => {
+    isShareSheetOpenRef.current = false;
     setShareModalVisible(false);
     setTimeout(() => {
       setSharingPost(undefined);
@@ -706,8 +882,22 @@ export default function ReelsScreen() {
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = Math.round(event.nativeEvent.layout.height);
     setHasMeasuredViewport(true);
-    setViewportHeight(prev => (prev === nextHeight ? prev : nextHeight));
-  }, []);
+    const resolvedHeight = resolveReelsViewportHeight({
+      currentHeight: viewportHeightRef.current,
+      nextHeight,
+      commentsOpen: isCommentsOpenRef.current,
+    });
+
+    if (isCommentsOpenRef.current) {
+      requestAnimationFrame(lockActiveReelPosition);
+      return;
+    }
+
+    viewportHeightRef.current = resolvedHeight;
+    setViewportHeight(prev =>
+      prev === resolvedHeight ? prev : resolvedHeight,
+    );
+  }, [lockActiveReelPosition]);
 
   const selectedCommentReel = useMemo(
     () => vm.items.find(item => item.id === vm.selectedCommentPostId) ?? null,
@@ -718,9 +908,9 @@ export default function ReelsScreen() {
 
   const handleRetryComments = useCallback(() => {
     if (vm.selectedCommentPostId) {
-      vm.openComments(vm.selectedCommentPostId);
+      openReelComments(vm.selectedCommentPostId).catch(() => undefined);
     }
-  }, [vm]);
+  }, [openReelComments, vm.selectedCommentPostId]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: ReelsItem; index: number }) => {
@@ -736,7 +926,6 @@ export default function ReelsScreen() {
       // when the user switches tabs, every reel becomes inactive (paused).
       const isActive = isReelItemActive({
         isScreenFocused: isPlaybackRouteFocused && !isPublisherOverlayOpen,
-        isCommentsOpen: vm.isCommentsOpen,
         index,
         activeIndex: vm.activeIndex,
       });
@@ -752,17 +941,20 @@ export default function ReelsScreen() {
           height={itemHeight}
           isActive={isActive}
           isCurrent={isCurrent}
+          commentsPreviewVisible={isCommentsPreviewVisible && isCurrent}
+          commentsPreviewHeight={Math.round(
+            itemHeight * REELS_COMMENTS_PREVIEW_RATIO,
+          )}
           shouldMount={shouldMount}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
           onReaction={vm.toggleReaction}
           onSave={vm.toggleSave}
           onShare={handleOpenShareReel}
-          onOpenComments={vm.openComments}
+          onOpenComments={handleOpenComments}
           onUnavailable={vm.markUnavailable}
           onFollow={vm.followPublisher}
           onOpenProfile={handleOpenProfile}
-          scrollY={scrollY}
           index={index}
           initialSeekTime={initialSeekTime}
           onVideoEnd={handleVideoEnd}
@@ -771,10 +963,9 @@ export default function ReelsScreen() {
     },
     [
 	      vm.activeIndex,
-	      vm.isCommentsOpen,
+	      isCommentsPreviewVisible,
 	      vm.toggleReaction,
       vm.toggleSave,
-      vm.openComments,
       vm.markUnavailable,
       vm.followPublisher,
       handleOpenProfile,
@@ -784,7 +975,7 @@ export default function ReelsScreen() {
       isPublisherOverlayOpen,
       isPlaybackRouteFocused,
       handleToggleMute,
-      scrollY,
+      handleOpenComments,
       preloadRadius,
       initialVideoId,
       route.params?.seekTime,
@@ -810,12 +1001,35 @@ export default function ReelsScreen() {
     }
   }, []);
 
+  const reelsRefreshControl = useMemo(
+    () => (
+      <RefreshControl
+        refreshing={vm.isRefreshing}
+        onRefresh={vm.refresh}
+        tintColor="#fff"
+        colors={['#fff']}
+        progressBackgroundColor="#222"
+      />
+    ),
+    [vm.isRefreshing, vm.refresh],
+  );
+
+  const reelsFooter = useMemo(
+    () =>
+      vm.isLoadingMore ? (
+        <View style={[styles.footerLoader, { height: itemHeight }]}>
+          <ActivityIndicator color="#fff" size="small" />
+        </View>
+      ) : null,
+    [itemHeight, vm.isLoadingMore],
+  );
+
   // ── Swipe-from-left to go back ───────────────────────────────────────
   // Facebook-style: drag the screen to the right and release past a
   // threshold to dismiss the reels feed back to home.
   //
   // The gesture is configured so it does NOT fight the vertical pager:
-  //   • `activeOffsetX([18, ...])` — only activate after the user moves
+  //   • `activeOffsetX(15)` — only activate after the user moves
   //     at least 18px to the RIGHT (positive X). A leftward drag never
   //     activates this gesture.
   //   • `failOffsetY([-15, 15])` — the moment the user moves 15+px up or
@@ -842,7 +1056,22 @@ export default function ReelsScreen() {
     rootNavigator.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
   }, [navigation]);
 
+  const prepareFeedStatusBarForReturn = useCallback(() => {
+    if (Platform.OS !== 'android') return;
+
+    // Reels draws below a translucent status bar while Home owns an opaque
+    // brand-coloured bar. Restore Home's native chrome before popping Reels
+    // so Android never inserts its default white status-bar frame between the
+    // two screens.
+    StatusBar.setBarStyle('light-content', false);
+    StatusBar.setBackgroundColor(APP_BRAND_COLOR, false);
+    StatusBar.setTranslucent(false);
+  }, []);
+
   const goBackToFeed = useCallback(() => {
+    if (navigationActionInFlightRef.current) return;
+    navigationActionInFlightRef.current = true;
+    prepareFeedStatusBarForReturn();
     // Prefer goBack when this screen sits on top of a stack — it POPS
     // the screen entirely, so the next visit re-mounts with fresh state
     // and we never have to worry about leftover transforms. Falls back
@@ -852,13 +1081,13 @@ export default function ReelsScreen() {
     } else {
       navigateToFeed();
     }
-  }, [navigation, navigateToFeed]);
+  }, [navigation, navigateToFeed, prepareFeedStatusBarForReturn]);
 
   const swipeBackGesture = useMemo(
     () =>
       Gesture.Pan()
         .hitSlop({ left: BACK_GESTURE_START_X, width: BACK_GESTURE_WIDTH })
-        .activeOffsetX([BACK_GESTURE_ACTIVE_OFFSET_X, 999])
+        .activeOffsetX(BACK_GESTURE_ACTIVE_OFFSET_X)
         .failOffsetY([-BACK_GESTURE_FAIL_OFFSET_Y, BACK_GESTURE_FAIL_OFFSET_Y])
         .enabled(
           !isTabRoute &&
@@ -892,10 +1121,34 @@ export default function ReelsScreen() {
               },
             );
           } else {
-            // Spring the indicator and screen back cleanly.
-            dragX.value = withSpring(0, { damping: 18, stiffness: 220 });
-            screenDismissX.value = withSpring(0, { damping: 18, stiffness: 220 });
+            // Return in one direction only. A spring can overshoot zero and
+            // make a short, cancelled swipe visibly wobble left/right.
+            const returnDuration = Math.max(
+              BACK_GESTURE_RETURN_MIN_DURATION_MS,
+              Math.min(
+                BACK_GESTURE_RETURN_MAX_DURATION_MS,
+                (Math.max(0, event.translationX) /
+                  (SCREEN_WIDTH * 0.32)) *
+                  BACK_GESTURE_RETURN_MAX_DURATION_MS,
+              ),
+            );
+            const returnConfig = {
+              duration: returnDuration,
+              easing: BACK_GESTURE_RETURN_EASING,
+            };
+            dragX.value = withTiming(0, returnConfig);
+            screenDismissX.value = withTiming(0, returnConfig);
           }
+        })
+        .onFinalize((_event, success) => {
+          'worklet';
+          if (success) return;
+          const returnConfig = {
+            duration: BACK_GESTURE_RETURN_MIN_DURATION_MS,
+            easing: BACK_GESTURE_RETURN_EASING,
+          };
+          dragX.value = withTiming(0, returnConfig);
+          screenDismissX.value = withTiming(0, returnConfig);
         }),
     [
       dragX,
@@ -909,13 +1162,14 @@ export default function ReelsScreen() {
   );
 
   const screenAnimatedStyle = useAnimatedStyle(() => {
-    const progress = Math.min(1, screenDismissX.value / SCREEN_WIDTH);
+    const dismissX = Math.max(0, screenDismissX.value);
+    const progress = Math.min(1, dismissX / SCREEN_WIDTH);
     return {
       borderTopLeftRadius: interpolate(progress, [0, 1], [0, 22], 'clamp'),
       borderBottomLeftRadius: interpolate(progress, [0, 1], [0, 22], 'clamp'),
       opacity: interpolate(progress, [0, 1], [1, 0.92], 'clamp'),
       transform: [
-        { translateX: screenDismissX.value },
+        { translateX: dismissX },
         { scale: interpolate(progress, [0, 1], [1, 0.97], 'clamp') },
       ],
     };
@@ -1022,18 +1276,12 @@ export default function ReelsScreen() {
       >
         <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-        <AnimatedFlatList
-          ref={flatListRef as any}
+        <FlatList
+          ref={flatListRef}
           data={vm.items}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           getItemLayout={getItemLayout}
-          extraData={{
-            isMuted,
-            activeIndex: vm.activeIndex,
-            isPlaybackRouteFocused,
-            isPublisherOverlayOpen,
-          }}
           // Only supply `initialScrollIndex` when we have a real
           // deeplink — leaving it `undefined` for normal visits keeps
           // RN's default behaviour (scroll to top). The `??` form
@@ -1042,6 +1290,7 @@ export default function ReelsScreen() {
           // newest reel on every cold start.
           initialScrollIndex={initialScrollIndexValue ?? undefined}
           pagingEnabled
+          scrollEnabled={!vm.isCommentsOpen}
           showsVerticalScrollIndicator={false}
           snapToInterval={itemHeight}
           snapToAlignment="start"
@@ -1050,38 +1299,26 @@ export default function ReelsScreen() {
           bounces={false}
           overScrollMode="never"
           style={styles.list}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
+          onScrollBeginDrag={handleReelScrollBeginDrag}
+          onScrollEndDrag={handleReelScrollEndDrag}
+          onMomentumScrollBegin={handleReelMomentumScrollBegin}
+          onMomentumScrollEnd={handleReelMomentumScrollEnd}
           // ── Virtualization tuning ───────────────────────────────────
           // windowSize=3 means: keep ~1 screen above + current + ~1 screen
           // below in the tree. Combined with our per-item mount gate this
           // gives smooth scrolling without exploding memory.
           windowSize={3}
-          initialNumToRender={1}
+          initialNumToRender={2}
           maxToRenderPerBatch={2}
-          updateCellsBatchingPeriod={50}
+          updateCellsBatchingPeriod={32}
           removeClippedSubviews={Platform.OS !== 'android'}
           // ──────────────────────────────────────────────────────────
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={VIEWABILITY_CONFIG}
           onEndReached={handleEndReached}
-          onEndReachedThreshold={1.5}
-          refreshControl={
-            <RefreshControl
-              refreshing={vm.isRefreshing}
-              onRefresh={vm.refresh}
-              tintColor="#fff"
-              colors={['#fff']}
-              progressBackgroundColor="#222"
-            />
-          }
-          ListFooterComponent={
-            vm.isLoadingMore ? (
-              <View style={[styles.footerLoader, { height: itemHeight }]}>
-                <ActivityIndicator color="#fff" size="small" />
-              </View>
-            ) : null
-          }
+          onEndReachedThreshold={0.5}
+          refreshControl={reelsRefreshControl}
+          ListFooterComponent={reelsFooter}
         />
 
         {isLaunchCoverVisible && launchCoverUri ? (
@@ -1122,9 +1359,10 @@ export default function ReelsScreen() {
           {!isTabRoute ? (
             <TouchableOpacity
               delayPressIn={0}
-              onPressIn={goBackToFeed}
+              activeOpacity={0.65}
+              onPress={goBackToFeed}
               style={styles.headerButton}
-              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              hitSlop={HEADER_EDGE_HIT_SLOP}
             >
               <ChevronLeft size={26} color="#fff" />
             </TouchableOpacity>
@@ -1136,21 +1374,23 @@ export default function ReelsScreen() {
           <View pointerEvents="box-none" style={styles.headerRightRow}>
             <TouchableOpacity
               delayPressIn={0}
-              onPressIn={toggleAutoScroll}
+              activeOpacity={0.65}
+              onPress={toggleAutoScroll}
               style={[
                 styles.headerButton,
                 autoScrollEnabled && styles.headerButtonActive,
               ]}
-              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              hitSlop={HEADER_ACTION_HIT_SLOP}
             >
               <ChevronsDown size={20} color="#fff" />
             </TouchableOpacity>
 
             <TouchableOpacity
               delayPressIn={0}
-              onPressIn={handleToggleMute}
+              activeOpacity={0.65}
+              onPress={handleToggleMute}
               style={styles.headerButton}
-              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              hitSlop={HEADER_ACTION_HIT_SLOP}
             >
               {isMuted ? (
                 <VolumeX size={20} color="#fff" />
@@ -1163,6 +1403,8 @@ export default function ReelsScreen() {
 
         <ReelCommentsSheet
           visible={vm.isCommentsOpen}
+          sheetHeight="64%"
+          backdropColor="rgba(0,0,0,0.08)"
           comments={vm.comments}
           commentCount={selectedCommentReel?.commentCount ?? vm.comments.length}
           isLoading={vm.isCommentsLoading}
@@ -1172,7 +1414,10 @@ export default function ReelsScreen() {
           repliesById={vm.repliesById}
           loadingRepliesIds={vm.loadingRepliesIds}
           replyingTo={vm.replyingTo}
-          onClose={vm.closeComments}
+          onOpenStart={handleCommentsOpenStart}
+          onCloseStart={handleCommentsCloseStart}
+          composerAvatarUrl={vm.currentUser?.avatarUrl}
+          onClose={handleCloseComments}
           onEndReached={vm.loadMoreComments}
           onRetry={handleRetryComments}
           onSubmit={vm.submitComment}
@@ -1199,7 +1444,7 @@ export default function ReelsScreen() {
           visible={selectedPublisherId !== null}
           userId={selectedPublisherId}
           currentReelId={currentReelId}
-          onClose={() => setSelectedPublisherId(null)}
+          onClose={handleClosePublisherOverlay}
           onPlayReel={handlePlayPublisherReel}
           onFollowToggled={(userId, isFollowing) => {
             if (isFollowing) {

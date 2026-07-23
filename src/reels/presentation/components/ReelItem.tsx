@@ -47,8 +47,10 @@ import {
   View,
 } from 'react-native';
 import Animated, {
+  Easing as ReanimatedEasing,
   useAnimatedStyle,
-  type SharedValue,
+  useSharedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import VideoPlayer from 'react-native-video';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
@@ -103,9 +105,25 @@ const SCREEN_W = Dimensions.get('window').width;
 // slightly more forgiving than Apple's 280ms — testing on Android showed
 // the second tap sometimes arrived at ~300ms when the user wasn't trying
 // to be especially fast.
-const DOUBLE_TAP_MS = 320;
+const DOUBLE_TAP_MS = 280;
+const SEEK_PREVIEW_THROTTLE_MS = 80;
 const REEL_VIDEO_RETRY_LIMIT = 1;
 const REEL_VIDEO_RETRY_DELAY_MS = 350;
+const REEL_ANDROID_BUFFER_CONFIG = {
+  minBufferMs: 1500,
+  maxBufferMs: 15000,
+  bufferForPlaybackMs: 400,
+  bufferForPlaybackAfterRebufferMs: 900,
+  backBufferDurationMs: 0,
+  cacheSizeMB: 64,
+};
+const RAIL_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 8, right: 8 };
+const RAIL_BUTTON_PRESS_RETENTION = {
+  top: 14,
+  bottom: 14,
+  left: 12,
+  right: 12,
+};
 
 interface Props {
   item: ReelsItem;
@@ -115,6 +133,10 @@ interface Props {
   isActive: boolean;
   /** True when this is the active selected item in the vertical feed. */
   isCurrent: boolean;
+  /** Shrinks the playing video into the preview area above Reel comments. */
+  commentsPreviewVisible?: boolean;
+  /** Exact pixel height reserved above the comments sheet. */
+  commentsPreviewHeight?: number;
   /** True when this reel is within the preload window (current ±1). */
   shouldMount: boolean;
   /** Global mute state shared across the feed. */
@@ -143,7 +165,6 @@ interface Props {
    * the feed and don't return it on future page loads".
    */
   onUnavailable?: (postId: string) => void;
-  scrollY?: SharedValue<number>;
   index?: number;
   initialSeekTime?: number;
   onVideoEnd?: (index: number) => boolean;
@@ -169,6 +190,8 @@ function ReelItemBase({
   height,
   isActive,
   isCurrent,
+  commentsPreviewVisible = false,
+  commentsPreviewHeight,
   shouldMount,
   isMuted,
   onReaction,
@@ -202,12 +225,70 @@ function ReelItemBase({
 
   // Video progress & scrubbing states
   const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekProgress, setSeekProgress] = useState(0);
+  const durationRef = useRef(0);
+  const isSeekingRef = useRef(false);
+  const seekProgressRef = useRef(0);
+  const lastSeekPreviewAtRef = useRef(0);
+  const lastNativeSeekAtRef = useRef(0);
   const [videoNaturalAspectRatio, setVideoNaturalAspectRatio] = useState<
     number | undefined
   >(undefined);
+  const resolvedCommentsPreviewHeight = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.min(height, commentsPreviewHeight ?? height * 0.36),
+      ),
+    [commentsPreviewHeight, height],
+  );
+  const previewVideoAspectRatio = videoNaturalAspectRatio ?? 9 / 16;
+  const previewVideoWidth = Math.min(
+    SCREEN_W,
+    resolvedCommentsPreviewHeight * previewVideoAspectRatio,
+  );
+  const previewVideoHeight = previewVideoWidth / previewVideoAspectRatio;
+  const previewVideoLeft = (SCREEN_W - previewVideoWidth) / 2;
+  const previewVideoTop =
+    (resolvedCommentsPreviewHeight - previewVideoHeight) / 2;
+  const commentsPreviewProgress = useSharedValue(
+    commentsPreviewVisible ? 1 : 0,
+  );
+  const playbackProgress = useSharedValue(0);
+  const dragSeekProgress = useSharedValue(0);
+  const seekingProgressActive = useSharedValue(0);
+  const mediaStageAnimatedStyle = useAnimatedStyle(() => ({
+    height:
+      height +
+      (resolvedCommentsPreviewHeight - height) * commentsPreviewProgress.value,
+  }));
+  const reelChromeAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, 1 - commentsPreviewProgress.value * 1.6),
+  }));
+  const mediaBackdropAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, 1 - commentsPreviewProgress.value),
+  }));
+  const videoFrameAnimatedStyle = useAnimatedStyle(() => ({
+    width:
+      SCREEN_W + (previewVideoWidth - SCREEN_W) * commentsPreviewProgress.value,
+    height:
+      height + (previewVideoHeight - height) * commentsPreviewProgress.value,
+    left: previewVideoLeft * commentsPreviewProgress.value,
+    top: previewVideoTop * commentsPreviewProgress.value,
+  }));
+  const progressFillAnimatedStyle = useAnimatedStyle(() => {
+    const progress =
+      seekingProgressActive.value > 0
+        ? dragSeekProgress.value
+        : playbackProgress.value;
+    return {
+      width: SCREEN_W * Math.max(0, Math.min(1, progress)),
+    };
+  });
+  const progressThumbAnimatedStyle = useAnimatedStyle(() => ({
+    left: SCREEN_W * Math.max(0, Math.min(1, dragSeekProgress.value)),
+  }));
   const onVideoEndRef = useRef(onVideoEnd);
   onVideoEndRef.current = onVideoEnd;
   const suppressNextEndRef = useRef(false);
@@ -215,19 +296,42 @@ function ReelItemBase({
   const videoRetryCountRef = useRef(0);
   const videoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoSource = useMemo(
-    () => (item.videoUrl ? { uri: item.videoUrl } : undefined),
+    () =>
+      item.videoUrl
+        ? {
+            uri: item.videoUrl,
+            ...(Platform.OS === 'android'
+              ? {
+                  bufferConfig: REEL_ANDROID_BUFFER_CONFIG,
+                  minLoadRetryCount: 2,
+                }
+              : {}),
+          }
+        : undefined,
     [item.videoUrl],
   );
+
+  useEffect(() => {
+    commentsPreviewProgress.value = withTiming(
+      commentsPreviewVisible ? 1 : 0,
+      {
+        duration: 180,
+        easing: ReanimatedEasing.bezier(0.22, 1, 0.36, 1),
+      },
+    );
+  }, [commentsPreviewProgress, commentsPreviewVisible]);
 
   const resetPlaybackToStart = useCallback((seekPlayer = true) => {
     if (seekPlayer && videoRef.current) {
       videoRef.current.seek(0);
     }
     currentTimeRef.current = 0;
-    setCurrentTime(0);
+    playbackProgress.value = 0;
+    dragSeekProgress.value = 0;
+    seekProgressRef.current = 0;
     setSeekProgress(0);
     setVideoPlaybackTime(item.id, 0);
-  }, [item.id]);
+  }, [dragSeekProgress, item.id, playbackProgress]);
 
   const clearEndSuppression = useCallback(() => {
     suppressNextEndRef.current = false;
@@ -300,44 +404,72 @@ function ReelItemBase({
   }, []);
 
   const handleTouchStart = useCallback((event: any) => {
-    if (duration <= 0) return;
+    const activeDuration = durationRef.current;
+    if (activeDuration <= 0) return;
     lockIosPagerSwipe();
     const touchX = event.nativeEvent.pageX;
     const progress = Math.min(1, Math.max(0, touchX / SCREEN_W));
+    const now = Date.now();
+    isSeekingRef.current = true;
+    seekProgressRef.current = progress;
+    dragSeekProgress.value = progress;
+    seekingProgressActive.value = 1;
+    lastSeekPreviewAtRef.current = now;
+    lastNativeSeekAtRef.current = now;
     setIsSeeking(true);
     setSeekProgress(progress);
     if (videoRef.current) {
-      videoRef.current.seek(progress * duration);
+      videoRef.current.seek(progress * activeDuration);
     }
-  }, [duration, lockIosPagerSwipe]);
+  }, [dragSeekProgress, lockIosPagerSwipe, seekingProgressActive]);
 
   const handleTouchMove = useCallback((event: any) => {
-    if (duration <= 0 || !isSeeking) return;
+    const activeDuration = durationRef.current;
+    if (activeDuration <= 0 || !isSeekingRef.current) return;
     const touchX = event.nativeEvent.pageX;
     const progress = Math.min(1, Math.max(0, touchX / SCREEN_W));
-    setSeekProgress(progress);
-    if (videoRef.current) {
-      videoRef.current.seek(progress * duration);
+    const now = Date.now();
+    seekProgressRef.current = progress;
+    dragSeekProgress.value = progress;
+
+    if (now - lastSeekPreviewAtRef.current >= SEEK_PREVIEW_THROTTLE_MS) {
+      lastSeekPreviewAtRef.current = now;
+      setSeekProgress(progress);
     }
-  }, [duration, isSeeking]);
+
+    if (
+      videoRef.current &&
+      now - lastNativeSeekAtRef.current >= SEEK_PREVIEW_THROTTLE_MS
+    ) {
+      lastNativeSeekAtRef.current = now;
+      videoRef.current.seek(progress * activeDuration);
+    }
+  }, [dragSeekProgress]);
 
   const handleTouchEnd = useCallback(() => {
     unlockIosPagerSwipe();
-    if (duration <= 0) return;
+    const activeDuration = durationRef.current;
+    isSeekingRef.current = false;
+    seekingProgressActive.value = 0;
+    if (activeDuration <= 0) return;
     setIsSeeking(false);
+    const finalProgress = seekProgressRef.current;
+    setSeekProgress(finalProgress);
+    playbackProgress.value = finalProgress;
     if (videoRef.current) {
-      const targetTime = seekProgress * duration;
+      const targetTime = finalProgress * activeDuration;
       videoRef.current.seek(targetTime);
-      setCurrentTime(targetTime);
       currentTimeRef.current = targetTime;
       setVideoPlaybackTime(item.id, targetTime);
     }
-  }, [duration, item.id, seekProgress, unlockIosPagerSwipe]);
+  }, [item.id, playbackProgress, seekingProgressActive, unlockIosPagerSwipe]);
 
   const handleTouchCancel = useCallback(() => {
+    isSeekingRef.current = false;
+    seekingProgressActive.value = 0;
     setIsSeeking(false);
     unlockIosPagerSwipe();
-  }, [unlockIosPagerSwipe]);
+  }, [seekingProgressActive, unlockIosPagerSwipe]);
 
   useEffect(() => {
     return () => {
@@ -354,8 +486,10 @@ function ReelItemBase({
     setIsReady(false);
     setIsBuffering(false);
     setHasError(false);
+    durationRef.current = 0;
     setDuration(0);
-  }, [clearVideoRetry, item.id, item.videoUrl]);
+    playbackProgress.value = 0;
+  }, [clearVideoRetry, item.id, item.videoUrl, playbackProgress]);
 
   useEffect(() => {
     if (shouldMount) return;
@@ -365,7 +499,9 @@ function ReelItemBase({
     setIsReady(false);
     setIsBuffering(false);
     setHasError(false);
-  }, [clearVideoRetry, shouldMount]);
+    isSeekingRef.current = false;
+    seekingProgressActive.value = 0;
+  }, [clearVideoRetry, seekingProgressActive, shouldMount]);
 
   useEffect(() => {
     const targetTime =
@@ -436,10 +572,6 @@ function ReelItemBase({
 
   // Removed scale/opacity/translateY parallax — it was causing items to
   // appear misaligned ("lệch") during and after scrolling.
-  const animatedStyle = useAnimatedStyle(() => {
-    return {};
-  });
-
   // The video plays iff: active + not manually paused + no decode error.
   const playing = isActive && !userPaused && !hasError;
 
@@ -556,8 +688,10 @@ function ReelItemBase({
   // Close picker when the user scrolls past this reel (otherwise a
   // forgotten open picker leaks into the next item visually).
   useEffect(() => {
-    if (!isActive && isPickerOpen) setIsPickerOpen(false);
-  }, [isActive, isPickerOpen]);
+    if ((!isActive || commentsPreviewVisible) && isPickerOpen) {
+      setIsPickerOpen(false);
+    }
+  }, [commentsPreviewVisible, isActive, isPickerOpen]);
 
   // ── Auto-remove broken reels ─────────────────────────────────────────
   // When the VideoPlayer fires onError we flip `hasError`. This effect
@@ -586,28 +720,37 @@ function ReelItemBase({
   const gradId = `rg-${item.id}`;
 
   return (
-    <Animated.View style={[styles.reelRoot, { height }, animatedStyle]}>
+    <Animated.View style={[styles.reelRoot, { height }]}>
+      <Animated.View style={[styles.mediaStage, mediaStageAnimatedStyle]}>
 
       {/* ── Thumbnail / poster background ────────────────────────────── */}
-      {item.thumbnailUrl && usesBlurContainVideo ? (
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <Image
-            source={{ uri: item.thumbnailUrl }}
-            style={[StyleSheet.absoluteFill, styles.blurredVideoBackground]}
-            resizeMode="cover"
-            blurRadius={28}
-          />
-          <View style={styles.blurredVideoScrim} />
-        </View>
-      ) : item.thumbnailUrl ? (
-        <Image
-          source={{ uri: item.thumbnailUrl }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
+      {item.thumbnailUrl ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, mediaBackdropAnimatedStyle]}
+        >
+          {usesBlurContainVideo ? (
+            <>
+              <Image
+                source={{ uri: item.thumbnailUrl }}
+                style={[StyleSheet.absoluteFill, styles.blurredVideoBackground]}
+                resizeMode="cover"
+                blurRadius={28}
+              />
+              <View style={styles.blurredVideoScrim} />
+            </>
+          ) : (
+            <Image
+              source={{ uri: item.thumbnailUrl }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+            />
+          )}
+        </Animated.View>
       ) : null}
 
       {/* ── Video — mounted only when in the ±1 preload window ─────── */}
+      <Animated.View style={[styles.videoFrame, videoFrameAnimatedStyle]}>
       {shouldMount && videoSource ? (
         <VideoPlayer
           key={`${item.id}:${playerAttempt}`}
@@ -638,22 +781,35 @@ function ReelItemBase({
             const naturalAspectRatio = getReelVideoNaturalAspectRatio(data);
             setVideoNaturalAspectRatio(naturalAspectRatio);
             if (data?.duration) {
-              setDuration(data.duration);
+              const nextDuration = Number(data.duration);
+              durationRef.current = nextDuration;
+              setDuration(previous =>
+                previous === nextDuration ? previous : nextDuration,
+              );
+              playbackProgress.value = Math.min(
+                1,
+                Math.max(0, currentTimeRef.current / nextDuration),
+              );
             }
           }}
           onBuffer={({ isBuffering: nextIsBuffering }) => {
             setIsBuffering(nextIsBuffering);
           }}
           onProgress={(data) => {
-            if (!isSeeking && data?.currentTime !== undefined) {
+            if (!isSeekingRef.current && data?.currentTime !== undefined) {
               const nextTime = data.currentTime;
               if (nextTime > 0.25) {
                 clearEndSuppression();
                 videoRetryCountRef.current = 0;
                 setIsBuffering(false);
               }
-              setCurrentTime(nextTime);
               currentTimeRef.current = nextTime;
+              if (durationRef.current > 0) {
+                playbackProgress.value = Math.min(
+                  1,
+                  Math.max(0, nextTime / durationRef.current),
+                );
+              }
               setVideoPlaybackTime(item.id, nextTime);
             }
           }}
@@ -684,6 +840,7 @@ function ReelItemBase({
           />
         </View>
       ) : null}
+      </Animated.View>
 
       {/* ── Tap surface ─────────────────────────────────────────────────
             Double-tap → heart reaction (fires on the 2nd tap, no delay)
@@ -696,21 +853,6 @@ function ReelItemBase({
 
       {/* ── Bottom gradient overlay — only covers the lower portion where
            text/icons sit, so the video itself stays clean. */}
-      <Svg
-        width={SCREEN_W}
-        height={height * 0.35}
-        style={styles.bottomGradient}
-        pointerEvents="none"
-      >
-        <Defs>
-          <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#000" stopOpacity="0" />
-            <Stop offset="0.4" stopColor="#000" stopOpacity="0.3" />
-            <Stop offset="1" stopColor="#000" stopOpacity="0.7" />
-          </LinearGradient>
-        </Defs>
-        <Rect width={SCREEN_W} height={height * 0.35} fill={`url(#${gradId})`} />
-      </Svg>
 
       {/* ── Center play overlay (only when user explicitly paused) ──── */}
       {showPauseOverlay ? (
@@ -775,7 +917,30 @@ function ReelItemBase({
         </RNAnimated.View>
       ))}
 
+      </Animated.View>
+
       {/* Mute button is now handled globally at the ReelsScreen header level */}
+
+      <Animated.View
+        pointerEvents={commentsPreviewVisible ? 'none' : 'box-none'}
+        style={[StyleSheet.absoluteFill, reelChromeAnimatedStyle]}
+      >
+
+      <Svg
+        width={SCREEN_W}
+        height={height * 0.35}
+        style={styles.bottomGradient}
+        pointerEvents="none"
+      >
+        <Defs>
+          <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#000" stopOpacity="0" />
+            <Stop offset="0.4" stopColor="#000" stopOpacity="0.3" />
+            <Stop offset="1" stopColor="#000" stopOpacity="0.7" />
+          </LinearGradient>
+        </Defs>
+        <Rect width={SCREEN_W} height={height * 0.35} fill={`url(#${gradId})`} />
+      </Svg>
 
       {/* ── Right rail: avatar → like → comment → save → share ──────── */}
       <View
@@ -786,6 +951,7 @@ function ReelItemBase({
         <View style={styles.avatarWrap}>
           <TouchableOpacity
             activeOpacity={0.85}
+            delayPressIn={0}
             onPress={
               item.isAnonymous
                 ? undefined
@@ -804,6 +970,7 @@ function ReelItemBase({
           {showFollowBadge && (
             <TouchableOpacity
               activeOpacity={0.8}
+              delayPressIn={0}
               onPress={() => item.publisher.userId && onFollow?.(item.publisher.userId)}
               style={styles.followBadge}
             >
@@ -871,18 +1038,19 @@ function ReelItemBase({
             ]}
           >
             {FEED_REACTION_TYPES.map(type => {
-              const isCurrent = item.myReaction === type;
+              const isSelectedReaction = item.myReaction === type;
               return (
                 <TouchableOpacity
                   key={type}
                   activeOpacity={0.7}
+                  delayPressIn={0}
                   onPress={() => {
                     setIsPickerOpen(false);
                     onReaction(item.id, type);
                   }}
                   style={[
                     styles.reactionPickerItem,
-                    isCurrent && styles.reactionPickerItemActive,
+                    isSelectedReaction && styles.reactionPickerItemActive,
                   ]}
                   hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
                 >
@@ -909,6 +1077,7 @@ function ReelItemBase({
         */}
         <TouchableOpacity
           activeOpacity={0.8}
+          delayPressIn={0}
           onPress={
             item.isAnonymous
               ? undefined
@@ -951,20 +1120,14 @@ function ReelItemBase({
         >
           <View style={[
             styles.progressTrack,
-            isSeeking && { height: 5 }
+            isSeeking && styles.progressTrackSeeking,
           ]}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${(isSeeking ? seekProgress : currentTime / duration) * 100}%` },
-              ]}
+            <Animated.View
+              style={[styles.progressFill, progressFillAnimatedStyle]}
             />
             {isSeeking && (
-              <View
-                style={[
-                  styles.progressThumb,
-                  { left: `${seekProgress * 100}%` },
-                ]}
+              <Animated.View
+                style={[styles.progressThumb, progressThumbAnimatedStyle]}
               />
             )}
           </View>
@@ -979,6 +1142,8 @@ function ReelItemBase({
           </Text>
         </View>
       )}
+
+      </Animated.View>
 
     </Animated.View>
   );
@@ -1020,13 +1185,15 @@ function RailButton({
   return (
     <TouchableOpacity
       activeOpacity={0.7}
+      delayPressIn={0}
       onPress={onPress}
       onLongPress={onLongPress}
       // 280ms feels snappier than RN's 500ms default but is still safe
       // against accidental long-presses while scrolling.
       delayLongPress={280}
       style={styles.railBtn}
-      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      hitSlop={RAIL_BUTTON_HIT_SLOP}
+      pressRetentionOffset={RAIL_BUTTON_PRESS_RETENTION}
     >
       {icon}
       {label ? <Text style={styles.railLabel}>{label}</Text> : null}
@@ -1090,6 +1257,16 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#000',
     overflow: 'hidden',
+  },
+  mediaStage: {
+    width: '100%',
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
+  videoFrame: {
+    position: 'absolute',
+    overflow: 'hidden',
+    backgroundColor: '#000',
   },
   bottomGradient: {
     position: 'absolute',
@@ -1221,6 +1398,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.24)',
     width: '100%',
     position: 'relative',
+  },
+  progressTrackSeeking: {
+    height: 5,
   },
   progressFill: {
     height: '100%',
@@ -1398,10 +1578,11 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
     prev.item === next.item &&
     prev.isActive === next.isActive &&
     prev.isCurrent === next.isCurrent &&
+    prev.commentsPreviewVisible === next.commentsPreviewVisible &&
+    prev.commentsPreviewHeight === next.commentsPreviewHeight &&
     prev.shouldMount === next.shouldMount &&
     prev.isMuted === next.isMuted &&
     prev.height === next.height &&
-    prev.scrollY === next.scrollY &&
     prev.index === next.index &&
     prev.bottomOverlayInset === next.bottomOverlayInset &&
     prev.initialSeekTime === next.initialSeekTime

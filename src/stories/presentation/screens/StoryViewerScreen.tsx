@@ -106,6 +106,7 @@ import { SharedPostStorySegment } from '../components/SharedPostStorySegment';
 import { calculateSharedPostStoryAvailableHeight } from '../../application/sharing/sharedPostStoryLayout';
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import type { StoryReplyMessageReference } from '../../../messages/domain/types/messages.types';
+import { filterActiveStories } from '../../domain/policies/storyExpiration';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = NativeStackScreenProps<RootStackParamList, 'StoryViewer'>;
@@ -154,9 +155,16 @@ function StoryViewerScreen({ route }: Props) {
   // Support BOTH: new API (stories array passed directly) AND old API
   // (stories list + initialUserIndex). This keeps backwards compat while
   // migrating to the cleaner "pass filtered stories" pattern.
-  const passedStories = Array.isArray(route.params?.stories)
+  const rawPassedStories = Array.isArray(route.params?.stories)
     ? route.params.stories
     : undefined;
+  const passedStories = useMemo(
+    () =>
+      rawPassedStories
+        ? filterActiveStories(rawPassedStories)
+        : undefined,
+    [rawPassedStories],
+  );
 
   const [stories, setStories] = useState<StoryItem[]>(passedStories ?? []);
 

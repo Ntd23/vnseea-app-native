@@ -38,6 +38,24 @@ describe('FeedHeader platform chrome', () => {
     expect(iosSource).toContain("color: '#ffffff'");
   });
 
+  it('returns to the Home feed from every VNSEEA header logo', () => {
+    const defaultSource = read('src/feed/presentation/components/FeedHeader.tsx');
+    const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
+    const messagesSource = read(
+      'src/messages/presentation/screens/MessageScreen.tsx',
+    );
+
+    for (const source of [defaultSource, iosSource, messagesSource]) {
+      expect(source).toContain('feedLogoEvents.emitScrollToTop()');
+      expect(source).toContain('navigation.navigate(ROUTES.MAIN_TABS, {');
+      expect(source).toContain('screen: ROUTES.FEED');
+      expect(source).toContain('onPress={handlePressLogo}');
+      expect(source).toContain('accessibilityLabel="home"');
+    }
+
+    expect(iosSource).toContain('onPress={handleOpenFutureDrawer}');
+  });
+
   it('moves FeedHeader out of FeedScreen without importing glass into the screen', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
@@ -131,10 +149,13 @@ describe('FeedHeader platform chrome', () => {
       /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*[\s\S]*?\{feedListElement\}\s*<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FeedHeader \/>/,
     );
     expect(feedScreenSource).toMatch(
-      /:\s*\(\s*<>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_HEADER_CONTENT_HEIGHT\}\s+top=\{topInset\}\s+translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>/s,
+      /:\s*\(\s*<>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_HEADER_BAR_HEIGHT\}\s+top=\{topInset\}\s+translateDistance=\{FEED_HEADER_BAR_HEIGHT\}\s*>/s,
     );
     expect(feedScreenSource).toMatch(
-      /translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>\s*<FeedHeader \/>\s*<FeedFilterTabs/s,
+      /translateDistance=\{FEED_HEADER_BAR_HEIGHT\}\s*>\s*<FeedHeader \/>\s*<\/FeedHeaderCollapseFrame>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_FILTER_BAR_HEIGHT\}\s+top=\{topInset \+ FEED_HEADER_BAR_HEIGHT\}\s+translateDistance=\{FEED_FILTER_BAR_HEIGHT\}/s,
+    );
+    expect(feedScreenSource).toMatch(
+      /translateDistance=\{FEED_FILTER_BAR_HEIGHT\}\s*>\s*<FeedFilterTabs/s,
     );
     expect(feedScreenSource).not.toContain('styles.staticHeaderContainer');
   });

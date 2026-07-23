@@ -1,7 +1,7 @@
 // Description: Shared feed chrome filter tabs used by home feed and group detail surfaces.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useMemo } from 'react';
-import { Compass, Image as ImageIcon, MapPin, ShoppingBag, Video } from 'lucide-react-native';
+import { House, Image as ImageIcon, MapPin, ShoppingBag, Video } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
@@ -24,10 +24,11 @@ export function FeedFilterTabs({
         key: 'all' as FeedFilterTabKey,
         accessibilityLabel: 'All',
         icon: (active: boolean) => (
-          <Compass
-            size={24}
-            color={active ? APP_BRAND_COLOR : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
+          <House
+            size={28}
+            color={active ? APP_BRAND_COLOR : '#626a77'}
+            strokeWidth={active ? 2.8 : 2.0}
+            fill="transparent"
           />
         ),
       },
@@ -36,8 +37,8 @@ export function FeedFilterTabs({
         accessibilityLabel: 'Nearby',
         icon: () => (
           <MapPin
-            size={24}
-            color="#9ca3af"
+            size={28}
+            color="#626a77"
             strokeWidth={2.0}
           />
         ),
@@ -48,8 +49,8 @@ export function FeedFilterTabs({
         accessibilityLabel: 'Photos',
         icon: (active: boolean) => (
           <ImageIcon
-            size={24}
-            color={active ? APP_BRAND_COLOR : '#9ca3af'}
+            size={28}
+            color={active ? APP_BRAND_COLOR : '#626a77'}
             strokeWidth={active ? 2.5 : 2.0}
           />
         ),
@@ -59,8 +60,8 @@ export function FeedFilterTabs({
         accessibilityLabel: 'Video',
         icon: () => (
           <Video
-            size={24}
-            color="#9ca3af"
+            size={28}
+            color="#626a77"
             strokeWidth={2.0}
           />
         ),
@@ -71,8 +72,8 @@ export function FeedFilterTabs({
         accessibilityLabel: 'Marketplace',
         icon: () => (
           <ShoppingBag
-            size={24}
-            color="#9ca3af"
+            size={28}
+            color="#626a77"
             strokeWidth={2.0}
           />
         ),
@@ -86,6 +87,7 @@ export function FeedFilterTabs({
     <FeedSourceFilterBar
       activeKey={activeSource}
       items={items}
+      variant="header"
       onChange={key => {
         if (key === 'all' || key === 'photos') {
           onChangeSource(key);

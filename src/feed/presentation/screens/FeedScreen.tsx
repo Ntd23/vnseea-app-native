@@ -61,6 +61,7 @@ import {
 } from '../../../navigation/nativeTabScrollPublisher';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
+import { preloadReelsStartupPage } from '../../../reels/application/services/reelsStartupFeed';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import PostReactionsSheet from '../components/PostReactionsSheet';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
@@ -1405,6 +1406,7 @@ function FeedScreen() {
   const isFeedTabFocused = useIsFocused();
   const userVm = useCurrentUserViewModel();
   const feedPosts = vm.posts;
+  const hasFeedContent = feedPosts.length > 0;
   const prependFeedPost = vm.prependPost;
   const toggleFeedReaction = vm.toggleReaction;
   const voteFeedPoll = vm.votePoll;
@@ -1423,6 +1425,21 @@ function FeedScreen() {
   const activeFeedSource = vm.feedSource;
   const activeFeedSourceRef = useRef<FeedSource | 'photos'>(activeFeedSource);
   const isFeedTabFocusedRef = useRef(isFeedTabFocused);
+
+  useEffect(() => {
+    if (!isFeedTabFocused || !hasFeedContent) return;
+
+    let cancelled = false;
+    const preloadTask = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      preloadReelsStartupPage().catch(() => undefined);
+    });
+
+    return () => {
+      cancelled = true;
+      preloadTask.cancel();
+    };
+  }, [hasFeedContent, isFeedTabFocused]);
   const isFeedLoadingRef = useRef(vm.isLoading);
   const hasFeedLoadedOnceRef = useRef(vm.hasLoadedOnce);
   const isCheckingLatestPostsRef = useRef(false);
@@ -3790,11 +3807,18 @@ function FeedScreen() {
           <>
             <FeedHeaderCollapseFrame
               hidden={isFeedChromeHidden}
-              height={FEED_HEADER_CONTENT_HEIGHT}
+              height={FEED_HEADER_BAR_HEIGHT}
               top={topInset}
-              translateDistance={FEED_HEADER_CONTENT_HEIGHT}
+              translateDistance={FEED_HEADER_BAR_HEIGHT}
             >
               <FeedHeader />
+            </FeedHeaderCollapseFrame>
+            <FeedHeaderCollapseFrame
+              hidden={isFeedChromeHidden}
+              height={FEED_FILTER_BAR_HEIGHT}
+              top={topInset + FEED_HEADER_BAR_HEIGHT}
+              translateDistance={FEED_FILTER_BAR_HEIGHT}
+            >
               <FeedFilterTabs
                 activeSource={activeFeedSource}
                 onChangeSource={setActiveFeedSource}
