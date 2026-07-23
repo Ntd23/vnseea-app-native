@@ -134,7 +134,7 @@ export const FeedHeader = React.memo(function FeedHeader({
               style={styles.headerIcon}
             >
               <Search
-                size={19}
+                size={24}
                 color={APP_COLORS.brand.onPrimary}
                 strokeWidth={2.4}
               />
@@ -149,7 +149,7 @@ export const FeedHeader = React.memo(function FeedHeader({
               style={[styles.headerIcon, styles.messageButton]}
             >
               <Bell
-                size={19}
+                size={24}
                 color={APP_COLORS.brand.onPrimary}
                 strokeWidth={2.35}
               />
@@ -167,7 +167,7 @@ export const FeedHeader = React.memo(function FeedHeader({
               style={[styles.headerIcon, styles.messageButton]}
             >
               <MessageCircle
-                size={19}
+                size={24}
                 color={APP_COLORS.brand.onPrimary}
                 strokeWidth={2.35}
               />
@@ -205,7 +205,7 @@ export const FeedHeader = React.memo(function FeedHeader({
                   ]}
                 >
                   <CircleUser
-                    size={19}
+                    size={24}
                     color={APP_COLORS.brand.onPrimary}
                     strokeWidth={2.2}
                   />
@@ -248,60 +248,43 @@ export const FeedHeader = React.memo(function FeedHeader({
 
 const styles = StyleSheet.create({
   headerRoot: {
-    borderBottomWidth: 1,
-    borderBottomColor: APP_COLORS.brand.borderOnPrimary,
     backgroundColor: APP_BRAND_COLOR,
-    shadowColor: APP_COLORS.brand.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
   },
   topBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   logoPill: {
-    backgroundColor: APP_COLORS.brand.pressed,
-    borderRadius: 11,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    height: 37,
-    minWidth: 110,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    height: 46,
+    minWidth: 126,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: APP_COLORS.brand.shadow,
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    elevation: 4,
   },
   logoImage: {
-    width: 100,
+    width: 122,
     height: '100%',
   },
   textLogoPill: {
-    minWidth: 110,
-    height: 37,
-    borderRadius: 11,
-    backgroundColor: APP_COLORS.brand.pressed,
+    minWidth: 126,
+    height: 46,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: APP_BRAND_COLOR,
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    elevation: 4,
   },
   brandText: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '900',
     color: '#ffffff',
     letterSpacing: 1,
@@ -312,37 +295,32 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     borderColor: APP_COLORS.brand.borderOnPrimary,
-    shadowColor: APP_COLORS.brand.shadow,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 5,
-    elevation: 3,
   },
   messageButton: {
     position: 'relative',
   },
   badge: {
     position: 'absolute',
-    top: -3,
-    right: -3,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    top: -1,
+    right: -1,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#ff3b4f',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
   },
   badgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '700',
     color: '#ffffff',
   },
@@ -361,9 +339,11 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   avatarImage: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 2,
+    borderColor: '#ffffff',
   },
 });
 

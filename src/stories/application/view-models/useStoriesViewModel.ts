@@ -20,6 +20,11 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { storyReactedEvents } from '../events/storyReactedEvents';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { StoryItem, StoryMedia } from '../../domain/types/stories.types';
+import {
+  filterActiveStories,
+  getStoryActiveUntil,
+  isStoryActiveWithin24Hours,
+} from '../../domain/policies/storyExpiration';
 
 const repository = createStoriesRepository();
 
@@ -44,12 +49,12 @@ export function useStoriesViewModel() {
 
       const sessionUserId = sessionStorage.getSession()?.userId;
       const now = Math.floor(Date.now() / 1000);
-      const threeDaysAgo = now - 60 * 60 * 24 * 3; // 3 days in seconds
+      const activeUserStories = filterActiveStories(allUserStories, now);
+      const activeFriendsStories = filterActiveStories(friendsStories, now);
 
       // Filter own stories using session userId (cast to string to prevent type mismatch)
-      // and filter out stories older than 3 days
-      const ownStories = allUserStories
-        .filter(story => story.postedAt > threeDaysAgo)
+      // after enforcing the shared 24-hour visibility window.
+      const ownStories = activeUserStories
         .filter(story =>
           sessionUserId
             ? String(story.publisher.userId) === String(sessionUserId)
@@ -57,17 +62,14 @@ export function useStoriesViewModel() {
         );
 
       // Filter friends' stories from allUserStories (which contains all segments of friends)
-      const friendsStoriesFromUserStories = allUserStories
-        .filter(story => story.postedAt > threeDaysAgo)
+      const friendsStoriesFromUserStories = activeUserStories
         .filter(story =>
           sessionUserId
             ? String(story.publisher.userId) !== String(sessionUserId)
             : !story.isOwner
         );
 
-      const friendsStoriesFiltered = friendsStories.filter(story =>
-        story.postedAt > threeDaysAgo
-      );
+      const friendsStoriesFiltered = activeFriendsStories;
 
       // Deduplicate and merge flat stories
       const merged: StoryItem[] = [];
@@ -144,7 +146,7 @@ export function useStoriesViewModel() {
         return (b.postedAt || 0) - (a.postedAt || 0);
       });
 
-      setStories(grouped);
+      setStories(filterActiveStories(grouped, now));
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -159,6 +161,24 @@ export function useStoriesViewModel() {
   useEffect(() => {
     void loadStories();
   }, [loadStories]);
+
+  useEffect(() => {
+    if (stories.length === 0) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const nextExpiry = stories.reduce(
+      (earliest, story) => Math.min(earliest, getStoryActiveUntil(story)),
+      Number.POSITIVE_INFINITY,
+    );
+    if (!Number.isFinite(nextExpiry)) return;
+
+    const delayMs = Math.max(1000, (nextExpiry - now + 1) * 1000);
+    const timer = setTimeout(() => {
+      setStories(current => filterActiveStories(current));
+    }, delayMs);
+
+    return () => clearTimeout(timer);
+  }, [stories]);
 
   useEffect(() => {
     const unsubReacted = storyReactedEvents.subscribe((storyId, reaction) => {
@@ -317,6 +337,10 @@ export function useStoriesViewModel() {
       const storyWithTimestamp = story.postedAt && story.postedAt > 0
         ? story
         : { ...story, postedAt: Math.floor(Date.now() / 1000) };
+
+      if (!isStoryActiveWithin24Hours(storyWithTimestamp)) {
+        return filterActiveStories(prev);
+      }
 
       if (existingIdx !== -1) {
         const existing = prev[existingIdx];

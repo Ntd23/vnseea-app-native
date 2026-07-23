@@ -30,12 +30,20 @@ import {
   APP_BRAND_COLOR,
   APP_COLORS,
 } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
+  Easing,
   FlatList,
   Image,
   Keyboard,
@@ -49,6 +57,7 @@ import {
   TouchableOpacity,
   View,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewStyle,
@@ -105,6 +114,7 @@ import {
   FEED_REACTION_TYPES,
 } from '../../../feed/presentation/components/FeedReactionAssets';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { ReelCommentComposerModal } from './ReelCommentComposerModal';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 const FONT_PRIMARY = 'Inter';
@@ -213,7 +223,9 @@ function getEditCommentLabel(language: keyof typeof COMMENTS_COPY) {
 }
 
 function getReportCommentLabel(language: keyof typeof COMMENTS_COPY) {
-  return language === 'en' ? 'Report comment' : 'B\u00e1o c\u00e1o b\u00ecnh lu\u1eadn';
+  return language === 'en'
+    ? 'Report comment'
+    : 'B\u00e1o c\u00e1o b\u00ecnh lu\u1eadn';
 }
 
 function getDeleteConfirmTitle(language: keyof typeof COMMENTS_COPY) {
@@ -256,12 +268,93 @@ const COMMENT_IMAGE_MAX_HEIGHT = 210;
 const COMMENT_IMAGE_FALLBACK_WIDTH = 180;
 const COMMENT_IMAGE_FALLBACK_HEIGHT = 140;
 const COMMENT_DELETE_ANIMATION_MS = 220;
-const SHEET_OPEN_SPRING = {
-  damping: 24,
-  stiffness: 360,
-  mass: 0.72,
-};
-const SHEET_CLOSE_DURATION_MS = 150;
+const SHEET_TRANSITION_DURATION_MS = 150;
+const SHEET_TRANSITION_EASING = Easing.bezier(0.22, 1, 0.36, 1);
+const SHEET_DRAG_ACTIVATION_DISTANCE = 12;
+const SHEET_DRAG_DISMISS_DISTANCE = 120;
+const SHEET_DRAG_SETTLE_DURATION_MS = 120;
+const COMMENT_SKELETON_ROW_COUNT = 4;
+
+const CommentsLoadingSkeleton = memo(function CommentsLoadingSkeleton() {
+  const pulseOpacity = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseOpacity, {
+          toValue: 0.92,
+          duration: 520,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseOpacity, {
+          toValue: 0.5,
+          duration: 520,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulse.start();
+
+    return () => {
+      pulse.stop();
+      pulseOpacity.stopAnimation();
+    };
+  }, [pulseOpacity]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.commentsSkeletonList, { opacity: pulseOpacity }]}
+      accessibilityLabel="Đang tải bình luận"
+    >
+      {Array.from({ length: COMMENT_SKELETON_ROW_COUNT }, (_, index) => (
+        <View key={`comment-skeleton-${index}`} style={styles.commentSkeletonRow}>
+          <View style={styles.commentSkeletonAvatar} />
+          <View style={styles.commentSkeletonBody}>
+            <View
+              style={[
+                styles.commentSkeletonBubble,
+                index % 2 === 1 ? styles.commentSkeletonBubbleShort : null,
+              ]}
+            >
+              <View style={styles.commentSkeletonName} />
+              <View style={styles.commentSkeletonTextWide} />
+              <View style={styles.commentSkeletonTextShort} />
+            </View>
+            <View style={styles.commentSkeletonMetaRow}>
+              <View style={styles.commentSkeletonMetaShort} />
+              <View style={styles.commentSkeletonMetaMedium} />
+              <View style={styles.commentSkeletonMetaMedium} />
+            </View>
+          </View>
+        </View>
+      ))}
+    </Animated.View>
+  );
+});
+
+function resolveSheetTravelDistance(
+  sheetHeight: string | number,
+  screenHeight: number,
+) {
+  const safeScreenHeight = Number.isFinite(screenHeight)
+    ? Math.max(0, screenHeight)
+    : 0;
+
+  if (typeof sheetHeight === 'number') {
+    return Number.isFinite(sheetHeight)
+      ? Math.min(safeScreenHeight, Math.max(0, sheetHeight))
+      : safeScreenHeight;
+  }
+
+  const percentageMatch = /^\s*(\d+(?:\.\d+)?)%\s*$/.exec(sheetHeight);
+  if (!percentageMatch) return safeScreenHeight;
+
+  const percentage = Math.min(100, Math.max(0, Number(percentageMatch[1])));
+  return safeScreenHeight * (percentage / 100);
+}
 
 type ReplyTarget = {
   commentId: string;
@@ -317,7 +410,11 @@ interface Props {
   onCancelReply: () => void;
   onRetryFailedComment: (comment: ReelComment) => void;
   onDeleteFailedComment: (comment: ReelComment) => void;
+  onOpenStart?: () => void;
+  onCloseStart?: () => void;
   sheetHeight?: string | number;
+  backdropColor?: string;
+  composerAvatarUrl?: string;
 }
 
 function formatCount(count: number) {
@@ -327,7 +424,10 @@ function formatCount(count: number) {
   return String(count);
 }
 
-function getCommentPublisherDisplayName(comment: ReelComment, language: AppLanguage) {
+function getCommentPublisherDisplayName(
+  comment: ReelComment,
+  language: AppLanguage,
+) {
   return (
     comment.publisher.name ||
     comment.publisher.username ||
@@ -335,7 +435,10 @@ function getCommentPublisherDisplayName(comment: ReelComment, language: AppLangu
   );
 }
 
-function getReplyTargetDisplayName(target: ReplyTarget | null, language: AppLanguage) {
+function getReplyTargetDisplayName(
+  target: ReplyTarget | null,
+  language: AppLanguage,
+) {
   return (
     target?.displayName?.trim() ||
     target?.username?.trim() ||
@@ -421,7 +524,7 @@ function ReelCommentsSheetBase({
   commentCount,
   isLoading,
   isLoadingMore,
-  isSubmitting: _isSubmitting,
+  isSubmitting,
   error,
   repliesById,
   loadingRepliesIds,
@@ -440,34 +543,68 @@ function ReelCommentsSheetBase({
   onCancelReply,
   onRetryFailedComment,
   onDeleteFailedComment,
+  onOpenStart,
+  onCloseStart,
   sheetHeight = '72%',
+  backdropColor = 'rgba(0,0,0,0.36)',
+  composerAvatarUrl,
 }: Props) {
   const isInline = presentation === 'inline';
-  const shouldOwnKeyboardAvoidance = !isInline || Platform.OS === 'android';
+  const shouldOwnKeyboardAvoidance = isInline && Platform.OS === 'android';
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
   const navigation = useNavigation<any>();
   const isScreenFocused = useIsFocused();
-  const screenHeight = Dimensions.get('window').height;
+  const initialViewportRef = useRef(Dimensions.get('window'));
+  const stableSheetViewportHeightRef = useRef(
+    initialViewportRef.current.height,
+  );
+  const stableSheetViewportWidthRef = useRef(initialViewportRef.current.width);
+  const latestSheetViewportHeightRef = useRef(
+    initialViewportRef.current.height,
+  );
+  const freezeSheetViewportRef = useRef(false);
+  const composerModalVisibleRef = useRef(false);
+  const sheetViewportReleaseTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const [stableSheetViewportHeight, setStableSheetViewportHeight] = useState(
+    initialViewportRef.current.height,
+  );
+  const sheetTravelDistance = useMemo(
+    () => resolveSheetTravelDistance(sheetHeight, stableSheetViewportHeight),
+    [sheetHeight, stableSheetViewportHeight],
+  );
 
-  const handlePressProfile = useCallback((userId: string) => {
-    navigateToUserProfile(navigation, userId);
-  }, [navigation]);
+  const handlePressProfile = useCallback(
+    (userId: string) => {
+      navigateToUserProfile(navigation, userId);
+    },
+    [navigation],
+  );
   const insets = useSafeAreaInsets();
-  const bottomSafeInset = Math.max(insets.bottom, Platform.OS === 'android' ? 18 : 10);
+  const bottomSafeInset = Math.max(
+    insets.bottom,
+    Platform.OS === 'android' ? 18 : 10,
+  );
   const actionSheetBottomInset =
     Platform.OS === 'android'
       ? insets.bottom > 0
         ? Math.max(insets.bottom + 12, 28)
         : 14
       : Math.max(insets.bottom, 14);
+  const [isComposerModalVisible, setIsComposerModalVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isKeyboardVisible = keyboardHeight > 0;
-  const activeSheetHeight =
-    Platform.OS === 'android' && isKeyboardVisible ? '100%' : sheetHeight;
+  const activeSheetHeight = sheetTravelDistance;
+  const activeSheetTop = Math.max(
+    0,
+    stableSheetViewportHeight - activeSheetHeight,
+  );
+  const isInlineKeyboardVisible = isInline && isKeyboardVisible;
   const sheetBottomPadding =
-    Platform.OS === 'ios' || isKeyboardVisible ? 0 : bottomSafeInset;
-  const composerBottomPadding = isKeyboardVisible ? 6 : bottomSafeInset;
+    Platform.OS === 'ios' || isInlineKeyboardVisible ? 0 : bottomSafeInset;
+  const composerBottomPadding = isInlineKeyboardVisible ? 6 : bottomSafeInset;
   const wavRecorder = useWavAudioRecorder();
   const {
     isRecording: isWavRecording,
@@ -477,6 +614,9 @@ function ReelCommentsSheetBase({
     cancelRecording: cancelWavRecording,
   } = wavRecorder;
   const [draft, setDraft] = useState('');
+  const [composerModalFocusSignal, setComposerModalFocusSignal] = useState(0);
+  const submitInFlightRef = useRef(false);
+  const reopenComposerAfterPhotoPickerRef = useRef(false);
   const [keyboardLift, setKeyboardLift] = useState(0);
   const appliedKeyboardLift = keyboardLift;
   const inputRef = useRef<TextInput>(null);
@@ -486,7 +626,9 @@ function ReelCommentsSheetBase({
   const keyboardLiftRef = useRef(0);
   const keyboardHeightRef = useRef(0);
   const keyboardTopRef = useRef<number | null>(null);
-  const keyboardMeasureTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const keyboardMeasureTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>(
+    [],
+  );
   const replyRevealTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const commitKeyboardLift = useCallback((nextLift: number) => {
@@ -544,8 +686,7 @@ function ReelCommentsSheetBase({
         isInline && Platform.OS === 'android'
           ? INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE
           : 2;
-      const effectiveKeyboardTop =
-        keyboardTop - keyboardAccessoryClearance;
+      const effectiveKeyboardTop = keyboardTop - keyboardAccessoryClearance;
       const unshiftedBottom = y + height + keyboardLiftRef.current;
       const overlap = Math.max(
         0,
@@ -587,15 +728,82 @@ function ReelCommentsSheetBase({
     Keyboard.dismiss();
   }, []);
 
-  useEffect(() => {
-    if (!visible || (!autoFocusComposer && composerFocusSignal <= 0)) return;
-    const timer = setTimeout(() => inputRef.current?.focus(), 220);
-    return () => clearTimeout(timer);
-  }, [autoFocusComposer, composerFocusSignal, visible]);
+  const clearSheetViewportReleaseTimer = useCallback(() => {
+    if (sheetViewportReleaseTimerRef.current === null) return;
+    clearTimeout(sheetViewportReleaseTimerRef.current);
+    sheetViewportReleaseTimerRef.current = null;
+  }, []);
+
+  const showComposerModal = useCallback(() => {
+    clearSheetViewportReleaseTimer();
+    composerModalVisibleRef.current = true;
+    freezeSheetViewportRef.current = true;
+    setIsComposerModalVisible(true);
+  }, [clearSheetViewportReleaseTimer]);
+
+  const hideComposerModal = useCallback(() => {
+    composerModalVisibleRef.current = false;
+    clearSheetViewportReleaseTimer();
+    sheetViewportReleaseTimerRef.current = setTimeout(() => {
+      sheetViewportReleaseTimerRef.current = null;
+      if (composerModalVisibleRef.current) return;
+
+      const currentViewportHeight = Math.max(
+        latestSheetViewportHeightRef.current,
+        Dimensions.get('window').height,
+      );
+      if (currentViewportHeight >= stableSheetViewportHeightRef.current - 1) {
+        freezeSheetViewportRef.current = false;
+      }
+    }, 360);
+    setIsComposerModalVisible(false);
+  }, [clearSheetViewportReleaseTimer]);
+
+  const handleOpenComposer = useCallback(() => {
+    if (isInline) {
+      inputRef.current?.focus();
+      return;
+    }
+    showComposerModal();
+    setComposerModalFocusSignal(current => current + 1);
+  }, [isInline, showComposerModal]);
+
+  const handleCloseComposer = useCallback(() => {
+    Keyboard.dismiss();
+    keyboardHeightRef.current = 0;
+    keyboardTopRef.current = null;
+    setKeyboardHeight(0);
+    hideComposerModal();
+  }, [hideComposerModal]);
+
+  const handleInsertMention = useCallback(() => {
+    setDraft(current => `${current}@`);
+  }, []);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    if (!visible || (!autoFocusComposer && composerFocusSignal <= 0)) return;
+    if (!isInline) {
+      showComposerModal();
+      setComposerModalFocusSignal(current => current + 1);
+      return;
+    }
+
+    const timer = setTimeout(() => inputRef.current?.focus(), 220);
+    return () => clearTimeout(timer);
+  }, [
+    autoFocusComposer,
+    composerFocusSignal,
+    isInline,
+    showComposerModal,
+    visible,
+  ]);
+
+  useEffect(() => {
+    if (!isInline) return;
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
     const handleKeyboardShow = (event: KeyboardEvent) => {
       const keyboardMetrics = Keyboard.metrics?.();
@@ -631,8 +839,14 @@ function ReelCommentsSheetBase({
       setKeyboardHeight(0);
     };
 
-    const showSubscription = Keyboard.addListener(showEvent, handleKeyboardShow);
-    const hideSubscription = Keyboard.addListener(hideEvent, handleKeyboardHide);
+    const showSubscription = Keyboard.addListener(
+      showEvent,
+      handleKeyboardShow,
+    );
+    const hideSubscription = Keyboard.addListener(
+      hideEvent,
+      handleKeyboardHide,
+    );
 
     return () => {
       clearKeyboardMeasureTimers();
@@ -644,19 +858,26 @@ function ReelCommentsSheetBase({
     clearKeyboardMeasureTimers,
     clearReplyRevealTimers,
     commitKeyboardLift,
+    isInline,
     replyingTo,
     scheduleReplyTargetReveal,
     scheduleKeyboardMeasurements,
   ]);
 
   useEffect(() => {
-    if (replyingTo && inputRef.current) {
-      scheduleReplyTargetReveal(replyingTo);
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
+    if (!replyingTo) return;
+    scheduleReplyTargetReveal(replyingTo);
+    if (!isInline) {
+      showComposerModal();
+      setComposerModalFocusSignal(current => current + 1);
+      return;
     }
-  }, [replyingTo, scheduleReplyTargetReveal]);
+
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isInline, replyingTo, scheduleReplyTargetReveal, showComposerModal]);
 
   // Image picked by the user for the next comment / reply. Local file://
   // URI; uploaded via multipart when `onSubmit` fires. Cleared after
@@ -664,9 +885,14 @@ function ReelCommentsSheetBase({
   const [pendingImage, setPendingImage] =
     useState<CommentImageAttachment | null>(null);
   const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
-  const [actionMenuComment, setActionMenuComment] = useState<ReelComment | null>(null);
-  const [inlineDeleteCommentId, setInlineDeleteCommentId] = useState<string | null>(null);
-  const [editingComment, setEditingComment] = useState<ReelComment | null>(null);
+  const [actionMenuComment, setActionMenuComment] =
+    useState<ReelComment | null>(null);
+  const [inlineDeleteCommentId, setInlineDeleteCommentId] = useState<
+    string | null
+  >(null);
+  const [editingComment, setEditingComment] = useState<ReelComment | null>(
+    null,
+  );
   const [deletingCommentIds, setDeletingCommentIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -674,11 +900,18 @@ function ReelCommentsSheetBase({
     useState<CommentAudioAttachment | null>(null);
 
   useEffect(() => {
-    if (!editingComment || !inputRef.current) return;
-    setTimeout(() => {
+    if (!editingComment) return;
+    if (!isInline) {
+      showComposerModal();
+      setComposerModalFocusSignal(current => current + 1);
+      return;
+    }
+
+    const timer = setTimeout(() => {
       inputRef.current?.focus();
     }, 80);
-  }, [editingComment]);
+    return () => clearTimeout(timer);
+  }, [editingComment, isInline, showComposerModal]);
 
   // Which comment-image URL is open in the full-screen viewer (null = closed).
   // Used both for already-uploaded `imageUrl` and pending local previews so
@@ -693,6 +926,54 @@ function ReelCommentsSheetBase({
   const touchStartY = useRef(0);
   const isDraggingSheet = useRef(false);
   const isClosingRef = useRef(false);
+  const isTransitioningRef = useRef(false);
+  const isSheetGestureEnabledRef = useRef(false);
+  const isTouchSessionEligibleRef = useRef(false);
+  const hasStartedOpenRef = useRef(false);
+  const openAnimationFrameRef = useRef<number | null>(null);
+  const panFrameRef = useRef<number | null>(null);
+  const pendingPanYRef = useRef(0);
+
+  const cancelScheduledOpenAnimation = useCallback(() => {
+    if (openAnimationFrameRef.current === null) return;
+    cancelAnimationFrame(openAnimationFrameRef.current);
+    openAnimationFrameRef.current = null;
+  }, []);
+
+  const cancelScheduledPanUpdate = useCallback(() => {
+    if (panFrameRef.current === null) return;
+    cancelAnimationFrame(panFrameRef.current);
+    panFrameRef.current = null;
+  }, []);
+
+  const schedulePanUpdate = useCallback(
+    (nextPanY: number) => {
+      pendingPanYRef.current = nextPanY;
+      if (panFrameRef.current !== null) return;
+      panFrameRef.current = requestAnimationFrame(() => {
+        panFrameRef.current = null;
+        panY.setValue(pendingPanYRef.current);
+      });
+    },
+    [panY],
+  );
+
+  const flushPanUpdate = useCallback(
+    (nextPanY: number) => {
+      cancelScheduledPanUpdate();
+      pendingPanYRef.current = nextPanY;
+      panY.setValue(nextPanY);
+    },
+    [cancelScheduledPanUpdate, panY],
+  );
+
+  useEffect(
+    () => () => {
+      cancelScheduledOpenAnimation();
+      cancelScheduledPanUpdate();
+    },
+    [cancelScheduledOpenAnimation, cancelScheduledPanUpdate],
+  );
 
   // Picker state — which comment's "Thích" was long-pressed, plus the
   // anchor coordinates so the pill floats just above the actual button.
@@ -705,6 +986,11 @@ function ReelCommentsSheetBase({
   useEffect(() => {
     if (!visible) {
       cancelWavRecording().catch(() => undefined);
+      clearSheetViewportReleaseTimer();
+      composerModalVisibleRef.current = false;
+      freezeSheetViewportRef.current = false;
+      setIsComposerModalVisible(false);
+      reopenComposerAfterPhotoPickerRef.current = false;
       setDraft('');
       setPickerAnchor(null);
       setPendingImage(null);
@@ -725,44 +1011,153 @@ function ReelCommentsSheetBase({
     }
   }, [
     cancelWavRecording,
+    clearSheetViewportReleaseTimer,
     clearKeyboardMeasureTimers,
     clearReplyRevealTimers,
     commitKeyboardLift,
     visible,
   ]);
 
+  const handlePresentationShow = useCallback(() => {
+    if (
+      isInline ||
+      !visible ||
+      isClosingRef.current ||
+      hasStartedOpenRef.current
+    ) {
+      return;
+    }
+
+    hasStartedOpenRef.current = true;
+    isTransitioningRef.current = true;
+    isSheetGestureEnabledRef.current = false;
+    onOpenStart?.();
+    cancelScheduledOpenAnimation();
+    openAnimationFrameRef.current = requestAnimationFrame(() => {
+      openAnimationFrameRef.current = null;
+      if (isClosingRef.current) return;
+
+      Animated.timing(openProgress, {
+        toValue: 1,
+        duration: SHEET_TRANSITION_DURATION_MS,
+        easing: SHEET_TRANSITION_EASING,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished || isClosingRef.current) return;
+        isTransitioningRef.current = false;
+        isSheetGestureEnabledRef.current = true;
+      });
+    });
+  }, [
+    cancelScheduledOpenAnimation,
+    isInline,
+    onOpenStart,
+    openProgress,
+    visible,
+  ]);
+
+  const handleSheetViewportLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const nextWidth = Math.max(0, event.nativeEvent.layout.width);
+      const nextHeight = Math.max(0, event.nativeEvent.layout.height);
+      latestSheetViewportHeightRef.current = nextHeight;
+
+      if (nextWidth > 0 && nextHeight > 0) {
+        const widthChanged =
+          Math.abs(stableSheetViewportWidthRef.current - nextWidth) >= 1;
+        const viewportRecovered =
+          nextHeight >= stableSheetViewportHeightRef.current - 1;
+        const canRefreshStableViewport =
+          widthChanged ||
+          !freezeSheetViewportRef.current ||
+          (!composerModalVisibleRef.current && viewportRecovered);
+
+        if (canRefreshStableViewport) {
+          freezeSheetViewportRef.current = composerModalVisibleRef.current;
+          stableSheetViewportWidthRef.current = nextWidth;
+          stableSheetViewportHeightRef.current = nextHeight;
+          setStableSheetViewportHeight(current =>
+            Math.abs(current - nextHeight) < 1 ? current : nextHeight,
+          );
+          if (!composerModalVisibleRef.current) {
+            clearSheetViewportReleaseTimer();
+          }
+        }
+      }
+
+      handlePresentationShow();
+    },
+    [clearSheetViewportReleaseTimer, handlePresentationShow],
+  );
+
   useEffect(() => {
     if (visible) {
       isClosingRef.current = false;
+      isTransitioningRef.current = true;
+      isSheetGestureEnabledRef.current = false;
+      isTouchSessionEligibleRef.current = false;
+      hasStartedOpenRef.current = false;
       setIsMounted(true);
+      cancelScheduledOpenAnimation();
       openProgress.stopAnimation();
       panY.stopAnimation();
+      cancelScheduledPanUpdate();
       openProgress.setValue(0);
       panY.setValue(0);
-      Animated.spring(openProgress, {
-        toValue: 1,
-        ...SHEET_OPEN_SPRING,
-        useNativeDriver: true,
-      }).start();
+      setScrollEnabled(true);
+
+      if (isInline) {
+        hasStartedOpenRef.current = true;
+        isTransitioningRef.current = false;
+        isSheetGestureEnabledRef.current = true;
+        openProgress.setValue(1);
+      }
       return;
     }
+
+    cancelScheduledOpenAnimation();
+    cancelScheduledPanUpdate();
+    isSheetGestureEnabledRef.current = false;
+    isTouchSessionEligibleRef.current = false;
+    hasStartedOpenRef.current = false;
 
     if (isClosingRef.current) {
       setIsMounted(false);
       isClosingRef.current = false;
+      isTransitioningRef.current = false;
       return;
     }
 
-    Animated.timing(openProgress, {
-      toValue: 0,
-      duration: SHEET_CLOSE_DURATION_MS,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
+    isTransitioningRef.current = true;
+    openProgress.stopAnimation();
+    panY.stopAnimation();
+    Animated.parallel([
+      Animated.timing(openProgress, {
+        toValue: 0,
+        duration: SHEET_TRANSITION_DURATION_MS,
+        easing: SHEET_TRANSITION_EASING,
+        useNativeDriver: true,
+      }),
+      Animated.timing(panY, {
+        toValue: 0,
+        duration: SHEET_TRANSITION_DURATION_MS,
+        easing: SHEET_TRANSITION_EASING,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
       if (finished) {
+        isTransitioningRef.current = false;
         setIsMounted(false);
       }
     });
-  }, [openProgress, panY, visible]);
+  }, [
+    cancelScheduledOpenAnimation,
+    cancelScheduledPanUpdate,
+    isInline,
+    openProgress,
+    panY,
+    visible,
+  ]);
 
   const dragBackdropOpacity = panY.interpolate({
     inputRange: [0, 120, 360],
@@ -770,44 +1165,72 @@ function ReelCommentsSheetBase({
     extrapolate: 'clamp',
   });
 
-  const backdropOpacity = Animated.multiply(
-    openProgress,
-    dragBackdropOpacity,
-  );
+  const backdropOpacity = Animated.multiply(openProgress, dragBackdropOpacity);
 
   const sheetTranslateY = Animated.add(
     openProgress.interpolate({
       inputRange: [0, 1],
-      outputRange: [screenHeight, 0],
+      outputRange: [sheetTravelDistance, 0],
     }),
-    panY
+    panY,
   );
-
-  const sheetScale = openProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.985, 1],
-  });
 
   const handleRequestClose = useCallback(() => {
     if (isClosingRef.current) return;
     isClosingRef.current = true;
+    isTransitioningRef.current = true;
+    isSheetGestureEnabledRef.current = false;
+    isTouchSessionEligibleRef.current = false;
+    cancelScheduledOpenAnimation();
+    cancelScheduledPanUpdate();
+    openProgress.stopAnimation();
+    panY.stopAnimation();
+    onCloseStart?.();
     Keyboard.dismiss();
     Animated.parallel([
       Animated.timing(openProgress, {
         toValue: 0,
-        duration: SHEET_CLOSE_DURATION_MS,
+        duration: SHEET_TRANSITION_DURATION_MS,
+        easing: SHEET_TRANSITION_EASING,
         useNativeDriver: true,
       }),
       Animated.timing(panY, {
         toValue: 0,
-        duration: SHEET_CLOSE_DURATION_MS,
+        duration: SHEET_TRANSITION_DURATION_MS,
+        easing: SHEET_TRANSITION_EASING,
         useNativeDriver: true,
       }),
-    ]).start(() => {
+    ]).start(({ finished }) => {
+      if (!finished || !isClosingRef.current) return;
+      isTransitioningRef.current = false;
       setScrollEnabled(true);
       onClose();
     });
-  }, [onClose, openProgress, panY]);
+  }, [
+    cancelScheduledOpenAnimation,
+    cancelScheduledPanUpdate,
+    onClose,
+    onCloseStart,
+    openProgress,
+    panY,
+  ]);
+
+  const settleSheetPan = useCallback(() => {
+    cancelScheduledPanUpdate();
+    isTransitioningRef.current = true;
+    isSheetGestureEnabledRef.current = false;
+    Animated.timing(panY, {
+      toValue: 0,
+      duration: SHEET_DRAG_SETTLE_DURATION_MS,
+      easing: SHEET_TRANSITION_EASING,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished || isClosingRef.current) return;
+      isTransitioningRef.current = false;
+      isSheetGestureEnabledRef.current = true;
+      setScrollEnabled(true);
+    });
+  }, [cancelScheduledPanUpdate, panY]);
 
   const title = useMemo(() => {
     return copy.commentsTitle;
@@ -868,12 +1291,25 @@ function ReelCommentsSheetBase({
         targetCommentId || commentId,
       );
       scheduleReplyTargetReveal(replyTarget);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      if (isInline) {
+        requestAnimationFrame(() => inputRef.current?.focus());
+      } else {
+        showComposerModal();
+        setComposerModalFocusSignal(current => current + 1);
+      }
     },
-    [handleCancelEdit, language, onStartReply, scheduleReplyTargetReveal],
+    [
+      handleCancelEdit,
+      isInline,
+      language,
+      onStartReply,
+      scheduleReplyTargetReveal,
+      showComposerModal,
+    ],
   );
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
+    if (isSubmitting || submitInFlightRef.current) return;
     const trimmed = draft.trim();
     if (editingComment) {
       if (!trimmed) return;
@@ -887,6 +1323,7 @@ function ReelCommentsSheetBase({
       if (trimmed !== previousText) {
         onEdit(editingComment.id, trimmed);
       }
+      handleCloseComposer();
       return;
     }
 
@@ -903,21 +1340,43 @@ function ReelCommentsSheetBase({
     setDraft('');
     setPendingImage(null);
     setPendingAudio(null);
+    submitInFlightRef.current = true;
+    handleCloseComposer();
 
-    if (replyingTo) {
-      const replyMentionName = splitLeadingReplyMention(
-        trimmed,
-        getReplyTargetDisplayName(replyingTo, language),
-      )?.mention;
-      onSubmitReply(replyingTo.commentId, trimmed, image, replyMentionName);
-      onCancelReply();
-    } else {
-      onSubmit(trimmed, image, audio);
-      scheduleCommentsAutoScrollToEnd();
+    try {
+      if (replyingTo) {
+        const replyMentionName = splitLeadingReplyMention(
+          trimmed,
+          getReplyTargetDisplayName(replyingTo, language),
+        )?.mention;
+        onCancelReply();
+        const replySubmission = onSubmitReply(
+          replyingTo.commentId,
+          trimmed,
+          image,
+          replyMentionName,
+        );
+        scheduleReplyTargetReveal(replyingTo);
+        await replySubmission;
+        scheduleReplyTargetReveal(replyingTo);
+      } else {
+        const commentSubmission = onSubmit(trimmed, image, audio);
+        // The view-model inserts an optimistic comment synchronously before
+        // awaiting the network. Scroll immediately, then repeat after the
+        // server response so the user's own comment stays visible even when
+        // the thread is long or the row height changes after upload.
+        scheduleCommentsAutoScrollToEnd();
+        await commentSubmission;
+        scheduleCommentsAutoScrollToEnd();
+      }
+    } finally {
+      submitInFlightRef.current = false;
     }
   }, [
     draft,
     editingComment,
+    handleCloseComposer,
+    isSubmitting,
     onEdit,
     pendingImage,
     pendingAudio,
@@ -925,9 +1384,14 @@ function ReelCommentsSheetBase({
     onSubmitReply,
     replyingTo,
     onCancelReply,
+    scheduleReplyTargetReveal,
     scheduleCommentsAutoScrollToEnd,
     language,
   ]);
+
+  const handleInsertQuickEmoji = useCallback((emoji: string) => {
+    setDraft(current => `${current}${emoji}`);
+  }, []);
 
   const handlePickAudio = useCallback(async () => {
     try {
@@ -954,6 +1418,9 @@ function ReelCommentsSheetBase({
           setPendingImage(null);
           setPendingAudio(audio);
         }
+        if (!isInline && isComposerModalVisible) {
+          setComposerModalFocusSignal(current => current + 1);
+        }
         return;
       }
 
@@ -966,7 +1433,14 @@ function ReelCommentsSheetBase({
         caught instanceof Error ? caught.message : copy.pleaseTryAgain,
       );
     }
-  }, [isWavRecording, startWavRecording, stopWavRecording, copy]);
+  }, [
+    copy,
+    isComposerModalVisible,
+    isInline,
+    isWavRecording,
+    startWavRecording,
+    stopWavRecording,
+  ]);
 
   /**
    * Open the gallery picker and stash the first selected image in
@@ -979,7 +1453,10 @@ function ReelCommentsSheetBase({
     (result: any) => {
       if (result.didCancel) return;
       if (result.errorCode) {
-        Alert.alert(copy.errorTitle, result.errorMessage ?? copy.errorActionMsg);
+        Alert.alert(
+          copy.errorTitle,
+          result.errorMessage ?? copy.errorActionMsg,
+        );
         return;
       }
       const asset = result.assets?.[0];
@@ -1014,26 +1491,43 @@ function ReelCommentsSheetBase({
    * `pendingImage`.
    */
   const handlePickImage = useCallback(() => {
+    const shouldReopenComposer = !isInline && isComposerModalVisible;
+    reopenComposerAfterPhotoPickerRef.current = shouldReopenComposer;
+    if (shouldReopenComposer) {
+      hideComposerModal();
+    }
     Keyboard.dismiss();
     setPhotoPickerVisible(true);
-  }, []);
+  }, [hideComposerModal, isComposerModalVisible, isInline]);
 
-  const handleInlineDeleteComment = useCallback((commentId: string) => {
-    setInlineDeleteCommentId(current => (current === commentId ? null : current));
-    setDeletingCommentIds(current => {
-      const next = new Set(current);
-      next.add(commentId);
-      return next;
-    });
-    setTimeout(() => {
-      onDelete(commentId);
+  const restoreComposerAfterPhotoPicker = useCallback(() => {
+    if (!reopenComposerAfterPhotoPickerRef.current) return;
+    reopenComposerAfterPhotoPickerRef.current = false;
+    showComposerModal();
+    setComposerModalFocusSignal(current => current + 1);
+  }, [showComposerModal]);
+
+  const handleInlineDeleteComment = useCallback(
+    (commentId: string) => {
+      setInlineDeleteCommentId(current =>
+        current === commentId ? null : current,
+      );
       setDeletingCommentIds(current => {
         const next = new Set(current);
-        next.delete(commentId);
+        next.add(commentId);
         return next;
       });
-    }, COMMENT_DELETE_ANIMATION_MS);
-  }, [onDelete]);
+      setTimeout(() => {
+        onDelete(commentId);
+        setDeletingCommentIds(current => {
+          const next = new Set(current);
+          next.delete(commentId);
+          return next;
+        });
+      }, COMMENT_DELETE_ANIMATION_MS);
+    },
+    [onDelete],
+  );
 
   const handleCommentLongPress = useCallback((comment: ReelComment) => {
     if (comment.isSending) return;
@@ -1046,20 +1540,23 @@ function ReelCommentsSheetBase({
     setActionMenuComment(null);
   }, []);
 
-  const handleConfirmDeleteComment = useCallback((comment: ReelComment) => {
-    Alert.alert(
-      getDeleteConfirmTitle(language),
-      getDeleteConfirmMessage(language),
-      [
-        { text: copy.cancel, style: 'cancel' },
-        {
-          text: getDeleteCommentLabel(language),
-          style: 'destructive',
-          onPress: () => handleInlineDeleteComment(comment.id),
-        },
-      ],
-    );
-  }, [copy.cancel, handleInlineDeleteComment, language]);
+  const handleConfirmDeleteComment = useCallback(
+    (comment: ReelComment) => {
+      Alert.alert(
+        getDeleteConfirmTitle(language),
+        getDeleteConfirmMessage(language),
+        [
+          { text: copy.cancel, style: 'cancel' },
+          {
+            text: getDeleteCommentLabel(language),
+            style: 'destructive',
+            onPress: () => handleInlineDeleteComment(comment.id),
+          },
+        ],
+      );
+    },
+    [copy.cancel, handleInlineDeleteComment, language],
+  );
 
   const handleDeleteActionMenuComment = useCallback(() => {
     const comment = actionMenuComment;
@@ -1088,10 +1585,7 @@ function ReelCommentsSheetBase({
   const handleReportActionMenuComment = useCallback(() => {
     if (!actionMenuComment) return;
     setActionMenuComment(null);
-    Alert.alert(
-      getReportSentTitle(language),
-      getReportSentMessage(language),
-    );
+    Alert.alert(getReportSentTitle(language), getReportSentMessage(language));
   }, [actionMenuComment, language]);
 
   const handleRetryActionMenuComment = useCallback(() => {
@@ -1125,31 +1619,33 @@ function ReelCommentsSheetBase({
   const actionMenuTitle = actionMenuIsFailed
     ? copy.failedCommentTitle
     : actionMenuIsOwner
-      ? copy.yourCommentTitle
-      : getReportCommentLabel(language);
+    ? copy.yourCommentTitle
+    : getReportCommentLabel(language);
 
   const actionMenuMessage = actionMenuIsFailed
     ? copy.failedCommentMsg
     : actionMenuPreview;
 
-  const actionMenuFootnote = actionMenuIsFailed
-    ? actionMenuPreview
-    : '';
+  const actionMenuFootnote = actionMenuIsFailed ? actionMenuPreview : '';
   const deleteCommentLabel = language === 'en' ? 'Delete' : 'X\u00f3a';
   const editCommentLabel = language === 'en' ? 'Edit' : 'Ch\u1ec9nh s\u1eeda';
   const reportCommentLabel = language === 'en' ? 'Report' : 'B\u00e1o c\u00e1o';
-  const deleteCommentHint = language === 'en'
-    ? 'Remove this comment'
-    : 'X\u00f3a b\u00ecnh lu\u1eadn n\u00e0y';
-  const editCommentHint = language === 'en'
-    ? 'Update your comment'
-    : 'Ch\u1ec9nh s\u1eeda n\u1ed9i dung b\u00ecnh lu\u1eadn';
-  const reportCommentHint = language === 'en'
-    ? 'Send this comment to review'
-    : 'G\u1eedi b\u00e1o c\u00e1o \u0111\u1ec3 ch\u00fang t\u00f4i xem x\u00e9t';
-  const retryCommentHint = language === 'en'
-    ? 'Try sending this comment again'
-    : 'Th\u1eed g\u1eedi l\u1ea1i b\u00ecnh lu\u1eadn n\u00e0y';
+  const deleteCommentHint =
+    language === 'en'
+      ? 'Remove this comment'
+      : 'X\u00f3a b\u00ecnh lu\u1eadn n\u00e0y';
+  const editCommentHint =
+    language === 'en'
+      ? 'Update your comment'
+      : 'Ch\u1ec9nh s\u1eeda n\u1ed9i dung b\u00ecnh lu\u1eadn';
+  const reportCommentHint =
+    language === 'en'
+      ? 'Send this comment to review'
+      : 'G\u1eedi b\u00e1o c\u00e1o \u0111\u1ec3 ch\u00fang t\u00f4i xem x\u00e9t';
+  const retryCommentHint =
+    language === 'en'
+      ? 'Try sending this comment again'
+      : 'Th\u1eed g\u1eedi l\u1ea1i b\u00ecnh lu\u1eadn n\u00e0y';
 
   const actionMenuCopy = useMemo(
     () => ({
@@ -1231,7 +1727,9 @@ function ReelCommentsSheetBase({
           onCollapseReplies={onCollapseReplies}
           onStartReply={handleStartReplyFromRow}
           onOpenImage={handleOpenImage}
-          replyingToCommentId={replyingTo?.targetCommentId ?? replyingTo?.commentId}
+          replyingToCommentId={
+            replyingTo?.targetCommentId ?? replyingTo?.commentId
+          }
           onPressProfile={handlePressProfile}
           inlineDeleteCommentId={inlineDeleteCommentId}
           deletingCommentIds={deletingCommentIds}
@@ -1283,516 +1781,660 @@ function ReelCommentsSheetBase({
   }, [replyingTo, comments, repliesById]);
   const isInitialLoading = isLoading && comments.length === 0;
   const isRefreshingComments = isLoading && comments.length > 0;
-  const PresentationRoot = (isInline ? View : Modal) as React.ComponentType<any>;
-  const SheetSurface = (isInline ? View : Animated.View) as React.ComponentType<any>;
+  const isSubmitDisabled =
+    isWavRecording ||
+    (editingComment
+      ? !draft.trim()
+      : !draft.trim() && !pendingImage && !pendingAudio);
+  const composerPlaceholder = editingComment
+    ? getEditCommentLabel(language)
+    : replyingTo
+    ? getReplyTargetDisplayName(replyingTo, language)
+    : copy.addCommentPlaceholder;
+  const PresentationRoot = (
+    isInline ? View : Modal
+  ) as React.ComponentType<any>;
+  const SheetSurface = (
+    isInline ? View : Animated.View
+  ) as React.ComponentType<any>;
 
   return (
-    <PresentationRoot
-      {...(isInline
-        ? { style: styles.inlineRoot }
-        : {
-            visible: isMounted && isScreenFocused,
-            transparent: true,
-            animationType: 'none',
-            statusBarTranslucent: true,
-            hardwareAccelerated: true,
-            presentationStyle: 'overFullScreen',
-            onRequestClose: handleRequestClose,
-          })}
-    >
-      <KeyboardSafeView
-        style={isInline ? styles.inlineRoot : styles.modalRoot}
-        enabled={visible && isScreenFocused && shouldOwnKeyboardAvoidance}
-        keyboardVerticalOffset={0}
+    <>
+      <PresentationRoot
+        {...(isInline
+          ? { style: styles.inlineRoot }
+          : {
+              visible: isMounted && isScreenFocused,
+              transparent: true,
+              animationType: 'none',
+              statusBarTranslucent: true,
+              hardwareAccelerated: true,
+              presentationStyle: 'overFullScreen',
+              onShow: handlePresentationShow,
+              onRequestClose: handleRequestClose,
+            })}
       >
-        {!isInline ? (
-          <Pressable style={styles.backdropPressable} onPress={handleRequestClose}>
-            <Animated.View
-              style={[styles.backdrop, { opacity: backdropOpacity }]}
-            />
-          </Pressable>
-        ) : null}
-        <SheetSurface
-          style={
-            isInline
-              ? styles.inlineSheet
-              : [
-                  styles.sheet,
-                  {
-                    height: activeSheetHeight as ViewStyle['height'],
-                    paddingBottom: sheetBottomPadding,
-                    transform: [
-                      { translateY: sheetTranslateY },
-                      { scale: sheetScale },
-                    ],
-                  },
-                ]
+        <KeyboardSafeView
+          style={isInline ? styles.inlineRoot : styles.modalRoot}
+          enabled={
+            visible && isScreenFocused && isInline && shouldOwnKeyboardAvoidance
           }
-          onTouchStart={(e: GestureResponderEvent) => {
-            if (isInline) return;
-            touchStartY.current = e.nativeEvent.pageY;
-            isDraggingSheet.current = false;
-          }}
-          onTouchMove={(e: GestureResponderEvent) => {
-            if (isInline) return;
-            const currentY = e.nativeEvent.pageY;
-            const dy = currentY - touchStartY.current;
-
-            if (dy > 5 && listScrollOffset.current <= 0) {
-              if (!isDraggingSheet.current) {
-                isDraggingSheet.current = true;
-                setScrollEnabled(false);
-              }
-              panY.setValue(dy);
+          keyboardVerticalOffset={0}
+          onLayout={isInline ? undefined : handleSheetViewportLayout}
+        >
+          {!isInline ? (
+            <Pressable
+              style={styles.backdropPressable}
+              onPress={handleRequestClose}
+            >
+              <Animated.View
+                style={[
+                  styles.backdrop,
+                  { backgroundColor: backdropColor, opacity: backdropOpacity },
+                ]}
+              />
+            </Pressable>
+          ) : null}
+          <SheetSurface
+            style={
+              isInline
+                ? styles.inlineSheet
+                : [
+                    styles.sheet,
+                    {
+                      position: 'absolute',
+                      top: activeSheetTop,
+                      right: 0,
+                      left: 0,
+                      height: activeSheetHeight as ViewStyle['height'],
+                      paddingBottom: sheetBottomPadding,
+                      transform: [{ translateY: sheetTranslateY }],
+                    },
+                  ]
             }
-          }}
-          onTouchEnd={(e: GestureResponderEvent) => {
-            if (isInline) return;
-            if (isDraggingSheet.current) {
+            onTouchStart={(e: GestureResponderEvent) => {
+              const canStartSheetGesture =
+                !isInline &&
+                isSheetGestureEnabledRef.current &&
+                !isTransitioningRef.current &&
+                !isClosingRef.current;
+              isTouchSessionEligibleRef.current = canStartSheetGesture;
+              isDraggingSheet.current = false;
+              if (!canStartSheetGesture) return;
+              cancelScheduledPanUpdate();
+              touchStartY.current = e.nativeEvent.pageY;
+            }}
+            onTouchMove={(e: GestureResponderEvent) => {
+              if (!isTouchSessionEligibleRef.current) return;
               const currentY = e.nativeEvent.pageY;
               const dy = currentY - touchStartY.current;
 
-              if (dy > 120) {
-                isClosingRef.current = true;
-                Animated.timing(panY, {
-                  toValue: screenHeight,
-                  duration: SHEET_CLOSE_DURATION_MS,
-                  useNativeDriver: true,
-                }).start(() => {
-                  setScrollEnabled(true);
-                  onClose();
-                });
-              } else {
-                Animated.spring(panY, {
-                  toValue: 0,
-                  useNativeDriver: true,
-                }).start(() => {
-                  setScrollEnabled(true);
-                });
+              if (
+                dy > SHEET_DRAG_ACTIVATION_DISTANCE &&
+                listScrollOffset.current <= 0
+              ) {
+                if (!isDraggingSheet.current) {
+                  isDraggingSheet.current = true;
+                  setScrollEnabled(false);
+                }
+                schedulePanUpdate(dy - SHEET_DRAG_ACTIVATION_DISTANCE);
               }
-              isDraggingSheet.current = false;
-            }
-          }}
-          onTouchCancel={() => {
-            if (isInline) return;
-            if (isDraggingSheet.current) {
-              Animated.spring(panY, {
-                toValue: 0,
-                useNativeDriver: true,
-              }).start(() => {
-                setScrollEnabled(true);
-              });
-              isDraggingSheet.current = false;
-            }
-          }}
-        >
-          {!isInline ? (
-            <View>
-              <View style={styles.grabber} />
+            }}
+            onTouchEnd={(e: GestureResponderEvent) => {
+              if (!isTouchSessionEligibleRef.current) return;
+              isTouchSessionEligibleRef.current = false;
+              if (isDraggingSheet.current) {
+                const currentY = e.nativeEvent.pageY;
+                const dragDistance = Math.max(
+                  0,
+                  currentY -
+                    touchStartY.current -
+                    SHEET_DRAG_ACTIVATION_DISTANCE,
+                );
+                flushPanUpdate(dragDistance);
 
-              <View style={styles.header}>
-                <View style={styles.headerSide}>
-                  {headerCountLabel ? (
-                    <CommentSheetHeaderBadge style={styles.headerCountBadge}>
-                      <Text style={styles.headerCountText}>{headerCountLabel}</Text>
-                    </CommentSheetHeaderBadge>
-                  ) : null}
-                </View>
-                <Text style={styles.title}>{title}</Text>
-                <View style={[styles.headerSide, styles.headerCloseSide]}>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={handleRequestClose}
-                    style={styles.closeButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <CommentSheetControlSurface style={styles.closeButtonSurface}>
-                      <X size={20} color="#111827" />
-                    </CommentSheetControlSurface>
-                  </TouchableOpacity>
+                if (dragDistance > SHEET_DRAG_DISMISS_DISTANCE) {
+                  isClosingRef.current = true;
+                  isTransitioningRef.current = true;
+                  isSheetGestureEnabledRef.current = false;
+                  cancelScheduledOpenAnimation();
+                  cancelScheduledPanUpdate();
+                  onCloseStart?.();
+                  Animated.timing(panY, {
+                    toValue: sheetTravelDistance,
+                    duration: SHEET_TRANSITION_DURATION_MS,
+                    easing: SHEET_TRANSITION_EASING,
+                    useNativeDriver: true,
+                  }).start(({ finished }) => {
+                    if (!finished || !isClosingRef.current) return;
+                    isTransitioningRef.current = false;
+                    setScrollEnabled(true);
+                    onClose();
+                  });
+                } else {
+                  settleSheetPan();
+                }
+                isDraggingSheet.current = false;
+              }
+            }}
+            onTouchCancel={() => {
+              if (!isTouchSessionEligibleRef.current) return;
+              isTouchSessionEligibleRef.current = false;
+              if (isDraggingSheet.current) {
+                settleSheetPan();
+                isDraggingSheet.current = false;
+              }
+            }}
+          >
+            {!isInline ? (
+              <View>
+                <View style={styles.grabber} />
+
+                <View style={styles.header}>
+                  <View style={styles.headerSide}>
+                    {headerCountLabel ? (
+                      <CommentSheetHeaderBadge style={styles.headerCountBadge}>
+                        <Text style={styles.headerCountText}>
+                          {headerCountLabel}
+                        </Text>
+                      </CommentSheetHeaderBadge>
+                    ) : null}
+                  </View>
+                  <Text style={styles.title}>{title}</Text>
+                  <View style={[styles.headerSide, styles.headerCloseSide]}>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={handleRequestClose}
+                      style={styles.closeButton}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <CommentSheetControlSurface
+                        style={styles.closeButtonSurface}
+                      >
+                        <X size={20} color="#111827" />
+                      </CommentSheetControlSurface>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
-          ) : null}
+            ) : null}
 
-          {isInitialLoading && !isInline ? (
-            <View style={styles.stateBox}>
-              <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
-              <Text style={styles.stateText}>{copy.loadingComments}</Text>
-            </View>
-          ) : error && comments.length === 0 && !isInline ? (
-            <View style={styles.stateBox}>
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onRetry}
-                style={styles.retryButton}
-              >
-                <Text style={styles.retryText}>{copy.retry}</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList
-              ref={commentsListRef}
-              data={comments}
-              keyExtractor={keyExtractor}
-              renderItem={renderThread}
-              style={styles.commentsList}
-              keyboardShouldPersistTaps="always"
-              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              onTouchStart={handleDismissKeyboardFromContent}
-              showsVerticalScrollIndicator={false}
-              scrollEnabled={scrollEnabled}
-              initialNumToRender={10}
-              maxToRenderPerBatch={8}
-              updateCellsBatchingPeriod={40}
-              windowSize={7}
-              removeClippedSubviews={false}
-              onContentSizeChange={handleCommentsContentSizeChange}
-              contentContainerStyle={[
-                isInline ? styles.inlineListContent : styles.listContent,
-                comments.length === 0
-                  ? isInline
-                    ? styles.inlineEmptyListContent
-                    : styles.emptyListContent
-                  : null,
-              ]}
-              onEndReached={onEndReached}
-              onEndReachedThreshold={0.6}
-              onScrollToIndexFailed={info => {
-                const estimatedOffset = Math.max(
-                  0,
-                  info.averageItemLength * info.index,
-                );
-                setTimeout(() => {
-                  commentsListRef.current?.scrollToOffset({
-                    offset: estimatedOffset,
-                    animated: true,
-                  });
-                }, 80);
-              }}
-              onScroll={handleListScroll}
-              scrollEventThrottle={16}
-              ListHeaderComponent={
-                listHeaderComponent || isInitialLoading || isRefreshingComments || error ? (
-                  <>
-                    {listHeaderComponent}
-                    {isInitialLoading || isRefreshingComments ? (
-                      <View style={styles.refreshingHeader}>
-                        <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
-                        <Text style={styles.refreshingHeaderText}>
-                          {copy.loadingComments}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {isInline && error && comments.length === 0 ? (
-                      <View style={styles.stateBoxInline}>
-                        <Text style={styles.errorText}>{error}</Text>
-                        <TouchableOpacity
-                          activeOpacity={0.8}
-                          onPress={onRetry}
-                          style={styles.retryButton}
-                        >
-                          <Text style={styles.retryText}>{copy.retry}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : null}
-                  </>
-                ) : null
-              }
-              ListEmptyComponent={
-                !isInitialLoading && !(error && comments.length === 0) ? (
-                  <View
-                    style={[
-                      styles.emptyBox,
-                      isInline ? styles.inlineEmptyBox : null,
-                    ]}
-                  >
-                    <Text style={styles.emptyTitle}>{copy.noCommentsTitle}</Text>
-                    <Text style={styles.emptyText}>
-                      {isInline
-                        ? language === 'en'
-                          ? 'Be the first to comment on this post.'
-                          : 'Hãy là người đầu tiên bình luận bài viết này.'
-                        : copy.noCommentsDesc}
-                    </Text>
-                  </View>
-                ) : null
-              }
-              ListFooterComponent={
-                isLoadingMore ? (
-                  <View style={styles.footerLoader}>
-                    <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
-                  </View>
-                ) : error ? (
-                  <Text style={styles.inlineError}>{error}</Text>
-                ) : null
-              }
+            {isInitialLoading && !isInline ? (
+              <CommentsLoadingSkeleton />
+            ) : error && comments.length === 0 && !isInline ? (
+              <View style={styles.stateBox}>
+                <Text style={styles.errorText}>{error}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={onRetry}
+                  style={styles.retryButton}
+                >
+                  <Text style={styles.retryText}>{copy.retry}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <FlatList
+                ref={commentsListRef}
+                data={comments}
+                keyExtractor={keyExtractor}
+                renderItem={renderThread}
+                style={styles.commentsList}
+                keyboardShouldPersistTaps="always"
+                keyboardDismissMode={
+                  Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                }
+                onTouchStart={handleDismissKeyboardFromContent}
+                showsVerticalScrollIndicator={false}
+                scrollEnabled={scrollEnabled}
+                initialNumToRender={10}
+                maxToRenderPerBatch={8}
+                updateCellsBatchingPeriod={40}
+                windowSize={7}
+                removeClippedSubviews={false}
+                onContentSizeChange={handleCommentsContentSizeChange}
+                contentContainerStyle={[
+                  isInline ? styles.inlineListContent : styles.listContent,
+                  comments.length === 0
+                    ? isInline
+                      ? styles.inlineEmptyListContent
+                      : styles.emptyListContent
+                    : null,
+                ]}
+                onEndReached={onEndReached}
+                onEndReachedThreshold={0.6}
+                onScrollToIndexFailed={info => {
+                  const estimatedOffset = Math.max(
+                    0,
+                    info.averageItemLength * info.index,
+                  );
+                  setTimeout(() => {
+                    commentsListRef.current?.scrollToOffset({
+                      offset: estimatedOffset,
+                      animated: true,
+                    });
+                  }, 80);
+                }}
+                onScroll={handleListScroll}
+                scrollEventThrottle={16}
+                ListHeaderComponent={
+                  listHeaderComponent ||
+                  isInitialLoading ||
+                  isRefreshingComments ||
+                  error ? (
+                    <>
+                      {listHeaderComponent}
+                      {isInitialLoading || isRefreshingComments ? (
+                        <View style={styles.refreshingHeader}>
+                          <ActivityIndicator
+                            color={APP_BRAND_COLOR}
+                            size="small"
+                          />
+                          <Text style={styles.refreshingHeaderText}>
+                            {copy.loadingComments}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {isInline && error && comments.length === 0 ? (
+                        <View style={styles.stateBoxInline}>
+                          <Text style={styles.errorText}>{error}</Text>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={onRetry}
+                            style={styles.retryButton}
+                          >
+                            <Text style={styles.retryText}>{copy.retry}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </>
+                  ) : null
+                }
+                ListEmptyComponent={
+                  !isInitialLoading && !(error && comments.length === 0) ? (
+                    <View
+                      style={[
+                        styles.emptyBox,
+                        isInline ? styles.inlineEmptyBox : null,
+                      ]}
+                    >
+                      <Text style={styles.emptyTitle}>
+                        {copy.noCommentsTitle}
+                      </Text>
+                      <Text style={styles.emptyText}>
+                        {isInline
+                          ? language === 'en'
+                            ? 'Be the first to comment on this post.'
+                            : 'Hãy là người đầu tiên bình luận bài viết này.'
+                          : copy.noCommentsDesc}
+                      </Text>
+                    </View>
+                  ) : null
+                }
+                ListFooterComponent={
+                  isLoadingMore ? (
+                    <View style={styles.footerLoader}>
+                      <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
+                    </View>
+                  ) : error ? (
+                    <Text style={styles.inlineError}>{error}</Text>
+                  ) : null
+                }
+              />
+            )}
+
+            <ReplyBanner
+              replyingTo={replyingTo}
+              snippet={replyingSnippet}
+              onCancelReply={onCancelReply}
             />
-          )}
 
-          <ReplyBanner
-            replyingTo={replyingTo}
-            snippet={replyingSnippet}
-            onCancelReply={onCancelReply}
-          />
-
-          {/* ── Pending image preview (above the input row) ─────────────
+            {/* ── Pending image preview (above the input row) ─────────────
               Rendered only while the user has an image queued. FB-style:
               a bigger preview thumbnail (88×88) with a circular X button
               to clear it. Sits in its own row so the input stays at a
               single line height. */}
-          {editingComment ? (
-            <View style={styles.replyBar}>
-              <View style={styles.replyBarContent}>
-                <View style={styles.replyBarIndicator} />
-                <View style={styles.replyBarTextWrap}>
-                  <Text style={styles.replyBarText}>
-                    {getEditingCommentLabel(language)}
-                  </Text>
-                  <Text style={styles.replyBarSnippet} numberOfLines={1}>
-                    {editingComment.text}
-                  </Text>
+            {editingComment ? (
+              <View style={styles.replyBar}>
+                <View style={styles.replyBarContent}>
+                  <View style={styles.replyBarIndicator} />
+                  <View style={styles.replyBarTextWrap}>
+                    <Text style={styles.replyBarText}>
+                      {getEditingCommentLabel(language)}
+                    </Text>
+                    <Text style={styles.replyBarSnippet} numberOfLines={1}>
+                      {editingComment.text}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <TouchableOpacity
-                onPress={handleCancelEdit}
-                style={styles.replyBarClose}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <X size={14} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {pendingImage ? (
-            <View style={styles.pendingImageRow}>
-              <View style={styles.pendingImageWrap}>
-                <Image
-                  source={{ uri: pendingImage.uri }}
-                  style={styles.pendingImageThumb}
-                  resizeMode="cover"
-                />
                 <TouchableOpacity
-                  onPress={() => setPendingImage(null)}
-                  style={styles.pendingImageRemove}
+                  onPress={handleCancelEdit}
+                  style={styles.replyBarClose}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <X size={14} color="#fff" />
+                  <X size={14} color="#64748b" />
                 </TouchableOpacity>
               </View>
-            </View>
-          ) : null}
+            ) : null}
 
-          {pendingAudio ? (
-            <View style={styles.pendingAudioRow}>
-              <View style={styles.pendingAudioBody}>
-                <Text style={styles.pendingAudioName} numberOfLines={1}>
-                  {pendingAudio.name}
-                </Text>
-                <AudioPlayer uri={pendingAudio.uri} compact />
+            {pendingImage ? (
+              <View style={styles.pendingImageRow}>
+                <View style={styles.pendingImageWrap}>
+                  <Image
+                    source={{ uri: pendingImage.uri }}
+                    style={styles.pendingImageThumb}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setPendingImage(null)}
+                    style={styles.pendingImageRemove}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={14} color="#fff" />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <TouchableOpacity
-                onPress={() => setPendingAudio(null)}
-                style={styles.pendingAudioRemove}
-              >
-                <X size={14} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-          ) : null}
+            ) : null}
 
-          {isWavRecording ? (
-            <View style={styles.recordingRow}>
-              <View style={styles.recordingDot} />
-              <View style={styles.recordingBody}>
-                <Text style={styles.recordingText}>
-                  {copy.recordingText.replace('{duration}', formatAudioDuration(wavDurationMs))}
-                </Text>
-                <AudioWaveform
-                  animated
-                  color="#dc2626"
-                  inactiveColor="#fecaca"
-                  height={18}
-                  barCount={30}
-                />
+            {pendingAudio ? (
+              <View style={styles.pendingAudioRow}>
+                <View style={styles.pendingAudioBody}>
+                  <Text style={styles.pendingAudioName} numberOfLines={1}>
+                    {pendingAudio.name}
+                  </Text>
+                  <AudioPlayer uri={pendingAudio.uri} compact />
+                </View>
+                <TouchableOpacity
+                  onPress={() => setPendingAudio(null)}
+                  style={styles.pendingAudioRemove}
+                >
+                  <X size={14} color="#64748b" />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                onPress={() => cancelWavRecording()}
-                style={styles.recordingCancel}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            ) : null}
+
+            {isWavRecording ? (
+              <View style={styles.recordingRow}>
+                <View style={styles.recordingDot} />
+                <View style={styles.recordingBody}>
+                  <Text style={styles.recordingText}>
+                    {copy.recordingText.replace(
+                      '{duration}',
+                      formatAudioDuration(wavDurationMs),
+                    )}
+                  </Text>
+                  <AudioWaveform
+                    animated
+                    color="#dc2626"
+                    inactiveColor="#fecaca"
+                    height={18}
+                    barCount={30}
+                  />
+                </View>
+                <TouchableOpacity
+                  onPress={() => cancelWavRecording()}
+                  style={styles.recordingCancel}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <X size={16} color="#dc2626" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleToggleAudioRecording}
+                  style={styles.recordingStop}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Square size={13} color="#fff" fill="#fff" />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            <View style={composerLiftStyle}>
+              <View
+                ref={composerMeasureRef}
+                collapsable={false}
+                onLayout={handleComposerLayout}
               >
-                <X size={16} color="#dc2626" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleToggleAudioRecording}
-                style={styles.recordingStop}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
-                <Square size={13} color="#fff" fill="#fff" />
-              </TouchableOpacity>
+                <CommentSheetComposerDock
+                  style={[
+                    styles.inputBar,
+                    { paddingBottom: composerBottomPadding },
+                  ]}
+                >
+                  {/* Image picker button — leftmost in the row, mirrors FB layout */}
+                  <View style={styles.composerPrimaryRow}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={handlePickImage}
+                      disabled={Boolean(editingComment)}
+                      style={styles.imageButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    >
+                      <ImagePlus
+                        size={22}
+                        color={editingComment ? '#cbd5e1' : APP_BRAND_COLOR}
+                      />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={handlePickAudio}
+                      disabled={Boolean(
+                        editingComment || replyingTo || isWavRecording,
+                      )}
+                      style={styles.imageButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    >
+                      <Music2
+                        size={21}
+                        color={
+                          editingComment || replyingTo || isWavRecording
+                            ? '#cbd5e1'
+                            : '#ec4899'
+                        }
+                      />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={handleToggleAudioRecording}
+                      disabled={Boolean(
+                        editingComment || replyingTo || isWavRecording,
+                      )}
+                      style={styles.imageButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                    >
+                      {isWavRecording ? (
+                        <Square size={17} color="#dc2626" fill="#dc2626" />
+                      ) : (
+                        <Mic
+                          size={21}
+                          color={
+                            editingComment || replyingTo || isWavRecording
+                              ? '#cbd5e1'
+                              : '#dc2626'
+                          }
+                        />
+                      )}
+                    </TouchableOpacity>
+
+                    <CommentSheetComposerInputSurface
+                      style={styles.inputSurface}
+                    >
+                      {isInline ? (
+                        <TextInput
+                          ref={inputRef}
+                          value={draft}
+                          onChangeText={setDraft}
+                          placeholder={composerPlaceholder}
+                          placeholderTextColor="#94a3b8"
+                          style={styles.input}
+                          multiline
+                          maxLength={500}
+                          editable={!isWavRecording}
+                        />
+                      ) : (
+                        <Pressable
+                          style={styles.inputLauncher}
+                          onPress={handleOpenComposer}
+                          accessibilityRole="button"
+                          accessibilityLabel={composerPlaceholder}
+                        >
+                          <Text
+                            style={
+                              draft
+                                ? styles.inputLauncherText
+                                : styles.inputLauncherPlaceholder
+                            }
+                            numberOfLines={2}
+                          >
+                            {draft || composerPlaceholder}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </CommentSheetComposerInputSurface>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={handleSubmit}
+                      // Enable submit if EITHER text or an image is provided —
+                      // matches the backend's "text OR image required" rule.
+                      disabled={isSubmitDisabled}
+                      style={[
+                        styles.sendButton,
+                        isSubmitDisabled ? styles.sendButtonDisabled : null,
+                      ]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <SendHorizonal size={18} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </CommentSheetComposerDock>
+              </View>
             </View>
-          ) : null}
+          </SheetSurface>
+        </KeyboardSafeView>
 
-          <View style={composerLiftStyle}>
-            <View
-              ref={composerMeasureRef}
-              collapsable={false}
-              onLayout={handleComposerLayout}
-            >
-              <CommentSheetComposerDock style={[styles.inputBar, { paddingBottom: composerBottomPadding }]}>
-              {/* Image picker button — leftmost in the row, mirrors FB layout */}
-              <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handlePickImage}
-              disabled={Boolean(editingComment)}
-              style={styles.imageButton}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-            >
-              <ImagePlus size={22} color={editingComment ? '#cbd5e1' : APP_BRAND_COLOR} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handlePickAudio}
-              disabled={Boolean(editingComment || replyingTo || isWavRecording)}
-              style={styles.imageButton}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-            >
-              <Music2
-                size={21}
-                color={editingComment || replyingTo || isWavRecording ? '#cbd5e1' : '#ec4899'}
-              />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleToggleAudioRecording}
-              disabled={Boolean(editingComment || replyingTo || isWavRecording)}
-              style={styles.imageButton}
-              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-            >
-              {isWavRecording ? (
-                <Square size={17} color="#dc2626" fill="#dc2626" />
-              ) : (
-                <Mic size={21} color={editingComment || replyingTo || isWavRecording ? '#cbd5e1' : '#dc2626'} />
-              )}
-              </TouchableOpacity>
-
-              <CommentSheetComposerInputSurface style={styles.inputSurface}>
-                <TextInput
-                ref={inputRef}
-                value={draft}
-                onChangeText={setDraft}
-                placeholder={
-                  editingComment
-                    ? getEditCommentLabel(language)
-                    : replyingTo
-                    ? getReplyTargetDisplayName(replyingTo, language)
-                    : copy.addCommentPlaceholder
-                }
-                placeholderTextColor="#94a3b8"
-                style={styles.input}
-                multiline
-                maxLength={500}
-                editable={!isWavRecording}
-                />
-              </CommentSheetComposerInputSurface>
-              <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleSubmit}
-              // Enable submit if EITHER text or an image is provided —
-              // matches the backend's "text OR image required" rule.
-              disabled={
-                isWavRecording ||
-                (editingComment
-                  ? !draft.trim()
-                  : !draft.trim() && !pendingImage && !pendingAudio)
-              }
-              style={[
-                styles.sendButton,
-                isWavRecording ||
-                (editingComment
-                  ? !draft.trim()
-                  : !draft.trim() && !pendingImage && !pendingAudio)
-                  ? styles.sendButtonDisabled
-                  : null,
-              ]}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <SendHorizonal size={18} color="#fff" />
-              </TouchableOpacity>
-              </CommentSheetComposerDock>
-            </View>
-          </View>
-        </SheetSurface>
-      </KeyboardSafeView>
-
-      {/* ── Reaction picker overlay ──────────────────────────────────────
+        {/* ── Reaction picker overlay ──────────────────────────────────────
           Rendered as a sibling so it can float above the sheet without
           being clipped by the sheet's `overflow: hidden`. */}
-      <ReactionPicker
-        anchor={pickerAnchor}
-        onPick={handlePickReaction}
-        onDismiss={handleClosePicker}
-      />
+        <ReactionPicker
+          anchor={pickerAnchor}
+          onPick={handlePickReaction}
+          onDismiss={handleClosePicker}
+        />
 
-      {/* ── Full-screen image viewer ─────────────────────────────────────
+        {/* ── Full-screen image viewer ─────────────────────────────────────
           Opens when the user taps any comment-bubble image (uploaded or
           pending). Single-image, single-page — no swipe between siblings
           because each comment carries at most one image. */}
-      <CommentImageViewer
-        uri={imageViewerUri}
-        onClose={() => setImageViewerUri(null)}
-      />
+        <CommentImageViewer
+          uri={imageViewerUri}
+          onClose={() => setImageViewerUri(null)}
+        />
 
-      <CommentActionSheet
-        visible={Boolean(actionMenuComment)}
-        copy={actionMenuCopy}
-        bottomInset={actionSheetBottomInset}
-        showRetry={Boolean(actionMenuComment?.isFailed)}
-        showEdit={actionMenuCanEdit}
-        showDelete={actionMenuCanDelete}
-        showReport={actionMenuCanReport}
-        onClose={handleCloseActionMenu}
-        onDelete={handleDeleteActionMenuComment}
-        onEdit={handleEditActionMenuComment}
-        onReport={handleReportActionMenuComment}
-        onRetry={handleRetryActionMenuComment}
-      />
+        <CommentActionSheet
+          visible={Boolean(actionMenuComment)}
+          copy={actionMenuCopy}
+          bottomInset={actionSheetBottomInset}
+          showRetry={Boolean(actionMenuComment?.isFailed)}
+          showEdit={actionMenuCanEdit}
+          showDelete={actionMenuCanDelete}
+          showReport={actionMenuCanReport}
+          onClose={handleCloseActionMenu}
+          onDelete={handleDeleteActionMenuComment}
+          onEdit={handleEditActionMenuComment}
+          onReport={handleReportActionMenuComment}
+          onRetry={handleRetryActionMenuComment}
+        />
 
-      <CommentPhotoPickerSheet
-        visible={photoPickerVisible}
-        bottomInset={actionSheetBottomInset}
-        title={copy.pickPhotoTitle}
-        message={copy.pickPhotoMsg}
-        takePhotoLabel={copy.takePhoto}
-        takePhotoHint={copy.takePhotoHint}
-        chooseFromLibraryLabel={copy.chooseFromLibrary}
-        chooseFromLibraryHint={copy.chooseFromLibraryHint}
-        cancelLabel={copy.cancel}
-        onClose={() => setPhotoPickerVisible(false)}
-        onTakePhoto={async () => {
-          setPhotoPickerVisible(false);
-          const result = await launchCamera({
-            mediaType: 'photo' as MediaType,
-            quality: 0.8,
-            saveToPhotos: false,
-            includeBase64: false,
-          });
-          handleImagePickerResult(result);
-        }}
-        onChooseFromLibrary={async () => {
-          setPhotoPickerVisible(false);
-          const result = await launchImageLibrary({
-            mediaType: 'photo' as MediaType,
-            selectionLimit: 1,
-            quality: 0.8,
-            includeBase64: false,
-          });
-          handleImagePickerResult(result);
-        }}
-      />
-    </PresentationRoot>
+        <CommentPhotoPickerSheet
+          visible={photoPickerVisible}
+          bottomInset={actionSheetBottomInset}
+          title={copy.pickPhotoTitle}
+          message={copy.pickPhotoMsg}
+          takePhotoLabel={copy.takePhoto}
+          takePhotoHint={copy.takePhotoHint}
+          chooseFromLibraryLabel={copy.chooseFromLibrary}
+          chooseFromLibraryHint={copy.chooseFromLibraryHint}
+          cancelLabel={copy.cancel}
+          onClose={() => {
+            setPhotoPickerVisible(false);
+            restoreComposerAfterPhotoPicker();
+          }}
+          onTakePhoto={async () => {
+            setPhotoPickerVisible(false);
+            const result = await launchCamera({
+              mediaType: 'photo' as MediaType,
+              quality: 0.8,
+              saveToPhotos: false,
+              includeBase64: false,
+            });
+            handleImagePickerResult(result);
+            restoreComposerAfterPhotoPicker();
+          }}
+          onChooseFromLibrary={async () => {
+            setPhotoPickerVisible(false);
+            const result = await launchImageLibrary({
+              mediaType: 'photo' as MediaType,
+              selectionLimit: 1,
+              quality: 0.8,
+              includeBase64: false,
+            });
+            handleImagePickerResult(result);
+            restoreComposerAfterPhotoPicker();
+          }}
+        />
+      </PresentationRoot>
+      {!isInline ? (
+        <ReelCommentComposerModal
+          visible={isComposerModalVisible && visible && isScreenFocused}
+          avatarUrl={composerAvatarUrl || AVATAR_FALLBACK}
+          value={draft}
+          placeholder={composerPlaceholder}
+          editable={!isWavRecording}
+          submitDisabled={isSubmitDisabled}
+          imageDisabled={Boolean(editingComment)}
+          recordingDisabled={Boolean(editingComment || replyingTo)}
+          pendingImage={pendingImage}
+          pendingAudio={pendingAudio}
+          isRecording={isWavRecording}
+          recordingLabel={copy.recordingText.replace(
+            '{duration}',
+            formatAudioDuration(wavDurationMs),
+          )}
+          contextLabel={
+            editingComment
+              ? getEditingCommentLabel(language)
+              : replyingTo
+              ? `${copy.replyingBanner} ${getReplyTargetDisplayName(
+                  replyingTo,
+                  language,
+                )}`
+              : undefined
+          }
+          contextSnippet={editingComment?.text || replyingSnippet}
+          focusSignal={composerModalFocusSignal}
+          onChangeText={setDraft}
+          onClose={handleCloseComposer}
+          onSubmit={handleSubmit}
+          onInsertEmoji={handleInsertQuickEmoji}
+          onInsertMention={handleInsertMention}
+          onPickImage={handlePickImage}
+          onToggleRecording={handleToggleAudioRecording}
+          onRemoveImage={() => setPendingImage(null)}
+          onRemoveAudio={() => setPendingAudio(null)}
+          onCancelRecording={() => {
+            cancelWavRecording().catch(() => undefined);
+            setComposerModalFocusSignal(current => current + 1);
+          }}
+          onCancelContext={
+            editingComment
+              ? handleCancelEdit
+              : replyingTo
+              ? onCancelReply
+              : undefined
+          }
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -1871,10 +2513,7 @@ function CommentPhotoPickerSheet({
     Math.max(Dimensions.get('window').width - 48, 300),
     430,
   );
-  const photoPickerOptionCopyWidth = Math.max(
-    photoPickerSheetWidth - 188,
-    116,
-  );
+  const photoPickerOptionCopyWidth = Math.max(photoPickerSheetWidth - 188, 116);
 
   return (
     <View style={styles.actionSheetLayer} pointerEvents="box-none">
@@ -1918,7 +2557,12 @@ function CommentPhotoPickerSheet({
             ]}
           >
             <View style={styles.photoPickerOptionMainRow}>
-              <View style={[styles.photoPickerOptionIcon, styles.actionSheetPhotoIcon]}>
+              <View
+                style={[
+                  styles.photoPickerOptionIcon,
+                  styles.actionSheetPhotoIcon,
+                ]}
+              >
                 <Camera size={26} color={APP_BRAND_COLOR} />
               </View>
               <Text
@@ -1955,7 +2599,12 @@ function CommentPhotoPickerSheet({
             ]}
           >
             <View style={styles.photoPickerOptionMainRow}>
-              <View style={[styles.photoPickerOptionIcon, styles.actionSheetLibraryIcon]}>
+              <View
+                style={[
+                  styles.photoPickerOptionIcon,
+                  styles.actionSheetLibraryIcon,
+                ]}
+              >
                 <ImagePlus size={26} color="#4f46e5" />
               </View>
               <Text
@@ -2036,8 +2685,8 @@ function CommentActionSheet({
   const heroIconStyle = isRetryMenu
     ? styles.commentActionHeroPrimaryIcon
     : isReportOnly
-      ? styles.commentActionHeroDangerIcon
-      : styles.commentActionHeroNeutralIcon;
+    ? styles.commentActionHeroDangerIcon
+    : styles.commentActionHeroNeutralIcon;
 
   return (
     <View style={styles.actionSheetLayer} pointerEvents="box-none">
@@ -2094,7 +2743,12 @@ function CommentActionSheet({
               ]}
             >
               <View style={styles.commentActionOptionMainRow}>
-                <View style={[styles.commentActionOptionIcon, styles.commentActionPrimaryIcon]}>
+                <View
+                  style={[
+                    styles.commentActionOptionIcon,
+                    styles.commentActionPrimaryIcon,
+                  ]}
+                >
                   <RotateCcw size={26} color={APP_BRAND_COLOR} />
                 </View>
                 <Text
@@ -2119,7 +2773,11 @@ function CommentActionSheet({
                 {copy.retryHint}
               </Text>
               <View pointerEvents="none" style={styles.commentActionChevronBox}>
-                <ChevronRight size={25} color={APP_BRAND_COLOR} strokeWidth={3} />
+                <ChevronRight
+                  size={25}
+                  color={APP_BRAND_COLOR}
+                  strokeWidth={3}
+                />
               </View>
             </Pressable>
           ) : null}
@@ -2134,7 +2792,12 @@ function CommentActionSheet({
               ]}
             >
               <View style={styles.commentActionOptionMainRow}>
-                <View style={[styles.commentActionOptionIcon, styles.commentActionNeutralIcon]}>
+                <View
+                  style={[
+                    styles.commentActionOptionIcon,
+                    styles.commentActionNeutralIcon,
+                  ]}
+                >
                   <Pencil size={26} color="#4f5f82" />
                 </View>
                 <Text
@@ -2159,7 +2822,11 @@ function CommentActionSheet({
                 {copy.editHint}
               </Text>
               <View pointerEvents="none" style={styles.commentActionChevronBox}>
-                <ChevronRight size={25} color={APP_BRAND_COLOR} strokeWidth={3} />
+                <ChevronRight
+                  size={25}
+                  color={APP_BRAND_COLOR}
+                  strokeWidth={3}
+                />
               </View>
             </Pressable>
           ) : null}
@@ -2174,7 +2841,12 @@ function CommentActionSheet({
               ]}
             >
               <View style={styles.commentActionOptionMainRow}>
-                <View style={[styles.commentActionOptionIcon, styles.commentActionDangerIcon]}>
+                <View
+                  style={[
+                    styles.commentActionOptionIcon,
+                    styles.commentActionDangerIcon,
+                  ]}
+                >
                   <Flag size={26} color="#ef4444" />
                 </View>
                 <Text
@@ -2214,7 +2886,12 @@ function CommentActionSheet({
               ]}
             >
               <View style={styles.commentActionOptionMainRow}>
-                <View style={[styles.commentActionOptionIcon, styles.commentActionDangerIcon]}>
+                <View
+                  style={[
+                    styles.commentActionOptionIcon,
+                    styles.commentActionDangerIcon,
+                  ]}
+                >
                   <Trash2 size={26} color="#ef4444" />
                 </View>
                 <Text
@@ -2419,13 +3096,18 @@ function ReactionPicker({ anchor, onPick, onDismiss }: PickerProps) {
   const minX = 10;
   const maxX = screenWidth - PICKER_PILL_WIDTH - 10;
   const left = Math.max(minX, Math.min(anchor.x - PICKER_PILL_WIDTH / 2, maxX));
-  const top = Math.max(40, anchor.y - PICKER_PILL_HEIGHT - PICKER_GAP_ABOVE_BUTTON);
+  const top = Math.max(
+    40,
+    anchor.y - PICKER_PILL_HEIGHT - PICKER_GAP_ABOVE_BUTTON,
+  );
 
   return (
     <View style={styles.pickerLayer} pointerEvents="box-none">
       {/* Invisible full-screen backdrop swallows the next tap to dismiss. */}
       <Pressable style={styles.pickerBackdrop} onPress={onDismiss} />
-      <CommentSheetReactionPickerSurface style={[styles.pickerPill, { left, top }]}>
+      <CommentSheetReactionPickerSurface
+        style={[styles.pickerPill, { left, top }]}
+      >
         {FEED_REACTION_TYPES.map(type => (
           <TouchableOpacity
             key={type}
@@ -2541,7 +3223,10 @@ function CommentThreadBase({
           <Text style={styles.repliesToggleText}>
             {isExpanded
               ? copy.hideReplies
-              : copy.showReplies.replace('{count}', formatCount(visibleReplyCount))}
+              : copy.showReplies.replace(
+                  '{count}',
+                  formatCount(visibleReplyCount),
+                )}
           </Text>
           {isLoadingReplies ? (
             <ActivityIndicator
@@ -2647,8 +3332,8 @@ function CommentRow({
     () => fitCommentImageSize(comment.imageWidth, comment.imageHeight),
     [comment.imageHeight, comment.imageWidth],
   );
-  const [commentImageSize, setCommentImageSize] = useState(() =>
-    commentImageKnownSize,
+  const [commentImageSize, setCommentImageSize] = useState(
+    () => commentImageKnownSize,
   );
 
   useEffect(() => {
@@ -2712,7 +3397,9 @@ function CommentRow({
   // Pick the label / colour for the "Thích" button based on the viewer's
   // current reaction. Defaults to gray "Thích" with a thumbs-up icon.
   const myReaction = comment.myReaction;
-  const likeLabel = myReaction ? copy[`${myReaction}Reaction` as keyof typeof copy] : copy.likeReaction;
+  const likeLabel = myReaction
+    ? copy[`${myReaction}Reaction` as keyof typeof copy]
+    : copy.likeReaction;
   const likeColor = myReaction ? REACTION_COLOR[myReaction] : '#64748b';
 
   const handleProfilePress = useCallback(() => {
@@ -2740,7 +3427,7 @@ function CommentRow({
             duration: 1000,
             useNativeDriver: false,
           }),
-        ])
+        ]),
       ).start();
     } else {
       highlightAnim.setValue(0);
@@ -2816,7 +3503,11 @@ function CommentRow({
 
   return (
     <Animated.View
-      style={[styles.commentRow, isReply && styles.commentRowReply, deleteRowStyle]}
+      style={[
+        styles.commentRow,
+        isReply && styles.commentRowReply,
+        deleteRowStyle,
+      ]}
       pointerEvents={isDeleting ? 'none' : 'auto'}
     >
       {isReply ? <View style={styles.branchLine} pointerEvents="none" /> : null}
@@ -2833,13 +3524,18 @@ function CommentRow({
           delayLongPress={350}
           style={({ pressed }) => [
             styles.bubbleWrap,
-            pressed && comment.owner && !isSending && !isFailed ? styles.bubbleWrapPressed : null,
+            pressed && comment.owner && !isSending && !isFailed
+              ? styles.bubbleWrapPressed
+              : null,
             (isSending || isFailed) && { opacity: 0.6 },
           ]}
         >
           <Animated.View style={[styles.bubble, { backgroundColor: bubbleBg }]}>
             <View style={styles.nameRow}>
-              <TouchableOpacity onPress={handleProfilePress} activeOpacity={0.85}>
+              <TouchableOpacity
+                onPress={handleProfilePress}
+                activeOpacity={0.85}
+              >
                 <Text style={styles.commentName} numberOfLines={1}>
                   {displayName}
                 </Text>
@@ -2995,9 +3691,7 @@ function CommentRow({
                 <Text style={styles.inlineDeleteText}>
                   {deleteCommentLabel}
                 </Text>
-                <Text style={styles.inlineDeleteHint}>
-                  {deleteCommentHint}
-                </Text>
+                <Text style={styles.inlineDeleteHint}>{deleteCommentHint}</Text>
               </View>
             </Pressable>
           </Animated.View>
@@ -3032,7 +3726,6 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.36)',
   },
   sheet: {
     height: '72%',
@@ -3081,8 +3774,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
-    backgroundColor:
-      Platform.OS === 'ios' ? 'transparent' : '#eef4ff',
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#eef4ff',
   },
   headerCountText: {
     color: '#0872ff',
@@ -3109,8 +3801,7 @@ const styles = StyleSheet.create({
   closeButtonSurface: {
     flex: 1,
     borderRadius: 16,
-    backgroundColor:
-      Platform.OS === 'ios' ? 'transparent' : '#f3f4f6',
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3125,6 +3816,80 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 24,
+  },
+  commentsSkeletonList: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingTop: 16,
+  },
+  commentSkeletonRow: {
+    minHeight: 112,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  commentSkeletonAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: 10,
+    backgroundColor: '#e2e8f0',
+  },
+  commentSkeletonBody: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  commentSkeletonBubble: {
+    width: '92%',
+    minHeight: 76,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#eef1f5',
+  },
+  commentSkeletonBubbleShort: {
+    width: '78%',
+  },
+  commentSkeletonName: {
+    width: 86,
+    height: 11,
+    borderRadius: 6,
+    marginBottom: 10,
+    backgroundColor: '#d8dee7',
+  },
+  commentSkeletonTextWide: {
+    width: '88%',
+    height: 10,
+    borderRadius: 5,
+    marginBottom: 8,
+    backgroundColor: '#d8dee7',
+  },
+  commentSkeletonTextShort: {
+    width: '58%',
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#d8dee7',
+  },
+  commentSkeletonMetaRow: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 14,
+    paddingTop: 9,
+  },
+  commentSkeletonMetaShort: {
+    width: 38,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 16,
+    backgroundColor: '#e2e8f0',
+  },
+  commentSkeletonMetaMedium: {
+    width: 54,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 16,
+    backgroundColor: '#e2e8f0',
   },
   stateText: {
     marginTop: 10,
@@ -3371,8 +4136,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor:
-      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.8)' : '#e5e7eb',
+    borderColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.8)' : '#e5e7eb',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: Platform.OS === 'ios' ? 0.1 : 0.08,
@@ -3527,8 +4291,7 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
 
-  repliesList: {
-  },
+  repliesList: {},
 
   // ── Reply mode banner ───────────────────────────────────────────────
   replyBar: {
@@ -3596,6 +4359,12 @@ const styles = StyleSheet.create({
     backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#fff',
     overflow: 'hidden',
   },
+  composerPrimaryRow: {
+    flex: 1,
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
   inputSurface: {
     flex: 1,
     borderRadius: 20,
@@ -3612,6 +4381,27 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 10 : 8,
     paddingBottom: Platform.OS === 'ios' ? 10 : 8,
     color: '#111827',
+    fontSize: 14,
+    includeFontPadding: false,
+  },
+  inputLauncher: {
+    minHeight: 40,
+    flex: 1,
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#f1f5f9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  inputLauncherText: {
+    color: '#111827',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 14,
+    includeFontPadding: false,
+  },
+  inputLauncherPlaceholder: {
+    color: '#94a3b8',
+    fontFamily: FONT_PRIMARY,
     fontSize: 14,
     includeFontPadding: false,
   },

@@ -26,37 +26,15 @@ import type {
 } from '../../domain/types/reels.types';
 import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
-import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
+import {
+  fetchReelsStartupPage,
+  getReelsStartupSnapshot,
+  mapFeedVideoPostToReel,
+  mergeReelsStartupItems,
+} from '../services/reelsStartupFeed';
 
 const repository = createReelsRepository();
 const feedRepository = createFeedRepository();
-
-const mapFeedVideoToReel = (post: FeedVideoPost): ReelsItem => {
-  return {
-    id: post.id,
-    videoUrl: post.videoUrl,
-    thumbnailUrl: post.thumbnailUrl,
-    caption: post.caption,
-    privacy: post.privacy,
-    privacyContract: post.privacyContract ?? 'legacy_feed',
-    isAnonymous: post.isAnonymous === true,
-    canShare: isFeedPostShareable(post),
-    postedAt: post.postedAt,
-    publisher: {
-      userId: post.publisher.id,
-      username: post.publisher.username,
-      name: post.publisher.name,
-      avatarUrl: post.publisher.avatarUrl,
-      isVerified: false,
-    },
-    likeCount: post.likeCount,
-    commentCount: post.commentCount,
-    viewCount: 0,
-    isLiked: post.isLiked,
-    isSaved: false,
-    myReaction: post.myReaction,
-  };
-};
 
 const PAGE_SIZE = 20;
 const COMMENT_PAGE_SIZE = 20;
@@ -87,9 +65,13 @@ function compareReelsNewestFirst(a: ReelsItem, b: ReelsItem) {
 }
 
 export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPost }) {
-  const [items, setItems] = useState<ReelsItem[]>(() =>
-    initialVideo ? [mapFeedVideoToReel(initialVideo.post)] : [],
+  const [startupSnapshot] = useState(() =>
+    getReelsStartupSnapshot(initialVideo),
   );
+  const [items, setItems] = useState<ReelsItem[]>(
+    startupSnapshot.items,
+  );
+  const itemsRef = useRef(items);
   // Seed the ref synchronously from the constructor argument so the
   // initial-load `loadInitial()` (which fires in a useEffect on mount)
   // can see the deeplinked / clicked video BEFORE the network round-trip
@@ -102,13 +84,24 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
   );
   const [phase, setPhase] = useState<LoadPhase>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(
+    startupSnapshot.hasMore,
+  );
   const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(activeIndex);
   const [selectedCommentPostId, setSelectedCommentPostId] = useState<string | null>(null);
   const [comments, setComments] = useState<ReelComment[]>([]);
   const [commentPhase, setCommentPhase] = useState<CommentPhase>('idle');
   const [commentError, setCommentError] = useState<string | null>(null);
   const [hasMoreComments, setHasMoreComments] = useState(false);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
   // ── Current user — for optimistic comment rendering ──────────────────
   //
   // We seed `currentUser` synchronously from MMKV (so the very first
@@ -261,7 +254,9 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
   } | null>(null);
 
   // Cursor + in-flight guard kept in refs so callbacks don't recreate.
-  const cursorRef = useRef<string | null>(null);
+  const cursorRef = useRef<string | null>(
+    startupSnapshot.nextCursor,
+  );
   const inFlightRef = useRef(false);
   const commentOffsetRef = useRef(0);
   const commentInFlightRef = useRef(false);
@@ -303,13 +298,21 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     setPhase('initial');
     setError(null);
     try {
-      const page = await repository.fetchReels({ limit: PAGE_SIZE });
+      const page = await fetchReelsStartupPage();
       let nextItems = filterUnavailable(page.items);
       let targetActiveIndex = 0;
 
-      if (initialVideoInfoRef.current) {
+      const visibleItems = filterUnavailable(itemsRef.current);
+      if (visibleItems.length > 0) {
+        nextItems = mergeReelsStartupItems(visibleItems, nextItems);
+        targetActiveIndex = Math.max(
+          0,
+          Math.min(activeIndexRef.current, nextItems.length - 1),
+        );
+        initialVideoInfoRef.current = null;
+      } else if (initialVideoInfoRef.current) {
         const { id, post } = initialVideoInfoRef.current;
-        const mapped = mapFeedVideoToReel(post);
+        const mapped = mapFeedVideoPostToReel(post);
         nextItems = [
           mapped,
           ...nextItems.filter(item => String(item.id) !== String(id)),
@@ -318,6 +321,8 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
         initialVideoInfoRef.current = null; // consumed
       }
 
+      itemsRef.current = nextItems;
+      activeIndexRef.current = targetActiveIndex;
       setItems(nextItems);
       cursorRef.current = page.nextCursor;
       setHasMore(page.nextCursor !== null);
@@ -339,8 +344,11 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     setPhase('refreshing');
     setError(null);
     try {
-      const page = await repository.fetchReels({ limit: PAGE_SIZE });
-      setItems(filterUnavailable(page.items));
+      const page = await fetchReelsStartupPage({ force: true });
+      const nextItems = filterUnavailable(page.items);
+      itemsRef.current = nextItems;
+      activeIndexRef.current = 0;
+      setItems(nextItems);
       cursorRef.current = page.nextCursor;
       setHasMore(page.nextCursor !== null);
       setActiveIndex(0);
@@ -1286,12 +1294,12 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     initialVideoInfoRef.current = { id, post };
     setItems(prev => {
       if (prev.length === 0) {
-        return [mapFeedVideoToReel(post)];
+        return [mapFeedVideoPostToReel(post)];
       }
       const index = prev.findIndex(item => String(item.id) === String(id));
       let nextList = [...prev];
       if (index === -1) {
-        const mapped = mapFeedVideoToReel(post);
+        const mapped = mapFeedVideoPostToReel(post);
         nextList = [mapped, ...prev];
       }
       
@@ -1334,6 +1342,7 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
 
   return {
     items,
+    currentUser,
     isInitialLoading: phase === 'initial' && items.length === 0,
     isRefreshing: phase === 'refreshing',
     isLoadingMore: phase === 'loading-more',

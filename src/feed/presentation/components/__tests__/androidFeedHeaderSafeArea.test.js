@@ -67,9 +67,9 @@ describe('Android Feed header top safe-area ownership', () => {
     );
   });
 
-  it('keeps the Android status bar white with dark icons', () => {
-    expect(feedSource).toContain('barStyle="dark-content"');
-    expect(feedSource).toContain('backgroundColor="#FFFFFF"');
+  it('keeps the Android status bar aligned with the red feed chrome', () => {
+    expect(feedSource).toContain("barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}");
+    expect(feedSource).toContain("backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF'}");
     expect(feedSource).toContain('translucent={false}');
   });
 });

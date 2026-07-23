@@ -27,10 +27,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStoriesViewModel } from './useStoriesViewModel';
 import type { StoryItem } from '../../domain/types/stories.types';
+import { filterActiveStories } from '../../domain/policies/storyExpiration';
 
 const NOOP = (): void => {
   // Intentional no-op: backend has no pagination for stories (Phase 1).
 };
+
+function resolveInitialStoryOverride(stories?: StoryItem[]) {
+  if (!stories || stories.length === 0) return null;
+  const activeStories = filterActiveStories(stories);
+  return activeStories.length > 0 ? activeStories : null;
+}
 
 export interface StoriesListRow {
   /** Stable row id — combines publisher + segment id for keying FlatList. */
@@ -70,17 +77,11 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [overrideStories, setOverrideStories] = useState<StoryItem[] | null>(
-    options.initialStories && options.initialStories.length > 0
-      ? options.initialStories
-      : null,
+    () => resolveInitialStoryOverride(options.initialStories),
   );
 
   useEffect(() => {
-    setOverrideStories(
-      options.initialStories && options.initialStories.length > 0
-        ? options.initialStories
-        : null,
-    );
+    setOverrideStories(resolveInitialStoryOverride(options.initialStories));
   }, [options.initialStories]);
 
   // Wrap the underlying reload so we can present a separate "refreshing"
@@ -96,7 +97,10 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
     }
   }, [reloadStories]);
 
-  const sourceStories = overrideStories ?? stories;
+  const sourceStories = useMemo(
+    () => filterActiveStories(overrideStories ?? stories),
+    [overrideStories, stories],
+  );
 
   // Build one grid row per publisher/story bubble. The viewer owns segment
   // progression, so the grid only needs the freshest segment as the cover.
