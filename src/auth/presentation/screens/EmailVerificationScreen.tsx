@@ -1,4 +1,5 @@
 // Description: Verifies newly registered email accounts with the backend six-digit OTP flow.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -174,7 +175,7 @@ function EmailVerificationScreen({
               <ArrowLeft size={21} color="#334155" />
             </TouchableOpacity>
             <View style={styles.headerIcon}>
-              <MailCheck size={30} color="#0000FF" strokeWidth={2.2} />
+              <MailCheck size={30} color={APP_BRAND_COLOR} strokeWidth={2.2} />
               <View style={styles.headerIconBadge}>
                 <ShieldCheck size={15} color="#FFFFFF" strokeWidth={2.5} />
               </View>
@@ -256,11 +257,11 @@ function EmailVerificationScreen({
               style={styles.resendButton}
             >
               {isResending ? (
-                <ActivityIndicator size="small" color="#0000FF" />
+                <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
               ) : (
                 <RotateCcw
                   size={16}
-                  color={resendRemaining > 0 ? '#94A3B8' : '#0000FF'}
+                  color={resendRemaining > 0 ? '#94A3B8' : APP_BRAND_COLOR}
                 />
               )}
               <Text
@@ -334,7 +335,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: '#EAF1FF',
-    backgroundColor: '#0000FF',
+    backgroundColor: APP_BRAND_COLOR,
   },
   card: {
     borderRadius: 24,
@@ -366,7 +367,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     maxWidth: '100%',
     marginTop: 5,
-    color: '#0000FF',
+    color: APP_BRAND_COLOR,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -394,7 +395,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   otpCellActive: {
-    borderColor: '#0000FF',
+    borderColor: APP_BRAND_COLOR,
     backgroundColor: '#EEF4FF',
   },
   otpDigit: {
@@ -431,7 +432,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 25,
-    backgroundColor: '#0000FF',
+    backgroundColor: APP_BRAND_COLOR,
   },
   submitButtonDisabled: {
     opacity: 0.42,
@@ -450,7 +451,7 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   resendText: {
-    color: '#0000FF',
+    color: APP_BRAND_COLOR,
     fontSize: 13,
     fontWeight: '700',
   },

@@ -38,7 +38,7 @@ describe('Create Product and Poll navigation flow', () => {
 
   it('uses a visible brand safe area for the product form', () => {
     expect(createProductSource).toContain(
-      "const PRODUCT_HEADER_COLOR = '#5252ff'",
+      'const PRODUCT_HEADER_COLOR = APP_BRAND_COLOR',
     );
     expect(createProductSource).toContain(
       'style={{ flex: 1, backgroundColor: PRODUCT_HEADER_COLOR }}',
@@ -52,7 +52,7 @@ describe('Create Product and Poll navigation flow', () => {
   });
 
   it('uses a visible brand safe area without coloring the poll body', () => {
-    expect(createPollSource).toContain("const POLL_HEADER_COLOR = '#0000FF'");
+    expect(createPollSource).toContain('const POLL_HEADER_COLOR = APP_BRAND_COLOR');
     expect(createPollSource).toContain(
       'style={{ flex: 1, backgroundColor: POLL_HEADER_COLOR }}',
     );

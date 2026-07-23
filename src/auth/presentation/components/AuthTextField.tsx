@@ -1,6 +1,10 @@
 // Description: Branded text input with a leading icon chip, optional trailing
 // password toggle, and a clean border transition for focus state.
 
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState } from 'react';
 import {
   KeyboardTypeOptions,
@@ -58,7 +62,9 @@ export default function AuthTextField({
     onBlur?.();
   };
 
-  const borderColor = isFocused ? '#0000ff' : 'rgba(0, 0, 255, 0.12)';
+  const borderColor = isFocused
+    ? APP_BRAND_COLOR
+    : APP_COLORS.brand.border;
 
   return (
     <View className="w-full" onLayout={onContainerLayout}>
@@ -74,14 +80,14 @@ export default function AuthTextField({
             height: 56,
             borderWidth: isFocused ? 1.5 : 1,
             borderColor,
-            shadowColor: '#0000ff',
+            shadowColor: APP_BRAND_COLOR,
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: isFocused ? 0.1 : 0,
             shadowRadius: 12,
             elevation: isFocused ? 2 : 0,
           }}
         >
-          <View className="mr-3 h-10 w-10 items-center justify-center rounded-2xl bg-[#EEF4FF]">
+              <View className="mr-3 h-10 w-10 items-center justify-center rounded-2xl bg-brand-subtle">
             {icon}
           </View>
           <TextInput

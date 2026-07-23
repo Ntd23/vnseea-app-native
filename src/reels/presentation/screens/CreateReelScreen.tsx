@@ -1,4 +1,8 @@
 // Description: Lets users choose or record a video, preview it, and publish it as a Reel.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -618,7 +622,7 @@ export default function CreateReelScreen() {
                 backgroundColor: '#ffffff',
                 borderStyle: 'dashed',
                 borderWidth: 1.5,
-                borderColor: '#bfdbfe',
+                borderColor: APP_COLORS.brand.border,
                 borderRadius: 24,
                 shadowColor: '#000',
                 shadowOffset: { width: 0, height: 2 },
@@ -630,15 +634,15 @@ export default function CreateReelScreen() {
               <View 
                 className="mb-5 h-20 w-20 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: '#eff6ff',
-                  shadowColor: '#1d4ed8',
+                  backgroundColor: APP_COLORS.brand.soft,
+                  shadowColor: APP_COLORS.brand.shadow,
                   shadowOffset: { width: 0, height: 2 },
                   shadowOpacity: 0.08,
                   shadowRadius: 4,
                   elevation: 2,
                 }}
               >
-                <Film size={32} color="#1d4ed8" strokeWidth={2} />
+                <Film size={32} color={APP_BRAND_COLOR} strokeWidth={2} />
               </View>
               <Text className="text-lg font-bold text-slate-800 mb-1.5 text-center">
                 {copy.cardTitle}
@@ -650,10 +654,10 @@ export default function CreateReelScreen() {
               <ScaleButton
                 className="w-full flex-row items-center rounded-2xl mb-3"
                 style={{
-                  backgroundColor: '#1d4ed8',
+                  backgroundColor: APP_BRAND_COLOR,
                   paddingHorizontal: 20,
                   paddingVertical: 16,
-                  shadowColor: '#1d4ed8',
+                  shadowColor: APP_COLORS.brand.shadow,
                   shadowOffset: { width: 0, height: 4 },
                   shadowOpacity: 0.2,
                   shadowRadius: 8,
@@ -684,7 +688,7 @@ export default function CreateReelScreen() {
                 }}
                 onPress={handleRecordVideo}
               >
-                <Video size={20} color="#1d4ed8" strokeWidth={2} />
+                <Video size={20} color={APP_BRAND_COLOR} strokeWidth={2} />
                 <Text className="ml-3 text-base font-semibold text-slate-700 flex-1 text-left">
                   {copy.recordLive}
                 </Text>
@@ -748,7 +752,7 @@ export default function CreateReelScreen() {
                         height: 80,
                         borderRadius: 40,
                         borderWidth: 2,
-                        borderColor: 'rgba(99,102,241,0.5)',
+                        borderColor: APP_BRAND_COLOR,
                         alignItems: 'center',
                         justifyContent: 'center',
                         marginBottom: 16,
@@ -760,15 +764,15 @@ export default function CreateReelScreen() {
                           width: 60,
                           height: 60,
                           borderRadius: 30,
-                          backgroundColor: 'rgba(99,102,241,0.15)',
+                          backgroundColor: APP_COLORS.brand.softPressed,
                           alignItems: 'center',
                           justifyContent: 'center',
                         }}
                       >
-                        <Film size={28} color="#818cf8" strokeWidth={1.8} />
+                        <Film size={28} color={APP_BRAND_COLOR} strokeWidth={1.8} />
                       </View>
                     </Animated.View>
-                    <ActivityIndicator color="#818cf8" size="small" />
+                    <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
                     <Text
                       style={{
                         color: 'rgba(255,255,255,0.6)',
@@ -994,8 +998,8 @@ export default function CreateReelScreen() {
                     onPress={() => vm.setPrivacy(opt.value)}
                     className="flex-row items-center rounded-full border"
                     style={{
-                      backgroundColor: isSelected ? '#1d4ed8' : '#f1f5f9',
-                      borderColor: isSelected ? '#1d4ed8' : '#e2e8f0',
+                      backgroundColor: isSelected ? APP_BRAND_COLOR : '#f1f5f9',
+                      borderColor: isSelected ? APP_BRAND_COLOR : '#e2e8f0',
                       paddingHorizontal: 16,
                       paddingVertical: 10,
                     }}
@@ -1032,8 +1036,11 @@ export default function CreateReelScreen() {
           <ScaleButton
             className="flex-row items-center justify-center py-4 rounded-full"
             style={{
-              backgroundColor: !vm.hasVideo || vm.isUploading ? '#8da2f2' : '#1d4ed8',
-              shadowColor: '#1d4ed8',
+              backgroundColor:
+                !vm.hasVideo || vm.isUploading
+                  ? APP_COLORS.brand.softPressed
+                  : APP_BRAND_COLOR,
+              shadowColor: APP_COLORS.brand.shadow,
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: !vm.hasVideo || vm.isUploading ? 0 : 0.25,
               shadowRadius: 8,
@@ -1103,7 +1110,7 @@ export default function CreateReelScreen() {
                     paddingVertical: 6,
                   }}
                 >
-                  <ActivityIndicator color="#0000ff" size="small" />
+                  <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
                   <Text
                     style={{
                       marginLeft: 8,
@@ -1138,7 +1145,7 @@ export default function CreateReelScreen() {
                         style={{
                           fontSize: 13,
                           fontWeight: '600',
-                          color: isMention ? '#1D4ED8' : '#6D28D9',
+                          color: isMention ? APP_COLORS.status.info : '#6D28D9',
                         }}
                         numberOfLines={1}
                       >
@@ -1218,7 +1225,7 @@ export default function CreateReelScreen() {
                 paddingHorizontal: 16,
                 paddingVertical: 8,
                 borderRadius: 999,
-                backgroundColor: '#1d4ed8',
+                backgroundColor: APP_BRAND_COLOR,
               }}
             >
               <Text

@@ -20,6 +20,10 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
 import {
   User,
@@ -1249,8 +1253,8 @@ const styles = StyleSheet.create({
     borderColor: '#fee2e2',
   },
   rolePro: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#dbeafe',
+    backgroundColor: APP_COLORS.brand.soft,
+    borderColor: APP_COLORS.brand.border,
   },
   roleMember: {
     backgroundColor: '#f1f5f9',
@@ -1264,7 +1268,7 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
   roleTextPro: {
-    color: '#3b82f6',
+    color: APP_BRAND_COLOR,
   },
   roleTextMember: {
     color: '#64748b',
@@ -1297,7 +1301,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 10,
-    backgroundColor: '#eff6ff',
+    backgroundColor: APP_COLORS.brand.soft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
@@ -1358,7 +1362,7 @@ const styles = StyleSheet.create({
   },
   langPillActive: {
     borderColor: '#0052ff',
-    backgroundColor: '#eff6ff',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   langPillInactive: {
     borderColor: '#e2e8f0',

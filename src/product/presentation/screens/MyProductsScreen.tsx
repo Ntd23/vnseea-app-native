@@ -1,4 +1,5 @@
 // Description: Renders the user's marketplace products, purchases, orders, and nearby shortcut.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -127,14 +128,14 @@ function SearchFilterRow({
       <TouchableOpacity
         className={`h-12 w-12 items-center justify-center rounded-2xl border ${
           hasActiveFilters
-            ? 'border-blue-600 bg-blue-50'
+            ? 'border-brand bg-brand-subtle'
             : 'border-slate-200 bg-white'
         }`}
         activeOpacity={0.8}
         hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
         onPress={onToggleFilters}
       >
-        <SlidersHorizontal size={20} color="#0000FF" />
+        <SlidersHorizontal size={20} color={APP_BRAND_COLOR} />
       </TouchableOpacity>
     </View>
   );
@@ -152,7 +153,7 @@ function FilterChip({
   return (
     <TouchableOpacity
       className={`rounded-full border px-3 py-2 ${
-        active ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white'
+        active ? 'border-brand bg-brand-subtle' : 'border-slate-200 bg-white'
       }`}
       activeOpacity={0.8}
       onPress={onPress}
@@ -184,7 +185,7 @@ function EmptyPanel({
   return (
     <View className="items-center px-8 py-16">
       <View className="icon-chip h-16 w-16 items-center justify-center">
-        <ShoppingBag size={30} color="#0000FF" />
+        <ShoppingBag size={30} color={APP_BRAND_COLOR} />
       </View>
       <Text className="mt-4 text-center text-title-primary">{title}</Text>
       <Text className="mt-2 text-center text-body-secondary">
@@ -196,7 +197,7 @@ function EmptyPanel({
           activeOpacity={0.85}
           onPress={onRetry}
         >
-          <RotateCw size={16} color="#0000FF" />
+          <RotateCw size={16} color={APP_BRAND_COLOR} />
           <Text className="text-title-primary text-brand">Thử lại</Text>
         </TouchableOpacity>
       ) : null}
@@ -225,15 +226,15 @@ function OrderCard({
             {isSeller ? 'Khách hàng: ' : 'Cửa hàng: '}<Text className="font-bold text-slate-700">{isSeller ? (item.buyerName || item.shop) : item.shop}</Text>
           </Text>
         </View>
-        <View className="rounded-full bg-blue-50 px-2.5 py-1">
-          <Text className="text-xs font-bold text-blue-600">
+        <View className="rounded-full bg-brand-subtle px-2.5 py-1">
+          <Text className="text-xs font-bold text-brand">
             {item.statusLabel}
           </Text>
         </View>
       </View>
       <View className="mt-4 flex-row items-center justify-between border-t border-slate-100 pt-3" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Text className="text-xs text-slate-400">{item.date}</Text>
-        <Text className="text-sm font-black text-blue-600">{item.total}</Text>
+        <Text className="text-sm font-black text-brand">{item.total}</Text>
       </View>
       <TouchableOpacity
         className="flex-row items-center justify-center bg-slate-100 border border-slate-200 h-10 mt-4 rounded-xl"
@@ -392,10 +393,10 @@ function OrderDetailModal({
               </View>
 
               {isSeller && (
-                <View className="mt-4 gap-3 bg-blue-50/40 border border-blue-100/50 rounded-2xl p-4">
-                  <Text className="text-xs font-extrabold text-blue-800 uppercase tracking-wide">Khách hàng: {order.buyerName}</Text>
+                <View className="mt-4 gap-3 bg-brand-subtle border border-brand-border rounded-2xl p-4">
+                  <Text className="text-xs font-extrabold text-brand-pressed uppercase tracking-wide">Khách hàng: {order.buyerName}</Text>
                   <TouchableOpacity
-                    className="flex-row items-center justify-center bg-blue-600 rounded-xl py-2.5 px-4 shadow-sm"
+                    className="flex-row items-center justify-center bg-brand rounded-xl py-2.5 px-4 shadow-sm"
                     style={{ flexDirection: 'row', alignItems: 'center' }}
                     activeOpacity={0.8}
                     onPress={handleMessageCustomer}
@@ -410,17 +411,17 @@ function OrderDetailModal({
                 <View className="mt-4 border-t border-slate-100 pt-4">
                   <Text className="text-xs font-extrabold text-slate-400 uppercase tracking-wide mb-2">Cập nhật trạng thái đơn</Text>
                   {updating ? (
-                    <ActivityIndicator size="small" color="#0000FF" />
+                    <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                   ) : (
                     <View className="flex-row flex-wrap gap-2" style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                       {nextStatuses.map(option => (
                         <TouchableOpacity
                           key={option.value}
-                          className="bg-blue-50 border border-blue-200 rounded-full px-3 py-1.5 mr-2 mb-2"
+                          className="bg-brand-subtle border border-brand-border rounded-full px-3 py-1.5 mr-2 mb-2"
                           activeOpacity={0.8}
                           onPress={() => handleUpdateStatus(option.value)}
                         >
-                          <Text className="text-xs font-bold text-blue-600">{option.label}</Text>
+                          <Text className="text-xs font-bold text-brand">{option.label}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -724,7 +725,7 @@ const downloadInvoiceFile = async (order: OrdersItem, shopName: string, lines: O
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1e293b; margin: 0; padding: 40px; background-color: #f8fafc; }
     .invoice-box { max-width: 600px; margin: auto; padding: 30px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05); }
     .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 25px; }
-    .logo { font-size: 24px; font-weight: 800; color: #2563eb; }
+    .logo { font-size: 24px; font-weight: 800; color: ${APP_BRAND_COLOR}; }
     .title { font-size: 18px; font-weight: 700; color: #475569; }
     .section-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
     .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
@@ -732,7 +733,7 @@ const downloadInvoiceFile = async (order: OrdersItem, shopName: string, lines: O
     table { width: 100%; border-collapse: collapse; margin-top: 15px; }
     th { text-align: left; font-size: 12px; font-weight: 700; color: #64748b; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; }
     td { padding: 12px 0; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
-    .total-row { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; font-size: 18px; font-weight: 700; color: #2563eb; }
+    .total-row { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; font-size: 18px; font-weight: 700; color: ${APP_BRAND_COLOR}; }
     .footer { text-align: center; font-size: 12px; color: #94a3b8; margin-top: 40px; }
   </style>
 </head>
@@ -759,7 +760,7 @@ const downloadInvoiceFile = async (order: OrdersItem, shopName: string, lines: O
       </div>
       <div class="info-row">
         <span style="color: #64748b;">Trạng thái:</span>
-        <span style="font-weight: 600; color: #2563eb;">${order.statusLabel}</span>
+        <span style="font-weight: 600; color: ${APP_BRAND_COLOR};">${order.statusLabel}</span>
       </div>
     </div>
     
@@ -875,7 +876,7 @@ function PurchasedOrderCard({
           </Text>
         </View>
         <TouchableOpacity
-          className="flex-row items-center rounded bg-[#0000ff] px-3 py-2"
+          className="flex-row items-center rounded bg-brand px-3 py-2"
           activeOpacity={0.8}
           onPress={() =>
             downloadInvoiceFile(item, item.shop || 'Shop', invoiceLines)
@@ -1069,7 +1070,7 @@ function MyProductsScreen() {
         <View className="mx-4 my-2.5 rounded-2xl bg-white p-3 border border-slate-100 shadow-sm">
           <View className="flex-row items-center">
             <TouchableOpacity
-              className="flex-1 flex-row items-center justify-center bg-blue-600 rounded-xl py-3 px-3 shadow-sm active:bg-blue-700"
+              className="flex-1 flex-row items-center justify-center bg-brand rounded-xl py-3 px-3 shadow-sm active:bg-brand-pressed"
               activeOpacity={0.8}
               onPress={() => navigation.navigate(ROUTES.MARKETPLACE)}
             >
@@ -1120,7 +1121,7 @@ function MyProductsScreen() {
                   {tabLabel}
                 </Text>
                 {isActive && (
-                  <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+                  <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand rounded-full" />
                 )}
               </TouchableOpacity>
             );
@@ -1128,7 +1129,7 @@ function MyProductsScreen() {
         </ScrollView>
         {!targetUserId && (
           <TouchableOpacity
-            className="mx-4 flex-row items-center bg-blue-600 rounded-full px-3 py-1.5 shadow-sm active:bg-blue-700"
+            className="mx-4 flex-row items-center bg-brand rounded-full px-3 py-1.5 shadow-sm active:bg-brand-pressed"
             activeOpacity={0.8}
             onPress={handleCreate}
           >
@@ -1198,7 +1199,7 @@ function MyProductsScreen() {
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               vm.isLoading ? (
-                <ActivityIndicator className="py-10" color="#0000FF" />
+                <ActivityIndicator className="py-10" color={APP_BRAND_COLOR} />
               ) : (
                 <EmptyPanel
                   title={
@@ -1269,7 +1270,7 @@ function MyProductsScreen() {
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               vm.isOrdersLoading ? (
-                <ActivityIndicator className="py-10" color="#0000FF" />
+                <ActivityIndicator className="py-10" color={APP_BRAND_COLOR} />
               ) : (
                 <EmptyPanel
                   title={
@@ -1303,7 +1304,7 @@ function MyProductsScreen() {
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             vm.isOrdersLoading ? (
-              <ActivityIndicator className="py-10" color="#0000FF" />
+              <ActivityIndicator className="py-10" color={APP_BRAND_COLOR} />
             ) : (
               <EmptyPanel
                 title={
@@ -1404,7 +1405,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#334155',
-    backgroundColor: '#eef2ff',
+    backgroundColor: '#f8fafc',
   },
   shippingAddressCard: {
     marginHorizontal: 14,
@@ -1437,7 +1438,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 18,
     borderTopWidth: 10,
-    borderTopColor: '#eef2ff',
+    borderTopColor: '#f8fafc',
   },
   orderProductRow: {
     minHeight: 104,

@@ -1,4 +1,8 @@
 // Description: Renders a full data-driven Page detail surface.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -347,10 +351,10 @@ function formatTime(timestamp?: number) {
 function PageImageFallback({ size = 52 }: { size?: number }) {
   return (
     <View
-      className="items-center justify-center rounded-full bg-[#EEF2FF]"
+      className="items-center justify-center rounded-full bg-brand-soft"
       style={{ width: size, height: size }}
     >
-      <Flag size={Math.max(20, size * 0.45)} color="#0000FF" />
+      <Flag size={Math.max(20, size * 0.45)} color={APP_BRAND_COLOR} />
     </View>
   );
 }
@@ -414,7 +418,7 @@ function ActionButton({
       <View
         className={`items-center justify-center rounded-2xl py-3 border ${
           active
-            ? 'bg-blue-50/50 border-blue-100'
+            ? 'bg-brand-subtle border-brand-border'
             : 'bg-white border-slate-100'
         }`}
         style={{ minHeight: 72 }}
@@ -422,7 +426,7 @@ function ActionButton({
         {icon}
         <Text
           className={`text-[11px] mt-1.5 font-bold ${
-            active ? 'text-blue-600' : 'text-slate-600'
+            active ? 'text-brand' : 'text-slate-600'
           }`}
           numberOfLines={1}
         >
@@ -503,7 +507,7 @@ function PageHero({
           />
         ) : (
           <View className="h-full w-full items-center justify-center">
-            <Flag size={64} color="rgba(0,47,255,0.15)" />
+            <Flag size={64} color={APP_COLORS.brand.border} />
           </View>
         )}
 
@@ -525,7 +529,7 @@ function PageHero({
               {title}
             </Text>
             {page.mapPinApproved ? (
-              <BadgeCheck size={22} color="#002fff" fill="#002fff" />
+              <BadgeCheck size={22} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
             ) : null}
           </View>
           {handle ? (
@@ -582,7 +586,7 @@ function PageHero({
               label={page.isLiked ? copy.likedBtn : copy.likeBtn}
               icon={
                 page.isLiked ? (
-                  <Heart size={20} color="#002fff" fill="#002fff" />
+                  <Heart size={20} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
                 ) : (
                   <Heart size={20} color="#64748B" />
                 )
@@ -595,7 +599,7 @@ function PageHero({
               label={page.isFollowing ? copy.followingBtn : copy.followBtn}
               icon={
                 page.isFollowing ? (
-                  <Bell size={20} color="#002fff" fill="#002fff" />
+                  <Bell size={20} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
                 ) : (
                   <Bell size={20} color="#64748B" />
                 )
@@ -688,7 +692,7 @@ function getPageCategoryLabel(page: PagesItem) {
 function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <View className="flex-row items-center border-b border-slate-100 bg-white px-4 py-3">
-      <View className="mr-2 h-6 w-6 items-center justify-center rounded-full bg-[#0000FF]">
+      <View className="mr-2 h-6 w-6 items-center justify-center rounded-full bg-brand">
         {icon}
       </View>
       <Text className="text-base font-bold text-slate-900">{title}</Text>
@@ -828,7 +832,7 @@ function SuggestedPagesSection({
               </View>
             </TouchableOpacity>
             <TouchableOpacity
-              className="mx-4 mt-3 h-10 items-center justify-center rounded-lg bg-[#0000FF]"
+              className="mx-4 mt-3 h-10 items-center justify-center rounded-lg bg-brand"
               activeOpacity={0.86}
               onPress={() => onLikePage(page.pageId)}
             >
@@ -848,7 +852,7 @@ function AboutTab({ page }: { page: PagesItem }) {
     <View className="gap-3 px-4 py-4">
       {page.pageDescription ? (
         <InfoRow
-          icon={<Flag size={20} color="#0000FF" />}
+          icon={<Flag size={20} color={APP_BRAND_COLOR} />}
           label={page.pageDescription}
         />
       ) : null}
@@ -1007,7 +1011,7 @@ function RateBox({
         editable={!disabled && !submitting}
       />
       <TouchableOpacity
-        className="mt-3 min-h-[42px] flex-row items-center justify-center rounded-xl bg-[#0000FF]"
+        className="mt-3 min-h-[42px] flex-row items-center justify-center rounded-xl bg-brand"
         activeOpacity={0.85}
         disabled={disabled || submitting}
         onPress={handleSubmit}
@@ -1089,7 +1093,7 @@ function ReviewsTab({
           onPress={onLoadMore}
         >
           {isLoadingMore ? (
-            <ActivityIndicator color="#0000FF" />
+            <ActivityIndicator color={APP_BRAND_COLOR} />
           ) : (
             <Text className="text-title-primary text-brand">
               Tải thêm đánh giá
@@ -1174,7 +1178,7 @@ function PollPreview({ post }: { post: FeedPollPost }) {
           className="rounded-2xl bg-slate-100 px-4 py-3"
         >
           <View
-            className="absolute bottom-0 left-0 top-0 rounded-2xl bg-blue-100"
+            className="absolute bottom-0 left-0 top-0 rounded-2xl bg-brand-soft"
             style={{ width: `${Math.min(100, option.percentageNum)}%` }}
           />
           <View className="flex-row items-center">
@@ -1348,7 +1352,7 @@ function InviteModal({
 
           {isLoading ? (
             <View className="h-52 items-center justify-center">
-              <ActivityIndicator color="#0000FF" />
+              <ActivityIndicator color={APP_BRAND_COLOR} />
             </View>
           ) : (
             <FlatList
@@ -1369,7 +1373,7 @@ function InviteModal({
                     trailing={
                       <TouchableOpacity
                         className={`min-h-[36px] min-w-[78px] items-center justify-center rounded-full px-3 ${
-                          invited ? 'bg-slate-100' : 'bg-[#0000FF]'
+                          invited ? 'bg-slate-100' : 'bg-brand'
                         }`}
                         activeOpacity={0.85}
                         disabled={invited || busyUserId === item.id}
@@ -1987,7 +1991,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     <>
       {vm.isLoadingPostsMore ? (
         <View className="py-4">
-          <ActivityIndicator color="#002fff" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
         </View>
       ) : null}
       {vm.activeTab === 'all' ? (
@@ -2033,7 +2037,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         ListEmptyComponent={
           <View className="px-4 py-10">
             {vm.isLoading ? (
-              <ActivityIndicator color="#002fff" />
+              <ActivityIndicator color={APP_BRAND_COLOR} />
             ) : (
               <View className="items-center bg-white px-4 py-12">
                 <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-100">
@@ -2054,8 +2058,8 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
           <RefreshControl
             refreshing={vm.isRefreshing}
             onRefresh={vm.refresh}
-            tintColor="#002fff"
-            colors={['#002fff']}
+            tintColor={APP_BRAND_COLOR}
+            colors={[APP_BRAND_COLOR]}
           />
         }
         onEndReached={vm.loadMorePosts}
@@ -2139,7 +2143,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             <TouchableOpacity
               disabled={isSavingEditedPost}
               onPress={() => void handleSaveEditedPost()}
-              className="ml-3 min-h-[46px] flex-1 items-center justify-center rounded-xl bg-[#0000ff]"
+              className="ml-3 min-h-[46px] flex-1 items-center justify-center rounded-xl bg-brand"
               activeOpacity={0.82}
             >
               {isSavingEditedPost ? (

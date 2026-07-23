@@ -1,6 +1,7 @@
 // Description: Light brand hero header for the login screen.
 // Renders only the real logo image returned by the backend.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect } from 'react';
 import { Image, Text, View } from 'react-native';
 import Animated, {
@@ -60,17 +61,17 @@ export default function LoginHero({
       <Animated.View
         pointerEvents="none"
         className="absolute -right-14 -top-14 h-36 w-36 rounded-full"
-        style={[{ backgroundColor: 'rgba(0,0,255,0.045)' }, circle1Style]}
+        style={[{ backgroundColor: 'rgba(185,28,28,0.045)' }, circle1Style]}
       />
       <Animated.View
         pointerEvents="none"
         className="absolute -bottom-12 -left-16 h-36 w-36 rounded-full"
-        style={[{ backgroundColor: 'rgba(0,0,255,0.04)' }, circle2Style]}
+        style={[{ backgroundColor: 'rgba(185,28,28,0.04)' }, circle2Style]}
       />
       <Animated.View
         pointerEvents="none"
         className="absolute right-24 top-28 h-11 w-11 rounded-full"
-        style={[{ backgroundColor: 'rgba(0,0,255,0.055)' }, circle3Style]}
+        style={[{ backgroundColor: 'rgba(185,28,28,0.055)' }, circle3Style]}
       />
       <View pointerEvents="none" className="absolute left-7 top-12">
         {Array.from({ length: 24 }).map((_, index) => (
@@ -101,10 +102,10 @@ export default function LoginHero({
 
       <View className="flex-1 items-center justify-center px-8 pt-8">
         <Animated.View
-          className="mb-8 h-24 w-64 items-center justify-center overflow-hidden rounded-[24px] border-[4px] border-white bg-[#0000ff]"
+          className="mb-8 h-24 w-64 items-center justify-center overflow-hidden rounded-[24px] border-[4px] border-white bg-brand"
           style={[
             {
-              shadowColor: '#0000ff',
+              shadowColor: APP_BRAND_COLOR,
               shadowOffset: { width: 0, height: 16 },
               shadowOpacity: 0.15,
               shadowRadius: 32,

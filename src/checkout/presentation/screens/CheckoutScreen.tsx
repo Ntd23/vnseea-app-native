@@ -1,4 +1,5 @@
 // Description: Creates a marketplace purchase request for selected cart items.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -231,14 +232,14 @@ function AddressOption({
   return (
     <TouchableOpacity
       className={`mb-3 rounded-2xl border p-4 ${
-        selected ? 'border-[#0000ff] bg-blue-50' : 'border-slate-200 bg-white'
+        selected ? 'border-brand bg-brand-subtle' : 'border-slate-200 bg-white'
       }`}
       activeOpacity={0.85}
       onPress={onPress}
     >
       <View className="flex-row items-start">
         <View className="h-10 w-10 items-center justify-center rounded-full bg-white">
-          <MapPin size={19} color="#0000FF" />
+          <MapPin size={19} color={APP_BRAND_COLOR} />
         </View>
         <View className="ml-3 flex-1">
           <Text className="text-base font-extrabold text-slate-950">
@@ -255,7 +256,7 @@ function AddressOption({
         </View>
         <View
           className={`h-6 w-6 items-center justify-center rounded-full border ${
-            selected ? 'border-[#0000ff] bg-[#0000ff]' : 'border-slate-300'
+            selected ? 'border-brand bg-brand' : 'border-slate-300'
           }`}
         >
           {selected ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
@@ -377,12 +378,12 @@ function CheckoutAddressSheet({
                     />
                   ))}
                   <TouchableOpacity
-                    className="mt-1 min-h-[48px] flex-row items-center justify-center rounded-full border border-blue-200 bg-blue-50"
+                    className="mt-1 min-h-[48px] flex-row items-center justify-center rounded-full border border-brand-border bg-brand-subtle"
                     activeOpacity={0.85}
                     onPress={startNewAddress}
                   >
-                    <Plus size={18} color="#0000FF" />
-                    <Text className="ml-2 text-base font-extrabold text-[#0000ff]">
+                    <Plus size={18} color={APP_BRAND_COLOR} />
+                    <Text className="ml-2 text-base font-extrabold text-brand">
                       Thêm địa chỉ mới
                     </Text>
                   </TouchableOpacity>
@@ -394,7 +395,7 @@ function CheckoutAddressSheet({
                       className="mb-4 self-start"
                       onPress={() => setShowForm(false)}
                     >
-                      <Text className="text-sm font-extrabold text-[#0000ff]">
+                      <Text className="text-sm font-extrabold text-brand">
                         Chọn địa chỉ đã lưu
                       </Text>
                     </TouchableOpacity>
@@ -458,7 +459,7 @@ function CheckoutAddressSheet({
             {showForm ? (
               <View className="border-t border-slate-100 bg-white px-4 pb-3 pt-3">
                 <TouchableOpacity
-                  className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] ${
+                  className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand ${
                     vm.isSavingAddress ? 'opacity-70' : ''
                   }`}
                   activeOpacity={0.9}
@@ -504,8 +505,8 @@ function ConfirmPurchaseModal({
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
       <View className="flex-1 items-center justify-center bg-black/35 px-5">
         <View className="w-full rounded-3xl bg-white px-5 py-6 shadow-lg">
-          <View className="mx-auto h-16 w-16 items-center justify-center rounded-full bg-blue-50">
-            <ShieldCheck size={30} color="#0000FF" />
+          <View className="mx-auto h-16 w-16 items-center justify-center rounded-full bg-brand-subtle">
+            <ShieldCheck size={30} color={APP_BRAND_COLOR} />
           </View>
           <Text className="mt-5 text-center text-xl font-extrabold text-slate-950">
             Xác nhận gửi yêu cầu mua
@@ -525,7 +526,7 @@ function ConfirmPurchaseModal({
               </Text>
               <CurrencyTotals
                 totals={currencyTotals}
-                textClassName="text-base font-extrabold text-[#0000ff]"
+                textClassName="text-base font-extrabold text-brand"
               />
             </View>
           </View>
@@ -539,7 +540,7 @@ function ConfirmPurchaseModal({
               <Text className="text-base font-extrabold text-slate-600">Hủy</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`h-12 flex-1 items-center justify-center rounded-2xl bg-[#0000ff] ${
+              className={`h-12 flex-1 items-center justify-center rounded-2xl bg-brand ${
                 isPaying ? 'opacity-70' : ''
               }`}
               activeOpacity={0.9}
@@ -585,7 +586,7 @@ function RequestSuccessModal({
               'Yêu cầu đã được lưu trong Đã đặt và gửi đầy đủ tới người bán.'}
           </Text>
           <TouchableOpacity
-            className="mt-6 min-h-[48px] items-center justify-center rounded-full bg-[#0000ff]"
+            className="mt-6 min-h-[48px] items-center justify-center rounded-full bg-brand"
             activeOpacity={0.9}
             onPress={onTrackOrder}
           >
@@ -661,7 +662,7 @@ function CheckoutScreen() {
 
       {vm.isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#0000FF" />
+          <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
           <Text className="mt-3 text-sm font-semibold text-slate-500">
             Đang tải thông tin đặt hàng...
           </Text>
@@ -676,7 +677,7 @@ function CheckoutScreen() {
             Quay lại giỏ hàng và chọn ít nhất một sản phẩm để tiếp tục.
           </Text>
           <TouchableOpacity
-            className="mt-6 min-h-[46px] items-center justify-center rounded-full bg-[#0000ff] px-6"
+            className="mt-6 min-h-[46px] items-center justify-center rounded-full bg-brand px-6"
             activeOpacity={0.9}
             onPress={handleBackToCart}
           >
@@ -699,7 +700,7 @@ function CheckoutScreen() {
                   activeOpacity={0.8}
                   onPress={() => setAddressSheetVisible(true)}
                 >
-                  <Text className="text-sm font-extrabold text-[#0000ff]">
+                  <Text className="text-sm font-extrabold text-brand">
                     {vm.selectedAddress ? 'Thay đổi' : 'Thêm địa chỉ'}
                   </Text>
                 </TouchableOpacity>
@@ -736,10 +737,10 @@ function CheckoutScreen() {
                 <TouchableOpacity
                   activeOpacity={0.9}
                   onPress={() => setAddressSheetVisible(true)}
-                  className="mt-4 flex-row items-center rounded-2xl border border-dashed border-blue-200 bg-blue-50 px-4 py-4"
+                  className="mt-4 flex-row items-center rounded-2xl border border-dashed border-brand-border bg-brand-subtle px-4 py-4"
                 >
-                  <Truck size={22} color="#0000FF" />
-                  <Text className="ml-3 flex-1 text-base font-extrabold text-[#0000ff]">
+                  <Truck size={22} color={APP_BRAND_COLOR} />
+                  <Text className="ml-3 flex-1 text-base font-extrabold text-brand">
                     Thêm địa chỉ giao hàng
                   </Text>
                 </TouchableOpacity>
@@ -783,7 +784,7 @@ function CheckoutScreen() {
                   </Text>
                   <CurrencyTotals
                     totals={summary.currencyTotals}
-                    textClassName="text-lg font-extrabold text-[#0000ff]"
+                    textClassName="text-lg font-extrabold text-brand"
                   />
                 </View>
               </View>
@@ -809,7 +810,7 @@ function CheckoutScreen() {
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={() => setAddressSheetVisible(true)}
-                className="min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] px-5"
+                className="min-h-[50px] flex-row items-center justify-center rounded-full bg-brand px-5"
               >
                 <Truck size={19} color="#FFFFFF" />
                 <Text className="ml-2 text-base font-extrabold text-white">
@@ -821,7 +822,7 @@ function CheckoutScreen() {
                 activeOpacity={0.9}
                 disabled={vm.isPaying}
                 onPress={vm.openConfirm}
-                className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] px-5 ${
+                className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand px-5 ${
                   vm.isPaying ? 'opacity-70' : ''
                 }`}
               >

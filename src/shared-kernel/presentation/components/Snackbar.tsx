@@ -1,4 +1,5 @@
 // Description: Provides the single app-wide Snackbar host and notification API.
+import { APP_BRAND_COLOR } from '../theme/appColors';
 import React, {
   createContext,
   useCallback,
@@ -69,7 +70,7 @@ const PALETTE = {
     icon: AlertTriangle,
   },
   info: {
-    accent: '#0000FF',
+    accent: APP_BRAND_COLOR,
     background: '#EFF6FF',
     border: '#BFDBFE',
     icon: Info,

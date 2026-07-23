@@ -26,6 +26,10 @@
 // have it open at a time. Position is measured from the pressed button so
 // the pill floats just above the actual tap location.
 
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -1413,7 +1417,7 @@ function ReelCommentsSheetBase({
 
           {isInitialLoading && !isInline ? (
             <View style={styles.stateBox}>
-              <ActivityIndicator color="#0866ff" size="small" />
+              <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
               <Text style={styles.stateText}>{copy.loadingComments}</Text>
             </View>
           ) : error && comments.length === 0 && !isInline ? (
@@ -1475,7 +1479,7 @@ function ReelCommentsSheetBase({
                     {listHeaderComponent}
                     {isInitialLoading || isRefreshingComments ? (
                       <View style={styles.refreshingHeader}>
-                        <ActivityIndicator color="#0866ff" size="small" />
+                        <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
                         <Text style={styles.refreshingHeaderText}>
                           {copy.loadingComments}
                         </Text>
@@ -1518,7 +1522,7 @@ function ReelCommentsSheetBase({
               ListFooterComponent={
                 isLoadingMore ? (
                   <View style={styles.footerLoader}>
-                    <ActivityIndicator color="#0866ff" size="small" />
+                    <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
                   </View>
                 ) : error ? (
                   <Text style={styles.inlineError}>{error}</Text>
@@ -1644,7 +1648,7 @@ function ReelCommentsSheetBase({
               style={styles.imageButton}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
             >
-              <ImagePlus size={22} color={editingComment ? '#cbd5e1' : '#1877f2'} />
+              <ImagePlus size={22} color={editingComment ? '#cbd5e1' : APP_BRAND_COLOR} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1915,7 +1919,7 @@ function CommentPhotoPickerSheet({
           >
             <View style={styles.photoPickerOptionMainRow}>
               <View style={[styles.photoPickerOptionIcon, styles.actionSheetPhotoIcon]}>
-                <Camera size={26} color="#2563eb" />
+                <Camera size={26} color={APP_BRAND_COLOR} />
               </View>
               <Text
                 allowFontScaling={false}
@@ -1939,7 +1943,7 @@ function CommentPhotoPickerSheet({
               {takePhotoHint}
             </Text>
             <View pointerEvents="none" style={styles.photoPickerChevronBox}>
-              <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+              <ChevronRight size={25} color={APP_BRAND_COLOR} strokeWidth={3} />
             </View>
           </Pressable>
 
@@ -1976,7 +1980,7 @@ function CommentPhotoPickerSheet({
               {chooseFromLibraryHint}
             </Text>
             <View pointerEvents="none" style={styles.photoPickerChevronBox}>
-              <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+              <ChevronRight size={25} color={APP_BRAND_COLOR} strokeWidth={3} />
             </View>
           </Pressable>
         </View>
@@ -2023,7 +2027,7 @@ function CommentActionSheet({
   const isReportOnly = showReport && !showRetry && !showEdit && !showDelete;
   const isRetryMenu = showRetry;
   const heroIcon = isRetryMenu ? (
-    <RotateCcw size={32} color="#2563eb" />
+    <RotateCcw size={32} color={APP_BRAND_COLOR} />
   ) : isReportOnly ? (
     <Flag size={32} color="#ef4444" />
   ) : (
@@ -2091,7 +2095,7 @@ function CommentActionSheet({
             >
               <View style={styles.commentActionOptionMainRow}>
                 <View style={[styles.commentActionOptionIcon, styles.commentActionPrimaryIcon]}>
-                  <RotateCcw size={26} color="#2563eb" />
+                  <RotateCcw size={26} color={APP_BRAND_COLOR} />
                 </View>
                 <Text
                   allowFontScaling={false}
@@ -2115,7 +2119,7 @@ function CommentActionSheet({
                 {copy.retryHint}
               </Text>
               <View pointerEvents="none" style={styles.commentActionChevronBox}>
-                <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+                <ChevronRight size={25} color={APP_BRAND_COLOR} strokeWidth={3} />
               </View>
             </Pressable>
           ) : null}
@@ -2155,7 +2159,7 @@ function CommentActionSheet({
                 {copy.editHint}
               </Text>
               <View pointerEvents="none" style={styles.commentActionChevronBox}>
-                <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+                <ChevronRight size={25} color={APP_BRAND_COLOR} strokeWidth={3} />
               </View>
             </Pressable>
           ) : null}
@@ -2332,7 +2336,7 @@ function ReplyBanner({ replyingTo, snippet, onCancelReply }: ReplyBannerProps) {
 }
 
 function renderReactionIcon(reaction: ReactionType) {
-  let bgColor = '#0866ff';
+  let bgColor: string = REACTION_COLOR.like;
   if (reaction === 'love') {
     bgColor = '#f33e58';
   } else if (reaction === 'haha') {
@@ -2767,7 +2771,7 @@ function CommentRow({
     inputRange: [0, 1],
     outputRange:
       Platform.OS === 'ios'
-        ? ['#ffffff', '#eff6ff']
+        ? ['#ffffff', APP_COLORS.brand.soft]
         : ['#f0f2f5', '#e0f2fe'],
   });
 
@@ -3139,7 +3143,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     borderRadius: 999,
-    backgroundColor: '#0866ff',
+    backgroundColor: APP_BRAND_COLOR,
     paddingHorizontal: 18,
     paddingVertical: 9,
   },
@@ -3318,7 +3322,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   adminBadgeText: {
-    color: '#1877f2',
+    color: APP_BRAND_COLOR,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -3328,7 +3332,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   commentMentionText: {
-    color: '#1877f2',
+    color: APP_BRAND_COLOR,
     fontWeight: '700',
   },
   commentImageWrap: {
@@ -3546,7 +3550,7 @@ const styles = StyleSheet.create({
   replyBarIndicator: {
     width: 3,
     height: 24,
-    backgroundColor: '#0866ff',
+    backgroundColor: APP_BRAND_COLOR,
     borderRadius: 1.5,
     marginRight: 10,
   },
@@ -3561,7 +3565,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   replyBarMention: {
-    color: '#0866ff',
+    color: APP_BRAND_COLOR,
     fontWeight: '700',
   },
   replyBarSnippet: {
@@ -3616,7 +3620,7 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     marginLeft: 8,
-    backgroundColor: '#0866ff',
+    backgroundColor: APP_BRAND_COLOR,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3714,7 +3718,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   recordingText: {
-    color: '#b91c1c',
+    color: APP_COLORS.status.destructive,
     fontFamily: FONT_PRIMARY,
     fontSize: 13,
     fontWeight: '700',
@@ -3882,7 +3886,7 @@ const styles = StyleSheet.create({
     borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#eef2ff',
+    backgroundColor: APP_COLORS.brand.soft,
     marginRight: 14,
     flexShrink: 0,
   },
@@ -3990,7 +3994,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   photoPickerCancelText: {
-    color: '#2563eb',
+    color: APP_BRAND_COLOR,
     fontFamily: FONT_PRIMARY,
     fontSize: 15,
     lineHeight: 20,
@@ -4028,10 +4032,10 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   commentActionHeroPrimaryIcon: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   commentActionHeroNeutralIcon: {
-    backgroundColor: '#eef2ff',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   commentActionHeroDangerIcon: {
     backgroundColor: '#fff1f2',
@@ -4092,7 +4096,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   commentActionPrimaryOptionCard: {
-    borderColor: '#bfdbfe',
+    borderColor: APP_COLORS.brand.border,
   },
   commentActionNeutralOptionCard: {
     borderColor: '#e1e7f0',
@@ -4124,7 +4128,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   commentActionPrimaryOptionText: {
-    color: '#2563eb',
+    color: APP_BRAND_COLOR,
     fontFamily: FONT_PRIMARY,
     fontSize: 15,
     lineHeight: 20,
@@ -4182,8 +4186,8 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
   },
   commentActionPrimaryTile: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
+    backgroundColor: APP_COLORS.brand.soft,
+    borderColor: APP_COLORS.brand.border,
   },
   commentActionDangerTile: {
     backgroundColor: '#fff7f8',
@@ -4198,16 +4202,16 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   commentActionNeutralIcon: {
-    backgroundColor: '#eef2ff',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   commentActionPrimaryIcon: {
-    backgroundColor: '#dbeafe',
+    backgroundColor: APP_COLORS.brand.softPressed,
   },
   commentActionDangerIcon: {
     backgroundColor: '#ffe4e6',
   },
   commentActionPrimaryText: {
-    color: '#0866ff',
+    color: APP_BRAND_COLOR,
     fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
@@ -4234,20 +4238,20 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   actionSheetPhotoIcon: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   actionSheetLibraryIcon: {
-    backgroundColor: '#eef2ff',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   actionSheetPrimaryIcon: {
-    backgroundColor: '#dbeafe',
+    backgroundColor: APP_COLORS.brand.softPressed,
   },
   actionSheetDangerIcon: {
     backgroundColor: '#ffe4e6',
   },
   actionSheetPrimaryText: {
     flex: 1,
-    color: '#0866ff',
+    color: APP_BRAND_COLOR,
     fontSize: 15,
     fontWeight: '800',
   },

@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { memo, useMemo } from 'react';
 import { Image, Text, Pressable, View } from 'react-native';
 import { Play } from 'lucide-react-native';
@@ -67,7 +68,7 @@ function StoryGridCellImpl({ row, copy, onPress }: StoryGridCellProps) {
                   width: 140,
                   height: 140,
                   borderRadius: 70,
-                  backgroundColor: '#4F46E5',
+                  backgroundColor: APP_BRAND_COLOR,
                   opacity: 0.35,
                 }}
               />
@@ -127,7 +128,7 @@ function StoryGridCellImpl({ row, copy, onPress }: StoryGridCellProps) {
                 height: 10,
                 width: 10,
                 borderRadius: 5,
-                backgroundColor: '#2563EB',
+                backgroundColor: APP_BRAND_COLOR,
                 borderWidth: 1.5,
                 borderColor: '#FFFFFF',
               }}
@@ -155,7 +156,7 @@ function StoryGridCellImpl({ row, copy, onPress }: StoryGridCellProps) {
                 justifyContent: 'center',
                 backgroundColor: '#FFFFFF',
                 borderWidth: 2,
-                borderColor: (row.hasUnseen && !row.isViewed) ? '#2563EB' : 'rgba(255, 255, 255, 0.6)',
+                borderColor: (row.hasUnseen && !row.isViewed) ? APP_BRAND_COLOR : 'rgba(255, 255, 255, 0.6)',
                 padding: 1.5,
               }}
             >

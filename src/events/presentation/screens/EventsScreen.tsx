@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA events list with event discovery and app-bar create navigation.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -37,7 +38,7 @@ import { showSnackbar as showToast } from '../../../shared-kernel/presentation/c
 
 type EventsNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 function formatEventDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '--/--/--';
@@ -275,7 +276,7 @@ function EventsScreen() {
         </ScrollView>
 
         <TouchableOpacity
-          className="my-2 ml-2 min-w-[78px] flex-row items-center justify-center rounded-md bg-[#0000ff] px-3"
+          className="my-2 ml-2 min-w-[78px] flex-row items-center justify-center rounded-md bg-brand px-3"
           activeOpacity={0.82}
           onPress={() => navigation.navigate(ROUTES.CREATE_EVENT)}
         >

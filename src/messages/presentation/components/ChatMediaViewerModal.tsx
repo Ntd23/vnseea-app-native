@@ -248,7 +248,7 @@ function ChatVideoViewer({ uri, onClose }: { uri: string; onClose: () => void })
               >
                 <View className="h-1.5 overflow-hidden rounded-full bg-white/20">
                   <View
-                    className="h-full rounded-full bg-blue-500"
+                    className="h-full rounded-full bg-brand"
                     style={{
                       width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
                     }}

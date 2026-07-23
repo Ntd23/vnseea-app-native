@@ -5,6 +5,7 @@
 // Data is driven entirely by `useSettingsViewModel` — this component
 // has no business logic of its own; it just lays out the sections and
 // forwards taps back to the screen via `onItemPress`.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import { Pressable, Switch, Text, View } from 'react-native';
 import {
@@ -69,7 +70,7 @@ function SectionLabel({ children }: { children: string }) {
 
 function SurfaceCard({ children }: { children: React.ReactNode }) {
   return (
-    <View className="overflow-hidden rounded-2xl border border-[rgba(0,0,255,0.06)] bg-white shadow-sm">
+    <View className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {children}
     </View>
   );
@@ -89,19 +90,19 @@ function BoardRow({
   trailing?: React.ReactNode;
 }) {
   const IconComponent = ICON_MAP[item.iconKey];
-  const iconColor = item.isDestructive ? '#ef4444' : '#0000ff';
+  const iconColor = item.isDestructive ? '#ef4444' : APP_BRAND_COLOR;
   const textColorClass = item.isDestructive
     ? 'text-[#ef4444]'
     : 'text-[#1a1c1e]';
 
   return (
     <Pressable
-      android_ripple={{ color: 'rgba(0,0,255,0.08)' }}
+      android_ripple={{ color: 'rgba(185,28,28,0.08)' }}
       onPress={onPress}
       className={`flex-row items-center gap-4 px-5 py-4 ${
-        !isLast ? 'border-b border-[rgba(0,0,255,0.06)]' : ''
+        !isLast ? 'border-b border-slate-200' : ''
       }`}>
-      <View className="h-9 w-9 items-center justify-center rounded-xl bg-[rgba(0,0,255,0.08)]">
+      <View className="h-9 w-9 items-center justify-center rounded-xl bg-brand-subtle">
         {IconComponent ? (
           <IconComponent size={18} color={iconColor} />
         ) : (
@@ -145,11 +146,11 @@ function WalletPointsHeader({
   return (
     <View className="flex-row gap-3">
       <Pressable
-        android_ripple={{ color: 'rgba(0,0,255,0.08)' }}
-        className="flex-1 rounded-2xl border border-[rgba(0,0,255,0.08)] bg-white p-4 shadow-sm">
+        android_ripple={{ color: 'rgba(185,28,28,0.08)' }}
+        className="flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <View className="mb-2 flex-row items-center gap-2">
-          <View className="h-8 w-8 items-center justify-center rounded-full bg-[rgba(0,0,255,0.1)]">
-            <Wallet size={16} color="#0000ff" />
+          <View className="h-8 w-8 items-center justify-center rounded-full bg-brand-subtle">
+            <Wallet size={16} color={APP_BRAND_COLOR} />
           </View>
           <Text className="text-[12px] font-semibold uppercase tracking-wide text-[#64748b]">
             {labels.wallet}
@@ -164,11 +165,11 @@ function WalletPointsHeader({
       </Pressable>
 
       <Pressable
-        android_ripple={{ color: 'rgba(0,0,255,0.08)' }}
-        className="flex-1 rounded-2xl border border-[rgba(0,0,255,0.08)] bg-white p-4 shadow-sm">
+        android_ripple={{ color: 'rgba(185,28,28,0.08)' }}
+        className="flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <View className="mb-2 flex-row items-center gap-2">
-          <View className="h-8 w-8 items-center justify-center rounded-full bg-[rgba(0,0,255,0.1)]">
-            <Banknote size={16} color="#0000ff" />
+          <View className="h-8 w-8 items-center justify-center rounded-full bg-brand-subtle">
+            <Banknote size={16} color={APP_BRAND_COLOR} />
           </View>
           <Text className="text-[12px] font-semibold uppercase tracking-wide text-[#64748b]">
             {labels.points}
@@ -308,7 +309,7 @@ export default function SettingsMenuBoard({
                     <Switch
                       value={Boolean(isNightMode)}
                       onValueChange={next => onToggleNightMode?.(next)}
-                      trackColor={{ false: '#cbd5e1', true: '#0000ff' }}
+                      trackColor={{ false: '#cbd5e1', true: APP_BRAND_COLOR }}
                       thumbColor="#ffffff"
                     />
                   }

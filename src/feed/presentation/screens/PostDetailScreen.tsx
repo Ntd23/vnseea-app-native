@@ -10,6 +10,7 @@
 // request on mount (even when the route already has a `post` param)
 // so the user sees the full data set the backend exposes, not the
 // trimmed shape the feed list carries.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -326,8 +327,8 @@ function AlbumGrid({
   return (
     <View className="mt-3">
       <View className="flex-row items-center px-4 pb-2">
-        <View className="h-7 w-7 items-center justify-center rounded-lg bg-[#0000ff]/10">
-          <Bookmark size={14} color="#0000ff" />
+        <View className="h-7 w-7 items-center justify-center rounded-lg bg-brand/10">
+          <Bookmark size={14} color={APP_BRAND_COLOR} />
         </View>
         <Text className="ml-2 text-title-primary" numberOfLines={1}>
           {album.name}
@@ -429,7 +430,7 @@ function LikedUsersPreview({
                   resizeMode="cover"
                 />
               ) : (
-                <View className="h-full w-full items-center justify-center rounded-full bg-[#0000ff]/10">
+                <View className="h-full w-full items-center justify-center rounded-full bg-brand/10">
                   <Text className="text-caption-secondary text-brand">
                     {readName(raw).charAt(0).toUpperCase()}
                   </Text>
@@ -624,8 +625,8 @@ function PostActions({
         >
           <Bookmark
             size={18}
-            color={post.isSaved ? '#0000ff' : '#64748b'}
-            fill={post.isSaved ? '#0000ff' : 'none'}
+            color={post.isSaved ? APP_BRAND_COLOR : '#64748b'}
+            fill={post.isSaved ? APP_BRAND_COLOR : 'none'}
           />
           <Text
             className={`ml-2 text-caption-primary ${
@@ -1054,7 +1055,7 @@ function PostDetailScreen() {
             postDetailSwipeBackCueStyle,
           ]}
         >
-          <ArrowLeft size={18} color="#1877F2" strokeWidth={2.6} />
+          <ArrowLeft size={18} color={APP_BRAND_COLOR} strokeWidth={2.6} />
           <Text style={postDetailStyles.swipeBackCueText}>
             {language === 'vi' ? 'Vuốt để quay lại' : 'Swipe to go back'}
           </Text>
@@ -1096,7 +1097,7 @@ function PostDetailScreen() {
           </View>
         </View>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#0000ff" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
           <Text className="mt-3 text-caption-secondary">
             Đang tải bài viết...
           </Text>
@@ -1410,7 +1411,7 @@ const postDetailStyles = StyleSheet.create({
   },
   swipeBackCueText: {
     marginLeft: 7,
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
     fontSize: 13,
     fontWeight: '900',
   },

@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -51,7 +52,7 @@ export function PinnedMessagesBanner({
   if (!isLoading && pinnedMessages.length === 0) return null;
 
   return (
-    <View className="border-b border-blue-100 bg-blue-50/80 px-3 py-1.5">
+    <View className="border-b border-brand-border bg-brand-subtle px-3 py-1.5">
       <View className="min-h-10 flex-row items-center">
         <TouchableOpacity
           activeOpacity={0.75}
@@ -63,7 +64,7 @@ export function PinnedMessagesBanner({
           accessibilityRole="button"
           accessibilityLabel="Mở tin nhắn ghim mới nhất"
         >
-          <Pin size={17} color="#1d4ed8" fill="#1d4ed8" />
+          <Pin size={17} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
           <Text
             className="ml-2 flex-1 text-sm font-semibold text-blue-950"
             numberOfLines={1}
@@ -75,7 +76,7 @@ export function PinnedMessagesBanner({
         </TouchableOpacity>
 
         {isLoading && pinnedMessages.length === 0 ? (
-          <ActivityIndicator size="small" color="#2563eb" />
+          <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
         ) : (
           <TouchableOpacity
             className="h-10 w-10 items-center justify-center"
@@ -89,9 +90,9 @@ export function PinnedMessagesBanner({
             }
           >
             {expanded ? (
-              <ChevronUp size={20} color="#1d4ed8" />
+              <ChevronUp size={20} color={APP_BRAND_COLOR} />
             ) : (
-              <ChevronDown size={20} color="#1d4ed8" />
+              <ChevronDown size={20} color={APP_BRAND_COLOR} />
             )}
           </TouchableOpacity>
         )}
@@ -107,14 +108,14 @@ export function PinnedMessagesBanner({
             <TouchableOpacity
               key={message.id}
               className={`min-h-12 flex-row items-center py-2 ${
-                index > 0 ? 'border-t border-blue-100' : ''
+                index > 0 ? 'border-t border-brand-border' : ''
               }`}
               activeOpacity={0.75}
               onPress={() => onOpenMessage(message.id)}
             >
-              <Pin size={15} color="#2563eb" />
+              <Pin size={15} color={APP_BRAND_COLOR} />
               <View className="ml-2 flex-1">
-                <Text className="text-xs font-semibold text-blue-800">
+                <Text className="text-xs font-semibold text-brand-pressed">
                   {getPinnedActorName(message, partnerName)} đã ghim
                 </Text>
                 <Text className="mt-0.5 text-sm text-gray-800" numberOfLines={2}>

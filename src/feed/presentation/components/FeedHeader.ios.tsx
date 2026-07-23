@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Image,
@@ -119,7 +120,7 @@ export const FeedHeader = React.memo(function FeedHeader() {
               accessibilityLabel="Search"
               onPress={() => navigation.navigate(ROUTES.SEARCH)}
             >
-              <Search size={19} color="#002fff" strokeWidth={2.55} />
+              <Search size={19} color={APP_BRAND_COLOR} strokeWidth={2.55} />
             </HeaderGlassActionButton>
             <HeaderGlassActionButton
               accessibilityLabel="Messages"
@@ -134,13 +135,13 @@ export const FeedHeader = React.memo(function FeedHeader() {
                 ) : null
               }
             >
-              <MessageCircle size={19} color="#002fff" strokeWidth={2.55} />
+              <MessageCircle size={19} color={APP_BRAND_COLOR} strokeWidth={2.55} />
             </HeaderGlassActionButton>
             <HeaderGlassActionButton
               accessibilityLabel="Profile Menu"
               onPress={handleOpenFutureDrawer}
             >
-              <Menu size={19} color="#002fff" strokeWidth={2.55} />
+              <Menu size={19} color={APP_BRAND_COLOR} strokeWidth={2.55} />
             </HeaderGlassActionButton>
           </View>
         </AdaptiveGlassSurface>
@@ -188,14 +189,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoPill: {
-    backgroundColor: '#002fff',
+    backgroundColor: APP_BRAND_COLOR,
     borderRadius: 15,
     paddingHorizontal: 10,
     height: 32,
     minWidth: 110,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#002fff',
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.18,
     shadowRadius: 10,
@@ -243,7 +244,7 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#002fff',
+    backgroundColor: APP_BRAND_COLOR,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,

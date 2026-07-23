@@ -1,4 +1,5 @@
 // Description: Edits the authenticated user's public profile details.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -281,7 +282,7 @@ function SchoolCompletedCheckbox({
       <View
         className={`h-5 w-5 items-center justify-center rounded border ${
           selected
-            ? 'border-blue-600 bg-blue-600'
+            ? 'border-brand bg-brand'
             : 'border-slate-300 bg-white'
         }`}
       >
@@ -343,18 +344,18 @@ function RelationshipModal({
                 onPress={() => onSelect(option.id)}
                 className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
                   selected
-                    ? 'border-blue-600 bg-blue-50'
+                    ? 'border-brand bg-brand-subtle'
                     : 'border-slate-100 bg-white'
                 }`}
               >
                 <Text
                   className={`flex-1 text-[16px] font-semibold ${
-                    selected ? 'text-blue-700' : 'text-slate-800'
+                    selected ? 'text-brand-pressed' : 'text-slate-800'
                   }`}
                 >
                   {option.label[language]}
                 </Text>
-                {selected ? <Check size={22} color="#0000ff" /> : null}
+                {selected ? <Check size={22} color={APP_BRAND_COLOR} /> : null}
               </TouchableOpacity>
             );
           })}
@@ -455,7 +456,7 @@ function EditProfileScreen({ navigation }: EditProfileScreenProps) {
           </Text>
         </View>
         <View className="flex-1 items-center justify-center px-8">
-          <ActivityIndicator size="large" color="#0000ff" />
+          <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
           <Text className="mt-4 text-center text-[15px] text-slate-500">
             {copy.loading}
           </Text>
@@ -619,7 +620,7 @@ function EditProfileScreen({ navigation }: EditProfileScreenProps) {
             disabled={isSaving}
             onPress={handleSave}
             className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
-              isSaving ? 'bg-blue-300' : 'bg-blue-600'
+              isSaving ? 'bg-brand/40' : 'bg-brand'
             }`}
           >
             {isSaving ? (

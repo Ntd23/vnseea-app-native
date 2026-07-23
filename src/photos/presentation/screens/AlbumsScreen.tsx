@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA albums screen with real album data from API.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect } from 'react';
 import {
   Image,
@@ -23,7 +24,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 
 type AlbumsNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 function mapPrivacyToText(privacy: string): string {
   switch (privacy) {
@@ -101,7 +102,7 @@ function LegacyAlbumsScreen() {
             Tạo album đầu tiên để chia sẻ khoảnh khắc với cộng đồng
           </Text>
           <TouchableOpacity
-            className="mt-6 min-w-[200px] rounded-lg bg-[#0000ff] py-3"
+            className="mt-6 min-w-[200px] rounded-lg bg-brand py-3"
             activeOpacity={0.85}
             onPress={() => navigation.navigate(ROUTES.CREATE_ALBUM)}
           >
@@ -159,7 +160,7 @@ function LegacyAlbumsScreen() {
       >
         {/* Info Card */}
         <View className="surface-card mb-5 flex-row items-center p-4">
-          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-[#0000ff]/10">
+          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-brand/10">
             <Images size={28} color={BRAND} />
           </View>
           <View className="ml-4 flex-1">
@@ -199,11 +200,11 @@ function LegacyAlbumsScreen() {
               {error}
             </Text>
             <TouchableOpacity
-              className="mt-6 min-w-[150px] rounded-lg border border-[#0000ff] bg-transparent py-3"
+              className="mt-6 min-w-[150px] rounded-lg border border-brand bg-transparent py-3"
               activeOpacity={0.85}
               onPress={retry}
             >
-              <Text className="text-center text-[14px] font-semibold text-[#0000ff]">
+              <Text className="text-center text-[14px] font-semibold text-brand">
                 Thử lại
               </Text>
             </TouchableOpacity>
@@ -297,11 +298,11 @@ function AlbumsScreen() {
           <Text className="pb-3 text-sm font-bold text-slate-700">
             {isVi ? 'Album của tôi' : 'My albums'}
           </Text>
-          <View className="h-2 bg-[#0000ff]" />
+          <View className="h-2 bg-brand" />
         </View>
         <TouchableOpacity
           activeOpacity={0.84}
-          className="mb-2 ml-auto h-9 flex-row items-center rounded-[6px] bg-[#0000ff] px-3"
+          className="mb-2 ml-auto h-9 flex-row items-center rounded-[6px] bg-brand px-3"
           onPress={() => navigation.navigate(ROUTES.CREATE_ALBUM)}
         >
           <Plus size={17} color="#FFFFFF" />
@@ -319,8 +320,8 @@ function AlbumsScreen() {
         <View className="flex-1 items-center justify-center px-8">
           <Images size={42} color="#ef4444" />
           <Text className="mt-4 text-center text-sm text-red-500">{error}</Text>
-          <TouchableOpacity className="mt-5 rounded-[5px] border border-[#0000ff] px-6 py-2.5" onPress={retry}>
-            <Text className="font-semibold text-[#0000ff]">{isVi ? 'Thử lại' : 'Retry'}</Text>
+          <TouchableOpacity className="mt-5 rounded-[5px] border border-brand px-6 py-2.5" onPress={retry}>
+            <Text className="font-semibold text-brand">{isVi ? 'Thử lại' : 'Retry'}</Text>
           </TouchableOpacity>
         </View>
       ) : albums.length === 0 ? (

@@ -1,4 +1,5 @@
 // Description: VNSEEA post-share sheet with an inline composer and carousels.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -133,7 +134,7 @@ function ShareEntityCarousel({
       </Text>
       {isLoading ? (
         <View className="min-h-[94px] items-center justify-center">
-          <ActivityIndicator color="#0000ff" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
         </View>
       ) : entities.length === 0 ? (
         <View className="rounded-lg bg-slate-50 p-3">
@@ -157,7 +158,7 @@ function ShareEntityCarousel({
                 onPress={() => onSelect(entity.id)}
                 className={`mr-3 w-[158px] flex-row items-center rounded-lg border p-2.5 ${
                   selected
-                    ? 'border-[#0000ff] bg-indigo-50'
+                    ? 'border-brand bg-brand-soft'
                     : 'border-slate-200 surface-card'
                 }`}
               >
@@ -905,7 +906,7 @@ export function FeedShareBottomSheet({
                 activeOpacity={0.88}
                 disabled={isSharing || messageRecipientIdsToSend.length === 0}
                 onPress={handleSendMessages}
-                className={`min-h-12 flex-row items-center justify-center rounded-lg bg-[#0000ff] px-4 ${
+                className={`min-h-12 flex-row items-center justify-center rounded-lg bg-brand px-4 ${
                   isSharing || messageRecipientIdsToSend.length === 0
                     ? 'opacity-40'
                     : ''

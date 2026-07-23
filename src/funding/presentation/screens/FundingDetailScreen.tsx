@@ -1,4 +1,8 @@
 // Description: Renders the funding detail screen with dynamic localization, 2026 design tokens, and tactile micro-interactions.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -62,7 +66,7 @@ function formatDate(timestamp?: any, fallback?: string) {
   }
 }
 
-const BRAND_COLOR = '#2563FF';
+const BRAND_COLOR = APP_BRAND_COLOR;
 
 const DETAIL_COPY = {
   vi: {
@@ -317,7 +321,7 @@ function DonateModal({
               value={amount}
               onChangeText={text => setAmount(text.replace(/[^0-9]/g, ''))}
             />
-            <View className="ml-2 rounded-lg bg-[#EFF6FF] px-2.5 py-1">
+            <View className="ml-2 rounded-lg bg-brand-soft px-2.5 py-1">
               <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>
                 {currencySymbol}
               </Text>
@@ -710,7 +714,7 @@ function FundingDetailScreen() {
 
             {/* Badges footer */}
             <View className="mt-3.5 flex-row items-center justify-between">
-              <View className="rounded-full bg-[#EFF6FF] px-2.5 py-0.5 border border-[#DBEAFE]">
+              <View className="rounded-full bg-brand-soft px-2.5 py-0.5 border border-brand-border">
                 <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>
                   {percent}% {copy.completed}
                 </Text>
@@ -792,7 +796,7 @@ function FundingDetailScreen() {
       >
         {isOwner ? (
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: APP_COLORS.brand.soft, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
               <ShieldCheck size={20} color={BRAND_COLOR} />
             </View>
             <View style={{ flex: 1 }}>
@@ -805,7 +809,7 @@ function FundingDetailScreen() {
                   : 'You cannot donate to your own campaign.'}
               </Text>
             </View>
-            <View style={{ backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
+            <View style={{ backgroundColor: APP_COLORS.brand.soft, borderWidth: 1, borderColor: APP_COLORS.brand.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND_COLOR }}>
                 {language === 'vi' ? 'QUẢN TRỊ' : 'OWNER'}
               </Text>

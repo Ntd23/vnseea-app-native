@@ -1,5 +1,9 @@
 // Description: Renders the withdrawal screen with SePay payout form and payment history.
 
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -161,7 +165,7 @@ function MethodPickerModal({
               >
                 {method.label}
               </Text>
-              {active ? <Check size={18} color="#0000ff" /> : null}
+              {active ? <Check size={18} color={APP_BRAND_COLOR} /> : null}
             </TouchableOpacity>
           );
         })}
@@ -276,7 +280,7 @@ function BankPickerModal({
                   </Text>
                   <Text style={pickerStyles.bankSubLabel}>{bank.name}</Text>
                 </View>
-                {active ? <Check size={18} color="#0000ff" /> : null}
+                {active ? <Check size={18} color={APP_BRAND_COLOR} /> : null}
               </TouchableOpacity>
             );
           })}
@@ -439,7 +443,7 @@ function WithdrawalScreen() {
 
           {isRefreshing ? (
             <View className="surface-card mb-4 items-center px-4 py-6">
-              <ActivityIndicator size="small" color="#0000ff" />
+              <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
             </View>
           ) : null}
 
@@ -472,7 +476,7 @@ function WithdrawalScreen() {
                         'Chọn ngân hàng'}
                     </Text>
                     {isBanksLoading ? (
-                      <ActivityIndicator size="small" color="#0000ff" />
+                      <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                     ) : (
                       <ChevronDown size={18} color="#64748b" />
                     )}
@@ -581,7 +585,7 @@ function WithdrawalScreen() {
 
           <View className="surface-card overflow-hidden">
             <View style={historyStyles.header}>
-              <Clock3 size={18} color="#0000ff" />
+              <Clock3 size={18} color={APP_BRAND_COLOR} />
               <Text style={historyStyles.title}>Lịch sử thanh toán</Text>
             </View>
             <View style={historyStyles.columns}>
@@ -667,7 +671,7 @@ const pickerStyles = StyleSheet.create({
     color: '#0f172a',
   },
   rowLabelActive: {
-    color: '#0000ff',
+    color: APP_BRAND_COLOR,
     fontWeight: '800',
   },
   bankList: {
@@ -833,16 +837,16 @@ const formStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
-    backgroundColor: '#0000ff',
+    backgroundColor: APP_BRAND_COLOR,
     paddingHorizontal: 24,
-    shadowColor: '#0000ff',
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 7,
     elevation: 5,
   },
   submitBtnDisabled: {
-    backgroundColor: '#818cf8',
+    backgroundColor: APP_COLORS.neutral.iconMuted,
   },
   submitText: {
     fontSize: 16,

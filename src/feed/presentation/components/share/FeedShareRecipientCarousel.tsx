@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -70,7 +71,7 @@ export function FeedShareRecipientCarousel({
             activeOpacity={0.85}
             disabled={disabled}
             onPress={onRetry}
-            className="mt-2 min-h-10 self-start justify-center rounded-lg bg-[#0000ff] px-4"
+            className="mt-2 min-h-10 self-start justify-center rounded-lg bg-brand px-4"
           >
             <Text className="text-[12px] font-extrabold text-white">
               {retryLabel}
@@ -81,7 +82,7 @@ export function FeedShareRecipientCarousel({
 
       {isLoading ? (
         <View className="min-h-[116px] items-center justify-center">
-          <ActivityIndicator color="#0000ff" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
           <Text className="mt-2 text-[12px] font-semibold text-slate-500">
             {loadingLabel}
           </Text>
@@ -116,7 +117,7 @@ export function FeedShareRecipientCarousel({
               >
                 <View
                   className={`relative rounded-full border-2 p-0.5 ${
-                    selected ? 'border-[#0000ff]' : 'border-transparent'
+                    selected ? 'border-brand' : 'border-transparent'
                   }`}
                 >
                   <Image
@@ -135,7 +136,7 @@ export function FeedShareRecipientCarousel({
                   ) : selected || sent ? (
                     <View
                       className={`absolute -bottom-0.5 -right-0.5 h-5 w-5 items-center justify-center rounded-full border-2 border-white ${
-                        failed ? 'bg-red-600' : 'bg-[#0000ff]'
+                        failed ? 'bg-red-600' : 'bg-brand'
                       }`}
                     >
                       {failed ? (

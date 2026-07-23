@@ -1,4 +1,5 @@
 // Description: Shopee-style page location picker with Google search and a fixed center pin.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -803,7 +804,7 @@ export default function PageLocationPickerModal({
               autoCorrect={false}
               returnKeyType="search"
             />
-            {isSearching ? <ActivityIndicator size="small" color="#002fff" /> : null}
+            {isSearching ? <ActivityIndicator size="small" color={APP_BRAND_COLOR} /> : null}
           </View>
 
           {predictions.length > 0 ? (
@@ -819,7 +820,7 @@ export default function PageLocationPickerModal({
                     onPress={() => handleSelectPrediction(item)}
                   >
                     <View style={styles.predictionIcon}>
-                      <MapPin size={17} color="#002fff" />
+                      <MapPin size={17} color={APP_BRAND_COLOR} />
                     </View>
                     <View style={styles.predictionCopy}>
                       <Text style={styles.predictionMain} numberOfLines={1}>
@@ -846,7 +847,7 @@ export default function PageLocationPickerModal({
           <Text style={styles.dragHint}>{copy.dragHint}</Text>
           <View style={styles.addressRow}>
             <View style={styles.addressIcon}>
-              <MapPin size={19} color="#002fff" />
+              <MapPin size={19} color={APP_BRAND_COLOR} />
             </View>
             <View style={styles.addressCopy}>
               <Text style={styles.addressLabel}>{copy.enteredAddress}</Text>
@@ -855,7 +856,7 @@ export default function PageLocationPickerModal({
               </Text>
               {isResolving ? (
                 <View style={styles.resolvingRow}>
-                  <ActivityIndicator size="small" color="#002fff" />
+                  <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                   <Text style={styles.resolvingText}>{copy.resolving}</Text>
                 </View>
               ) : nearbyAddress ? (
@@ -887,7 +888,7 @@ export default function PageLocationPickerModal({
               onPress={handleUseCurrentLocation}
               style={styles.currentLocationButton}
             >
-              <LocateFixed size={18} color="#002fff" />
+              <LocateFixed size={18} color={APP_BRAND_COLOR} />
               <Text style={styles.currentLocationText}>{copy.useCurrent}</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1180,7 +1181,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 48,
     borderRadius: 13,
-    backgroundColor: '#002fff',
+    backgroundColor: APP_BRAND_COLOR,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

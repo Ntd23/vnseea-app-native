@@ -1,4 +1,5 @@
 // Description: Renders the no-footer forgot password screen using the real auth API.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -156,17 +157,17 @@ function ForgotPasswordScreen() {
             <Animated.View
               pointerEvents="none"
               className="absolute -right-14 -top-14 h-36 w-36 rounded-full"
-              style={[{ backgroundColor: 'rgba(0,0,255,0.04)' }, circle1Style]}
+              style={[{ backgroundColor: 'rgba(185,28,28,0.04)' }, circle1Style]}
             />
             <Animated.View
               pointerEvents="none"
               className="absolute -bottom-12 -left-16 h-36 w-36 rounded-full"
-              style={[{ backgroundColor: 'rgba(0,0,255,0.035)' }, circle2Style]}
+              style={[{ backgroundColor: 'rgba(185,28,28,0.035)' }, circle2Style]}
             />
             <Animated.View
               pointerEvents="none"
               className="absolute right-24 top-28 h-11 w-11 rounded-full"
-              style={[{ backgroundColor: 'rgba(0,0,255,0.05)' }, circle3Style]}
+              style={[{ backgroundColor: 'rgba(185,28,28,0.05)' }, circle3Style]}
             />
             <View pointerEvents="none" className="absolute left-7 top-10">
               {Array.from({ length: 12 }).map((_, index) => (
@@ -197,10 +198,10 @@ function ForgotPasswordScreen() {
 
             <View className="items-center justify-center px-8 pt-4">
               <Animated.View
-                className="mb-3 h-16 w-44 items-center justify-center overflow-hidden rounded-[16px] border-[3px] border-white bg-[#0000ff]"
+                className="mb-3 h-16 w-44 items-center justify-center overflow-hidden rounded-[16px] border-[3px] border-white bg-brand"
                 style={[
                   {
-                    shadowColor: '#0000ff',
+                    shadowColor: APP_BRAND_COLOR,
                     shadowOffset: { width: 0, height: 10 },
                     shadowOpacity: 0.12,
                     shadowRadius: 20,
@@ -235,9 +236,9 @@ function ForgotPasswordScreen() {
           >
             <View className="items-center">
               <View className="relative mb-4 h-16 w-16 items-center justify-center rounded-full bg-[#EEF4FF]">
-                <RefreshCcw size={28} color="#0000ff" strokeWidth={2.5} />
+                <RefreshCcw size={28} color={APP_BRAND_COLOR} strokeWidth={2.5} />
                 <View className="absolute h-6 w-6 items-center justify-center rounded-full bg-[#EEF4FF]">
-                  <LockKeyhole size={14} color="#0000ff" strokeWidth={2.5} />
+                  <LockKeyhole size={14} color={APP_BRAND_COLOR} strokeWidth={2.5} />
                 </View>
               </View>
               <Text className="text-center text-[18px] font-bold text-slate-900">
@@ -257,15 +258,15 @@ function ForgotPasswordScreen() {
                 style={{
                   height: 44,
                   borderWidth: isEmailFocused ? 1.5 : 1,
-                  borderColor: isEmailFocused ? '#0000ff' : 'rgba(0, 0, 255, 0.08)',
-                  shadowColor: '#0000ff',
+                  borderColor: isEmailFocused ? APP_BRAND_COLOR : 'rgba(185, 28, 28, 0.18)',
+                  shadowColor: APP_BRAND_COLOR,
                   shadowOffset: { width: 0, height: 4 },
                   shadowOpacity: isEmailFocused ? 0.08 : 0,
                   shadowRadius: 10,
                   elevation: isEmailFocused ? 2 : 0,
                 }}
               >
-                <Mail size={18} color="#0000ff" />
+                <Mail size={18} color={APP_BRAND_COLOR} />
                 <TextInput
                   className="ml-2.5 flex-1 text-[14px] font-medium text-slate-900"
                   placeholder={copy.emailPlaceholder}
@@ -288,10 +289,10 @@ function ForgotPasswordScreen() {
             </View>
 
             <TouchableOpacity
-              className="mt-6 flex-row items-center justify-center rounded-full bg-[#0000ff]"
+              className="mt-6 flex-row items-center justify-center rounded-full bg-brand"
               style={{
                 height: 46,
-                shadowColor: '#0000ff',
+                shadowColor: APP_BRAND_COLOR,
                 shadowOffset: { width: 0, height: 6 },
                 shadowOpacity: 0.12,
                 shadowRadius: 12,
@@ -320,7 +321,7 @@ function ForgotPasswordScreen() {
             ) : null}
 
             {passwordResetSent ? (
-              <Text className="mt-3 text-center text-[12px] font-semibold text-[#0000ff]">
+              <Text className="mt-3 text-center text-[12px] font-semibold text-brand">
                 {copy.resetEmailSent}
               </Text>
             ) : null}
@@ -342,7 +343,7 @@ function ForgotPasswordScreen() {
               activeOpacity={0.8}
               onPress={() => navigation.navigate(ROUTES.LOGIN)}
             >
-              <ArrowLeft size={16} color="#0000ff" />
+              <ArrowLeft size={16} color={APP_BRAND_COLOR} />
             </TouchableOpacity>
             <TouchableOpacity
               className="ml-3"

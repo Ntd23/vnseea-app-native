@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA single-page create/edit product form.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
@@ -59,7 +60,7 @@ import AddressAutocomplete from '../../../shared-kernel/presentation/components/
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
 
-const PRODUCT_HEADER_COLOR = '#5252ff';
+const PRODUCT_HEADER_COLOR = APP_BRAND_COLOR;
 
 type RootStackParamList = {
   Feed: undefined;
@@ -358,10 +359,10 @@ function BottomSheetSelector<T>({
                     onClose();
                   }}
                 >
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: isSelected ? '#5252ff' : '#334155' }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: isSelected ? APP_BRAND_COLOR : '#334155' }}>
                     {item.name}
                   </Text>
-                  {isSelected ? <Check size={18} color="#5252ff" /> : null}
+                  {isSelected ? <Check size={18} color={APP_BRAND_COLOR} /> : null}
                 </TouchableOpacity>
               );
             }}
@@ -1053,7 +1054,7 @@ export default function CreateProductScreen() {
               flex: 2,
               minHeight: 52,
               borderRadius: 26,
-              backgroundColor: '#0000ff',
+              backgroundColor: APP_BRAND_COLOR,
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isLoading ? 0.6 : 1,

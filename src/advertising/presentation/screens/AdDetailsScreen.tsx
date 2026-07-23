@@ -36,6 +36,7 @@ import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAr
 import { Pressable } from 'react-native';
 import type { AdDailyStats } from '../../domain/types/ads.types';
 import { createAdsRepository } from '../../infrastructure/repositories/ApiAdsRepository';
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 
 type AdDetailsNav = NativeStackNavigationProp<RootStackParamList>;
 type AdDetailsRoute = RouteProp<RootStackParamList, typeof ROUTES.AD_DETAILS>;
@@ -125,7 +126,7 @@ function DailyStatsChart({ dailyStats, copy }: { dailyStats: AdDailyStats[]; cop
               <Text className="w-16 text-xs text-[#64748b]">{copy.viewsLabel}</Text>
               <View className="flex-1 rounded bg-slate-200">
                 <View
-                  className="rounded bg-blue-500"
+                  className="rounded bg-brand"
                   style={{ width: `${(day.views / maxViews) * 100}%` }}
                 />
               </View>
@@ -200,7 +201,7 @@ function AdDetailsScreen() {
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-body-secondary text-center">{copy.notFound}</Text>
           <TouchableOpacity
-            className="mt-4 rounded-xl bg-blue-700 px-6 py-3"
+            className="mt-4 rounded-xl bg-brand-pressed px-6 py-3"
             onPress={() => navigation.goBack()}
           >
             <Text className="text-body-primary font-semibold text-white">{copy.goBack}</Text>
@@ -275,7 +276,7 @@ function AdDetailsScreen() {
               elevation: 2,
             }}
           >
-            <Edit size={18} color="#1d4ed8" />
+            <Edit size={18} color={APP_BRAND_COLOR} />
           </Pressable>
         </View>
 
@@ -297,7 +298,7 @@ function AdDetailsScreen() {
 
           {/* Tags */}
           <View className="mb-6 flex-row flex-wrap gap-2">
-            <View className="rounded-full bg-[#eef2ff] px-3 py-1">
+            <View className="rounded-full bg-brand-soft px-3 py-1">
               <Text className="text-xs font-semibold text-[#3730a3]">{getAppearsLabel(ad.appears, copy)}</Text>
             </View>
             <View className="rounded-full bg-[#f1f5f9] px-3 py-1">

@@ -1,4 +1,8 @@
 // Description: Shows WoWonder pages list with search, tabs, creation, verified badges, and animations.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -49,7 +53,7 @@ import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAr
 
 type PagesNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#3435F7';
+const BRAND = APP_BRAND_COLOR;
 const TEXT = '#0F172A';
 const MUTED = '#64748B';
 const BORDER = '#E2E8F4';
@@ -566,7 +570,7 @@ function PageCard({
           {page.pageTitle || page.pageName || 'Trang'}
         </Text>
         {page.verified ? (
-          <BadgeCheck size={18} color="#0084FF" fill="#0084FF" />
+          <BadgeCheck size={18} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
         ) : null}
       </TouchableOpacity>
 
@@ -596,11 +600,11 @@ function PageCard({
           width: 44,
           height: 44,
           borderRadius: 22,
-          backgroundColor: '#0084FF',
+          backgroundColor: APP_BRAND_COLOR,
           alignItems: 'center',
           justifyContent: 'center',
           marginTop: 18,
-          shadowColor: '#0084FF',
+          shadowColor: APP_BRAND_COLOR,
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.2,
           shadowRadius: 6,
@@ -969,13 +973,13 @@ const styles = StyleSheet.create({
   viewPageBtn: {
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#0000FF',
+    backgroundColor: APP_BRAND_COLOR,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     flexShrink: 1,
-    shadowColor: '#0000FF',
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
     shadowRadius: 10,
@@ -1008,7 +1012,7 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     borderWidth: 4,
     borderColor: '#FFFFFF',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.brand.soft,
     alignItems: 'center',
     justifyContent: 'center',
   },

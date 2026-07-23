@@ -1,4 +1,8 @@
 // Description: Renders real saved posts for the Settings -> Saved screen.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
@@ -200,8 +204,8 @@ function EmptyState({
 }) {
   return (
     <View className="items-center px-6 py-16">
-      <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}>
-        <Bookmark size={38} color="#002fff" fill="#002fff" />
+      <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: APP_COLORS.brand.soft, alignItems: 'center', justifyContent: 'center' }}>
+        <Bookmark size={38} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
       </View>
       <Text className="mt-5 text-center text-[#0f172a]" style={{ fontSize: 17, fontWeight: '800' }}>
         {error ? copy.errorTitle : copy.emptyTitle}
@@ -213,7 +217,7 @@ function EmptyState({
         style={{
           marginTop: 24,
           minHeight: 46,
-          backgroundColor: '#002fff',
+          backgroundColor: APP_BRAND_COLOR,
           borderRadius: 12,
           paddingHorizontal: 24,
           alignItems: 'center',
@@ -251,11 +255,11 @@ function SavedThumbnail({ item }: { item: SavedItem }) {
   return (
     <View style={{ width: 96, height: 96, borderRadius: 18, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>
       {item.kind === 'photo' ? (
-        <ImageIcon size={28} color="#002fff" />
+        <ImageIcon size={28} color={APP_BRAND_COLOR} />
       ) : item.kind === 'video' ? (
-        <Play size={28} color="#002fff" fill="#002fff" />
+        <Play size={28} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
       ) : (
-        <FileText size={28} color="#002fff" />
+        <FileText size={28} color={APP_BRAND_COLOR} />
       )}
     </View>
   );
@@ -398,8 +402,8 @@ function SavedPostsScreen() {
                   activeOpacity={0.7}
                   onPress={() => handleShare(item)}
                 >
-                  <Share2 size={15} color="#002fff" />
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#002fff', marginLeft: 6 }}>
+                  <Share2 size={15} color={APP_BRAND_COLOR} />
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: APP_BRAND_COLOR, marginLeft: 6 }}>
                     {copy.share}
                   </Text>
                 </TouchableOpacity>
@@ -459,7 +463,7 @@ function SavedPostsScreen() {
           activeOpacity={0.7}
           onPress={() => navigation.navigate(ROUTES.SEARCH)}
         >
-          <Search size={20} color="#002fff" />
+          <Search size={20} color={APP_BRAND_COLOR} />
         </TouchableOpacity>
       </View>
 
@@ -474,8 +478,8 @@ function SavedPostsScreen() {
           <RefreshControl
             refreshing={vm.isRefreshing}
             onRefresh={vm.refresh}
-            tintColor="#002fff"
-            colors={['#002fff']}
+            tintColor={APP_BRAND_COLOR}
+            colors={[APP_BRAND_COLOR]}
           />
         }
         onEndReached={vm.loadMore}
@@ -484,7 +488,7 @@ function SavedPostsScreen() {
           <>
             <View
               style={{
-                backgroundColor: '#f0f3ff',
+                backgroundColor: APP_COLORS.brand.soft,
                 borderRadius: 24,
                 padding: 16,
                 flexDirection: 'row',
@@ -494,7 +498,7 @@ function SavedPostsScreen() {
               }}
             >
               <View style={{ flex: 1, marginRight: 16 }}>
-                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#002fff', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: APP_BRAND_COLOR, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
                   <Bookmark size={22} color="#ffffff" fill="#ffffff" />
                 </View>
                 <Text style={{ fontSize: 20, fontWeight: '800', color: '#0f172a' }}>{copy.bannerTitle}</Text>
@@ -522,7 +526,7 @@ function SavedPostsScreen() {
                         paddingHorizontal: 16,
                         paddingVertical: 8,
                         borderRadius: 20,
-                        backgroundColor: isActive ? '#002fff' : '#ffffff',
+                        backgroundColor: isActive ? APP_BRAND_COLOR : '#ffffff',
                         borderWidth: isActive ? 0 : 1,
                         borderColor: '#e2e8f0',
                       }}
@@ -553,7 +557,7 @@ function SavedPostsScreen() {
         ListFooterComponent={
           vm.isLoadingMore ? (
             <View style={{ paddingVertical: 16 }}>
-              <ActivityIndicator color="#002fff" />
+              <ActivityIndicator color={APP_BRAND_COLOR} />
             </View>
           ) : null
         }

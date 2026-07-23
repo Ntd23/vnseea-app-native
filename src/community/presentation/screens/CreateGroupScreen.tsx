@@ -1,4 +1,5 @@
 // Description: Renders a multi-step create group form and submits it to WoWonder.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -65,7 +66,7 @@ type SiteSettingsResponse = {
   group_categories?: Record<string, string> | Array<Record<string, unknown>>;
 };
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const GROUP_URL_PREFIX = `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/`;
 const GROUP_CATEGORIES: GroupCategory[] = [
   { id: '1', label: 'Hài kịch' },
@@ -358,10 +359,10 @@ function BottomSheetSelect({
                         setOpen(false);
                       }}
                       className={`min-h-[52px] flex-row items-center border-b border-slate-100 px-4 ${
-                        isSelected ? 'bg-blue-50' : 'bg-white'
+                        isSelected ? 'bg-brand-subtle' : 'bg-white'
                       }`}
                     >
-                      <Text className={`flex-1 text-body-primary ${isSelected ? 'text-[#0000ff]' : 'text-slate-700'}`}>
+                      <Text className={`flex-1 text-body-primary ${isSelected ? 'text-brand' : 'text-slate-700'}`}>
                         {option.label}
                       </Text>
                       {isSelected ? <CheckCircle2 size={19} color={BRAND} /> : null}
@@ -392,14 +393,14 @@ function ProgressBar({ step }: { step: number }) {
     <View className="mb-6 flex-row gap-2">
       {STEPS.map((label, index) => (
         <View key={label} className="flex-1">
-          <View className="h-1 overflow-hidden rounded-full bg-blue-100">
+          <View className="h-1 overflow-hidden rounded-full bg-brand-soft">
             {index <= step ? (
-              <View className="h-full w-full rounded-full bg-[#0000ff]" />
+              <View className="h-full w-full rounded-full bg-brand" />
             ) : null}
           </View>
           <Text
             className={`mt-2 text-center text-[11px] ${
-              index <= step ? 'text-blue-700' : 'text-slate-400'
+              index <= step ? 'text-brand-pressed' : 'text-slate-400'
             }`}
           >
             {label}
@@ -432,7 +433,7 @@ function PrivacyOption({
       activeOpacity={0.84}
       onPress={() => onPress(value)}
     >
-      <View className="h-12 w-12 items-center justify-center rounded-full bg-blue-50">
+      <View className="h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
         <Icon size={23} color={BRAND} />
       </View>
       <View className="ml-4 flex-1">
@@ -909,7 +910,7 @@ function CreateGroupScreen() {
             {activeEditTab === 'general' ? (
               <View className="bg-white px-4 pb-8 pt-5">
                 <View className="mb-5 flex-row items-center">
-                  <View className="h-8 w-8 items-center justify-center rounded-full bg-[#0000ff]">
+                  <View className="h-8 w-8 items-center justify-center rounded-full bg-brand">
                     <Shapes size={17} color="#FFFFFF" />
                   </View>
                   <Text className="ml-2 text-title-primary">{copy.tabGeneral}</Text>
@@ -966,7 +967,7 @@ function CreateGroupScreen() {
                   activeOpacity={0.86}
                   disabled={isLoading}
                   onPress={handleSaveEdit}
-                  className="mt-7 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-[#0000ff]"
+                  className="mt-7 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-brand"
                 >
                   {isLoading ? (
                     <ActivityIndicator color="#FFFFFF" />
@@ -980,7 +981,7 @@ function CreateGroupScreen() {
             {activeEditTab === 'privacy' ? (
               <View className="bg-white px-4 pb-8 pt-5">
                 <View className="mb-5 flex-row items-center">
-                  <View className="h-8 w-8 items-center justify-center rounded-full bg-[#0000ff]">
+                  <View className="h-8 w-8 items-center justify-center rounded-full bg-brand">
                     <Lock size={17} color="#FFFFFF" />
                   </View>
                   <Text className="ml-2 text-title-primary">{copy.tabPrivacy}</Text>
@@ -1010,7 +1011,7 @@ function CreateGroupScreen() {
                   activeOpacity={0.86}
                   disabled={isLoading}
                   onPress={handleSaveEdit}
-                  className="mt-5 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-[#0000ff]"
+                  className="mt-5 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-brand"
                 >
                   {isLoading ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-title-primary text-inverse">Lưu</Text>}
                 </TouchableOpacity>
@@ -1020,7 +1021,7 @@ function CreateGroupScreen() {
             {activeEditTab === 'media' ? (
               <View className="bg-white pb-8 pt-5">
                 <View className="mb-5 flex-row items-center px-4">
-                  <View className="h-8 w-8 items-center justify-center rounded-full bg-[#0000ff]">
+                  <View className="h-8 w-8 items-center justify-center rounded-full bg-brand">
                     <Camera size={17} color="#FFFFFF" />
                   </View>
                   <Text className="ml-2 text-title-primary">{copy.tabMedia}</Text>
@@ -1065,7 +1066,7 @@ function CreateGroupScreen() {
                     activeOpacity={0.86}
                     disabled={isSavingMedia}
                     onPress={handleSaveMedia}
-                    className="mt-7 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-[#0000ff]"
+                    className="mt-7 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-brand"
                   >
                     {isSavingMedia ? (
                       <ActivityIndicator color="#FFFFFF" />
@@ -1080,7 +1081,7 @@ function CreateGroupScreen() {
             {activeEditTab === 'members' ? (
               <View className="bg-white px-4 pb-8 pt-5">
                 <View className="mb-5 flex-row items-center">
-                  <View className="h-8 w-8 items-center justify-center rounded-full bg-[#0000ff]">
+                  <View className="h-8 w-8 items-center justify-center rounded-full bg-brand">
                     <Users size={17} color="#FFFFFF" />
                   </View>
                   <Text className="ml-2 text-title-primary">{copy.tabMembers}</Text>
@@ -1130,7 +1131,7 @@ function CreateGroupScreen() {
                               {member.username ? `@${member.username}` : `ID ${member.userId}`}
                             </Text>
                             {member.isAdmin ? (
-                              <Text className="mt-1 text-caption-primary text-[#0000ff]">
+                              <Text className="mt-1 text-caption-primary text-brand">
                                 Quản trị viên
                               </Text>
                             ) : null}
@@ -1190,7 +1191,7 @@ function CreateGroupScreen() {
                               setIsAnalyticsRangeOpen(false);
                             }}
                             className={`min-h-[44px] justify-center px-4 ${
-                              selected ? 'bg-blue-600' : 'bg-white'
+                              selected ? 'bg-brand' : 'bg-white'
                             }`}
                           >
                             <Text className={`text-body-primary ${selected ? 'text-white' : 'text-slate-700'}`}>
@@ -1233,7 +1234,7 @@ function CreateGroupScreen() {
                   activeOpacity={0.86}
                   disabled={isLoading}
                   onPress={handleDeleteGroup}
-                  className="mt-7 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-[#0000ff]"
+                  className="mt-7 min-h-[46px] w-32 self-center items-center justify-center rounded-lg bg-brand"
                 >
                   {isLoading ? (
                     <ActivityIndicator color="#FFFFFF" />
@@ -1406,7 +1407,7 @@ function CreateGroupScreen() {
               minWidth: 128,
               minHeight: 46,
               borderRadius: 23,
-              backgroundColor: '#002fff',
+              backgroundColor: APP_BRAND_COLOR,
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isCreating ? 0.7 : 1,

@@ -21,6 +21,10 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 
 type AddressNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -280,7 +284,7 @@ function AddressScreen() {
       {/* Main List */}
       {isLoading && addresses.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#2563eb" />
+          <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
         </View>
       ) : (
         <FlatList
@@ -325,7 +329,7 @@ function AddressScreen() {
                   onPress={() => handleEditPress(item)}
                   className="h-10 w-10 items-center justify-center rounded-full bg-sky-100"
                 >
-                  <Pencil size={18} color="#0284c7" />
+                  <Pencil size={18} color={APP_BRAND_COLOR} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
@@ -482,9 +486,9 @@ function AddressScreen() {
                   activeOpacity={0.85}
                   disabled={isSaving}
                   onPress={handleSaveAddress}
-                  className="min-h-[48px] px-8 bg-blue-600 rounded-2xl items-center justify-center flex-row"
+                  className="min-h-[48px] px-8 bg-brand rounded-2xl items-center justify-center flex-row"
                   style={{
-                    shadowColor: '#2563eb',
+                    shadowColor: APP_COLORS.brand.shadow,
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: 0.15,
                     shadowRadius: 6,

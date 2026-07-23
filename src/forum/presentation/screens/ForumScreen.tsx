@@ -1,6 +1,7 @@
 // Description: Renders the phtml-aligned forum tabs for browsing, members, search, personal threads, and messages.
 // Port từ: client/src/forum/presentation/pages/ForumPage.vue
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -72,7 +73,7 @@ function LegacyForumScreen() {
   if (vm.isLoading && !vm.catalog) {
     return (
       <View className="flex-1 items-center justify-center bg-white">
-        <ActivityIndicator size="large" color="#0000FF" />
+        <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
       </View>
     );
   }
@@ -83,7 +84,7 @@ function LegacyForumScreen() {
       edges={['top']}
     >
       {/* Header */}
-      <View className="bg-blue-600 p-4">
+      <View className="bg-brand p-4">
         <Text className="text-white text-xl font-bold">{copy.title}</Text>
       </View>
 
@@ -214,8 +215,8 @@ function ForumSelectSheet({
                     onClose();
                   }}
                 >
-                  <View className={`mr-3 h-5 w-5 rounded-full border ${active ? 'border-[#0000ff] bg-[#0000ff]' : 'border-slate-300'}`} />
-                  <Text className={`text-base ${active ? 'font-bold text-[#0000ff]' : 'text-slate-700'}`}>
+                  <View className={`mr-3 h-5 w-5 rounded-full border ${active ? 'border-brand bg-brand' : 'border-slate-300'}`} />
+                  <Text className={`text-base ${active ? 'font-bold text-brand' : 'text-slate-700'}`}>
                     {option.label}
                   </Text>
                 </TouchableOpacity>
@@ -342,7 +343,7 @@ export default function ForumScreen() {
       >
         {sections.map(section => (
           <View key={section.id} className="mb-3 bg-white">
-            <View className="bg-[#0000ff] px-4 py-3">
+            <View className="bg-brand px-4 py-3">
               <Text className="font-bold text-white">{section.title}</Text>
             </View>
             {section.forums.map(renderForum)}
@@ -357,7 +358,7 @@ export default function ForumScreen() {
       className="flex-1 bg-white"
       refreshControl={<RefreshControl refreshing={vm.isLoading} onRefresh={refreshCurrentTab} />}
     >
-      <View className="bg-[#0000ff] px-3 py-3">
+      <View className="bg-brand px-3 py-3">
         <Text className="mb-1 text-sm text-white">{language === 'vi' ? 'Danh sách người dùng' : 'User list'}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator>
           <TouchableOpacity onPress={() => setMemberLetter('')} className="mr-2">
@@ -444,7 +445,7 @@ export default function ForumScreen() {
       <SelectField label={language === 'vi' ? 'Loại tìm kiếm' : 'Search type'} value={findLabel(typeOptions, searchContent ? '1' : '0')} onPress={() => setSheet('type')} />
       <SelectField label={language === 'vi' ? 'Tìm kiếm ở' : 'Search in'} value={findLabel(scopeOptions, searchScope)} onPress={() => setSheet('scope')} />
       <SelectField label={language === 'vi' ? 'Phần tìm kiếm' : 'Search section'} value={findLabel(sectionOptions, sectionId)} onPress={() => setSheet('section')} />
-      <TouchableOpacity style={{ height: 46 }} disabled={vm.isLoading} className="mx-auto mt-1 w-[122px] items-center justify-center rounded-[6px] bg-[#0000ff]" onPress={submitSearch}>
+      <TouchableOpacity style={{ height: 46 }} disabled={vm.isLoading} className="mx-auto mt-1 w-[122px] items-center justify-center rounded-[6px] bg-brand" onPress={submitSearch}>
         {vm.isLoading ? <ActivityIndicator color="#FFFFFF" /> : <Text className="font-bold text-white">{language === 'vi' ? 'Tìm kiếm' : 'Search'}</Text>}
       </TouchableOpacity>
       {renderSearchResults()}
@@ -476,7 +477,7 @@ export default function ForumScreen() {
             return (
               <TouchableOpacity style={{ height: 52 }} key={tab.key} className="mr-1 justify-end px-3" onPress={() => setActiveTab(tab.key)}>
                 <Text className={`pb-3 text-sm ${active ? 'font-bold text-slate-800' : 'text-slate-500'}`}>{language === 'vi' ? tab.vi : tab.en}</Text>
-                <View className={`h-2 ${active ? 'bg-[#0000ff]' : 'bg-transparent'}`} />
+                <View className={`h-2 ${active ? 'bg-brand' : 'bg-transparent'}`} />
               </TouchableOpacity>
             );
           })}
@@ -491,7 +492,7 @@ export default function ForumScreen() {
 
       {vm.isLoading && activeTab !== 'search' && (
         <View pointerEvents="none" className="absolute inset-x-0 top-60 items-center">
-          <ActivityIndicator color="#0000ff" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
         </View>
       )}
       {!!vm.error && <Text className="bg-red-50 px-4 py-2 text-center text-red-600">{vm.error}</Text>}

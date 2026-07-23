@@ -1,4 +1,5 @@
 // Description: Shared feed chrome filter tabs used by home feed and group detail surfaces.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useMemo } from 'react';
 import { Compass, Image as ImageIcon, MapPin, ShoppingBag, Video } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -25,7 +26,7 @@ export function FeedFilterTabs({
         icon: (active: boolean) => (
           <Compass
             size={24}
-            color={active ? '#0758ff' : '#9ca3af'}
+            color={active ? APP_BRAND_COLOR : '#9ca3af'}
             strokeWidth={active ? 2.5 : 2.0}
           />
         ),
@@ -48,7 +49,7 @@ export function FeedFilterTabs({
         icon: (active: boolean) => (
           <ImageIcon
             size={24}
-            color={active ? '#0758ff' : '#9ca3af'}
+            color={active ? APP_BRAND_COLOR : '#9ca3af'}
             strokeWidth={active ? 2.5 : 2.0}
           />
         ),

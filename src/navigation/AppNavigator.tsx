@@ -8,6 +8,7 @@ import { createStackRoutes } from './routeRegistry';
 import type { RootStackParamList } from './types';
 import MainTabNavigator from './MainTabNavigator';
 import { navigationRef } from './navigationRef';
+import { VNSEEA_NAVIGATION_THEME } from './navigationTheme';
 import { sessionStorage } from '../shared-kernel/infrastructure/storage/sessionStorage';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -67,7 +68,7 @@ function AppNavigator() {
     : ROUTES.LOGIN;
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} theme={VNSEEA_NAVIGATION_THEME}>
       <Stack.Navigator
         initialRouteName={initialRouteName}
         screenOptions={{ headerShown: false }}

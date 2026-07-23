@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA search filter screen with Stitch styling and filter.png functionality.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState } from 'react';
 import {
   ScrollView,
@@ -72,10 +73,10 @@ function FilterRow({
 }) {
   return (
     <TouchableOpacity
-      className="min-h-[64px] flex-row items-center border-b border-[rgba(0,0,255,0.08)]"
+      className="min-h-[64px] flex-row items-center border-b border-slate-200"
       activeOpacity={0.75}
     >
-      <Icon size={28} color="#0000ff" strokeWidth={1.9} />
+      <Icon size={28} color={APP_BRAND_COLOR} strokeWidth={1.9} />
       <Text className="ml-4 flex-1 text-title-primary">{label}</Text>
       <Text className="mr-3 text-title-secondary">{value}</Text>
       <ChevronRight size={20} color="#94A3B8" />
@@ -100,7 +101,7 @@ function SearchFilterScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={APP_BRAND_COLOR} />
 
       <View className="surface-brand h-16 flex-row items-center justify-center px-4">
         <TouchableOpacity
@@ -120,7 +121,7 @@ function SearchFilterScreen() {
       >
         <View className="surface-card mb-5 p-5">
           <View className="mb-5 flex-row items-center">
-            <UserRound size={28} color="#0000ff" strokeWidth={1.8} />
+            <UserRound size={28} color={APP_BRAND_COLOR} strokeWidth={1.8} />
             <Text className="ml-4 text-heading">{copy.gender}</Text>
           </View>
 
@@ -130,7 +131,7 @@ function SearchFilterScreen() {
                 key={item}
                 className={`min-h-[44px] flex-1 items-center justify-center rounded-full border ${
                   gender === item
-                    ? 'border-[#0000ff] bg-[#0000ff]'
+                    ? 'border-brand bg-brand'
                     : 'border-[#e2e8f0] bg-white'
                 }`}
                 activeOpacity={0.85}
@@ -151,13 +152,13 @@ function SearchFilterScreen() {
         <View className="surface-card mb-5 p-5">
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center">
-              <Cake size={28} color="#0000ff" strokeWidth={1.8} />
+              <Cake size={28} color={APP_BRAND_COLOR} strokeWidth={1.8} />
               <Text className="ml-4 text-heading">{copy.age}</Text>
             </View>
             <TouchableOpacity
               className={`h-8 w-14 rounded-full px-1 ${
                 ageEnabled
-                  ? 'items-end bg-[#0000ff]'
+                  ? 'items-end bg-brand'
                   : 'items-start bg-[#cbd5e1]'
               } justify-center`}
               activeOpacity={0.8}

@@ -177,9 +177,10 @@ describe('FeedShareBottomSheet', () => {
       destinationCarouselSource,
     ].join('\n');
 
-    expect(shareUiSource).not.toMatch(/\b(?:bg|border)-brand\b/);
-    expect(composerSource).toContain('bg-[#0000ff]');
+    expect(shareUiSource).toMatch(/\bbg-brand\b/);
+    expect(composerSource).toContain('bg-brand');
     expect(composerSource).toContain('text-white');
-    expect(source).toContain('bg-[#0000ff]');
+    expect(source).toContain('bg-brand');
+    expect(shareUiSource).not.toContain('bg-[#0000ff]');
   });
 });

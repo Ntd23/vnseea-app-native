@@ -1,6 +1,7 @@
 // Description: Compact stat card shown at the top of the Explore screen.
 // Uses the brand-aligned translucent surface so it floats above the page
 // background and reads as "primary metric".
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import { Text, View, type ViewStyle } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
@@ -13,7 +14,7 @@ export interface StatPillProps {
   style?: ViewStyle;
 }
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 function StatPill({ Icon, value, label, brandTint, style }: StatPillProps) {
   return (
@@ -26,7 +27,7 @@ function StatPill({ Icon, value, label, brandTint, style }: StatPillProps) {
     >
       <View
         className={`h-9 w-9 items-center justify-center rounded-full ${
-          brandTint ? 'bg-[#0000ff]/12' : 'bg-[#0000ff]/8'
+          brandTint ? 'bg-brand/12' : 'bg-brand/8'
         }`}
       >
         <Icon size={18} color={BRAND} strokeWidth={2.2} />

@@ -8,8 +8,8 @@ class VnseeaColorPicker: NSObject, UIColorPickerViewControllerDelegate,
   UIAdaptivePresentationControllerDelegate {
   private var pendingResolve: RCTPromiseResolveBlock?
   private var pendingReject: RCTPromiseRejectBlock?
-  private var initialHex = "#3B82F6"
-  private var selectedHex = "#3B82F6"
+  private var initialHex = "#B91C1C"
+  private var selectedHex = "#B91C1C"
 
   static func moduleName() -> String! {
     "VnseeaColorPicker"
@@ -42,7 +42,7 @@ class VnseeaColorPicker: NSObject, UIColorPickerViewControllerDelegate,
         return
       }
 
-      let normalizedInitialHex = self.normalizedHex(initialHex) ?? "#3B82F6"
+      let normalizedInitialHex = self.normalizedHex(initialHex) ?? "#B91C1C"
       let picker = UIColorPickerViewController()
       picker.delegate = self
       picker.selectedColor = self.color(from: normalizedInitialHex)

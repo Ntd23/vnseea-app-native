@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA job detail screen with real API data from job listing.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -34,7 +35,7 @@ import { createJobsRepository } from '../../infrastructure/repositories/ApiJobsR
 type JobDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type JobDetailRoute = RouteProp<RootStackParamList, 'JobDetail'>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const jobsRepository = createJobsRepository();
 
 function formatTimeAgo(timestamp: number, copy: Record<string, string>): string {
@@ -108,7 +109,7 @@ function JobDetailScreen() {
         <View className="flex-1 items-center justify-center">
           <Text className="text-slate-500">{language === 'vi' ? 'Không có thông tin việc làm' : 'Job information not found'}</Text>
           <Pressable
-            className="mt-4 rounded-full bg-[#0000ff] px-6 py-3"
+            className="mt-4 rounded-full bg-brand px-6 py-3"
             onPress={() => navigation.goBack()}
           >
             <Text className="text-white">{language === 'vi' ? 'Quay lại' : 'Back'}</Text>

@@ -1,5 +1,9 @@
 // Description: Renders the canonical Messages conversation list with user, broadcast, and group tabs.
 
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -822,7 +826,7 @@ function getMessagePreview(
 
       return {
 
-        icon: <ShoppingBag size={14} color="#2563eb" />,
+        icon: <ShoppingBag size={14} color={APP_COLORS.status.info} />,
 
         text: `${
           isFromMe ? copy.orderRequestMe : copy.orderRequest
@@ -848,7 +852,7 @@ function getMessagePreview(
 
       return {
 
-        icon: <Link2 size={14} color="#2563eb" />,
+        icon: <Link2 size={14} color={APP_COLORS.status.info} />,
 
         text: `${isFromMe ? copy.sentLinkMe : copy.sentLink}${host ? ` · ${host}` : ''}`,
 
@@ -860,7 +864,7 @@ function getMessagePreview(
 
       return {
 
-        icon: <Newspaper size={14} color="#2563eb" />,
+        icon: <Newspaper size={14} color={APP_COLORS.status.info} />,
 
         text: isFromMe ? copy.sharedPostMe : copy.sharedPost,
 
@@ -1014,7 +1018,7 @@ function UserAvatar({
 
       <View
 
-        className="items-center justify-center rounded-full bg-blue-100"
+        className="items-center justify-center rounded-full bg-brand-soft"
 
         style={{ width: size, height: size }}
 
@@ -1022,7 +1026,7 @@ function UserAvatar({
 
         <Text
 
-          className="font-bold text-blue-600"
+          className="font-bold text-brand"
 
           style={{ fontSize: size ? size * 0.35 : 16 }}
 
@@ -1066,7 +1070,7 @@ function UnreadBadge({ count }: { count: number }) {
 
   return (
 
-    <View className="min-h-6 min-w-6 items-center justify-center rounded-full bg-blue-500 px-2">
+    <View className="min-h-6 min-w-6 items-center justify-center rounded-full bg-brand px-2">
 
       <Text className="text-xs font-bold text-white">
 
@@ -1255,7 +1259,7 @@ function ChatListItem({
 
             {chat.isVerified && (
 
-              <CheckCircle2 size={14} color="#3b82f6" className="ml-1" />
+              <CheckCircle2 size={14} color={APP_COLORS.status.info} className="ml-1" />
 
             )}
 
@@ -1271,7 +1275,7 @@ function ChatListItem({
 
                   alignItems: 'center',
 
-                  backgroundColor: '#dbeafe',
+                  backgroundColor: APP_COLORS.brand.soft,
 
                   paddingHorizontal: 6,
 
@@ -1285,9 +1289,9 @@ function ChatListItem({
 
               >
 
-                <UserPlus size={10} color="#2563eb" />
+                <UserPlus size={10} color={APP_BRAND_COLOR} />
 
-                <Text style={{ fontSize: 10, color: '#2563eb', fontWeight: '600' }}>
+                <Text style={{ fontSize: 10, color: APP_BRAND_COLOR, fontWeight: '600' }}>
 
                   Bạn bè mới
 
@@ -1378,11 +1382,11 @@ function ChatListItem({
                 chat.unreadCount > 0
 
                   ? chat.lastMessageKind === 'link'
-                    ? 'font-semibold text-blue-700'
+                    ? 'font-semibold text-brand-pressed'
                     : 'font-medium text-gray-800'
 
                   : chat.lastMessageKind === 'link'
-                    ? 'text-blue-600'
+                    ? 'text-brand'
                     : 'text-gray-500'
 
               }`}
@@ -1411,7 +1415,7 @@ function ChatListItem({
 
                 selected
 
-                  ? 'border-blue-600 bg-blue-600'
+                  ? 'border-brand bg-brand'
 
                   : 'border-gray-300 bg-white'
 
@@ -1596,9 +1600,9 @@ function EmptyChats({
 
     <View className="flex-1 items-center justify-center px-8">
 
-      <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-blue-50">
+      <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-brand-subtle">
 
-        <MessageCircle size={48} color="#3b82f6" />
+        <MessageCircle size={48} color={APP_BRAND_COLOR} />
 
       </View>
 
@@ -1688,7 +1692,7 @@ function ErrorState({
 
       <TouchableOpacity
 
-        className="rounded-full bg-blue-500 px-6 py-3"
+        className="rounded-full bg-brand px-6 py-3"
 
         activeOpacity={0.8}
 
@@ -1834,7 +1838,7 @@ function ChatFilters({
 
           >
 
-            <Icon size={14} color={active ? '#2563eb' : '#64748b'} strokeWidth={active ? 2.5 : 2} />
+            <Icon size={14} color={active ? APP_BRAND_COLOR : '#64748b'} strokeWidth={active ? 2.5 : 2} />
 
             <Text
 
@@ -2014,7 +2018,7 @@ function StoriesBubbleRow({
 
             />
 
-            <View className="absolute bottom-0 right-0 h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-blue-600">
+            <View className="absolute bottom-0 right-0 h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-brand">
 
               <Plus size={12} color="#FFFFFF" strokeWidth={3} />
 
@@ -2842,7 +2846,7 @@ function MessageScreen() {
 
             >
 
-              <Search size={19} color="#0758ff" strokeWidth={2.4} />
+              <Search size={19} color={APP_BRAND_COLOR} strokeWidth={2.4} />
 
             </TouchableOpacity>
 
@@ -2864,7 +2868,7 @@ function MessageScreen() {
 
             >
 
-              <Bell size={19} color="#0758ff" strokeWidth={2.35} />
+              <Bell size={19} color={APP_BRAND_COLOR} strokeWidth={2.35} />
 
               {notificationCount > 0 ? (
 
@@ -2932,7 +2936,7 @@ function MessageScreen() {
 
                 >
 
-                  <CircleUser size={19} color="#0758ff" strokeWidth={2.2} />
+                  <CircleUser size={19} color={APP_BRAND_COLOR} strokeWidth={2.2} />
 
                 </Animated.View>
 
@@ -3070,13 +3074,13 @@ function MessageScreen() {
 
                     activeOpacity={0.8}
 
-                    className="flex-1 flex-row items-center justify-center bg-indigo-50 border border-indigo-100 py-3 rounded-xl active:scale-95"
+                    className="flex-1 flex-row items-center justify-center bg-brand-soft border border-brand-border py-3 rounded-xl active:scale-95"
 
                   >
 
-                    <Plus size={16} color="#4F46E5" className="mr-1.5" />
+                    <Plus size={16} color={APP_BRAND_COLOR} className="mr-1.5" />
 
-                    <Text className="text-indigo-600 font-bold text-sm">
+                    <Text className="text-brand font-bold text-sm">
 
                       {copy.createLabelBtn}
 
@@ -3093,7 +3097,7 @@ function MessageScreen() {
                     disabled={!canSendBroadcast}
 
                     className={`flex-1 flex-row items-center justify-center py-3 rounded-xl active:scale-95 ${
-                      canSendBroadcast ? 'bg-indigo-600' : 'bg-slate-300'
+                      canSendBroadcast ? 'bg-brand' : 'bg-slate-300'
                     }`}
 
                   >
@@ -3116,7 +3120,7 @@ function MessageScreen() {
 
                 {/* Broadcast Panel */}
 
-                <View className="mx-4 mb-3 rounded-2xl border border-indigo-100 bg-white p-4">
+                <View className="mx-4 mb-3 rounded-2xl border border-brand-border bg-white p-4">
 
                   <Text className="mb-2 text-xs font-bold uppercase text-slate-400">
 
@@ -3126,7 +3130,7 @@ function MessageScreen() {
 
                   <TouchableOpacity
 
-                    className="mb-2 flex-row items-center rounded-xl border border-indigo-200 px-3 py-3"
+                    className="mb-2 flex-row items-center rounded-xl border border-brand-border px-3 py-3"
 
                     activeOpacity={0.8}
 
@@ -3240,7 +3244,7 @@ function MessageScreen() {
 
                       accessibilityLabel={copy.chooseImage}
 
-                      className="h-11 w-11 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50"
+                      className="h-11 w-11 items-center justify-center rounded-xl border border-brand-border bg-brand-soft"
 
                       activeOpacity={0.8}
 
@@ -3252,7 +3256,7 @@ function MessageScreen() {
 
                     >
 
-                      <ImageIcon size={21} color="#4F46E5" />
+                      <ImageIcon size={21} color={APP_BRAND_COLOR} />
 
                     </TouchableOpacity>
 
@@ -3260,7 +3264,7 @@ function MessageScreen() {
 
                   {broadcastAttachment ? (
 
-                    <View className="mb-3 flex-row items-center rounded-xl border border-indigo-100 bg-indigo-50 p-2">
+                    <View className="mb-3 flex-row items-center rounded-xl border border-brand-border bg-brand-soft p-2">
 
                       <Image
 
@@ -3326,7 +3330,7 @@ function MessageScreen() {
 
                           selectedRecipients.size === broadcastRecipientChats.length
 
-                            ? 'bg-blue-600'
+                            ? 'bg-brand'
 
                             : 'border border-slate-300 bg-white'
 
@@ -3364,7 +3368,7 @@ function MessageScreen() {
 
                     contentContainerStyle={{ flexGrow: 1 }}
 
-                    className="mb-1 min-h-12 rounded-xl border border-indigo-100"
+                    className="mb-1 min-h-12 rounded-xl border border-brand-border"
 
                     showsVerticalScrollIndicator={selectedBroadcastRecipientChats.length > 3}
 
@@ -3496,7 +3500,7 @@ function MessageScreen() {
 
                 onRefresh={onRefresh}
 
-                colors={['#3b82f6']}
+                colors={[APP_BRAND_COLOR]}
 
               />
 
@@ -3580,7 +3584,7 @@ function MessageScreen() {
 
                 onRefresh={onRefresh}
 
-                colors={['#3b82f6']}
+                colors={[APP_BRAND_COLOR]}
 
               />
 
@@ -3626,12 +3630,12 @@ function MessageScreen() {
                   style={styles.groupsCreateCta}
                 >
                   <View style={styles.groupsCreateCtaIcon}>
-                    <Users size={18} color="#2563eb" />
+                    <Users size={18} color={APP_BRAND_COLOR} />
                   </View>
                   <Text style={styles.groupsCreateCtaText}>
                     {copy.createGroupChat}
                   </Text>
-                  <Plus size={18} color="#2563eb" />
+                  <Plus size={18} color={APP_BRAND_COLOR} />
                 </TouchableOpacity>
 
               </View>
@@ -3678,7 +3682,7 @@ function MessageScreen() {
 
                 onRefresh={onRefresh}
 
-                colors={['#3b82f6']}
+                colors={[APP_BRAND_COLOR]}
 
               />
 
@@ -3832,7 +3836,7 @@ const styles = StyleSheet.create({
 
   logoPill: {
 
-    backgroundColor: '#1200ff',
+    backgroundColor: APP_BRAND_COLOR,
 
     borderRadius: 11,
 
@@ -3848,7 +3852,7 @@ const styles = StyleSheet.create({
 
     alignItems: 'center',
 
-    shadowColor: '#0000ff',
+    shadowColor: APP_BRAND_COLOR,
 
     shadowOffset: { width: 0, height: 7 },
 
@@ -3876,13 +3880,13 @@ const styles = StyleSheet.create({
 
     borderRadius: 11,
 
-    backgroundColor: '#1200ff',
+    backgroundColor: APP_BRAND_COLOR,
 
     alignItems: 'center',
 
     justifyContent: 'center',
 
-    shadowColor: '#0000ff',
+    shadowColor: APP_BRAND_COLOR,
 
     shadowOffset: { width: 0, height: 7 },
 
@@ -3998,9 +4002,9 @@ const styles = StyleSheet.create({
 
     borderWidth: 1,
 
-    borderColor: '#dbeafe',
+    borderColor: APP_COLORS.brand.border,
 
-    backgroundColor: '#eff6ff',
+    backgroundColor: APP_COLORS.brand.soft,
 
     flexDirection: 'row',
 
@@ -4020,7 +4024,7 @@ const styles = StyleSheet.create({
 
     borderRadius: 17,
 
-    backgroundColor: '#dbeafe',
+    backgroundColor: APP_COLORS.brand.softPressed,
 
     alignItems: 'center',
 
@@ -4034,7 +4038,7 @@ const styles = StyleSheet.create({
 
     flex: 1,
 
-    color: '#1e3a8a',
+    color: APP_BRAND_COLOR,
 
     fontSize: 14,
 

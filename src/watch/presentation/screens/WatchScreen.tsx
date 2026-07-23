@@ -1,4 +1,5 @@
 // Description: Renders the API-backed watch player with navigation and an up-next playlist.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -252,7 +253,7 @@ function WatchScreen() {
 
       {vm.isLoading && vm.videos.length === 0 ? (
         <View style={styles.centerState}>
-          <ActivityIndicator color="#0000ff" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
         </View>
       ) : vm.videos.length === 0 ? (
         <View style={styles.centerState}>
@@ -275,13 +276,13 @@ function WatchScreen() {
             <RefreshControl
               refreshing={vm.isRefreshing}
               onRefresh={() => vm.loadFirstPage(true)}
-              colors={['#0000ff']}
+              colors={[APP_BRAND_COLOR]}
             />
           }
           onEndReached={() => void vm.loadMore()}
           onEndReachedThreshold={0.35}
           ListFooterComponent={
-            vm.isLoadingMore ? <ActivityIndicator style={styles.footerLoader} color="#0000ff" /> : null
+            vm.isLoadingMore ? <ActivityIndicator style={styles.footerLoader} color={APP_BRAND_COLOR} /> : null
           }
         />
       )}
@@ -294,7 +295,7 @@ const styles = StyleSheet.create({
   listContent: { paddingBottom: 32 },
   centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   emptyText: { marginTop: 14, color: '#64748b', fontSize: 14, textAlign: 'center' },
-  retryButton: { marginTop: 18, backgroundColor: '#0000ff', borderRadius: 5, paddingHorizontal: 24, paddingVertical: 10 },
+  retryButton: { marginTop: 18, backgroundColor: APP_BRAND_COLOR, borderRadius: 5, paddingHorizontal: 24, paddingVertical: 10 },
   retryText: { color: '#ffffff', fontWeight: '700' },
   playerStage: { height: 260, backgroundColor: '#000000' },
   player: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },

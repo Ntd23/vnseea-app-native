@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -535,8 +536,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563EB',
-    shadowColor: '#2563EB',
+    backgroundColor: APP_BRAND_COLOR,
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,

@@ -2,6 +2,7 @@
 // Uses Reanimated to slide a brand-colored indicator pill under the
 // active chip — gives the tab change a clear, responsive feel without
 // re-laying out the row.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect } from 'react';
 import { Text, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
@@ -12,7 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { ExploreTab } from '../../application/view-models/useExploreViewModel';
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 export interface HashtagTabsProps {
   tabs: ReadonlyArray<{ id: ExploreTab; label: string }>;
@@ -63,7 +64,7 @@ function HashtagTabs({ tabs, activeTab, onChange }: HashtagTabsProps) {
     };
 
   return (
-    <View className="relative flex-row items-center gap-1 self-start rounded-full bg-[#0000ff]/8 p-1">
+    <View className="relative flex-row items-center gap-1 self-start rounded-full bg-brand/8 p-1">
       {/* The brand-colored active pill. Sits BEHIND the chips so the
           chips' own backgrounds paint on top. */}
       <Animated.View

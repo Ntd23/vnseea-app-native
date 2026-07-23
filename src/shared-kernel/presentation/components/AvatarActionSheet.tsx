@@ -5,6 +5,7 @@
 // badge next to the avatar (own profile only), NOT in this sheet.
 // Uses Reanimated 3 for the slide-up + fade backdrop and per-row
 // press-scale feedback.
+import { APP_BRAND_COLOR } from '../theme/appColors';
 import React, { useEffect } from 'react';
 import {
   Dimensions,
@@ -175,7 +176,7 @@ export function AvatarActionSheet({
                   height: 40,
                   borderRadius: 20,
                   overflow: 'hidden',
-                  backgroundColor: '#0000FF',
+                  backgroundColor: APP_BRAND_COLOR,
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginRight: 12,
@@ -254,7 +255,7 @@ export function AvatarActionSheet({
               label={copy.viewAvatarLabel}
               hint={copy.viewAvatarHint}
               iconBg="#EEF0FF"
-              iconColor="#0000FF"
+              iconColor={APP_BRAND_COLOR}
               Icon={Eye}
               onPress={onViewAvatar}
             />

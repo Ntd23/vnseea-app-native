@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -149,7 +150,7 @@ export default function ConversationSearchScreen({ navigation, route }: Props) {
 
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#0000FF" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
         </View>
       ) : error ? (
         <View className="flex-1 items-center justify-center px-8">

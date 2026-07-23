@@ -8,6 +8,15 @@ import PushKit
 import AVFoundation
 import GoogleMaps
 
+enum VNSEEAColor {
+  static let brandPrimary = UIColor(
+    red: 185.0 / 255.0,
+    green: 28.0 / 255.0,
+    blue: 28.0 / 255.0,
+    alpha: 1.0
+  )
+}
+
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
   var window: UIWindow?
@@ -31,6 +40,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     reactNativeFactory = factory
 
     window = UIWindow(frame: UIScreen.main.bounds)
+    window?.tintColor = VNSEEAColor.brandPrimary
 
     factory.startReactNative(
       withModuleName: "VNSEEA",

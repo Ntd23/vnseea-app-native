@@ -1,6 +1,7 @@
 // Description: Animated list row for a single trending hashtag.
 // Mounts with a fade+slide entrance; the parent provides a per-index
 // delay so cards stagger in instead of popping in all at once.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect, useMemo } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { ArrowUpRight, Hash } from 'lucide-react-native';
@@ -13,7 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { TrendingHashtag } from '../../domain/types/explore.types';
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 /**
  * Format a large number into a short, locale-neutral string.
@@ -139,7 +140,7 @@ function HashtagCard({
         accessibilityRole="button"
         accessibilityLabel={`Hashtag ${hashtag.tag}, ${hashtag.useCount} bài viết`}
       >
-        <View className="h-12 w-12 items-center justify-center rounded-full bg-[#0000ff]/10">
+        <View className="h-12 w-12 items-center justify-center rounded-full bg-brand/10">
           <Hash size={22} color={BRAND} strokeWidth={2.2} />
         </View>
         <View className="ml-3.5 flex-1 pr-3">
@@ -157,7 +158,7 @@ function HashtagCard({
             {relativeTime ? ` · cập nhật ${relativeTime}` : ''}
           </Text>
         </View>
-        <View className="flex-row items-center rounded-full bg-[#0000ff]/10 px-2.5 py-1">
+        <View className="flex-row items-center rounded-full bg-brand/10 px-2.5 py-1">
           <ArrowUpRight size={14} color={BRAND} strokeWidth={2.4} />
           <Text className="ml-1 text-caption-primary text-brand">
             {compactCount}

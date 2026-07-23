@@ -1,4 +1,5 @@
 // Description: Create offer screen - form to create a new offer for a page.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
@@ -51,7 +52,7 @@ import { useCreateOfferViewModel } from '../../application/view-models/useOfferV
 import type { DiscountType } from '../../domain/types/offer.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
-const BRAND = '#3435F7';
+const BRAND = APP_BRAND_COLOR;
 const TEXT = '#0F172A';
 const MUTED = '#64748B';
 const BORDER = '#E4E8F4';
@@ -928,7 +929,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     left: 8,
-    color: '#3435F7',
+    color: APP_BRAND_COLOR,
     fontSize: 16,
     fontWeight: '900',
   },

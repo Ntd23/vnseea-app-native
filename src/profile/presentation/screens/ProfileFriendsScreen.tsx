@@ -1,4 +1,8 @@
 // Description: Shows tabbed followers, following, and mutual connections for a profile.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -560,7 +564,11 @@ export default function ProfileFriendsScreen() {
                 </Text>
                 {item.verified ? (
                   <View className="ml-1.5">
-                    <BadgeCheck size={16} color="#1877F2" fill="#1877F2" />
+                    <BadgeCheck
+                      size={16}
+                      color={APP_COLORS.status.info}
+                      fill={APP_COLORS.status.info}
+                    />
                   </View>
                 ) : null}
               </View>
@@ -578,7 +586,7 @@ export default function ProfileFriendsScreen() {
           {tab === 'followers' && !isFollowing ? (
             <TouchableOpacity
               activeOpacity={0.82}
-              className="mr-1 min-h-[38px] items-center justify-center rounded-xl bg-[#1877F2] px-4"
+              className="mr-1 min-h-[38px] items-center justify-center rounded-xl bg-brand px-4"
               onPress={() => void updateFollowState(item, true)}
             >
               <Text className="text-[13px] font-bold text-white">
@@ -617,8 +625,8 @@ export default function ProfileFriendsScreen() {
 
       return (
         <View className="items-center px-8 py-20">
-          <View className="h-20 w-20 items-center justify-center rounded-full bg-blue-50">
-            <Search size={32} color="#1877F2" />
+          <View className="h-20 w-20 items-center justify-center rounded-full bg-brand-subtle">
+            <Search size={32} color={APP_BRAND_COLOR} />
           </View>
           <Text className="mt-4 text-center text-[15px] font-semibold text-slate-600">
             {query.trim() ? copy.emptySearch : error || copy.empty}
@@ -626,7 +634,7 @@ export default function ProfileFriendsScreen() {
           {!query.trim() && error ? (
             <TouchableOpacity
               activeOpacity={0.82}
-              className="mt-5 min-h-[42px] items-center justify-center rounded-full bg-[#1877F2] px-6"
+              className="mt-5 min-h-[42px] items-center justify-center rounded-full bg-brand px-6"
               onPress={() => void loadConnections('refresh', tab)}
             >
               <Text className="text-[14px] font-bold text-white">
@@ -708,7 +716,7 @@ export default function ProfileFriendsScreen() {
               >
                 <Text
                   className={`text-[14px] font-bold ${
-                    selected ? 'text-[#0866FF]' : 'text-[#050505]'
+                    selected ? 'text-brand' : 'text-[#050505]'
                   }`}
                   numberOfLines={1}
                   adjustsFontSizeToFit
@@ -765,7 +773,7 @@ export default function ProfileFriendsScreen() {
                 ListFooterComponent={
                   isLoadingMore && activeTab === tab ? (
                     <View className="items-center py-5">
-                      <ActivityIndicator color="#1877F2" />
+                      <ActivityIndicator color={APP_BRAND_COLOR} />
                     </View>
                   ) : (
                     <View className="h-5" />
@@ -775,8 +783,8 @@ export default function ProfileFriendsScreen() {
                   <RefreshControl
                     refreshing={isRefreshing && activeTab === tab}
                     onRefresh={() => void loadConnections('refresh', tab)}
-                    tintColor="#1877F2"
-                    colors={['#1877F2']}
+                    tintColor={APP_BRAND_COLOR}
+                    colors={[APP_BRAND_COLOR]}
                   />
                 }
                 onEndReached={() => {
@@ -903,7 +911,7 @@ export default function ProfileFriendsScreen() {
 
               {actionLoading ? (
                 <View className="absolute inset-x-0 bottom-5 items-center">
-                  <ActivityIndicator color="#1877F2" />
+                  <ActivityIndicator color={APP_BRAND_COLOR} />
                 </View>
               ) : null}
             </View>

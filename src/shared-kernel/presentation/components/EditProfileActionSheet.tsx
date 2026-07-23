@@ -1,6 +1,7 @@
 // Description: Modern bottom-sheet action menu for editing the profile —
 // "Change Cover Photo" + "Edit Public Details" + "Cancel". Uses Reanimated 3
 // for the slide-up + fade backdrop and per-row press-scale feedback.
+import { APP_BRAND_COLOR } from '../theme/appColors';
 import React, { useEffect } from 'react';
 import {
   Dimensions,
@@ -174,7 +175,7 @@ export function EditProfileActionSheet({
                   height: 40,
                   borderRadius: 20,
                   overflow: 'hidden',
-                  backgroundColor: '#0000FF',
+                  backgroundColor: APP_BRAND_COLOR,
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginRight: 12,
@@ -253,7 +254,7 @@ export function EditProfileActionSheet({
               label={copy.changeCoverLabel}
               hint={copy.changeCoverHint}
               iconBg="#EEF0FF"
-              iconColor="#0000FF"
+              iconColor={APP_BRAND_COLOR}
               Icon={Camera}
               onPress={onChangeCover}
             />

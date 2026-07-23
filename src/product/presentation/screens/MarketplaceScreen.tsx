@@ -1,4 +1,5 @@
 // Description: Displays Marketplace products with searchable filter controls.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
@@ -115,9 +116,9 @@ function EmptyState({
     <View className="items-center px-8 py-20">
       <View className="icon-chip h-20 w-20 items-center justify-center">
         {error ? (
-          <RotateCw size={36} color="#0000FF" />
+          <RotateCw size={36} color={APP_BRAND_COLOR} />
         ) : (
-          <ShoppingBag size={38} color="#0000FF" />
+          <ShoppingBag size={38} color={APP_BRAND_COLOR} />
         )}
       </View>
       <Text className="mt-5 text-center text-heading">
@@ -133,7 +134,7 @@ function EmptyState({
           activeOpacity={0.85}
           onPress={onRetry}
         >
-          <RotateCw size={17} color="#0000FF" />
+          <RotateCw size={17} color={APP_BRAND_COLOR} />
           <Text className="text-title-primary text-brand">Thử lại</Text>
         </TouchableOpacity>
       ) : null}
@@ -197,12 +198,12 @@ function DistanceSlider({
       >
         <View className="h-1.5 rounded-full bg-slate-200">
           <View
-            className="h-1.5 rounded-full bg-blue-600"
+            className="h-1.5 rounded-full bg-brand"
             style={{ width: `${percent}%` }}
           />
         </View>
         <View
-          className="absolute -ml-3 h-6 w-6 rounded-full border-2 border-blue-600 bg-white"
+          className="absolute -ml-3 h-6 w-6 rounded-full border-2 border-brand bg-white"
           style={{ left: `${percent}%` }}
         />
       </View>
@@ -277,12 +278,12 @@ function FilterPickerModal<T>({
                 >
                   <Text
                     className={`text-body-primary text-base ${
-                      isSelected ? 'text-blue-600 font-semibold' : 'text-slate-700'
+                      isSelected ? 'text-brand font-semibold' : 'text-slate-700'
                     }`}
                   >
                     {item.label}
                   </Text>
-                  {isSelected ? <Check size={18} color="#0000FF" /> : null}
+                  {isSelected ? <Check size={18} color={APP_BRAND_COLOR} /> : null}
                 </TouchableOpacity>
               );
             }}
@@ -352,7 +353,7 @@ function DistancePickerModal({
                     key={idx}
                     className={`rounded-full border px-4 py-2 ${
                       isActive
-                        ? 'border-blue-600 bg-blue-50'
+                        ? 'border-brand bg-brand-subtle'
                         : 'border-slate-200 bg-white'
                     }`}
                     activeOpacity={0.8}
@@ -361,7 +362,7 @@ function DistancePickerModal({
                     <Text
                       className={
                         isActive
-                          ? 'text-caption-primary font-semibold text-blue-600'
+                          ? 'text-caption-primary font-semibold text-brand'
                           : 'text-caption-secondary'
                       }
                     >
@@ -384,7 +385,7 @@ function DistancePickerModal({
 
           {/* Apply button */}
           <TouchableOpacity
-            className="btn-primary h-12 w-full items-center justify-center rounded-xl bg-blue-600 mt-4"
+            className="btn-primary h-12 w-full items-center justify-center rounded-xl bg-brand mt-4"
             activeOpacity={0.9}
             onPress={onClose}
           >
@@ -781,7 +782,7 @@ function MarketplaceScreen() {
           <RotateCcw size={16} color={hasActiveFilters ? '#EF4444' : '#64748B'} />
         </TouchableOpacity>
         <TouchableOpacity
-          className="h-10 px-3.5 flex-row items-center justify-center rounded-2xl bg-[#0F56FB] gap-1.5 shadow-sm shadow-blue-200/50"
+          className="h-10 px-3.5 flex-row items-center justify-center rounded-2xl bg-brand gap-1.5 shadow-sm shadow-brand-border"
           activeOpacity={0.85}
           onPress={() => animateFiltersCollapsed(false)}
           hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
@@ -837,7 +838,7 @@ function MarketplaceScreen() {
           <TouchableOpacity
             className={`flex-1 flex-row items-center justify-between rounded-2xl border px-3.5 py-3 ${
               vm.orderBy !== undefined
-                ? 'border-blue-200 bg-blue-50/60'
+                ? 'border-brand-border bg-brand-subtle'
                 : 'border-slate-200/50 bg-slate-50/50'
             }`}
             activeOpacity={0.8}
@@ -845,19 +846,19 @@ function MarketplaceScreen() {
           >
             <Text
               className={`text-sm font-semibold flex-1 mr-1 ${
-                vm.orderBy !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
+                vm.orderBy !== undefined ? 'text-brand' : 'text-slate-700'
               }`}
               numberOfLines={1}
             >
               {currentSortLabel}
             </Text>
-            <ChevronDown size={14} color={vm.orderBy !== undefined ? '#0F56FB' : '#64748B'} />
+            <ChevronDown size={14} color={vm.orderBy !== undefined ? APP_BRAND_COLOR : '#64748B'} />
           </TouchableOpacity>
 
           <TouchableOpacity
             className={`flex-1 flex-row items-center justify-between rounded-2xl border px-3.5 py-3 ${
               vm.categoryId !== undefined
-                ? 'border-blue-200 bg-blue-50/60'
+                ? 'border-brand-border bg-brand-subtle'
                 : 'border-slate-200/50 bg-slate-50/50'
             }`}
             activeOpacity={0.8}
@@ -865,13 +866,13 @@ function MarketplaceScreen() {
           >
             <Text
               className={`text-sm font-semibold flex-1 mr-1 ${
-                vm.categoryId !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
+                vm.categoryId !== undefined ? 'text-brand' : 'text-slate-700'
               }`}
               numberOfLines={1}
             >
               {currentCategoryLabel}
             </Text>
-            <ChevronDown size={14} color={vm.categoryId !== undefined ? '#0F56FB' : '#64748B'} />
+            <ChevronDown size={14} color={vm.categoryId !== undefined ? APP_BRAND_COLOR : '#64748B'} />
           </TouchableOpacity>
         </View>
 
@@ -880,40 +881,40 @@ function MarketplaceScreen() {
           <TouchableOpacity
             className={`min-h-[62px] flex-1 flex-row items-center justify-between rounded-2xl border px-3 py-2.5 ${
               vm.distance !== undefined
-                ? 'border-blue-200 bg-blue-50/60'
+                ? 'border-brand-border bg-brand-subtle'
                 : 'border-slate-200/50 bg-slate-50/50'
             }`}
             activeOpacity={0.8}
             onPress={() => setDistanceModalVisible(true)}
           >
             <View className="mr-1 flex-1 flex-row items-center gap-2">
-              <MapPin size={15} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
+              <MapPin size={15} color={vm.distance !== undefined ? APP_BRAND_COLOR : '#64748B'} />
               <Text
                 className={`flex-1 text-[13px] font-semibold ${
-                  vm.distance !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
+                  vm.distance !== undefined ? 'text-brand' : 'text-slate-700'
                 }`}
                 numberOfLines={2}
               >
                 {currentDistanceLabel}
               </Text>
             </View>
-            <ChevronDown size={14} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
+            <ChevronDown size={14} color={vm.distance !== undefined ? APP_BRAND_COLOR : '#64748B'} />
           </TouchableOpacity>
 
           <TouchableOpacity
             className={`min-h-[62px] flex-1 flex-row items-center rounded-2xl border px-3 py-2.5 ${
               nearbyProductsActive
-                ? 'border-[#0F56FB] bg-blue-50'
-                : 'border-[#5252ff]/20 bg-[#5252ff]/5'
+                ? 'border-brand bg-brand-subtle'
+                : 'border-brand/20 bg-brand/5'
             }`}
             activeOpacity={0.8}
             onPress={handleNearbyStoresToggle}
             accessibilityRole="button"
             accessibilityState={{ selected: nearbyProductsActive }}
           >
-            <Compass size={16} color={nearbyProductsActive ? '#0F56FB' : '#5252ff'} />
+            <Compass size={16} color={nearbyProductsActive ? APP_BRAND_COLOR : APP_BRAND_COLOR} />
             <View className="ml-2 flex-1">
-              <Text className="text-[13px] font-bold text-[#5252ff]" numberOfLines={1}>
+              <Text className="text-[13px] font-bold text-brand" numberOfLines={1}>
                 Cửa hàng lân cận
               </Text>
               <Text
@@ -1000,7 +1001,7 @@ function MarketplaceScreen() {
         <View className="h-10 flex-1 items-center justify-center">
           <ShoppingBag
             size={24}
-            color="#0758ff"
+            color={APP_BRAND_COLOR}
             strokeWidth={2.5}
           />
         </View>
@@ -1102,8 +1103,8 @@ function MarketplaceScreen() {
           <RefreshControl
             refreshing={vm.isRefreshing}
             onRefresh={vm.reload}
-            colors={['#0000FF']}
-            tintColor="#0000FF"
+            colors={[APP_BRAND_COLOR]}
+            tintColor={APP_BRAND_COLOR}
           />
         }
         ListEmptyComponent={
@@ -1118,7 +1119,7 @@ function MarketplaceScreen() {
         }
         ListFooterComponent={
           vm.isLoadingMore ? (
-            <ActivityIndicator className="py-6" size="small" color="#0000FF" />
+            <ActivityIndicator className="py-6" size="small" color={APP_BRAND_COLOR} />
           ) : null
         }
       />

@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   View,
@@ -15,10 +16,10 @@ export default function MemoriesScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#f9f9fc]" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000ff" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={APP_BRAND_COLOR} />
       
       {/* TopAppBar */}
-      <View className="h-16 flex-row items-center justify-between px-6 bg-[#0000ff] z-50 relative">
+      <View className="h-16 flex-row items-center justify-between px-6 bg-brand z-50 relative">
         <TouchableOpacity 
           className="p-2 -ml-2 rounded-full active:bg-white/10 z-10" 
           onPress={() => navigation.goBack()}

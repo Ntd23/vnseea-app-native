@@ -4,6 +4,7 @@
 // dumb view that binds ViewModel output to token-styled UI. Mirrors the
 // layout pattern of CreateAlbumScreen + CreateStoryScreen.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -50,13 +51,13 @@ import type {
 
 type CreateMovieNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const TEXT_PRIMARY = '#0f172a';
 const TEXT_SECONDARY = '#64748b';
 const ERROR_RED = '#ef4444';
 const SURFACE_CARD = '#ffffff';
 const SURFACE_BASE = '#f1f4fb';
-const BORDER_LIGHT = 'rgba(0, 0, 255, 0.08)';
+const BORDER_LIGHT = '#E2E8F0';
 
 const COVER_RATIO = 570 / 400; // admin rule: ≤400×570
 const COVER_DISPLAY_HEIGHT = 220;
@@ -117,7 +118,7 @@ function PickerModal<TKey extends string>(props: {
                     onClose();
                   }}
                   className={`flex-row items-center justify-between rounded-2xl px-4 py-3 ${
-                    isActive ? 'bg-blue-50' : 'bg-white'
+                    isActive ? 'bg-brand-subtle' : 'bg-white'
                   }`}
                   style={
                     !isActive
@@ -132,7 +133,7 @@ function PickerModal<TKey extends string>(props: {
                   <Text
                     className={`text-[14px] ${
                       isActive
-                        ? 'font-semibold text-[#0000ff]'
+                        ? 'font-semibold text-brand'
                         : 'font-medium text-slate-700'
                     }`}
                   >
@@ -427,7 +428,7 @@ function CreateMovieScreen() {
                 />
               ) : (
                 <View className="items-center">
-                  <View className="mb-2 h-12 w-12 items-center justify-center rounded-full bg-blue-50">
+                  <View className="mb-2 h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
                     <Camera size={22} color={BRAND} />
                   </View>
                   <Text className="text-[14px] font-semibold text-slate-700">
@@ -440,7 +441,7 @@ function CreateMovieScreen() {
               )}
             </Pressable>
             {vm.cover ? (
-              <View className="flex-row items-center justify-between border-t border-blue-50/40 px-4 py-2.5">
+              <View className="flex-row items-center justify-between border-t border-slate-200 px-4 py-2.5">
                 <View className="flex-1 flex-row items-center gap-2">
                   <Check size={14} color={BRAND} />
                   <Text
@@ -455,7 +456,7 @@ function CreateMovieScreen() {
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   className="ml-3"
                 >
-                  <Text className="text-[12px] font-semibold text-[#0000ff]">
+                  <Text className="text-[12px] font-semibold text-brand">
                     {copy.replaceCover}
                   </Text>
                 </Pressable>
@@ -735,7 +736,7 @@ function CreateMovieScreen() {
               disabled={!vm.canSubmit}
               className="flex-1 min-h-[54px] items-center justify-center rounded-full"
               style={{
-                backgroundColor: vm.canSubmit ? BRAND : 'rgba(0, 0, 255, 0.3)',
+                backgroundColor: vm.canSubmit ? BRAND : 'rgba(185, 28, 28, 0.3)',
               }}
               activeOpacity={0.85}
             >

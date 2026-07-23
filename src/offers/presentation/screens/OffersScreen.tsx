@@ -1,4 +1,5 @@
 // Description: Renders VNSEEA offers list with real API data and beautiful card layout.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -24,7 +25,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 
 type OffersNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 const DISCOUNT_LABELS: Record<DiscountType, string> = {
   discount_percent: 'Giảm %',
@@ -151,7 +152,7 @@ function EmptyState({ onRetry }: { onRetry: () => void }) {
         Hãy quay lại sau để xem các ưu đãi mới
       </Text>
       <Pressable
-        className="mt-6 rounded-full bg-[#0000ff] px-8 py-3"
+        className="mt-6 rounded-full bg-brand px-8 py-3"
         activeOpacity={0.8}
         onPress={onRetry}
       >
@@ -172,7 +173,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
       </Text>
       <Text className="mt-2 text-center text-[13px] text-slate-500">{error}</Text>
       <Pressable
-        className="mt-6 rounded-full bg-[#0000ff] px-8 py-3"
+        className="mt-6 rounded-full bg-brand px-8 py-3"
         activeOpacity={0.8}
         onPress={onRetry}
       >

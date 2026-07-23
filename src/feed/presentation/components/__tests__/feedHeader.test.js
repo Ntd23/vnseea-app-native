@@ -26,7 +26,7 @@ describe('FeedHeader platform chrome', () => {
     expect(iosSource).not.toContain("backgroundColor: '#F8FAFC'");
   });
 
-  it('renders the iOS VNSEEA logo inside the blue brand pill', () => {
+  it('renders the iOS VNSEEA logo inside the red brand pill', () => {
     const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
 
     expect(iosSource).toContain('style={styles.brandLogoTouchable}');
@@ -34,7 +34,7 @@ describe('FeedHeader platform chrome', () => {
     expect(iosSource.indexOf('<View style={styles.logoPill}>')).toBeLessThan(
       iosSource.indexOf('<Text style={styles.brandText}>VNSEEA</Text>'),
     );
-    expect(iosSource).toContain("backgroundColor: '#002fff'");
+    expect(iosSource).toContain('backgroundColor: APP_BRAND_COLOR');
     expect(iosSource).toContain("color: '#ffffff'");
   });
 
@@ -48,7 +48,7 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).not.toContain('AdaptiveGlassSurface');
   });
 
-  it('keeps the Feed safe area transparent on iOS while preserving Android white surface', () => {
+  it('keeps the Feed safe area transparent on iOS while preserving Android content surface', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toContain('const FEED_SAFE_AREA_CLASS_NAME');
@@ -148,6 +148,12 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
     expect(feedScreenSource).toContain('top={topInset}');
     expect(feedScreenSource).toContain('translucent={false}');
+    expect(feedScreenSource).toContain(
+      "barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}",
+    );
+    expect(feedScreenSource).toContain(
+      'backgroundColor={Platform.OS === \'android\' ? APP_BRAND_COLOR : \'#FFFFFF\'}',
+    );
     expect(feedScreenSource).toContain('const feedHeaderOverlayHeight = feedRefreshProgressViewOffset');
     expect(feedScreenSource).toContain('const newPostsButtonTop = feedHeaderOverlayHeight + 12');
     expect(feedScreenSource).toContain('style={{ top: newPostsButtonTop }}');
@@ -273,8 +279,21 @@ describe('FeedHeader platform chrome', () => {
     expect(iosSource.indexOf('accessibilityLabel="Profile Menu"')).toBeGreaterThan(
       iosSource.indexOf('accessibilityLabel="Messages"'),
     );
-    expect(iosSource.indexOf('<Menu size={19} color="#002fff" strokeWidth={2.55} />')).toBeGreaterThan(
-      iosSource.indexOf('<MessageCircle size={19} color="#002fff" strokeWidth={2.55} />'),
+    expect(iosSource.indexOf('<Menu size={19} color={APP_BRAND_COLOR} strokeWidth={2.55} />')).toBeGreaterThan(
+      iosSource.indexOf('<MessageCircle size={19} color={APP_BRAND_COLOR} strokeWidth={2.55} />'),
     );
+  });
+
+  it('uses solid red chrome on Android without changing iOS Liquid Glass', () => {
+    const defaultSource = read('src/feed/presentation/components/FeedHeader.tsx');
+    const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
+
+    expect(defaultSource).toContain('backgroundColor: APP_BRAND_COLOR');
+    expect(defaultSource).toContain('color={APP_COLORS.brand.onPrimary}');
+    expect(defaultSource).toContain(
+      'borderColor: APP_COLORS.brand.borderOnPrimary',
+    );
+    expect(iosSource).toContain("backgroundColor: 'transparent'");
+    expect(iosSource).toContain('color={APP_BRAND_COLOR}');
   });
 });

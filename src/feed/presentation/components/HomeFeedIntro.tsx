@@ -69,7 +69,7 @@ function DefaultStoriesRow({
             fadeDuration={0}
           />
           <View className="flex-1 items-center justify-center bg-white px-2 pb-1.5">
-            <View className="absolute -top-[18px] h-9 w-9 items-center justify-center rounded-full border-4 border-white bg-[#0866ff]">
+            <View className="absolute -top-[18px] h-9 w-9 items-center justify-center rounded-full border-4 border-white bg-brand">
               <Plus size={20} color="#FFFFFF" />
             </View>
             <Text className="mt-4 text-center text-[14px] font-extrabold text-[#050505]">
@@ -114,7 +114,7 @@ function DefaultStoriesRow({
                   fadeDuration={0}
                 />
                 {story.media.length > 1 ? (
-                  <View className="absolute -bottom-2 -right-2 flex h-4 items-center justify-center rounded-full bg-blue-600 px-1">
+                  <View className="absolute -bottom-2 -right-2 flex h-4 items-center justify-center rounded-full bg-brand px-1">
                     <Text className="text-[9px] font-bold text-white">
                       {story.media.length}
                     </Text>

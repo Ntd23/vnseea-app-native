@@ -1,4 +1,5 @@
 ﻿// Description: Renders the current user's blog articles with in-app edit navigation and owner actions.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,7 +25,7 @@ import type { BlogsItem } from '../../domain/types/blogs.types';
 
 type MyArticlesNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 
 const categoryKeyMap: Record<string, string> = {
   vehicles: 'Ô tô và Xe cộ',
@@ -241,7 +242,7 @@ function MyArticlesScreen() {
           </View>
         ) : articles.length === 0 ? (
           <View style={{ paddingHorizontal: 28, paddingVertical: 70, alignItems: 'center' }}>
-            <FileText size={48} color="rgba(0,0,255,0.28)" />
+            <FileText size={48} color={APP_BRAND_COLOR} opacity={0.28} />
             <Text style={{ marginTop: 16, color: '#111827', fontSize: 17, fontWeight: '900' }}>Chưa có bài viết</Text>
             <Text style={{ marginTop: 7, color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>Tạo bài viết đầu tiên để hiển thị ở đây.</Text>
           </View>

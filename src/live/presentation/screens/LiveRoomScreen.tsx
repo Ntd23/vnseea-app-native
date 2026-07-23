@@ -643,7 +643,7 @@ export default function LiveRoomScreen() {
               <TouchableOpacity
                 activeOpacity={0.85}
                 onPress={handleSendComment}
-                className="h-9 w-9 items-center justify-center rounded-full bg-blue-600"
+                className="h-9 w-9 items-center justify-center rounded-full bg-brand"
               >
                 <Send size={15} color="#ffffff" />
               </TouchableOpacity>

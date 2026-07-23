@@ -1,3 +1,7 @@
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { Play, Sparkles } from 'lucide-react-native';
@@ -96,13 +100,13 @@ export function StoryReplyMessageCard({
   }, [isAvailable, isOpening, navigation, reference.storyId]);
 
   const colors = {
-    sentBubble: '#2563EB',
+    sentBubble: APP_BRAND_COLOR,
     receivedBubble: isDark ? '#1F2937' : '#F1F5F9',
     sentQuote: 'rgba(255, 255, 255, 0.14)',
     receivedQuote: isDark ? '#111827' : '#FFFFFF',
     sentPrimary: '#FFFFFF',
     receivedPrimary: isDark ? '#F8FAFC' : '#0F172A',
-    sentSecondary: '#DBEAFE',
+    sentSecondary: APP_COLORS.brand.onPrimaryMuted,
     receivedSecondary: isDark ? '#94A3B8' : '#64748B',
     fallback: isDark ? '#334155' : '#E2E8F0',
   };

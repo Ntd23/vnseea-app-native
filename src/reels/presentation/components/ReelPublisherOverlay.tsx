@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -331,7 +332,7 @@ export function ReelPublisherOverlay({
 
           {loading ? (
             <View style={styles.centerContainer}>
-              <ActivityIndicator color="#0866ff" size="large" />
+              <ActivityIndicator color={APP_BRAND_COLOR} size="large" />
             </View>
           ) : profile ? (
             <View style={styles.profileContainer}>
@@ -560,7 +561,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   followBtn: {
-    backgroundColor: '#0866ff',
+    backgroundColor: APP_BRAND_COLOR,
   },
   msgBtn: {
     backgroundColor: '#27272a',

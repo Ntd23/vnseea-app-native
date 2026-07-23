@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA jobs listing screen with search, job cards, and detail navigation.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -41,7 +42,7 @@ import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAr
 
 type JobsNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 function formatSalary(job: JobsItem, copy: Record<string, string>): string {
   if (!job.minimum && !job.maximum) return copy.negotiable || 'Thương lượng';
@@ -120,8 +121,8 @@ function FilterSheet({
                     onClose();
                   }}
                 >
-                  {selected ? <CheckCircle2 size={19} color="#0000ff" /> : <Circle size={19} color="#94A3B8" />}
-                  <Text className={`ml-3 text-[14px] ${selected ? 'font-bold text-[#0000ff]' : 'text-slate-700'}`}>
+                  {selected ? <CheckCircle2 size={19} color={APP_BRAND_COLOR} /> : <Circle size={19} color="#94A3B8" />}
+                  <Text className={`ml-3 text-[14px] ${selected ? 'font-bold text-brand' : 'text-slate-700'}`}>
                     {option.label}
                   </Text>
                 </TouchableOpacity>
@@ -206,7 +207,7 @@ function DistanceFilterSheet({
           </View>
 
           <TouchableOpacity
-            className="mt-5 min-h-[46px] items-center justify-center rounded-md bg-[#0000ff]"
+            className="mt-5 min-h-[46px] items-center justify-center rounded-md bg-brand"
             onPress={() => {
               onApply(draft);
               onClose();
@@ -488,7 +489,7 @@ function JobsScreen() {
             <View className="flex-1 items-center py-16">
               <Text className="text-center text-red-500">{error}</Text>
               <TouchableOpacity
-                className="mt-4 rounded-full bg-blue-600 px-6 py-2"
+                className="mt-4 rounded-full bg-brand px-6 py-2"
                 onPress={refresh}
               >
                 <Text className="font-semibold text-white">{copy.retry || "Thử lại"}</Text>

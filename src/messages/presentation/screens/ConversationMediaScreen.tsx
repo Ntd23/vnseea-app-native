@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -172,7 +173,7 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
           >
             <Text
               className="text-[13px] font-semibold"
-              style={{ color: activeTab === tab.key ? '#0000FF' : '#64748B' }}
+              style={{ color: activeTab === tab.key ? APP_BRAND_COLOR : '#64748B' }}
             >
               {tab.label}
             </Text>
@@ -182,13 +183,13 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
 
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#0000FF" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
         </View>
       ) : error ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-center text-sm text-red-600">{error}</Text>
           <TouchableOpacity
-            className="mt-4 rounded-lg bg-[#0000ff] px-4 py-3"
+            className="mt-4 rounded-lg bg-brand px-4 py-3"
             onPress={() => {
               const requestVersion = requestVersionRef.current + 1;
               requestVersionRef.current = requestVersion;
@@ -215,7 +216,7 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
           onEndReachedThreshold={0.35}
           ListFooterComponent={
             isLoadingMore ? (
-              <ActivityIndicator className="my-4" color="#0000FF" />
+              <ActivityIndicator className="my-4" color={APP_BRAND_COLOR} />
             ) : null
           }
           ListEmptyComponent={
@@ -262,9 +263,9 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
                 onPress={() => openItem(item)}
               >
                 {activeTab === 'links' ? (
-                  <LinkIcon size={22} color="#0000FF" />
+                  <LinkIcon size={22} color={APP_BRAND_COLOR} />
                 ) : (
-                  <FileText size={22} color="#0000FF" />
+                  <FileText size={22} color={APP_BRAND_COLOR} />
                 )}
                 <Text
                   className="ml-3 flex-1 text-sm text-slate-900 dark:text-white"

@@ -1,3 +1,7 @@
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -50,7 +54,7 @@ type Props = NativeStackScreenProps<
 >;
 
 const repository = createMessagesRepository();
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 const REPORT_REASONS = [
   'Spam hoặc lừa đảo',
   'Quấy rối hoặc bắt nạt',
@@ -78,7 +82,7 @@ function ActionButton({
       onPress={onPress}
       disabled={busy}
     >
-      <View className="h-12 w-12 items-center justify-center rounded-full bg-[#0000ff]/10">
+      <View className="h-12 w-12 items-center justify-center rounded-full bg-brand/10">
         {busy ? (
           <ActivityIndicator color={BRAND} />
         ) : (
@@ -536,7 +540,7 @@ export default function ConversationDetailsScreen({
                         : '#CBD5E1',
                     backgroundColor:
                       reportReason === reason
-                        ? 'rgba(0,0,255,0.08)'
+                        ? APP_COLORS.brand.soft
                         : 'transparent',
                   }}
                   onPress={() => setReportReason(reason)}
@@ -571,7 +575,7 @@ export default function ConversationDetailsScreen({
               onChangeText={setReportDetails}
             />
             <TouchableOpacity
-              className="mt-4 min-h-[48px] items-center justify-center rounded-xl bg-[#0000ff]"
+              className="mt-4 min-h-[48px] items-center justify-center rounded-xl bg-brand"
               onPress={submitReport}
               disabled={isReporting}
             >

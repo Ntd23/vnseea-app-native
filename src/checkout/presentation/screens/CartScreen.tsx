@@ -1,4 +1,5 @@
 // Description: Marketplace cart screen with item selection before checkout.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -53,7 +54,7 @@ function CartItemRow({
           activeOpacity={0.8}
           onPress={onToggle}
           className={`mr-3 mt-1 h-7 w-7 items-center justify-center rounded-full border-2 ${
-            selected ? 'border-[#0000ff] bg-[#0000ff]' : 'border-slate-300 bg-white'
+            selected ? 'border-brand bg-brand' : 'border-slate-300 bg-white'
           }`}
         >
           {selected ? <Check size={16} color="#FFFFFF" strokeWidth={3} /> : null}
@@ -75,7 +76,7 @@ function CartItemRow({
           <Text className="text-base font-extrabold leading-5 text-slate-950" numberOfLines={2}>
             {item.name}
           </Text>
-          <Text className="mt-2 text-base font-extrabold text-[#0000ff]">
+          <Text className="mt-2 text-base font-extrabold text-brand">
             {formatCurrency(
               item.price,
               item.currencyCode,
@@ -217,15 +218,15 @@ function CartScreen() {
 
       {vm.isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#0000FF" />
+          <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
           <Text className="mt-3 text-sm font-semibold text-slate-500">
             Đang tải giỏ hàng...
           </Text>
         </View>
       ) : !items.length ? (
         <View className="flex-1 items-center justify-center px-8">
-          <View className="h-20 w-20 items-center justify-center rounded-full bg-blue-50">
-            <ShoppingBag size={34} color="#0000FF" />
+          <View className="h-20 w-20 items-center justify-center rounded-full bg-brand-subtle">
+            <ShoppingBag size={34} color={APP_BRAND_COLOR} />
           </View>
           <Text className="mt-5 text-center text-xl font-extrabold text-slate-950">
             Giỏ hàng đang trống
@@ -234,7 +235,7 @@ function CartScreen() {
             Hãy thêm sản phẩm vào giỏ rồi quay lại đây để chọn món cần thanh toán.
           </Text>
           <TouchableOpacity
-            className="mt-6 min-h-[46px] rounded-full bg-[#0000ff] px-6 items-center justify-center"
+            className="mt-6 min-h-[46px] rounded-full bg-brand px-6 items-center justify-center"
             activeOpacity={0.9}
             onPress={() => navigation.navigate(ROUTES.MARKETPLACE)}
           >
@@ -256,7 +257,7 @@ function CartScreen() {
               >
                 <View
                   className={`h-7 w-7 items-center justify-center rounded-full border-2 ${
-                    allSelected ? 'border-[#0000ff] bg-[#0000ff]' : 'border-slate-300'
+                    allSelected ? 'border-brand bg-brand' : 'border-slate-300'
                   }`}
                 >
                   {allSelected ? <Check size={16} color="#FFFFFF" strokeWidth={3} /> : null}
@@ -298,7 +299,7 @@ function CartScreen() {
                   Đã chọn {selectedCount} sản phẩm
                 </Text>
                 <Text
-                  className="mt-0.5 max-w-[210px] text-lg font-extrabold text-[#0000ff]"
+                  className="mt-0.5 max-w-[210px] text-lg font-extrabold text-brand"
                   numberOfLines={2}
                 >
                   {selectedCurrencyTotals
@@ -317,7 +318,7 @@ function CartScreen() {
                 disabled={!selectedIds.length}
                 onPress={handleCheckout}
                 className={`min-h-[50px] min-w-[150px] items-center justify-center rounded-full px-5 ${
-                  selectedIds.length ? 'bg-[#0000ff]' : 'bg-slate-300'
+                  selectedIds.length ? 'bg-brand' : 'bg-slate-300'
                 }`}
               >
                 <Text className="text-base font-extrabold text-white">

@@ -1,4 +1,5 @@
 // Description: Offer card component - shows one offer in a card.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   Image,
@@ -75,7 +76,7 @@ export default function OfferCard({ offer, onPress }: Props) {
           <Text style={[styles.ctaText, isExpired && styles.ctaTextExpired]}>
             {isExpired ? 'Đã hết hạn' : 'Sử dụng ngay'}
           </Text>
-          {!isExpired && <ChevronRight size={16} color="#0000FF" strokeWidth={2.5} />}
+          {!isExpired && <ChevronRight size={16} color={APP_BRAND_COLOR} strokeWidth={2.5} />}
         </View>
       </View>
     </TouchableOpacity>
@@ -131,7 +132,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   discountText: {
-    color: '#0000FF',
+    color: APP_BRAND_COLOR,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.3,
@@ -171,7 +172,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#0000FF',
+    color: APP_BRAND_COLOR,
   },
   ctaTextExpired: {
     color: '#9CA3AF',

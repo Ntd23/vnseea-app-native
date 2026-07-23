@@ -1,4 +1,5 @@
 // Description: Page offers list screen - shows all offers for a specific page.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   FlatList,
@@ -184,11 +185,11 @@ const styles = {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
-    backgroundColor: '#0000FF',
+    backgroundColor: APP_BRAND_COLOR,
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderRadius: 28,
-    shadowColor: '#0000FF',
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

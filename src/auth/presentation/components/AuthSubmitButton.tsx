@@ -2,6 +2,7 @@
 // Includes a press-scale spring animation, loading spinner, and a trailing
 // chevron icon for affordance.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -55,10 +56,10 @@ export default function AuthSubmitButton({
         }}
         onPress={onPress}
         className={`mt-5 h-14 flex-row items-center justify-center rounded-[18px] ${
-          disabled || isLoading ? 'bg-blue-400' : 'bg-[#0000ff]'
+          disabled || isLoading ? 'bg-brand/55' : 'bg-brand'
         }`}
         style={{
-          shadowColor: '#0000ff',
+          shadowColor: APP_BRAND_COLOR,
           shadowOffset: { width: 0, height: 12 },
           shadowOpacity: disabled || isLoading ? 0.12 : 0.26,
           shadowRadius: 22,

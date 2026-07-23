@@ -10,6 +10,7 @@
 // All UI strings come from `usePagesCopy()` so the screen honours
 // the active language without any per-component wiring.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -247,12 +248,12 @@ function PageSettingsScreen({ navigation, route }: PageSettingsProps) {
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={handleEditProfile}
-              className="mt-3 flex-row items-center justify-between rounded-xl bg-blue-50 px-4 py-3"
+              className="mt-3 flex-row items-center justify-between rounded-xl bg-brand-subtle px-4 py-3"
             >
-              <Text className="text-[14px] font-semibold text-blue-600">
+              <Text className="text-[14px] font-semibold text-brand">
                 {copy.settingsEditProfile}
               </Text>
-              <ChevronRight size={18} color="#2563EB" />
+              <ChevronRight size={18} color={APP_BRAND_COLOR} />
             </TouchableOpacity>
           </View>
 
@@ -299,7 +300,7 @@ function PageSettingsScreen({ navigation, route }: PageSettingsProps) {
                   <View
                     className={`h-5 w-5 items-center justify-center rounded-full border ${
                       isSelected
-                        ? 'border-blue-600 bg-blue-600'
+                        ? 'border-brand bg-brand'
                         : 'border-slate-300 bg-white'
                     }`}
                   >
@@ -431,7 +432,7 @@ function PageSettingsScreen({ navigation, route }: PageSettingsProps) {
             disabled={!canSave}
             onPress={handleSave}
             className={`h-12 flex-row items-center justify-center rounded-xl ${
-              canSave ? 'bg-blue-600' : 'bg-blue-300'
+              canSave ? 'bg-brand' : 'bg-brand/40'
             }`}
           >
             {vm.isSaving ? (
@@ -487,7 +488,7 @@ function SignalRow({
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: '#e2e8f0', true: '#2563EB' }}
+        trackColor={{ false: '#e2e8f0', true: APP_BRAND_COLOR }}
         thumbColor="#ffffff"
         ios_backgroundColor="#e2e8f0"
       />

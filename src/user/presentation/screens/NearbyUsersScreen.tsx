@@ -1,4 +1,5 @@
 // Description: Shows the Nearby page-and-address map search experience with route actions.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -151,7 +152,7 @@ import {
 type NearbyNav = NativeStackNavigationProp<RootStackParamList>;
 type NearbyRoute = RouteProp<RootStackParamList, typeof ROUTES.NEARBY_USERS>;
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 const ACCENT = '#EF4444';
 const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 const feedRepository = createFeedRepository();
@@ -5368,8 +5369,8 @@ export default function NearbyUsersScreen() {
           <Circle
             center={currentLocation}
             radius={DISCOVERY_RADIUS_METERS}
-            strokeColor="rgba(0, 0, 255, 0.28)"
-            fillColor="rgba(0, 0, 255, 0.08)"
+            strokeColor="rgba(59, 130, 246, 0.28)"
+            fillColor="rgba(59, 130, 246, 0.08)"
             strokeWidth={2}
           />
         ) : null}
@@ -6866,7 +6867,7 @@ export default function NearbyUsersScreen() {
             )}
             <TouchableOpacity
               activeOpacity={0.86}
-              className="flex-1 items-center rounded-xl bg-blue-700 px-2 py-3"
+              className="flex-1 items-center rounded-xl bg-brand-pressed px-2 py-3"
               onPress={handleGetDirections}
               disabled={selectedPoint.source === 'self' || isLoadingRoutes}
               style={
@@ -6885,7 +6886,7 @@ export default function NearbyUsersScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.86}
-              className="flex-1 items-center rounded-xl border border-blue-200 bg-blue-50 px-2 py-3"
+              className="flex-1 items-center rounded-xl border border-info-border bg-info-soft px-2 py-3"
               onPress={handleStartNavigation}
               disabled={selectedPoint.source === 'self' || isLoadingRoutes}
               style={
@@ -6894,7 +6895,7 @@ export default function NearbyUsersScreen() {
                   : null
               }
             >
-              <Text className="text-xs font-extrabold text-blue-700">
+              <Text className="text-xs font-extrabold text-info">
                 Bắt đầu
               </Text>
             </TouchableOpacity>
@@ -7497,7 +7498,7 @@ export default function NearbyUsersScreen() {
                   </View>
                   <View style={styles.pageDetailStatDivider} />
                   <View style={styles.pageDetailStat}>
-                    <Users size={18} color="#0000FF" />
+                    <Users size={18} color={APP_BRAND_COLOR} />
                     <Text style={styles.pageDetailStatValue}>
                       {formatCompactCount(activePageDetail.followersCount)}
                     </Text>
@@ -7519,7 +7520,7 @@ export default function NearbyUsersScreen() {
 
                 {isPageDetailLoading ? (
                   <View style={styles.pageDetailLoading}>
-                    <ActivityIndicator size="small" color="#0000FF" />
+                    <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                     <Text style={styles.pageDetailLoadingText}>
                       Đang cập nhật thông tin page...
                     </Text>
@@ -7531,7 +7532,7 @@ export default function NearbyUsersScreen() {
                     size={16}
                     color={
                       isOwnPageDetail || activePageDetail.isFollowing
-                        ? '#0000FF'
+                        ? APP_BRAND_COLOR
                         : '#64748B'
                     }
                   />
@@ -7579,7 +7580,7 @@ export default function NearbyUsersScreen() {
                   >
                     <Eye
                       size={17}
-                      color={canFollowPageDetail ? '#0000FF' : '#FFFFFF'}
+                      color={canFollowPageDetail ? APP_BRAND_COLOR : '#FFFFFF'}
                     />
                     <Text
                       style={
@@ -7600,9 +7601,9 @@ export default function NearbyUsersScreen() {
                     onPress={handleMessagePageOwner}
                   >
                     {isOwnPageDetail ? (
-                      <UserPlus size={17} color="#0000FF" />
+                      <UserPlus size={17} color={APP_BRAND_COLOR} />
                     ) : (
-                      <MessageCircle size={17} color="#0000FF" />
+                      <MessageCircle size={17} color={APP_BRAND_COLOR} />
                     )}
                     <Text style={styles.pageDetailSecondaryText}>
                       {isOwnPageDetail ? 'Mời người' : 'Nhắn tin'}
@@ -9237,7 +9238,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#1200FF',
+    backgroundColor: APP_BRAND_COLOR,
   },
   vnseeaPageBadgeLogo: {
     width: 40,
@@ -9755,7 +9756,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   pageDetailPrimaryButton: {
-    backgroundColor: '#0000FF',
+    backgroundColor: APP_BRAND_COLOR,
   },
   pageDetailSecondaryButton: {
     borderWidth: 1,
@@ -9770,7 +9771,7 @@ const styles = StyleSheet.create({
   },
   pageDetailSecondaryText: {
     marginLeft: 6,
-    color: '#0000FF',
+    color: APP_BRAND_COLOR,
     fontSize: 13,
     fontWeight: '900',
   },

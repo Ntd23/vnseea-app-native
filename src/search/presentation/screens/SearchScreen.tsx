@@ -1,4 +1,5 @@
 // Description: Dedicated global search screen for users, pages, groups, and hashtags.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -51,7 +52,7 @@ import { COUNTRY_OPTIONS, type CountryOption } from '../../../settings/domain/co
 type SearchNav = NativeStackNavigationProp<RootStackParamList>;
 type SearchRoute = RouteProp<RootStackParamList, typeof ROUTES.SEARCH>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
 
 const COPY = {
@@ -218,7 +219,7 @@ function Avatar({
   }
 
   return (
-    <View className="h-14 w-14 items-center justify-center rounded-full bg-[#EEF2FF]">
+    <View className="h-14 w-14 items-center justify-center rounded-full bg-brand-soft">
       {fallback}
     </View>
   );
@@ -244,7 +245,7 @@ function SectionHeader({
       </Text>
       {onSeeAll ? (
         <TouchableOpacity className="flex-row items-center" onPress={onSeeAll}>
-          <Text className="text-[13px] font-bold text-[#0000ff]">{copy.seeAll}</Text>
+          <Text className="text-[13px] font-bold text-brand">{copy.seeAll}</Text>
           <ChevronRight size={16} color={BRAND} />
         </TouchableOpacity>
       ) : null}
@@ -287,7 +288,7 @@ function UserRow({
       </View>
       <TouchableOpacity
         className={`rounded-full px-3 py-2 ${
-          user.isFollowing ? 'bg-slate-100' : 'bg-[#0000ff]'
+          user.isFollowing ? 'bg-slate-100' : 'bg-brand'
         }`}
         activeOpacity={0.85}
         onPress={event => {
@@ -389,7 +390,7 @@ function HashtagRow({
       activeOpacity={0.86}
       onPress={onPress}
     >
-      <View className="h-14 w-14 items-center justify-center rounded-full bg-[#EEF2FF]">
+      <View className="h-14 w-14 items-center justify-center rounded-full bg-brand-soft">
         <Hash size={25} color={BRAND} />
       </View>
       <View className="ml-3 flex-1">
@@ -416,7 +417,7 @@ function EmptyState({
 }) {
   return (
     <View className="items-center px-8 py-20">
-      <View className="h-16 w-16 items-center justify-center rounded-full bg-[#EEF2FF]">
+      <View className="h-16 w-16 items-center justify-center rounded-full bg-brand-soft">
         <Search size={28} color={BRAND} />
       </View>
       <Text className="mt-4 text-center text-[17px] font-extrabold text-slate-950">
@@ -461,7 +462,7 @@ function DiscoveryHeroCard({
           )}
           <View className="absolute bottom-0 left-0 right-0 h-36 bg-black/45" />
           <TouchableOpacity
-            className={`absolute right-3 top-3 min-h-[38px] flex-row items-center rounded-md px-3 ${actionActive ? 'bg-white/90' : 'bg-[#0000ff]'}`}
+            className={`absolute right-3 top-3 min-h-[38px] flex-row items-center rounded-md px-3 ${actionActive ? 'bg-white/90' : 'bg-brand'}`}
             activeOpacity={0.82}
             onPress={event => {
               event.stopPropagation();
@@ -672,7 +673,7 @@ function DiscoveryFilterSheet({
               </View>
             ))}
           </ScrollView>
-          <TouchableOpacity className="mx-4 mt-3 min-h-[48px] items-center justify-center rounded-md bg-[#0000ff]" onPress={() => { onApply(draft); onClose(); }}>
+          <TouchableOpacity className="mx-4 mt-3 min-h-[48px] items-center justify-center rounded-md bg-brand" onPress={() => { onApply(draft); onClose(); }}>
             <Text className="font-bold text-white">{copy.applyFilter}</Text>
           </TouchableOpacity>
         </View>
@@ -1031,7 +1032,7 @@ function SearchScreen() {
               <TouchableOpacity
                 key={tab.id}
                 className={`rounded-full px-4 py-2 ${
-                  isActive ? 'bg-[#0000ff]' : 'bg-slate-100'
+                  isActive ? 'bg-brand' : 'bg-slate-100'
                 }`}
                 activeOpacity={0.85}
                 onPress={() => setActiveTab(tab.id)}

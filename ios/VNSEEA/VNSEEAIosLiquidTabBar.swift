@@ -68,6 +68,7 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
 
     tabBar.delegate = self
     tabBar.isTranslucent = true
+    tabBar.tintColor = VNSEEAColor.brandPrimary
     configurePlatformTabBarBackground()
     tabBar.clipsToBounds = false
     tabBar.itemPositioning = .fill

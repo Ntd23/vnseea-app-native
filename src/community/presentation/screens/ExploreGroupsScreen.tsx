@@ -1,4 +1,5 @@
 // Description: Shows real WoWonder groups from Settings with website-style filters.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -37,7 +38,7 @@ import type {
 
 type ExploreGroupsNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 
 const EXPLORE_GROUPS_COPY = {
   vi: {
@@ -257,7 +258,7 @@ function FilterTabs({
                 justifyContent: 'center',
                 paddingHorizontal: 12,
                 borderBottomWidth: 3,
-                borderBottomColor: activeFilter === 'mine' ? '#002fff' : 'transparent',
+                borderBottomColor: activeFilter === 'mine' ? APP_BRAND_COLOR : 'transparent',
               }}
             >
               <Text
@@ -280,7 +281,7 @@ function FilterTabs({
                 justifyContent: 'center',
                 paddingHorizontal: 12,
                 borderBottomWidth: 3,
-                borderBottomColor: activeFilter === 'suggested' ? '#002fff' : 'transparent',
+                borderBottomColor: activeFilter === 'suggested' ? APP_BRAND_COLOR : 'transparent',
               }}
             >
               <Text
@@ -303,7 +304,7 @@ function FilterTabs({
                 justifyContent: 'center',
                 paddingHorizontal: 12,
                 borderBottomWidth: 3,
-                borderBottomColor: activeFilter === 'joined' ? '#002fff' : 'transparent',
+                borderBottomColor: activeFilter === 'joined' ? APP_BRAND_COLOR : 'transparent',
               }}
             >
               <Text
@@ -350,7 +351,7 @@ function FilterTabs({
             marginRight: 16,
             minHeight: 34,
             borderRadius: 6,
-            backgroundColor: '#002fff',
+            backgroundColor: APP_BRAND_COLOR,
             paddingHorizontal: 12,
             flexDirection: 'row',
             alignItems: 'center',
@@ -377,7 +378,7 @@ function GroupAvatar({ group }: { group: GroupItem }) {
   }
 
   return (
-    <View className="h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-[#EEF2FF]">
+    <View className="h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-brand-soft">
       <Users size={28} color={BRAND} />
     </View>
   );
@@ -395,8 +396,8 @@ function GroupCover({ group }: { group: GroupItem }) {
   }
 
   return (
-    <View className="h-32 w-full items-center justify-center bg-[#EEF2FF]">
-      <Users size={42} color="rgba(0,0,255,0.34)" strokeWidth={1.8} />
+    <View className="h-32 w-full items-center justify-center bg-brand-soft">
+      <Users size={42} color={APP_BRAND_COLOR} opacity={0.34} strokeWidth={1.8} />
     </View>
   );
 }
@@ -556,8 +557,8 @@ function ExploreGroupsScreen() {
           <RefreshControl
             refreshing={vm.isRefreshing}
             onRefresh={vm.refresh}
-            tintColor="#002fff"
-            colors={['#002fff']}
+            tintColor={APP_BRAND_COLOR}
+            colors={[APP_BRAND_COLOR]}
           />
         }
         onEndReached={vm.loadMore}
@@ -578,7 +579,7 @@ function ExploreGroupsScreen() {
         ListFooterComponent={
           vm.isLoadingMore ? (
             <View className="py-4">
-              <ActivityIndicator color="#002fff" />
+              <ActivityIndicator color={APP_BRAND_COLOR} />
             </View>
           ) : null
         }

@@ -1,4 +1,8 @@
 // Description: Renders real WoWonder articles with pagination and detail navigation.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -41,7 +45,7 @@ import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 
 type BlogsNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 
 function formatCount(value?: number) {
   const safeValue = value ?? 0;
@@ -396,8 +400,8 @@ function BlogsScreen() {
               <Svg pointerEvents="none" width={screenWidth} height={210} style={{ position: 'absolute', left: 0, top: 0 }}>
                 <Defs>
                   <LinearGradient id="blogsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <Stop offset="0%" stopColor="#3b82f6" />
-                    <Stop offset="100%" stopColor="#7c3aed" />
+                    <Stop offset="0%" stopColor={APP_BRAND_COLOR} />
+                    <Stop offset="100%" stopColor={APP_COLORS.brand.pressed} />
                   </LinearGradient>
                 </Defs>
                 <Rect width={screenWidth} height={210} fill="url(#blogsGrad)" />
@@ -498,14 +502,14 @@ function BlogsScreen() {
                         paddingHorizontal: 14,
                         paddingVertical: 8,
                         borderRadius: 20,
-                        backgroundColor: isSelected ? '#3b82f6' : '#eff6ff',
+                        backgroundColor: isSelected ? APP_BRAND_COLOR : APP_COLORS.brand.soft,
                       }}
                     >
                       <Text
                         style={{
                           fontSize: 13,
                           fontWeight: '600',
-                          color: isSelected ? '#ffffff' : '#3b82f6',
+                          color: isSelected ? '#ffffff' : APP_BRAND_COLOR,
                         }}
                       >
                         {displayLabel}

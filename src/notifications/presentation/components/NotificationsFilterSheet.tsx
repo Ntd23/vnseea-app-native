@@ -4,6 +4,7 @@
 // sheet animation. Content is rendered eagerly (only when visible=true)
 // to keep the first frame after open lightweight.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { memo, useCallback } from 'react';
 import {
   Modal,
@@ -52,11 +53,11 @@ const ICON_MAP: Record<NotificationFilterType, React.ComponentType<{ size: numbe
 };
 
 const COLOR_MAP: Record<NotificationFilterType, string> = {
-  all: '#0000ff',
+  all: APP_BRAND_COLOR,
   likes: '#F33E58',
   comments: '#1877F2',
   follows: '#65676B',
-  groups: '#0000ff',
+  groups: APP_BRAND_COLOR,
   events: '#EA4335',
 };
 
@@ -113,14 +114,14 @@ const FilterRow = memo(function FilterRow({
         style={[
           styles.rowLabel,
           {
-            color: active ? '#0000FF' : '#1E293B',
+            color: active ? APP_BRAND_COLOR : '#1E293B',
             fontWeight: active ? '700' : '500',
           },
         ]}
       >
         {label}
       </Text>
-      {active ? <Check size={18} color="#0000FF" /> : null}
+      {active ? <Check size={18} color={APP_BRAND_COLOR} /> : null}
     </TouchableOpacity>
   );
 });

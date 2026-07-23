@@ -1,4 +1,5 @@
 // Description: Explore / Hashtags screen that lists trending hashtags and opens their post detail feed.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -76,7 +77,7 @@ import StatPill from '../components/StatPill';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const AVATAR_FALLBACK = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
 const feedRepository = createFeedRepository();
 
@@ -314,11 +315,11 @@ function HashtagCommentsOverlay({
 
           {error ? (
             <View className="mb-3 flex-row items-center rounded-2xl bg-[#fef2f2] p-3">
-              <Text className="flex-1 text-caption-primary text-[#b91c1c]">
+              <Text className="flex-1 text-caption-primary text-brand">
                 {error}
               </Text>
               <TouchableOpacity onPress={onRetry} activeOpacity={0.8}>
-                <Text className="text-caption-primary text-[#b91c1c]">
+                <Text className="text-caption-primary text-brand">
                   Thử lại
                 </Text>
               </TouchableOpacity>
@@ -326,12 +327,12 @@ function HashtagCommentsOverlay({
           ) : null}
 
           {replyingTo ? (
-            <View className="mb-3 flex-row items-center rounded-2xl bg-[#eef2ff] px-3 py-2">
-              <Text className="flex-1 text-caption-primary text-[#1d4ed8]">
+            <View className="mb-3 flex-row items-center rounded-2xl bg-brand-soft px-3 py-2">
+              <Text className="flex-1 text-caption-primary text-brand">
                 Đang phản hồi @{replyingTo.username}
               </Text>
               <TouchableOpacity onPress={onCancelReply} activeOpacity={0.8}>
-                <X size={16} color="#1d4ed8" />
+                <X size={16} color={APP_BRAND_COLOR} />
               </TouchableOpacity>
             </View>
           ) : null}
@@ -396,7 +397,7 @@ function HashtagCommentsOverlay({
               onPress={handleSubmit}
               disabled={!draft.trim() || isSubmitting}
               className={`ml-2 h-10 w-10 items-center justify-center rounded-full ${
-                draft.trim() && !isSubmitting ? 'bg-[#0000ff]' : 'bg-[#cbd5e1]'
+                draft.trim() && !isSubmitting ? 'bg-brand' : 'bg-[#cbd5e1]'
               }`}
               activeOpacity={0.85}
             >
@@ -583,7 +584,7 @@ function HashtagShareOverlay({
                   onPress={() => setDestination(id)}
                   className={`min-h-[74px] flex-1 basis-[46%] items-center justify-center rounded-2xl border px-2 ${
                     active
-                      ? 'border-[#0000ff] bg-[#eef2ff]'
+                      ? 'border-brand bg-brand-soft'
                       : 'border-[#e2e8f0] bg-[#f8fafc]'
                   }`}
                   activeOpacity={0.85}
@@ -591,7 +592,7 @@ function HashtagShareOverlay({
                   <Icon size={18} color={active ? BRAND : '#64748b'} />
                   <Text
                     className={`mt-2 text-caption-primary ${
-                      active ? 'text-[#0000ff]' : 'text-[#64748b]'
+                      active ? 'text-brand' : 'text-[#64748b]'
                     }`}
                   >
                     {label}
@@ -602,7 +603,7 @@ function HashtagShareOverlay({
           </View>
 
           {destination === 'timeline' ? (
-            <View className="mt-3 rounded-2xl border border-[#e0e7ff] bg-[#eef2ff] p-3">
+            <View className="mt-3 rounded-2xl border border-brand-border bg-brand-soft p-3">
               <Text className="text-caption-primary text-[#0f172a]">
                 Trang cá nhân của tôi
               </Text>
@@ -642,7 +643,7 @@ function HashtagShareOverlay({
                       onPress={() => setSelectedPageId(id)}
                       className={`mb-2 flex-row items-center rounded-xl border p-2 ${
                         active
-                          ? 'border-[#0000ff] bg-white'
+                          ? 'border-brand bg-white'
                           : 'border-transparent bg-white'
                       }`}
                       activeOpacity={0.85}
@@ -679,7 +680,7 @@ function HashtagShareOverlay({
                       onPress={() => setSelectedGroupId(id)}
                       className={`mb-2 flex-row items-center rounded-xl border p-2 ${
                         active
-                          ? 'border-[#0000ff] bg-white'
+                          ? 'border-brand bg-white'
                           : 'border-transparent bg-white'
                       }`}
                       activeOpacity={0.85}
@@ -711,7 +712,7 @@ function HashtagShareOverlay({
           <TouchableOpacity
             onPress={handleShare}
             disabled={isSharing}
-            className="mt-4 h-12 items-center justify-center rounded-xl bg-[#0000ff]"
+            className="mt-4 h-12 items-center justify-center rounded-xl bg-brand"
             activeOpacity={0.9}
           >
             {isSharing ? (
@@ -1099,7 +1100,7 @@ function ExploreScreen() {
           accessibilityLiveRegion="polite"
         >
           <AlertCircle size={18} color="#ef4444" strokeWidth={2.2} />
-          <Text className="ml-2 flex-1 text-caption-primary text-[#b91c1c]">
+          <Text className="ml-2 flex-1 text-caption-primary text-brand">
             {error}
           </Text>
           <TouchableOpacity
@@ -1108,7 +1109,7 @@ function ExploreScreen() {
             activeOpacity={0.8}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <Text className="text-caption-primary text-[#b91c1c]">Thử lại</Text>
+            <Text className="text-caption-primary text-brand">Thử lại</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1117,7 +1118,7 @@ function ExploreScreen() {
 
   const ListEmpty = !isLoading ? (
     <View className="items-center justify-center px-6 py-12">
-      <View className="h-16 w-16 items-center justify-center rounded-full bg-[#0000ff]/8">
+      <View className="h-16 w-16 items-center justify-center rounded-full bg-brand/8">
         <Hash size={28} color={BRAND} strokeWidth={2} />
       </View>
       <Text className="mt-4 text-title-primary text-center">
@@ -1138,7 +1139,7 @@ function ExploreScreen() {
 
   const HashtagPostEmpty = !isHashtagLoading ? (
     <View className="items-center justify-center px-6 py-16">
-      <View className="h-16 w-16 items-center justify-center rounded-full bg-[#0000ff]/8">
+      <View className="h-16 w-16 items-center justify-center rounded-full bg-brand/8">
         <Hash size={28} color={BRAND} strokeWidth={2} />
       </View>
       <Text className="mt-4 text-title-primary text-center">
@@ -1148,7 +1149,7 @@ function ExploreScreen() {
         Hashtag này hiện chưa có bài viết nào để hiển thị.
       </Text>
       {hashtagError ? (
-        <Text className="mt-3 text-caption-primary text-center text-[#b91c1c]">
+        <Text className="mt-3 text-caption-primary text-center text-brand">
           {hashtagError}
         </Text>
       ) : null}
@@ -1211,7 +1212,7 @@ function ExploreScreen() {
                   accessibilityLiveRegion="polite"
                 >
                   <AlertCircle size={18} color="#ef4444" strokeWidth={2.2} />
-                  <Text className="ml-2 flex-1 text-caption-primary text-[#b91c1c]">
+                  <Text className="ml-2 flex-1 text-caption-primary text-brand">
                     {hashtagError}
                   </Text>
                 </View>

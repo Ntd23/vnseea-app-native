@@ -41,12 +41,12 @@ export default function NotificationsTabs({
               }
         }
         className={`flex-1 items-center justify-center py-3.5 rounded-[16px] border ${
-          active === 'all' ? 'border-[#0000ff]/10' : 'border-slate-100'
+          active === 'all' ? 'border-brand/10' : 'border-slate-100'
         }`}
       >
         <Text
           className={`text-[15px] font-bold ${
-            active === 'all' ? 'text-[#0000ff]' : 'text-slate-500'
+            active === 'all' ? 'text-brand' : 'text-slate-500'
           }`}
         >
           {labels.all}
@@ -73,19 +73,19 @@ export default function NotificationsTabs({
               }
         }
         className={`flex-1 items-center justify-center py-3.5 rounded-[16px] border ${
-          active === 'unread' ? 'border-[#0000ff]/10' : 'border-slate-100'
+          active === 'unread' ? 'border-brand/10' : 'border-slate-100'
         }`}
       >
         <View className="flex-row items-center justify-center">
           <Text
             className={`text-[15px] font-bold ${
-              active === 'unread' ? 'text-[#0000ff]' : 'text-slate-500'
+              active === 'unread' ? 'text-brand' : 'text-slate-500'
             }`}
           >
             {labels.unread}
           </Text>
           {active !== 'unread' && unreadCount > 0 ? (
-            <View className="ml-2 min-w-[20px] h-5 items-center justify-center rounded-full bg-[#0000ff] px-1.5">
+            <View className="ml-2 min-w-[20px] h-5 items-center justify-center rounded-full bg-brand px-1.5">
               <Text className="text-[10px] font-bold text-white leading-none">
                 {unreadCount > 99 ? '99+' : String(unreadCount)}
               </Text>

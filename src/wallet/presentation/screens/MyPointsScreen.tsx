@@ -1,4 +1,5 @@
 // Description: Renders the member points balance screen displaying point rules, balance card, and wallet link, matching the user's mockup.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -85,7 +86,7 @@ function MyPointsScreen() {
           onPress={() => navigation.goBack()}
           className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
         >
-          <ArrowLeft size={24} color="#0000ff" />
+          <ArrowLeft size={24} color={APP_BRAND_COLOR} />
         </TouchableOpacity>
         <Text className="flex-1 text-center text-xl font-extrabold text-slate-950" numberOfLines={1}>
           {copy.header}
@@ -100,7 +101,7 @@ function MyPointsScreen() {
       >
         {isLoading && !hasData ? (
           <View className="items-center justify-center bg-white rounded-3xl p-8 border border-slate-100">
-            <ActivityIndicator size="small" color="#0000ff" />
+            <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
             <Text className="mt-3 text-sm font-bold text-slate-500">{copy.loading}</Text>
           </View>
         ) : null}
@@ -112,7 +113,7 @@ function MyPointsScreen() {
             className="items-center justify-center bg-white rounded-3xl p-8 border border-slate-100"
           >
             <Text className="text-center text-sm font-extrabold text-red-500 mb-2">{error}</Text>
-            <Text className="text-sm font-extrabold text-blue-600">{copy.retry}</Text>
+            <Text className="text-sm font-extrabold text-brand">{copy.retry}</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -132,8 +133,8 @@ function MyPointsScreen() {
 
               {/* Rule 2: Post */}
               <View className="flex-row items-center gap-x-4">
-                <View className="h-11 w-11 items-center justify-center rounded-full bg-[#eef2ff]">
-                  <PlusCircle size={20} color="#3b82f6" />
+                <View className="h-11 w-11 items-center justify-center rounded-full bg-brand-soft">
+                  <PlusCircle size={20} color={APP_BRAND_COLOR} />
                 </View>
                 <Text className="flex-1 text-[15px] font-bold text-slate-700 leading-tight">
                   {formatRuleText(copy.rules.post, data.createPostPoint)}
@@ -202,7 +203,7 @@ function MyPointsScreen() {
                 {copy.transferNotePrefix}
                 <Text
                   onPress={() => navigation.navigate(ROUTES.MY_BALANCE as any)}
-                  className="text-blue-600 underline font-bold"
+                  className="text-brand underline font-bold"
                 >
                   {copy.walletLink}
                 </Text>

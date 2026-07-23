@@ -1,4 +1,8 @@
 // Description: Renders the Facebook-style profile screen with user-backed API data.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -943,7 +947,7 @@ const profileStoryStyles = StyleSheet.create({
     height: 40,
     borderRadius: 0,
     borderWidth: 2,
-    borderColor: '#1877F2',
+    borderColor: APP_BRAND_COLOR,
     backgroundColor: '#FFFFFF',
     padding: 2,
   },
@@ -1019,7 +1023,7 @@ const profileStoryStyles = StyleSheet.create({
     borderRadius: 17,
     borderWidth: 4,
     borderColor: '#FFFFFF',
-    backgroundColor: '#1877F2',
+    backgroundColor: APP_BRAND_COLOR,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2469,7 +2473,7 @@ function ProfileScreen() {
             : `${actorLabel} follows ${formatCount(following.length)} people`,
         subtitle:
           language === 'vi' ? 'Hoạt động kết nối' : 'Connection activity',
-        color: '#1877F2',
+        color: APP_BRAND_COLOR,
         backgroundColor: '#E7F3FF',
       });
     }
@@ -2509,8 +2513,8 @@ function ProfileScreen() {
               ? `${actorLabel} đã đăng ${postKind}`
               : `${actorLabel} posted a ${postKind}`,
           subtitle: `${preview} · ${timeText}`,
-          color: '#1D4ED8',
-          backgroundColor: '#DBEAFE',
+          color: APP_BRAND_COLOR,
+          backgroundColor: APP_COLORS.brand.soft,
         });
 
         if (isOwnProfile && post.myReaction) {
@@ -4090,7 +4094,11 @@ function ProfileScreen() {
               </Text>
               {profile?.verified && (
                 <View className="ml-2 mt-0.5">
-                  <Verified size={18} color="#FFFFFF" fill="#1877F2" />
+                  <Verified
+                    size={18}
+                    color="#FFFFFF"
+                    fill={APP_COLORS.status.info}
+                  />
                 </View>
               )}
             </View>
@@ -4196,7 +4204,7 @@ function ProfileScreen() {
                 activeOpacity={0.85}
                 onPress={handleOpenActivities}
               >
-                <Sparkles size={16} color="#1877F2" />
+                <Sparkles size={16} color={APP_BRAND_COLOR} />
                 <Text
                   style={profileMainStyles.storyAddButtonText}
                   numberOfLines={1}
@@ -4215,7 +4223,7 @@ function ProfileScreen() {
                 activeOpacity={0.85}
                 onPress={handleOpenCart}
               >
-                <ShoppingCart size={16} color="#1877F2" />
+                <ShoppingCart size={16} color={APP_BRAND_COLOR} />
                 <Text
                   style={profileMainStyles.storyAddButtonText}
                   numberOfLines={1}
@@ -4240,7 +4248,7 @@ function ProfileScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-[#1877F2] px-4"
+                className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-brand px-4"
                 activeOpacity={0.8}
                 onPress={handleOpenMessages}
               >
@@ -4266,7 +4274,7 @@ function ProfileScreen() {
             <>
               <TouchableOpacity
                 className={`h-10 flex-1 flex-row items-center justify-center rounded-full px-4 ${
-                  isRequestedProfile ? 'bg-[#E4E6EB]' : 'bg-[#1877F2]'
+                  isRequestedProfile ? 'bg-[#E4E6EB]' : 'bg-brand'
                 }`}
                 activeOpacity={0.8}
                 disabled={isRequestedProfile || isConnectLoading}
@@ -4361,13 +4369,13 @@ function ProfileScreen() {
                     }}
                     onPress={handleCreateStory}
                   >
-                    <PlusCircle size={22} color="#1877F2" />
+                    <PlusCircle size={22} color={APP_BRAND_COLOR} />
                   </TouchableOpacity>
                   <Text
                     style={{
                       fontSize: 11,
                       fontWeight: '700',
-                      color: '#1877F2',
+                      color: APP_BRAND_COLOR,
                       textAlign: 'center',
                       marginTop: 6,
                     }}
@@ -4608,7 +4616,7 @@ function ProfileScreen() {
             style={profileMainStyles.managePostsButton}
             activeOpacity={0.8}
           >
-            <Sliders size={12} color="#1877F2" />
+            <Sliders size={12} color={APP_BRAND_COLOR} />
             <Text style={profileMainStyles.managePostsText}>
               {language === 'vi' ? 'Quản lý bài viết' : 'Manage posts'}
             </Text>
@@ -4619,7 +4627,7 @@ function ProfileScreen() {
             activeOpacity={0.8}
             onPress={handleOpenPublicProducts}
           >
-            <ShoppingBag size={13} color="#1877F2" />
+            <ShoppingBag size={13} color={APP_BRAND_COLOR} />
             <Text style={profileMainStyles.managePostsText}>
               {language === 'vi' ? 'Sản phẩm' : 'Products'}
             </Text>
@@ -4660,7 +4668,7 @@ function ProfileScreen() {
     () =>
       isLoadingMorePosts ? (
         <View className="items-center py-4">
-          <ActivityIndicator size="small" color="#1877F2" />
+          <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
         </View>
       ) : null,
     [isLoadingMorePosts],
@@ -4927,7 +4935,7 @@ function ProfileScreen() {
           profileSwipeBackCueStyle,
         ]}
       >
-        <ArrowLeft size={18} color="#1877F2" strokeWidth={2.6} />
+        <ArrowLeft size={18} color={APP_BRAND_COLOR} strokeWidth={2.6} />
         <Text style={profileMainStyles.profileSwipeBackCueText}>
           {language === 'vi' ? 'Vuốt để quay lại' : 'Swipe to go back'}
         </Text>
@@ -4979,13 +4987,13 @@ function ProfileScreen() {
                   <View
                     style={[
                       profileMainStyles.relationshipSheetActionIcon,
-                      { backgroundColor: '#EFF6FF' },
+                      { backgroundColor: APP_COLORS.brand.soft },
                     ]}
                   >
                     {relationshipAction === 'unfollow' ? (
-                      <ActivityIndicator size="small" color="#2563EB" />
+                      <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                     ) : (
-                      <UserMinus size={18} color="#2563EB" />
+                      <UserMinus size={18} color={APP_BRAND_COLOR} />
                     )}
                   </View>
                   <View
@@ -5026,7 +5034,7 @@ function ProfileScreen() {
                     <Text
                       style={[
                         profileMainStyles.relationshipSheetActionTitle,
-                        { color: '#B91C1C' },
+                        { color: APP_COLORS.status.destructive },
                       ]}
                     >
                       {copy.blockUser}
@@ -5136,10 +5144,10 @@ function ProfileScreen() {
                     <View
                       style={[
                         profileMainStyles.mediaActionIcon,
-                        { backgroundColor: '#EFF6FF' },
+                        { backgroundColor: APP_COLORS.brand.soft },
                       ]}
                     >
-                      <Sparkles size={19} color="#2563EB" />
+                      <Sparkles size={19} color={APP_BRAND_COLOR} />
                     </View>
                     <View style={profileMainStyles.mediaActionContent}>
                       <Text style={profileMainStyles.mediaActionLabel}>
@@ -5169,7 +5177,7 @@ function ProfileScreen() {
                       { backgroundColor: '#E7F3FF' },
                     ]}
                   >
-                    <Eye size={19} color="#1877F2" />
+                    <Eye size={19} color={APP_BRAND_COLOR} />
                   </View>
                   <View style={profileMainStyles.mediaActionContent}>
                     <Text style={profileMainStyles.mediaActionLabel}>
@@ -5461,7 +5469,7 @@ function ProfileScreen() {
                 >
                   {!shouldRenderActivitiesList ? (
                     <View style={profileMainStyles.activitiesOpeningState}>
-                      <ActivityIndicator size="small" color="#1877F2" />
+                      <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                     </View>
                   ) : profileActivityItems.length > 0 ? (
                     profileActivityItems.map(item => {
@@ -5495,7 +5503,7 @@ function ProfileScreen() {
                     })
                   ) : (
                     <View style={profileMainStyles.activitiesEmptyState}>
-                      <Sparkles size={24} color="#1877F2" />
+                      <Sparkles size={24} color={APP_BRAND_COLOR} />
                       <Text style={profileMainStyles.activitiesEmptyTitle}>
                         {language === 'vi'
                           ? 'Chưa có hoạt động'
@@ -5558,7 +5566,7 @@ const profileMainStyles = StyleSheet.create({
   },
   profileSwipeBackCueText: {
     marginLeft: 7,
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
     fontSize: 13,
     fontWeight: '900',
   },
@@ -5751,7 +5759,7 @@ const profileMainStyles = StyleSheet.create({
     flex: 0.96,
     height: 36,
     borderRadius: 9999,
-    backgroundColor: '#1877F2',
+    backgroundColor: APP_BRAND_COLOR,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -5788,7 +5796,7 @@ const profileMainStyles = StyleSheet.create({
     flex: 0.92,
   },
   storyAddButtonText: {
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
     fontSize: 13,
     fontWeight: '700',
     marginLeft: 5,
@@ -5883,7 +5891,7 @@ const profileMainStyles = StyleSheet.create({
   },
   cardHeaderAction: {
     fontSize: 12,
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
     fontWeight: '700',
   },
   detailItem: {
@@ -5908,7 +5916,7 @@ const profileMainStyles = StyleSheet.create({
   },
   cardButtonText: {
     fontSize: 12,
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
     fontWeight: '700',
   },
   friendsSubtitle: {
@@ -5943,7 +5951,7 @@ const profileMainStyles = StyleSheet.create({
     color: '#64748B',
   },
   friendFilterTextActive: {
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
   },
   friendsRow: {
     flexDirection: 'row',
@@ -5994,7 +6002,7 @@ const profileMainStyles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#1877F2',
+    backgroundColor: APP_BRAND_COLOR,
   },
   dotInactive: {
     width: 6,
@@ -6091,7 +6099,7 @@ const profileMainStyles = StyleSheet.create({
     borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.neutral.muted,
     marginTop: 2,
   },
   relationshipSheetCancelText: {
@@ -6201,7 +6209,7 @@ const profileMainStyles = StyleSheet.create({
     borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.neutral.muted,
     marginTop: 6,
   },
   mediaCancelText: {
@@ -6298,7 +6306,7 @@ const profileMainStyles = StyleSheet.create({
   activitiesSummaryValue: {
     fontSize: 17,
     fontWeight: '900',
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
   },
   activitiesSummaryLabel: {
     marginTop: 2,
@@ -6391,7 +6399,7 @@ const profileMainStyles = StyleSheet.create({
   },
   postsTabUnderline: {
     height: 3,
-    backgroundColor: '#1877F2',
+    backgroundColor: APP_BRAND_COLOR,
     width: 32,
     borderRadius: 1.5,
   },
@@ -6407,7 +6415,7 @@ const profileMainStyles = StyleSheet.create({
   managePostsText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
   },
 });
 

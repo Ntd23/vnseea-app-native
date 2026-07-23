@@ -10,6 +10,7 @@
 // Visual language mirrors PostMenuActionSheet (Modal fade + bottom
 // rounded sheet) so the two menus feel like siblings.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -136,8 +137,8 @@ export function PageDetailMenuActionSheet({
               className="flex-row items-center py-4"
               activeOpacity={0.7}
             >
-              <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-                <Settings size={20} color="#2563EB" />
+              <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-brand-soft">
+                <Settings size={20} color={APP_BRAND_COLOR} />
               </View>
               <View className="flex-1">
                 <Text className="text-base font-semibold text-slate-900">

@@ -1,5 +1,6 @@
 // Description: Poll post card component for the home feed.
 // Displays poll posts with voting options, results, and interaction actions.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useRef, useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -79,7 +80,7 @@ interface PollPostCardProps {
   hasDragged?: any;
 }
 
-const BRAND_BLUE = '#0866FF';
+const BRAND_BLUE = APP_BRAND_COLOR;
 
 type PollCopy = {
   reactionLabel: Record<ReactionType, string>;
@@ -233,7 +234,7 @@ function PollOptionItem({
         <View className="flex-row items-center flex-1 pr-4">
           <View
             className={`mr-3 flex h-6 w-6 items-center justify-center rounded-full ${
-              isVoted ? 'bg-[#0866FF]' : 'bg-[#A3A3A3]'
+              isVoted ? 'bg-brand' : 'bg-[#A3A3A3]'
             }`}
           >
             <Check size={13} color="#FFFFFF" strokeWidth={3} />
@@ -291,7 +292,7 @@ function PollVoterRow({
             @{voter.username}
           </Text>
         )}
-        <Text className="mt-1 text-[13px] text-[#0866FF]">
+        <Text className="mt-1 text-[13px] text-brand">
           {voter.optionText || optionFallback}
         </Text>
       </View>
@@ -485,7 +486,7 @@ export const PollPostCard = React.memo(function PollPostCard({
               resizeMode="cover"
             />
           ) : (
-            <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-600">
+            <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
               <Smile size={20} color="#FFFFFF" />
             </View>
           )}
@@ -562,7 +563,7 @@ export const PollPostCard = React.memo(function PollPostCard({
 
         {/* Votes Pill Badge (aligned to right, blue background, white text) */}
         <TouchableOpacity
-          className="flex-row items-center self-end bg-[#0866FF] px-4 py-1.5 rounded-full mt-2 mb-2 shadow-sm"
+          className="flex-row items-center self-end bg-brand px-4 py-1.5 rounded-full mt-2 mb-2 shadow-sm"
           activeOpacity={0.8}
           onPress={handleViewVoters}
           disabled={totalVotes <= 0}

@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA fundraising list screen with premium 2026 designs, micro-interactions, and multi-language support.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -45,7 +46,7 @@ import { createFundingRepository } from '../../infrastructure/repositories/ApiFu
 
 type FundingNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND_COLOR = '#2563FF';
+const BRAND_COLOR = APP_BRAND_COLOR;
 
 const FUNDING_COPY = {
   vi: {
@@ -263,7 +264,7 @@ function CampaignCardInner({
             >
               {campaign.title || copy.untitled}
             </Text>
-            <View className="rounded-full bg-[#EFF6FF] px-2.5 py-0.5 border border-[#DBEAFE] self-start">
+            <View className="rounded-full bg-brand-soft px-2.5 py-0.5 border border-brand-border self-start">
               <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>
                 {percent}%
               </Text>
@@ -321,7 +322,7 @@ function CampaignCardInner({
             <View className="flex-row items-center justify-end gap-3 mt-4 pt-3.5 border-t border-[#F1F5F9]">
               <TouchableOpacity
                 onPress={onEdit}
-                className="flex-row items-center bg-[#EFF6FF] px-4 py-2 rounded-full border border-[#DBEAFE]"
+                className="flex-row items-center bg-brand-soft px-4 py-2 rounded-full border border-brand-border"
                 activeOpacity={0.75}
               >
                 <Edit size={13} color={BRAND_COLOR} />
@@ -411,7 +412,7 @@ function PaginationControls({
 function EmptyState({ onRetry, copy }: { onRetry: () => void; copy: typeof FUNDING_COPY.vi }) {
   return (
     <View className="flex-1 items-center justify-center py-20 px-6">
-      <View className="mb-5 h-16 w-16 items-center justify-center rounded-full bg-[#EFF6FF] border border-[#DBEAFE]">
+      <View className="mb-5 h-16 w-16 items-center justify-center rounded-full bg-brand-soft border border-brand-border">
         <HeartHandshake size={28} color={BRAND_COLOR} />
       </View>
       <Text className="text-[18px] font-bold text-[#0F172A]">{copy.noCampaigns}</Text>
@@ -496,7 +497,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
             {this.state.error?.message}
           </Text>
           <TouchableOpacity
-            className="mt-6 rounded-full px-8 py-3 bg-blue-600 shadow-md"
+            className="mt-6 rounded-full px-8 py-3 bg-brand shadow-md"
             onPress={() => this.setState({ hasError: false, error: null })}
           >
             <Text className="text-white font-bold text-sm">Thử lại</Text>
@@ -666,8 +667,8 @@ function FundingScreenInner() {
               paddingHorizontal: 12,
               height: 36,
               borderRadius: 18,
-              backgroundColor: '#2563FF',
-              shadowColor: '#2563FF',
+              backgroundColor: APP_BRAND_COLOR,
+              shadowColor: APP_BRAND_COLOR,
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.15,
               shadowRadius: 4,
@@ -733,7 +734,7 @@ function FundingScreenInner() {
             style={{
               fontSize: 13,
               fontWeight: activeTab === 'coFunding' ? 'bold' : '600',
-              color: activeTab === 'coFunding' ? '#2563FF' : '#64748B',
+              color: activeTab === 'coFunding' ? APP_BRAND_COLOR : '#64748B',
             }}
           >
             {copy.coFunding}
@@ -763,7 +764,7 @@ function FundingScreenInner() {
             style={{
               fontSize: 13,
               fontWeight: activeTab === 'myRequests' ? 'bold' : '600',
-              color: activeTab === 'myRequests' ? '#2563FF' : '#64748B',
+              color: activeTab === 'myRequests' ? APP_BRAND_COLOR : '#64748B',
             }}
           >
             {copy.myRequests}

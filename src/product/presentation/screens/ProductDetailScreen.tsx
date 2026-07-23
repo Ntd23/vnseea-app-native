@@ -1,4 +1,5 @@
 // Description: Renders an ecommerce-style product detail page.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -44,7 +45,7 @@ import { formatProductPrice } from '../components/ProductCurrency';
 type ProductDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.PRODUCT_DETAIL>;
 type ProductDetailNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const HERO_HEIGHT = Math.min(SCREEN_WIDTH, 430);
 const repository = createProductRepository();
@@ -197,7 +198,7 @@ function ProductGallery({
                 activeOpacity={0.85}
                 onPress={() => selectImage(index)}
                 className={`h-16 w-16 overflow-hidden rounded-2xl border-2 ${
-                  active ? 'border-[#0000ff]' : 'border-slate-200'
+                  active ? 'border-brand' : 'border-slate-200'
                 }`}
               >
                 <Image source={{ uri: item.image }} className="h-full w-full" resizeMode="cover" />
@@ -239,7 +240,7 @@ function ProductSummaryCard({ product }: { product: ProductItem }) {
       </Text>
 
       {/* Price */}
-      <Text className="mt-2 text-2xl font-extrabold text-[#0000ff]" style={{ color: '#0000ff', fontSize: 20, marginTop: 8 }}>
+      <Text className="mt-2 text-2xl font-extrabold text-brand" style={{ color: APP_BRAND_COLOR, fontSize: 20, marginTop: 8 }}>
         {formatProductPrice(product)}
       </Text>
 
@@ -327,7 +328,7 @@ function DetailRow({
 }) {
   return (
     <View className="mt-4 flex-row items-start">
-      <View className="h-10 w-10 items-center justify-center rounded-full bg-[#0000ff]/8">
+      <View className="h-10 w-10 items-center justify-center rounded-full bg-brand/8">
         <Icon size={18} color={BRAND} strokeWidth={2.2} />
       </View>
       <View className="ml-3 flex-1">
@@ -409,7 +410,7 @@ function RelatedProductCard({
             </Text>
           </View>
         ) : null}
-        <Text className="mt-2 text-base font-extrabold text-[#0000ff]" numberOfLines={1}>
+        <Text className="mt-2 text-base font-extrabold text-brand" numberOfLines={1}>
           {formatProductPrice(product)}
         </Text>
       </View>
@@ -476,7 +477,7 @@ function RelatedProductsSection({
             height: 28,
             width: 28,
             borderRadius: 14,
-            backgroundColor: '#0000ff',
+            backgroundColor: APP_BRAND_COLOR,
             alignItems: 'center',
             justifyContent: 'center',
             marginRight: 10,
@@ -673,8 +674,8 @@ function ProductDetailContent({
               />
             ) : (
               <View
-                className="h-12 w-12 items-center justify-center rounded-full bg-blue-600"
-                style={{ height: 48, width: 48, borderRadius: 24, backgroundColor: '#0000ff', alignItems: 'center', justifyContent: 'center' }}
+                className="h-12 w-12 items-center justify-center rounded-full bg-brand"
+                style={{ height: 48, width: 48, borderRadius: 24, backgroundColor: APP_BRAND_COLOR, alignItems: 'center', justifyContent: 'center' }}
               >
                 <ShoppingBag size={22} color="#FFFFFF" />
               </View>
@@ -768,7 +769,7 @@ function ProductDetailContent({
                 height: 28,
                 width: 28,
                 borderRadius: 14,
-                backgroundColor: '#0000ff',
+                backgroundColor: APP_BRAND_COLOR,
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginRight: 10,
@@ -810,7 +811,7 @@ function ProductDetailContent({
             accessibilityRole="button"
             accessibilityLabel="Nhắn tin cho người bán"
             className={`h-12 flex-row items-center justify-center rounded-2xl ${
-              canContactSeller ? 'bg-blue-600' : 'bg-slate-200'
+              canContactSeller ? 'bg-brand' : 'bg-slate-200'
             }`}
           >
             <MessageCircle

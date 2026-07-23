@@ -26,6 +26,10 @@
 // On submit success we emit through `storyCreatedEvents` so the FeedScreen
 // can prepend the new story to its rail (Phase 3 wires that listener).
 
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
@@ -363,15 +367,17 @@ function CreateStoryScreen() {
           activeOpacity={0.8}
           className="rounded-full px-5 py-2"
           style={{
-            backgroundColor: vm.canSubmit ? '#1d4ed8' : '#eff6ff',
+            backgroundColor: vm.canSubmit
+              ? APP_BRAND_COLOR
+              : APP_COLORS.brand.soft,
           }}
         >
           {vm.isUploading ? (
-            <ActivityIndicator color={vm.canSubmit ? '#FFFFFF' : '#93c5fd'} size="small" />
+            <ActivityIndicator color={vm.canSubmit ? '#FFFFFF' : APP_BRAND_COLOR} size="small" />
           ) : (
             <Text
               style={{
-                color: vm.canSubmit ? '#FFFFFF' : '#93c5fd',
+                color: vm.canSubmit ? '#FFFFFF' : APP_BRAND_COLOR,
                 fontWeight: '700',
                 fontSize: 14,
               }}
@@ -492,45 +498,45 @@ function CreateStoryScreen() {
                 </View>
               </View>
 
-              {/* Blue photo card (front left, tilted) */}
+              {/* Brand photo card (front left, tilted) */}
               <View
                 style={{
                   width: 100,
                   height: 130,
                   borderRadius: 16,
-                  backgroundColor: '#eff6ff',
+                  backgroundColor: APP_COLORS.brand.soft,
                   borderWidth: 2,
-                  borderColor: '#bfdbfe',
+                  borderColor: APP_COLORS.brand.border,
                   position: 'absolute',
                   transform: [{ rotate: '-12deg' }, { translateX: -22 }, { translateY: 5 }],
                   alignItems: 'center',
                   justifyContent: 'center',
-                  shadowColor: '#3b82f6',
+                  shadowColor: APP_COLORS.brand.shadow,
                   shadowOffset: { width: 0, height: 6 },
                   shadowOpacity: 0.12,
                   shadowRadius: 8,
                   elevation: 3,
                 }}
               >
-                <ImagePlus size={36} color="#3b82f6" strokeWidth={1.8} />
+                <ImagePlus size={36} color={APP_BRAND_COLOR} strokeWidth={1.8} />
               </View>
 
               {/* Tiny sparkles/stars around */}
               {/* Top-left Sparkle */}
               <View style={{ position: 'absolute', top: 12, left: '30%' }}>
-                <Text style={{ fontSize: 16, color: '#93c5fd' }}>✦</Text>
+                <Text style={{ fontSize: 16, color: APP_COLORS.brand.primary }}>✦</Text>
               </View>
               {/* Top-right Sparkle */}
               <View style={{ position: 'absolute', top: 20, right: '32%' }}>
-                <Text style={{ fontSize: 20, color: '#c7d2fe' }}>✦</Text>
+                <Text style={{ fontSize: 20, color: APP_COLORS.brand.onPrimaryMuted }}>✦</Text>
               </View>
               {/* Bottom-left Sparkle */}
               <View style={{ position: 'absolute', bottom: 18, left: '26%' }}>
-                <Text style={{ fontSize: 18, color: '#bfdbfe' }}>✦</Text>
+                <Text style={{ fontSize: 18, color: APP_COLORS.brand.border }}>✦</Text>
               </View>
               {/* Far Right tiny Sparkle */}
               <View style={{ position: 'absolute', bottom: 35, right: '28%' }}>
-                <Text style={{ fontSize: 12, color: '#e0e7ff' }}>✦</Text>
+                <Text style={{ fontSize: 12, color: APP_COLORS.brand.softPressed }}>✦</Text>
               </View>
             </Animated.View>
 
@@ -581,13 +587,13 @@ function CreateStoryScreen() {
                     width: 64,
                     height: 64,
                     borderRadius: 32,
-                    backgroundColor: '#eff6ff',
+                    backgroundColor: APP_COLORS.brand.soft,
                     alignItems: 'center',
                     justifyContent: 'center',
                     marginBottom: 16,
                   }}
                 >
-                  <ImagePlus size={28} color="#1d4ed8" strokeWidth={2} />
+                  <ImagePlus size={28} color={APP_BRAND_COLOR} strokeWidth={2} />
                 </View>
                 <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center', marginBottom: 16 }}>
                   <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 6, textAlign: 'center' }}>
@@ -602,12 +608,12 @@ function CreateStoryScreen() {
                     width: 32,
                     height: 32,
                     borderRadius: 16,
-                    backgroundColor: '#eff6ff',
+                    backgroundColor: APP_COLORS.brand.soft,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <ChevronRight size={16} color="#1d4ed8" strokeWidth={2.5} />
+                  <ChevronRight size={16} color={APP_BRAND_COLOR} strokeWidth={2.5} />
                 </View>
               </TouchableOpacity>
 
@@ -687,13 +693,13 @@ function CreateStoryScreen() {
                     width: 36,
                     height: 36,
                     borderRadius: 18,
-                    backgroundColor: '#eff6ff',
+                    backgroundColor: APP_COLORS.brand.soft,
                     alignItems: 'center',
                     justifyContent: 'center',
                     marginRight: 12,
                   }}
                 >
-                  <ShieldCheck size={20} color="#1d4ed8" strokeWidth={2} />
+                  <ShieldCheck size={20} color={APP_BRAND_COLOR} strokeWidth={2} />
                 </View>
                 <Text
                   style={{
@@ -726,10 +732,10 @@ function CreateStoryScreen() {
                   <TouchableOpacity
                     key={audience}
                     onPress={() => vm.setAudience(audience)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: selected ? '#2563eb' : '#e2e8f0', backgroundColor: selected ? '#eff6ff' : '#ffffff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: selected ? APP_BRAND_COLOR : '#e2e8f0', backgroundColor: selected ? APP_COLORS.brand.soft : '#ffffff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}
                   >
-                    <Icon size={14} color={selected ? '#2563eb' : '#64748b'} />
-                    <Text style={{ color: selected ? '#1d4ed8' : '#475569', fontSize: 12, fontWeight: '600' }}>
+                    <Icon size={14} color={selected ? APP_BRAND_COLOR : '#64748b'} />
+                    <Text style={{ color: selected ? APP_BRAND_COLOR : '#475569', fontSize: 12, fontWeight: '600' }}>
                       {copy.audiences[audience]}
                     </Text>
                   </TouchableOpacity>
@@ -784,7 +790,7 @@ function CreateStoryScreen() {
         {/* ── Error banner ───────────────────────────────────────── */}
         {vm.error ? (
           <View className="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2">
-            <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
+            <Text style={{ color: APP_COLORS.status.error, fontSize: 13 }}>{vm.error}</Text>
           </View>
         ) : null}
       </ScrollView>

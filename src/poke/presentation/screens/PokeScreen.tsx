@@ -1,4 +1,5 @@
 // Description: Renders poke list with poke back and remove functionality.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,7 +25,7 @@ import { getPokeCopyAsString } from '../../application/i18n/pokeCopy';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 
 function PokeSkeleton() {
   return (
@@ -107,7 +108,7 @@ function PokeCard({
             resizeMode="cover"
           />
         ) : (
-          <View className="h-12 w-12 items-center justify-center rounded-full bg-blue-50">
+          <View className="h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
             <User size={24} color={BRAND} />
           </View>
         )}
@@ -123,7 +124,7 @@ function PokeCard({
 
         <View className="flex-row items-center gap-2">
           <TouchableOpacity
-            className="h-9 w-9 items-center justify-center rounded-full bg-blue-50"
+            className="h-9 w-9 items-center justify-center rounded-full bg-brand-subtle"
             activeOpacity={0.8}
             onPress={onPokeBack}
           >

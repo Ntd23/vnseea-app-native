@@ -30,6 +30,10 @@ import { useNavigation } from '@react-navigation/native';
 import { useCreateAdViewModel } from '../../application/view-models/useCreateAdViewModel';
 import type { AdGender } from '../../application/view-models/useCreateAdViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 
 const { width } = Dimensions.get('window');
 
@@ -65,7 +69,7 @@ function AnimatedHeader() {
           left: 0,
           right: 0,
           height: '100%',
-          backgroundColor: '#4f46e5',
+          backgroundColor: APP_BRAND_COLOR,
         },
         {
           opacity: pulseAnim.interpolate({
@@ -282,7 +286,7 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
           width: 40,
           height: 40,
           borderRadius: 12,
-          backgroundColor: 'rgba(79,70,229,0.1)',
+          backgroundColor: APP_COLORS.brand.soft,
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: 12,
@@ -291,7 +295,7 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
         {icon}
       </View>
       <View>
-        <Text style={{ fontSize: 16, fontWeight: '700', color: '#1e1b4b' }}>{title}</Text>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: APP_COLORS.neutral.text }}>{title}</Text>
         {subtitle && <Text style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{subtitle}</Text>}
       </View>
     </View>
@@ -331,7 +335,7 @@ function AnimatedInput({
 
   const borderColor = borderAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#e5e7eb', '#4f46e5'],
+    outputRange: ['#e5e7eb', APP_BRAND_COLOR],
   });
 
   return (
@@ -351,7 +355,7 @@ function AnimatedInput({
           style={{
             flex: 1,
             fontSize: 14,
-            color: '#1e1b4b',
+            color: APP_COLORS.neutral.text,
             minHeight: multiline ? 80 : undefined,
             textAlignVertical: multiline ? 'top' : 'center',
           }}
@@ -371,10 +375,10 @@ function AnimatedInput({
               paddingHorizontal: 12,
               paddingVertical: 6,
               borderRadius: 8,
-              backgroundColor: 'rgba(79,70,229,0.1)',
+              backgroundColor: APP_COLORS.brand.soft,
             }}
           >
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#4f46e5' }}>{unit}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: APP_BRAND_COLOR }}>{unit}</Text>
           </View>
         )}
       </View>
@@ -404,9 +408,9 @@ function GenderPill({ options, selected, onChange }: {
               justifyContent: 'center',
               paddingVertical: 12,
               borderRadius: 12,
-              backgroundColor: isSelected ? '#4f46e5' : '#f3f4f6',
+              backgroundColor: isSelected ? APP_BRAND_COLOR : '#f3f4f6',
               borderWidth: 1.5,
-              borderColor: isSelected ? '#4f46e5' : 'transparent',
+              borderColor: isSelected ? APP_BRAND_COLOR : 'transparent',
             }}
           >
             <Text style={{ fontSize: 13, fontWeight: isSelected ? '600' : '500', color: isSelected ? '#ffffff' : '#6b7280' }}>
@@ -438,7 +442,7 @@ function DropdownSelector({ label, value, onPress }: { label: string; value: str
         marginBottom: 14,
       }}
     >
-      <Text style={{ fontSize: 14, color: value ? '#1e1b4b' : '#9ca3af' }}>
+      <Text style={{ fontSize: 14, color: value ? APP_COLORS.neutral.text : '#9ca3af' }}>
         {value || label}
       </Text>
       <ChevronDown size={18} color="#6b7280" />
@@ -489,8 +493,8 @@ function SubmitButton({ onPress, disabled, loading }: { onPress: () => void; dis
           justifyContent: 'center',
           paddingVertical: 16,
           borderRadius: 16,
-          backgroundColor: disabled ? '#d1d5db' : '#4f46e5',
-          shadowColor: disabled ? '#9ca3af' : '#4f46e5',
+          backgroundColor: disabled ? '#d1d5db' : APP_BRAND_COLOR,
+          shadowColor: disabled ? '#9ca3af' : APP_COLORS.brand.shadow,
           shadowOffset: { width: 0, height: 8 },
           shadowOpacity: disabled ? 0.1 : 0.4,
           shadowRadius: 20,
@@ -541,14 +545,14 @@ function CreateAdScreen() {
   const totalSteps = 4;
 
   const stepTitles = ['Phương tiện', 'Chi tiết', 'Nhắm đối tượng', 'Ngân sách'];
-  const stepIcons = [<ImagePlus size={20} color="#4f46e5" />, <TrendingUp size={20} color="#4f46e5" />, <Target size={20} color="#4f46e5" />, <DollarSign size={20} color="#4f46e5" />];
+  const stepIcons = [<ImagePlus size={20} color={APP_BRAND_COLOR} />, <TrendingUp size={20} color={APP_BRAND_COLOR} />, <Target size={20} color={APP_BRAND_COLOR} />, <DollarSign size={20} color={APP_BRAND_COLOR} />];
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }} edges={['top']}>
       <FocusAwareStatusBar barStyle="light-content" />
 
       {/* Animated header */}
-      <View style={{ backgroundColor: '#4f46e5', paddingBottom: 20 }}>
+      <View style={{ backgroundColor: APP_BRAND_COLOR, paddingBottom: 20 }}>
         <AnimatedHeader />
         <FloatingParticles />
 
@@ -584,7 +588,7 @@ function CreateAdScreen() {
           {/* Step 1: Media */}
           <GlassCard>
             <SectionHeader
-              icon={<ImagePlus size={20} color="#4f46e5" />}
+              icon={<ImagePlus size={20} color={APP_BRAND_COLOR} />}
               title="Phương tiện"
               subtitle="Hình ảnh hoặc video cho quảng cáo"
             />
@@ -598,7 +602,7 @@ function CreateAdScreen() {
                 borderRadius: 16,
                 borderWidth: 2,
                 borderStyle: 'dashed',
-                borderColor: '#c7d2fe',
+                borderColor: APP_COLORS.brand.border,
                 backgroundColor: '#fafafa',
               }}
             >
@@ -607,15 +611,15 @@ function CreateAdScreen() {
                   width: 64,
                   height: 64,
                   borderRadius: 32,
-                  backgroundColor: 'rgba(79,70,229,0.1)',
+                  backgroundColor: APP_COLORS.brand.soft,
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginBottom: 12,
                 }}
               >
-                <ImagePlus size={28} color="#4f46e5" />
+                <ImagePlus size={28} color={APP_BRAND_COLOR} />
               </View>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: '#4f46e5', marginBottom: 6 }}>Tải lên phương tiện</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: APP_BRAND_COLOR, marginBottom: 6 }}>Tải lên phương tiện</Text>
               <Text style={{ fontSize: 12, color: '#9ca3af' }}>PNG, JPG, MP4 — tối đa 50 MB</Text>
             </TouchableOpacity>
           </GlassCard>
@@ -623,7 +627,7 @@ function CreateAdScreen() {
           {/* Step 2: Details */}
           <GlassCard>
             <SectionHeader
-              icon={<TrendingUp size={20} color="#4f46e5" />}
+              icon={<TrendingUp size={20} color={APP_BRAND_COLOR} />}
               title="Chi tiết chiến dịch"
               subtitle="Thông tin cơ bản về quảng cáo"
             />
@@ -656,7 +660,7 @@ function CreateAdScreen() {
           {/* Step 3: Targeting */}
           <GlassCard>
             <SectionHeader
-              icon={<Target size={20} color="#4f46e5" />}
+              icon={<Target size={20} color={APP_BRAND_COLOR} />}
               title="Nhắm đối tượng"
               subtitle="Xác định đối tượng mục tiêu"
             />
@@ -687,7 +691,7 @@ function CreateAdScreen() {
           {/* Step 4: Budget */}
           <GlassCard>
             <SectionHeader
-              icon={<DollarSign size={20} color="#4f46e5" />}
+              icon={<DollarSign size={20} color={APP_BRAND_COLOR} />}
               title="Ngân sách & Lịch trình"
               subtitle="Thiết lập ngân sách và thời gian"
             />

@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA-style calls list screen translated from the Stitch reference.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   Image,
@@ -95,7 +96,7 @@ function CallStatusIcon({ status }: { status: CallItem['status'] }) {
     return <PhoneIncoming size={13} color="#64748B" />;
   }
 
-  return <PhoneOutgoing size={13} color="#0000FF" />;
+  return <PhoneOutgoing size={13} color={APP_BRAND_COLOR} />;
 }
 
 function Avatar({ item }: { item: CallItem }) {
@@ -149,7 +150,7 @@ function CallRow({ item }: { item: CallItem }) {
         className="h-10 w-10 items-center justify-center rounded-full bg-[#eff4ff]"
         activeOpacity={0.8}
       >
-        <ActionIcon size={19} color="#0000FF" strokeWidth={2.1} />
+        <ActionIcon size={19} color={APP_BRAND_COLOR} strokeWidth={2.1} />
       </TouchableOpacity>
     </View>
   );
@@ -158,7 +159,7 @@ function CallRow({ item }: { item: CallItem }) {
 function CallScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#f8f9ff]" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={APP_BRAND_COLOR} />
 
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <View className="flex-row items-center">
@@ -228,7 +229,7 @@ function CallScreen() {
       </ScrollView>
 
       <TouchableOpacity
-        className="absolute bottom-8 right-8 h-14 w-14 items-center justify-center rounded-2xl bg-[#0000ff]"
+        className="absolute bottom-8 right-8 h-14 w-14 items-center justify-center rounded-2xl bg-brand"
         activeOpacity={0.85}
       >
         <View className="relative">
