@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA following/followers list with real API data.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect } from 'react';
 import {
   Image,
@@ -19,7 +20,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 
 type FollowingNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 function FollowingScreen() {
   const navigation = useNavigation<FollowingNav>();
@@ -59,14 +60,14 @@ function FollowingScreen() {
       <View className="flex-row border-b border-[#E4E6EB] bg-white">
         <TouchableOpacity
           className={`flex-1 items-center py-3 ${
-            activeTab === 'following' ? 'border-b-2 border-[#0000ff]' : ''
+            activeTab === 'following' ? 'border-b-2 border-brand' : ''
           }`}
           activeOpacity={0.8}
           onPress={() => switchTab('following')}
         >
           <Text
             className={`text-[14px] font-semibold ${
-              activeTab === 'following' ? 'text-[#0000ff]' : 'text-[#65676B]'
+              activeTab === 'following' ? 'text-brand' : 'text-[#65676B]'
             }`}
           >
             Đang theo dõi
@@ -74,14 +75,14 @@ function FollowingScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           className={`flex-1 items-center py-3 ${
-            activeTab === 'followers' ? 'border-b-2 border-[#0000ff]' : ''
+            activeTab === 'followers' ? 'border-b-2 border-brand' : ''
           }`}
           activeOpacity={0.8}
           onPress={() => switchTab('followers')}
         >
           <Text
             className={`text-[14px] font-semibold ${
-              activeTab === 'followers' ? 'text-[#0000ff]' : 'text-[#65676B]'
+              activeTab === 'followers' ? 'text-brand' : 'text-[#65676B]'
             }`}
           >
             Người theo dõi
@@ -98,7 +99,7 @@ function FollowingScreen() {
         <View className="flex-1 items-center justify-center px-4">
           <Text className="text-center text-body-secondary">{error}</Text>
           <TouchableOpacity
-            className="mt-4 rounded-lg bg-[#0000ff] px-6 py-2"
+            className="mt-4 rounded-lg bg-brand px-6 py-2"
             activeOpacity={0.8}
             onPress={() => loadFirstPage()}
           >
@@ -143,7 +144,7 @@ function FollowingScreen() {
                   </Text>
                   {item.verified && (
                     <View className="ml-1">
-                      <Text style={{ color: '#1877F2', fontSize: 12 }}>✓</Text>
+                      <Text style={{ color: APP_BRAND_COLOR, fontSize: 12 }}>✓</Text>
                     </View>
                   )}
                 </View>
@@ -158,7 +159,7 @@ function FollowingScreen() {
               </View>
               {item.followingState === 'following' ? (
                 <TouchableOpacity
-                  className="flex-row items-center rounded-full bg-[#0000ff]/10 px-4 py-2"
+                  className="flex-row items-center rounded-full bg-brand/10 px-4 py-2"
                   activeOpacity={0.8}
                 >
                   <UserCheck size={16} color={BRAND} />
@@ -173,7 +174,7 @@ function FollowingScreen() {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  className="flex-row items-center rounded-full bg-[#0000ff] px-4 py-2"
+                  className="flex-row items-center rounded-full bg-brand px-4 py-2"
                   activeOpacity={0.8}
                 >
                   <UserPlus size={16} color="#FFFFFF" />

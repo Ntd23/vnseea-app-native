@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -107,13 +108,13 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
       />
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#0000FF" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
         </View>
       ) : error ? (
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-center text-sm text-red-600">{error}</Text>
           <TouchableOpacity
-            className="mt-4 rounded-lg bg-[#0000ff] px-4 py-3"
+            className="mt-4 rounded-lg bg-brand px-4 py-3"
             onPress={loadPinnedMessages}
           >
             <Text className="font-semibold text-white">Thử lại</Text>

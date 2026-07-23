@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA boosted content dashboard for promoted posts and campaigns.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   Image,
@@ -24,7 +25,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 
 type BoostedNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 const campaigns = [
   {
@@ -93,7 +94,7 @@ function BoostedScreen() {
       >
         <View className="surface-card mb-5 p-5">
           <View className="flex-row items-center">
-            <View className="h-14 w-14 items-center justify-center rounded-2xl bg-[#0000ff]/10">
+            <View className="h-14 w-14 items-center justify-center rounded-2xl bg-brand/10">
               <Megaphone size={28} color={BRAND} />
             </View>
             <View className="ml-4 flex-1">
@@ -105,12 +106,12 @@ function BoostedScreen() {
           </View>
 
           <View className="mt-5 flex-row gap-3">
-            <View className="flex-1 rounded-2xl bg-[#0000ff]/10 p-4">
+            <View className="flex-1 rounded-2xl bg-brand/10 p-4">
               <Eye size={22} color={BRAND} />
               <Text className="mt-2 text-heading text-brand">157K</Text>
               <Text className="text-caption-secondary">Lượt tiếp cận</Text>
             </View>
-            <View className="flex-1 rounded-2xl bg-[#0000ff]/10 p-4">
+            <View className="flex-1 rounded-2xl bg-brand/10 p-4">
               <Wallet size={22} color={BRAND} />
               <Text className="mt-2 text-heading text-brand">3,85M</Text>
               <Text className="text-caption-secondary">Ngân sách</Text>
@@ -154,7 +155,7 @@ function BoostedScreen() {
                     {campaign.type} · {campaign.status}
                   </Text>
                 </View>
-                <View className="rounded-full bg-[#0000ff]/10 px-3 py-2">
+                <View className="rounded-full bg-brand/10 px-3 py-2">
                   <Text className="text-caption-primary text-brand">
                     {campaign.progress}%
                   </Text>
@@ -163,7 +164,7 @@ function BoostedScreen() {
 
               <View className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
                 <View
-                  className="h-2 rounded-full bg-[#0000ff]"
+                  className="h-2 rounded-full bg-brand"
                   style={{ width: `${campaign.progress}%` }}
                 />
               </View>

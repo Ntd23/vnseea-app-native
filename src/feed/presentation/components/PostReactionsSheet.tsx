@@ -9,6 +9,7 @@
 // `usePostReactionsViewModel(postId)` and only renders the returned slice.
 // All styling uses NativeWind token utilities (no StyleSheet.create).
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -41,7 +42,7 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { FEED_REACTION_IMAGES } from './FeedReactionAssets';
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 const TAB_KEYS: PostReactionTab[] = [
   'all',
@@ -89,7 +90,7 @@ function ReactionTab({
       activeOpacity={0.8}
       onPress={onPress}
       className={`flex-row items-center rounded-full px-3.5 py-2 ${
-        active ? 'bg-[#0000ff]' : 'bg-white border border-slate-200'
+        active ? 'bg-brand' : 'bg-white border border-slate-200'
       }`}
       accessibilityRole="tab"
       accessibilityLabel={label}
@@ -145,7 +146,7 @@ function FollowButton({
       onPress={onPress}
       disabled={isLoading}
       className={`flex-row items-center rounded-full px-4 py-2 ${
-        isFollowing ? 'bg-[#0000ff]/10' : 'bg-[#0000ff]'
+        isFollowing ? 'bg-brand/10' : 'bg-brand'
       }`}
       accessibilityRole="button"
       accessibilityLabel={isFollowing ? followingLabel : followLabel}
@@ -215,7 +216,7 @@ function ReactionUserRow({
             resizeMode="cover"
           />
         ) : (
-          <View className="avatar-md items-center justify-center bg-[#0000ff]/10">
+          <View className="avatar-md items-center justify-center bg-brand/10">
             <Text className="text-caption-primary text-brand">{initial}</Text>
           </View>
         )}

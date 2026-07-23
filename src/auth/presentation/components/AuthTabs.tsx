@@ -1,6 +1,7 @@
 // Description: Pill-style tab switcher used by the auth screens.
 // Active tab has a brand-blue background with a soft brand shadow.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { LogIn, UserPlus } from 'lucide-react-native';
@@ -56,7 +57,7 @@ function TabPill({
   Icon: React.ComponentType<{ size: number; color: string; strokeWidth?: number }>;
   onPress: () => void;
 }) {
-  const color = isActive ? '#0000ff' : '#8A91A3';
+  const color = isActive ? APP_BRAND_COLOR : '#8A91A3';
 
   return (
     <TouchableOpacity
@@ -70,7 +71,7 @@ function TabPill({
       style={
         isActive
           ? {
-              shadowColor: '#1D4ED8',
+              shadowColor: APP_BRAND_COLOR,
               shadowOffset: { width: 0, height: 8 },
               shadowOpacity: 0.12,
               shadowRadius: 18,
@@ -82,7 +83,7 @@ function TabPill({
       <Icon size={19} color={color} strokeWidth={2.4} />
       <Text
         className={`ml-2 text-[14px] font-extrabold ${
-          isActive ? 'text-[#0000ff]' : 'text-slate-400'
+          isActive ? 'text-brand' : 'text-slate-400'
         }`}
       >
         {label}

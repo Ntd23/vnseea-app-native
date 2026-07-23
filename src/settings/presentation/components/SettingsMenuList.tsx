@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {Text, TouchableOpacity, View} from 'react-native';
 import {
@@ -44,7 +45,7 @@ function SettingsMenuRow({
   isLast: boolean;
 }) {
   const IconComponent = ICON_MAP[item.iconKey];
-  const iconColor = item.isDestructive ? '#ef4444' : '#0000ff';
+  const iconColor = item.isDestructive ? '#ef4444' : APP_BRAND_COLOR;
   const textColorClass = item.isDestructive
     ? 'text-[#ef4444]'
     : 'text-[#1a1c1e]';
@@ -54,7 +55,7 @@ function SettingsMenuRow({
       activeOpacity={0.8}
       onPress={onPress}
       className={`flex-row items-center gap-4 px-5 py-4 ${
-        !isLast ? 'border-b border-[rgba(0,0,255,0.08)]' : ''
+        !isLast ? 'border-b border-slate-200' : ''
       }`}>
       <View>
         {IconComponent ? (

@@ -1,4 +1,5 @@
 // Description: Renders the settings shortcut grid with token-aligned blue feature icons.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
@@ -88,7 +89,7 @@ function FeatureGridItemView({
       className="items-center gap-2"
       style={styles.item}
     >
-      {IconComponent ? <IconComponent size={24} color="#0000FF" /> : null}
+      {IconComponent ? <IconComponent size={24} color={APP_BRAND_COLOR} /> : null}
       <Text
         className="text-center text-[10px] font-semibold leading-tight text-[#1e293b]"
         numberOfLines={2}

@@ -1,5 +1,6 @@
 // Description: Event post card component for the home feed.
 // Displays events in Facebook-style card layout.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   Image,
@@ -35,7 +36,7 @@ interface EventPostCardProps {
   onEditPress?: (event: EventsItem) => void;
 }
 
-const BRAND_BLUE = '#0000ff';
+const BRAND_BLUE = APP_BRAND_COLOR;
 const SLATE_GRAY = '#65676B';
 
 // Date formatter helper
@@ -134,7 +135,7 @@ const EventPostCard = React.memo(function EventPostCard({
                 resizeMode="cover"
               />
             ) : (
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-600">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
                 <CalendarDays size={20} color="#FFFFFF" />
               </View>
             )}
@@ -143,8 +144,8 @@ const EventPostCard = React.memo(function EventPostCard({
                 <Text className="text-title-primary font-bold text-[#050505] flex-shrink mr-2" numberOfLines={1}>
                   {event.user_data?.full_name || event.user_data?.name || 'Ban tổ chức'}
                 </Text>
-                <View className="bg-blue-50 rounded px-1.5 py-0.5" style={{ flexShrink: 0 }}>
-                  <Text className="text-[10px] font-bold uppercase text-[#0866FF]">
+                <View className="bg-brand-subtle rounded px-1.5 py-0.5" style={{ flexShrink: 0 }}>
+                  <Text className="text-[10px] font-bold uppercase text-brand">
                     Sự kiện
                   </Text>
                 </View>
@@ -193,8 +194,8 @@ const EventPostCard = React.memo(function EventPostCard({
       <FeedCardContent className="pb-3">
         <View className="flex-row border-b border-[#F0F2F5] pb-4 mb-3">
           {/* Calendar style Date block */}
-          <View className="h-16 w-16 items-center justify-center rounded-2xl bg-[#0000ff]/10">
-            <Text className="text-center text-[13px] font-bold uppercase text-[#0866FF] leading-tight">
+          <View className="h-16 w-16 items-center justify-center rounded-2xl bg-brand/10">
+            <Text className="text-center text-[13px] font-bold uppercase text-brand leading-tight">
               {dateText}
             </Text>
           </View>
@@ -236,8 +237,8 @@ const EventPostCard = React.memo(function EventPostCard({
                 activeOpacity={0.75}
                 onPress={handleEditPress}
               >
-                <Edit size={18} color="#0866FF" />
-                <Text className="ml-2 text-[13px] font-semibold text-[#0866FF]" numberOfLines={1}>
+                <Edit size={18} color={APP_BRAND_COLOR} />
+                <Text className="ml-2 text-[13px] font-semibold text-brand" numberOfLines={1}>
                   Sửa
                 </Text>
               </FeedGlassActionButton>

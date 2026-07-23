@@ -1,6 +1,7 @@
 // Description: Renders the VNSEEA notifications tab with section grouping,
 // tabs (All / Unread), filter sheet, animated cards, and i18n.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -117,7 +118,7 @@ function BeautifulBellIllustration() {
       </View>
 
       {/* Overlapping blue check badge at bottom right */}
-      <View className="absolute bottom-[2px] right-[38%] h-6 w-6 items-center justify-center rounded-full bg-[#0000ff] border-2 border-white">
+      <View className="absolute bottom-[2px] right-[38%] h-6 w-6 items-center justify-center rounded-full bg-brand border-2 border-white">
         <Check size={12} color="#ffffff" strokeWidth={3} />
       </View>
     </View>
@@ -549,7 +550,7 @@ function NotificationsScreen() {
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => loadFirstPage()}
-          className="rounded-full bg-[#0000ff] px-6 py-2.5"
+          className="rounded-full bg-brand px-6 py-2.5"
         >
           <Text className="text-[14px] font-semibold text-white">
             {copy.retry}
@@ -572,7 +573,7 @@ function NotificationsScreen() {
 
   const notificationsListFooterComponent = isLoadingMore ? (
     <View className="items-center py-4">
-      <ActivityIndicator size="small" color="#0000ff" />
+      <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
     </View>
   ) : !hasMore && visibleNotifications.length > 0 ? (
     <View className="items-center justify-center pt-6 pb-8">
@@ -616,7 +617,7 @@ function NotificationsScreen() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refresh}
-          colors={['#0000ff']}
+          colors={[APP_BRAND_COLOR]}
         />
       }
       onEndReached={handleNotificationsEndReached}
@@ -645,7 +646,7 @@ function NotificationsScreen() {
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={() => loadFirstPage()}
-              className="rounded-full bg-[#0000ff] px-6 py-2.5"
+              className="rounded-full bg-brand px-6 py-2.5"
             >
               <Text className="text-[14px] font-semibold text-white">
                 {copy.retry}
@@ -660,7 +661,7 @@ function NotificationsScreen() {
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={refresh}
-                colors={['#0000ff']}
+                colors={[APP_BRAND_COLOR]}
               />
             }
           >
@@ -678,7 +679,7 @@ function NotificationsScreen() {
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={refresh}
-                colors={['#0000ff']}
+                colors={[APP_BRAND_COLOR]}
               />
             }
           >
@@ -697,7 +698,7 @@ function NotificationsScreen() {
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={refresh}
-                colors={['#0000ff']}
+                colors={[APP_BRAND_COLOR]}
               />
             }
             onScroll={e => {
@@ -726,7 +727,7 @@ function NotificationsScreen() {
 
             {isLoadingMore ? (
               <View className="items-center py-4">
-                <ActivityIndicator size="small" color="#0000ff" />
+                <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
               </View>
             ) : null}
 

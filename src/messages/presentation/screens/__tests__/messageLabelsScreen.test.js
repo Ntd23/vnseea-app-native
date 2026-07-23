@@ -50,6 +50,7 @@ describe('message labels native-stack screen', () => {
     expect(screen).toContain('<SafeAreaView');
     expect(screen).toContain('<KeyboardAvoidingView');
     expect(screen).toContain('<ColorPicker');
+    expect(screen).toContain('const DEFAULT_LABEL_COLOR = APP_BRAND_COLOR;');
     expect(screen).toContain('repository.listLabels()');
     expect(screen).toContain('repository.listTargetLabels(');
     expect(screen).toContain('repository.attachLabel(');

@@ -29,6 +29,10 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackRouteName } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../theme/appColors';
 
 type CreateActionKey =
   | 'post'
@@ -64,7 +68,7 @@ type CreateAction = {
 // the full list. Keep this as the single source of truth — any new
 // "create" type the app supports goes here first.
 export const CREATE_ACTIONS: CreateAction[] = [
-  { key: 'post', Icon: ImagePlus, iconColor: '#1d4ed8', iconBg: '#eff6ff', route: ROUTES.CREATE_POST },
+  { key: 'post', Icon: ImagePlus, iconColor: APP_BRAND_COLOR, iconBg: APP_COLORS.brand.soft, route: ROUTES.CREATE_POST },
   { key: 'story', Icon: CircleDot, iconColor: '#7c3aed', iconBg: '#faf5ff', route: ROUTES.CREATE_STORY },
   { key: 'album', Icon: Images, iconColor: '#10b981', iconBg: '#ecfdf5', route: ROUTES.CREATE_ALBUM },
   { key: 'ad', Icon: Megaphone, iconColor: '#f59e0b', iconBg: '#fffbeb', route: ROUTES.CREATE_AD },
@@ -75,7 +79,7 @@ export const CREATE_ACTIONS: CreateAction[] = [
   { key: 'page', Icon: FilePlus2, iconColor: '#0ea5e9', iconBg: '#f0f9ff', route: ROUTES.CREATE_PAGE },
   { key: 'group', Icon: Users, iconColor: '#ec4899', iconBg: '#fdf2f8', route: ROUTES.CREATE_GROUP },
   { key: 'reel', Icon: PlaySquare, iconColor: '#9333ea', iconBg: '#faf5ff', route: ROUTES.CREATE_REEL },
-  { key: 'blog', Icon: FileText, iconColor: '#2563eb', iconBg: '#eff6ff', route: ROUTES.CREATE_BLOG },
+  { key: 'blog', Icon: FileText, iconColor: APP_BRAND_COLOR, iconBg: APP_COLORS.brand.soft, route: ROUTES.CREATE_BLOG },
 ];
 
 const actions = CREATE_ACTIONS;

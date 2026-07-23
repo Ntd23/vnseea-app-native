@@ -1,4 +1,5 @@
 // Description: Renders the Messages LiveKit group call room from the app-level group call session.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -139,7 +140,7 @@ function ParticipantTile({
               className="h-20 w-20 rounded-full bg-slate-800"
             />
           ) : (
-            <View className="h-20 w-20 items-center justify-center rounded-full bg-blue-600">
+            <View className="h-20 w-20 items-center justify-center rounded-full bg-brand">
               <Text className="text-2xl font-bold text-white">
                 {(item.name || '?').slice(0, 1).toUpperCase()}
               </Text>
@@ -421,7 +422,7 @@ function InviteMembersModal({
 
           {isLoading ? (
             <View className="items-center py-8">
-              <ActivityIndicator color="#0000ff" />
+              <ActivityIndicator color={APP_BRAND_COLOR} />
             </View>
           ) : items.length === 0 ? (
             <Text className="py-8 text-center text-slate-500">
@@ -446,7 +447,7 @@ function InviteMembersModal({
                         className="h-11 w-11 rounded-full bg-slate-100"
                       />
                     ) : (
-                      <View className="h-11 w-11 rounded-full bg-blue-100" />
+                      <View className="h-11 w-11 rounded-full bg-info-muted" />
                     )}
                     <View className="ml-3 flex-1">
                       <Text className="font-bold text-slate-950">
@@ -459,7 +460,7 @@ function InviteMembersModal({
                     <View
                       className={`h-6 w-6 rounded-full border ${
                         isSelected
-                          ? 'border-blue-600 bg-blue-600'
+                          ? 'border-brand bg-brand'
                           : 'border-slate-300 bg-white'
                       }`}
                     />
@@ -470,7 +471,7 @@ function InviteMembersModal({
           )}
 
           <TouchableOpacity
-            className="mt-4 min-h-[48px] items-center justify-center rounded-2xl bg-blue-600"
+            className="mt-4 min-h-[48px] items-center justify-center rounded-2xl bg-brand"
             activeOpacity={0.85}
             onPress={submit}
           >
@@ -657,7 +658,7 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
               {session?.phase !== 'error' && session?.phase !== 'ended' ? (
                 <ActivityIndicator
                   className="mt-8"
-                  color="#0000ff"
+                  color={APP_BRAND_COLOR}
                   size="large"
                 />
               ) : null}
@@ -671,7 +672,7 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
             </RoomContext.Provider>
           ) : (
             <View className="flex-1 items-center justify-center">
-              <ActivityIndicator color="#0000ff" size="large" />
+              <ActivityIndicator color={APP_BRAND_COLOR} size="large" />
             </View>
           )}
         </Pressable>

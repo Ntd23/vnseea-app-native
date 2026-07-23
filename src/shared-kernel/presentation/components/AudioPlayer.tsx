@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../theme/appColors';
 import React, { useCallback, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Music2, Pause, Play } from 'lucide-react-native';
@@ -16,7 +17,7 @@ export function AudioPlayer({
   uri,
   pending = false,
   compact = false,
-  accentColor = '#0084FF',
+  accentColor = APP_BRAND_COLOR,
 }: Props) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(0);

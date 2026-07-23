@@ -4,6 +4,7 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import {
   REACTION_TO_WIRE,
   type ReactionType,
@@ -1424,7 +1425,7 @@ function mapMessageLabel(raw: RawRecord): MessageLabel {
   return {
     id: readString(raw, 'id', 'label_id', 'tag_id'),
     name: readString(raw, 'name', 'label_name') || 'Label',
-    color: readString(raw, 'color', 'label_color') || '#3B82F6',
+    color: readString(raw, 'color', 'label_color') || APP_BRAND_COLOR,
   };
 }
 

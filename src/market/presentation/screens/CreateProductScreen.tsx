@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA nine-step create product wizard based on Stitch references.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useMemo, useState } from 'react';
 import {
   ScrollView,
@@ -118,7 +119,7 @@ function CreateProductScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={APP_BRAND_COLOR} />
       <View className="surface-brand h-16 flex-row items-center justify-between px-4">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
@@ -150,7 +151,7 @@ function CreateProductScreen() {
         <View className="surface-card p-5">
           <View className="mb-5 flex-row items-center">
             <View className="icon-chip h-14 w-14 items-center justify-center">
-              <Package size={28} color="#0000FF" />
+              <Package size={28} color={APP_BRAND_COLOR} />
             </View>
             <View className="ml-4 flex-1">
               <Text className="text-display">{current.title}</Text>
@@ -160,10 +161,10 @@ function CreateProductScreen() {
 
           {current.upload ? (
             <TouchableOpacity
-              className="preview-panel min-h-[190px] items-center justify-center border border-dashed border-[#0000ff] p-6"
+              className="preview-panel min-h-[190px] items-center justify-center border border-dashed border-brand p-6"
               activeOpacity={0.85}
             >
-              <ImagePlus size={46} color="#0000FF" />
+              <ImagePlus size={46} color={APP_BRAND_COLOR} />
               <Text className="mt-4 text-title-primary text-brand">
                 Chọn hình ảnh
               </Text>
@@ -177,13 +178,13 @@ function CreateProductScreen() {
                 <TouchableOpacity
                   key={option}
                   className={`input-shell min-h-[54px] flex-row items-center justify-between px-4 ${
-                    index === 0 ? 'border-blue-600' : ''
+                    index === 0 ? 'border-brand' : ''
                   }`}
                   activeOpacity={0.8}
                 >
                   <Text className="text-title-primary">{option}</Text>
                   {index === 0 ? (
-                    <CheckCircle2 size={21} color="#0000FF" />
+                    <CheckCircle2 size={21} color={APP_BRAND_COLOR} />
                   ) : null}
                 </TouchableOpacity>
               ))}

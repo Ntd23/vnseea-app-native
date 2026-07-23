@@ -1,5 +1,6 @@
 // Description: Presents post-level actions such as save, hide, delete, and report.
 
+import { APP_BRAND_COLOR } from '../theme/appColors';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -91,8 +92,8 @@ export function PostMenuActionSheet({
           label="Lưu bài viết"
           loading={loadingId === 'save'}
           disabled={isBusy}
-          icon={<Bookmark size={20} color="#3B82F6" />}
-          iconClassName="bg-blue-100"
+          icon={<Bookmark size={20} color={APP_BRAND_COLOR} />}
+          iconClassName="bg-brand-soft"
           onPress={() => runAction('save', onSave)}
         />
         <Divider />
@@ -161,7 +162,7 @@ function MenuAction({
       activeOpacity={0.7}
     >
       {loading ? (
-        <ActivityIndicator size="small" color="#3B82F6" className="mr-3" />
+        <ActivityIndicator size="small" color={APP_BRAND_COLOR} className="mr-3" />
       ) : (
         <View
           className={`mr-3 h-10 w-10 items-center justify-center rounded-full ${iconClassName}`}

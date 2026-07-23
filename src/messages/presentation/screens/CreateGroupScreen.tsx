@@ -1,5 +1,6 @@
 // Description: Create group chat screen - modern UI with real friends API
 // English description: Allows users to create new group conversations with beautiful animations.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
@@ -41,9 +42,9 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 
 type CreateGroupNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
-const BRAND_LIGHT = 'rgba(0, 0, 255, 0.08)';
-const BRAND_MEDIUM = 'rgba(0, 0, 255, 0.15)';
+const BRAND = APP_BRAND_COLOR;
+const BRAND_LIGHT = 'rgba(185, 28, 28, 0.08)';
+const BRAND_MEDIUM = 'rgba(185, 28, 28, 0.14)';
 const MAX_GROUP_NAME = 25;
 const MIN_GROUP_NAME = 4;
 const MAX_MEMBERS = 50;
@@ -212,7 +213,7 @@ function FriendItem({
         <View className="relative">
           <UserAvatar user={user} size={48} />
           {isSelected && (
-            <View className="absolute -bottom-1 -right-1 rounded-full bg-[#0000ff] p-1">
+            <View className="absolute -bottom-1 -right-1 rounded-full bg-brand p-1">
               <Check size={12} color="#ffffff" strokeWidth={3} />
             </View>
           )}
@@ -501,7 +502,7 @@ export default function CreateGroupScreen() {
         </View>
         <TouchableOpacity
           className={`h-11 w-11 items-center justify-center rounded-full ${
-            isValid ? 'bg-[#0000ff]' : 'bg-slate-100'
+            isValid ? 'bg-brand' : 'bg-slate-100'
           }`}
           activeOpacity={0.8}
           onPress={handleCreateGroup}
@@ -528,8 +529,8 @@ export default function CreateGroupScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Hero Section */}
-          <View className="mx-4 mt-4 items-center rounded-2xl bg-gradient-to-br from-[#0000ff]/5 to-[#0000ff]/10 p-6">
-            <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-[#0000ff]">
+          <View className="mx-4 mt-4 items-center rounded-2xl bg-brand/5 p-6">
+            <View className="mb-4 h-16 w-16 items-center justify-center rounded-2xl bg-brand">
               <Group size={32} color="#ffffff" />
             </View>
             <Text className="text-[18px] font-bold text-slate-800">
@@ -622,7 +623,7 @@ export default function CreateGroupScreen() {
               {/* Create button preview */}
               <TouchableOpacity
                 className={`mt-4 flex-row items-center justify-center rounded-xl py-3 ${
-                  isValid ? 'bg-[#0000ff]' : 'bg-slate-300'
+                  isValid ? 'bg-brand' : 'bg-slate-300'
                 }`}
                 activeOpacity={0.8}
                 onPress={handleCreateGroup}

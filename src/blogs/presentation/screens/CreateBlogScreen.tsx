@@ -1,4 +1,5 @@
 // Description: Renders the mobile blog create and edit form using existing blog API data.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,7 +37,7 @@ import type { BlogCreateData } from '../../domain/repositories/BlogsRepository';
 
 type CreateBlogNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 
 type Selection = {
   start: number;

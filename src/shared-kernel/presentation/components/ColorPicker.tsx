@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Check, Sliders, X } from 'lucide-react-native';
+import { APP_BRAND_COLOR } from '../theme/appColors';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -121,7 +122,7 @@ function ColorCustomizeModal({ visible, color, onChange, onClose }: ColorCustomi
   const hueOffsetRef = useRef({ x: 40, y: 0 });
   const pickerCursorRef = useRef({ x: PICKER_W * 0.8, y: PICKER_H * 0.4 });
   const hueCursorRef = useRef(0);
-  const currentColorRef = useRef('#3b82f6');
+  const currentColorRef = useRef<string>(APP_BRAND_COLOR);
   const hueBgRef = useRef<string>(hslToHex(hexToHsl(color)[0], 100, 50));
 
   // Chỉ re-render khi hueBg thay đổi (kéo hue slider)
@@ -612,7 +613,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   doneBtn: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: APP_BRAND_COLOR,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',

@@ -9,6 +9,10 @@
 // can optimistically prepend the new post and the user lands back on a
 // feed that already shows their content.
 
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -331,7 +335,7 @@ function assetToVideoAttachment(asset: Asset): PostVideoAttachment | null {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────
-const TOKEN_BLUE = '#0000ff';
+const TOKEN_BRAND = APP_BRAND_COLOR;
 const COMPOSER_TOKEN_PATTERN = /([@#][^\s@#.,!?;:()[\]{}"']+)/g;
 
 function renderHighlightedText(value: string) {
@@ -345,7 +349,7 @@ function renderHighlightedText(value: string) {
       nodes.push(value.slice(lastIndex, match.index));
     }
     nodes.push(
-      <Text key={`${match[0]}-${match.index}`} style={{ color: TOKEN_BLUE }}>
+      <Text key={`${match[0]}-${match.index}`} style={{ color: TOKEN_BRAND }}>
         {match[0]}
       </Text>,
     );
@@ -416,8 +420,8 @@ function HighlightedComposerInput({
         placeholderTextColor="#94a3b8"
         multiline
         scrollEnabled
-        cursorColor={TOKEN_BLUE}
-        selectionColor={TOKEN_BLUE}
+        cursorColor={TOKEN_BRAND}
+        selectionColor={TOKEN_BRAND}
         onFocus={onFocus}
         onBlur={onBlur}
         style={{
@@ -475,7 +479,7 @@ function CaptionSuggestionBar({
       >
         {isLoading && suggestions.length === 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 }}>
-            <ActivityIndicator color={TOKEN_BLUE} size="small" />
+            <ActivityIndicator color={TOKEN_BRAND} size="small" />
             <Text style={{ marginLeft: 8, fontSize: 13, color: '#64748b', fontWeight: '600' }}>
               {loadingLabel}
             </Text>
@@ -512,10 +516,10 @@ function CaptionSuggestionBar({
                       marginRight: 10,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: isMention ? '#eff6ff' : '#eef2ff',
+                      backgroundColor: APP_COLORS.brand.soft,
                     }}
                   >
-                    <Text style={{ color: TOKEN_BLUE, fontWeight: '800', fontSize: 13 }}>
+                    <Text style={{ color: TOKEN_BRAND, fontWeight: '800', fontSize: 13 }}>
                       {isMention ? '@' : '#'}
                     </Text>
                   </View>
@@ -524,7 +528,7 @@ function CaptionSuggestionBar({
                   <Text
                     numberOfLines={1}
                     style={{
-                      color: isMention ? '#0f172a' : TOKEN_BLUE,
+                      color: isMention ? '#0f172a' : TOKEN_BRAND,
                       fontSize: 14,
                       fontWeight: '800',
                     }}
@@ -537,7 +541,7 @@ function CaptionSuggestionBar({
                     </Text>
                   ) : null}
                 </View>
-                <ChevronRight size={18} color={TOKEN_BLUE} />
+                <ChevronRight size={18} color={TOKEN_BRAND} />
               </TouchableOpacity>
             );
           })
@@ -613,7 +617,7 @@ function PrivacyPickerSheet({
                       height: 22,
                       borderRadius: 11,
                       borderWidth: 6,
-                      borderColor: '#0000ff',
+                      borderColor: APP_BRAND_COLOR,
                     }}
                   />
                 ) : (
@@ -675,7 +679,7 @@ function FeelingPickerSheet({
                 }}
                 activeOpacity={0.7}
               >
-                <Text className="text-title-secondary text-brand font-bold text-[#0000ff]">{clearLabel}</Text>
+                <Text className="text-title-secondary font-bold text-brand">{clearLabel}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -703,7 +707,7 @@ function FeelingPickerSheet({
                     <Text
                       className={
                         isActive
-                          ? 'ml-3 text-title-primary font-bold text-[#0000ff]'
+                          ? 'ml-3 text-title-primary font-bold text-brand'
                           : 'ml-3 text-title-primary text-slate-700'
                       }
                     >
@@ -781,7 +785,7 @@ const CreatePostHeader = React.memo(({
           activeOpacity={0.7}
           className={
             canSubmit && !isProcessingPhotos
-              ? 'rounded-full bg-[#0000ff] px-6 py-2.5'
+              ? 'rounded-full bg-brand px-6 py-2.5'
               : 'rounded-full bg-slate-200 px-6 py-2.5'
           }
         >
@@ -870,7 +874,7 @@ const AuthorPrivacyCard = React.memo(({
             </Text>
           </View>
         )}
-        <View className="absolute bottom-0 right-0 h-4.5 w-4.5 rounded-full bg-[#0000ff] border border-white items-center justify-center">
+        <View className="absolute bottom-0 right-0 h-4.5 w-4.5 rounded-full bg-brand border border-white items-center justify-center">
           <Text className="text-white text-[10px] font-bold leading-none">+</Text>
         </View>
       </View>
@@ -890,7 +894,7 @@ const AuthorPrivacyCard = React.memo(({
           ) : null}
         </View>
         {targetPage ? (
-          <Text className="mt-1 text-[12px] font-semibold text-[#0000ff]">
+          <Text className="mt-1 text-[12px] font-semibold text-brand">
             {copy.postAsPage}
           </Text>
         ) : null}
@@ -943,16 +947,16 @@ const AuthorPrivacyCard = React.memo(({
                       paddingHorizontal: 10,
                       paddingVertical: 8,
                       borderRadius: 8,
-                      backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                      backgroundColor: isSelected ? APP_COLORS.brand.soft : 'transparent',
                     }}
                   >
-                    <OptIcon size={14} color={isSelected ? '#3b82f6' : '#64748B'} />
+                    <OptIcon size={14} color={isSelected ? APP_BRAND_COLOR : '#64748B'} />
                     <Text
                       style={{
                         marginLeft: 8,
                         fontSize: 12,
                         fontWeight: isSelected ? '700' : '500',
-                        color: isSelected ? '#1d4ed8' : '#334155',
+                        color: isSelected ? APP_BRAND_COLOR : '#334155',
                       }}
                     >
                       {opt.label}
@@ -1021,8 +1025,8 @@ const CaptionComposer = React.memo(({
       label: copy.video,
       onPress: onPickVideo,
       Icon: VideoIcon,
-      iconBg: '#eff6ff',
-      iconColor: '#3b82f6',
+      iconBg: APP_COLORS.brand.soft,
+      iconColor: APP_BRAND_COLOR,
     },
     {
       key: 'product',
@@ -1126,7 +1130,7 @@ const CaptionComposer = React.memo(({
               paddingHorizontal: 12,
             }}
           >
-            <ImageIcon size={18} color="#3b82f6" strokeWidth={2.5} />
+            <ImageIcon size={18} color={APP_BRAND_COLOR} strokeWidth={2.5} />
             <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
               {photoLabel}
             </Text>
@@ -1329,7 +1333,7 @@ const MediaPreviewStrip = React.memo(({
                 justifyContent: 'center',
               }}
             >
-              <ActivityIndicator color="#0000ff" size="small" />
+              <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
               <Text className="mt-2 text-center text-[10px] font-bold text-slate-500">
                 {copy.processing}
               </Text>
@@ -1359,8 +1363,8 @@ const MediaPreviewStrip = React.memo(({
                     borderRadius: 18,
                     borderStyle: 'dashed',
                     borderWidth: 2,
-                    borderColor: pressed ? '#2563EB' : '#BAC7D6',
-                    backgroundColor: pressed ? '#EFF6FF' : '#F8FAFC',
+                    borderColor: pressed ? APP_BRAND_COLOR : '#BAC7D6',
+                    backgroundColor: pressed ? APP_COLORS.brand.soft : '#F8FAFC',
                     alignItems: 'center',
                     justifyContent: 'center',
                     transform: [{ scale: pressed ? 0.98 : 1 }],
@@ -1425,8 +1429,8 @@ const VideoPreviewCard = React.memo(({
       style={{ maxHeight: frameHeight + 54 }}
     >
       <View className="flex-row items-center border-b border-white/5 bg-black/25 px-3 py-2.5">
-        <View className="h-8 w-8 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10">
-          <VideoIcon size={15} color="#3b82f6" />
+        <View className="h-8 w-8 items-center justify-center rounded-xl border border-brand/20 bg-brand/10">
+          <VideoIcon size={15} color={APP_BRAND_COLOR} />
         </View>
         <View className="ml-3 flex-1">
           <Text className="text-[13px] font-bold text-slate-100" numberOfLines={1}>
@@ -1477,7 +1481,7 @@ const VideoPreviewCard = React.memo(({
               />
             ) : null}
             <View style={StyleSheet.absoluteFill} className="bg-black/25" />
-            <ActivityIndicator color="#3b82f6" size="small" />
+            <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
             <Text className="mt-2 text-xs text-slate-400 font-semibold">{copy.processing}</Text>
           </View>
         )}
@@ -1498,7 +1502,7 @@ const VideoPreviewCard = React.memo(({
           pointerEvents="none"
         >
           {!isPlaying ? (
-            <View className="h-14 w-14 items-center justify-center rounded-full border border-blue-400/30 bg-blue-600/90 shadow-lg">
+            <View className="h-14 w-14 items-center justify-center rounded-full border border-brand/30 bg-brand/90 shadow-lg">
               <View style={{
                 width: 0,
                 height: 0,
@@ -1593,7 +1597,7 @@ const AudioPreviewCard = React.memo(({
 
   if (audio) {
     return (
-      <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-blue-100 bg-blue-50 p-4">
+      <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-info-border bg-info-soft p-4">
         <View className="flex-1">
           <Text className="mb-2 text-sm font-semibold text-slate-700" numberOfLines={1}>
             {audio.name}
@@ -1735,8 +1739,8 @@ const ComposerActionTray = React.memo(({
       label: copy.video,
       onPress: onPickVideo,
       Icon: VideoIcon,
-      iconBg: '#eff6ff',
-      iconColor: '#3b82f6',
+      iconBg: APP_COLORS.brand.soft,
+      iconColor: APP_BRAND_COLOR,
     },
     {
       key: 'product',
@@ -2546,7 +2550,7 @@ export function CreatePostModal({
               {/* Error banner */}
               {vm.error ? (
                 <View className="rounded-lg bg-red-50 px-3 py-2">
-                  <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
+                  <Text style={{ color: APP_COLORS.status.error, fontSize: 13 }}>{vm.error}</Text>
                 </View>
               ) : null}
             </ScrollView>
@@ -2559,8 +2563,8 @@ export function CreatePostModal({
                 onPress={handlePickPhotos}
                 style={{ flex: 1, alignItems: 'center' }}
               >
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
-                  <ImageIcon size={20} color="#3b82f6" strokeWidth={2.5} />
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: APP_COLORS.brand.soft, alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                  <ImageIcon size={20} color={APP_BRAND_COLOR} strokeWidth={2.5} />
                 </View>
                 <Text style={{ fontSize: 11, fontWeight: '600', color: '#475569', textAlign: 'center' }} numberOfLines={1}>
                   {copy.photo}
@@ -2687,7 +2691,7 @@ export function CreatePostModal({
                 onPress={handleSubmit}
                 disabled={vm.isSubmitting || isProcessingPhotos}
                 style={{
-                  backgroundColor: '#0758ff',
+                  backgroundColor: APP_BRAND_COLOR,
                   borderRadius: 20,
                   paddingVertical: 9,
                   paddingHorizontal: 20,
@@ -2754,7 +2758,7 @@ export function CreatePostModal({
                         paddingVertical: 12,
                         paddingHorizontal: 16,
                         backgroundColor: isSelected
-                          ? '#3b82f6'
+                          ? APP_BRAND_COLOR
                           : 'transparent',
                         opacity: vm.draft.isAnonymous ? 0.45 : 1,
                       }}
@@ -2801,8 +2805,8 @@ export function CreatePostModal({
                     <Switch
                       value={vm.draft.isAnonymous}
                       onValueChange={stableSetAnonymous}
-                      trackColor={{ false: '#cbd5e1', true: '#93c5fd' }}
-                      thumbColor={vm.draft.isAnonymous ? '#0758ff' : '#f8fafc'}
+                      trackColor={{ false: '#cbd5e1', true: APP_BRAND_COLOR }}
+                      thumbColor="#ffffff"
                     />
                   </View>
                 ) : null}

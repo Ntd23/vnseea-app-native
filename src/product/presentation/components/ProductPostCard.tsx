@@ -1,5 +1,9 @@
 // Description: Product post card component for the home feed.
 // Displays products in Facebook Marketplace-style layout.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import {
@@ -294,10 +298,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
           </Text>
           {compactLocationLabel ? (
             <View className="flex-row items-center mt-1">
-              <MapPin size={10.5} color={distanceLabel ? '#0F56FB' : '#94A3B8'} />
+              <MapPin size={10.5} color={distanceLabel ? APP_COLORS.status.info : '#94A3B8'} />
               <Text
                 className={`ml-1 text-[11px] font-semibold ${
-                  distanceLabel ? 'text-[#0F56FB]' : 'text-slate-400'
+                  distanceLabel ? 'text-info' : 'text-slate-400'
                 }`}
                 numberOfLines={1}
               >
@@ -308,7 +312,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
           {/* Price & Action Row */}
           <View className="flex-row items-center justify-between mt-2.5">
-            <Text className="text-[15px] font-extrabold text-[#0F56FB] flex-1 mr-1.5" numberOfLines={1}>
+            <Text className="text-[15px] font-extrabold text-brand flex-1 mr-1.5" numberOfLines={1}>
               {formatProductPrice(product)}
             </Text>
 
@@ -317,19 +321,19 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 {/* Contact Action */}
                 <TouchableOpacity
                   className={`h-8 w-8 items-center justify-center rounded-full ${
-                    product.can_contact_seller ? 'bg-blue-50/80 active:bg-blue-100/80' : 'bg-slate-50'
+                    product.can_contact_seller ? 'bg-brand-subtle active:bg-brand-soft' : 'bg-slate-50'
                   }`}
                   activeOpacity={0.7}
                   disabled={!product.can_contact_seller}
                   onPress={handleContactSeller}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
-                  <MessageCircle size={15} color={product.can_contact_seller ? "#0F56FB" : "#CBD5E1"} />
+                  <MessageCircle size={15} color={product.can_contact_seller ? APP_BRAND_COLOR : "#CBD5E1"} />
                 </TouchableOpacity>
                 {canShowOrderRequest ? (
                   <TouchableOpacity
                     className={`h-8 w-8 items-center justify-center rounded-full ${
-                      product.can_add_to_cart ? 'bg-blue-600' : 'bg-slate-50'
+                      product.can_add_to_cart ? 'bg-brand' : 'bg-slate-50'
                     }`}
                     activeOpacity={0.7}
                     disabled={!product.can_add_to_cart || isOrderRequesting}
@@ -377,7 +381,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 resizeMode="cover"
               />
             ) : (
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-600">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
                 <ShoppingBag size={20} color="#FFFFFF" />
               </View>
             )}
@@ -386,8 +390,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 <Text className="text-title-primary font-bold text-[#050505] flex-shrink mr-2" numberOfLines={1}>
                   {product.seller?.name || 'Người bán'}
                 </Text>
-                <View className="bg-blue-50 rounded px-1.5 py-0.5" style={{ flexShrink: 0 }}>
-                  <Text className="text-[10px] font-bold uppercase text-[#0866FF]">
+                <View className="bg-brand-subtle rounded px-1.5 py-0.5" style={{ flexShrink: 0 }}>
+                  <Text className="text-[10px] font-bold uppercase text-brand">
                     Sản phẩm
                   </Text>
                 </View>
@@ -457,7 +461,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
         {/* Location */}
         {compactLocationLabel ? (
-          <Text className="text-[13px] text-slate-500 font-semibold leading-5 mb-2.5" numberOfLines={1} style={{ color: distanceLabel ? '#0F56FB' : '#64748B', marginBottom: 10 }}>
+          <Text className="text-[13px] text-slate-500 font-semibold leading-5 mb-2.5" numberOfLines={1} style={{ color: distanceLabel ? APP_COLORS.status.info : '#64748B', marginBottom: 10 }}>
             {compactLocationLabel}
           </Text>
         ) : null}
@@ -554,8 +558,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 className="flex-row items-center justify-center flex-1 py-2.5"
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}
               >
-                <ThumbsUp size={18} color={myReaction ? '#0000ff' : '#64748B'} strokeWidth={2.4} />
-                <Text className={`ml-2 text-[13px] font-bold ${myReaction ? 'text-[#0000ff]' : 'text-[#64748B]'}`} style={{ marginLeft: 8 }}>
+                <ThumbsUp size={18} color={myReaction ? APP_BRAND_COLOR : '#64748B'} strokeWidth={2.4} />
+                <Text className={`ml-2 text-[13px] font-bold ${myReaction ? 'text-brand' : 'text-[#64748B]'}`} style={{ marginLeft: 8 }}>
                   Thích
                 </Text>
               </TouchableOpacity>
@@ -629,7 +633,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef2f7',
   },
   marketplaceCartButton: {
-    backgroundColor: '#0f56fb',
+    backgroundColor: APP_BRAND_COLOR,
   },
   marketplaceActionDisabled: {
     backgroundColor: '#f1f5f9',

@@ -1,4 +1,8 @@
 // Description: Facebook-style profile action/settings menu for own and other profiles.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -742,7 +746,7 @@ export default function ProfileMoreScreen() {
       >
         <Icon
           size={24}
-          color={action.danger ? '#B91C1C' : '#050505'}
+          color={action.danger ? APP_COLORS.status.destructive : '#050505'}
           strokeWidth={2.2}
         />
         <Text
@@ -754,7 +758,7 @@ export default function ProfileMoreScreen() {
           {action.label}
         </Text>
         {isLoading ? (
-          <ActivityIndicator size="small" color="#1877F2" style={styles.rowSpinner} />
+          <ActivityIndicator size="small" color={APP_BRAND_COLOR} style={styles.rowSpinner} />
         ) : null}
       </TouchableOpacity>
     );
@@ -775,7 +779,7 @@ export default function ProfileMoreScreen() {
         pointerEvents="none"
         style={[styles.swipeBackCue, swipeBackCueStyle]}
       >
-        <ArrowLeft size={18} color="#1877F2" strokeWidth={2.6} />
+        <ArrowLeft size={18} color={APP_BRAND_COLOR} strokeWidth={2.6} />
         <Text style={styles.swipeBackCueText}>
           {language === 'vi' ? 'Vuốt đúng rồi' : 'Keep swiping'}
         </Text>
@@ -862,7 +866,7 @@ const styles = StyleSheet.create({
   },
   swipeBackCueText: {
     marginLeft: 7,
-    color: '#1877F2',
+    color: APP_BRAND_COLOR,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -928,7 +932,7 @@ const styles = StyleSheet.create({
     color: '#050505',
   },
   actionLabelDanger: {
-    color: '#7F1D1D',
+    color: APP_COLORS.status.destructive,
   },
   rowSpinner: {
     marginLeft: 8,

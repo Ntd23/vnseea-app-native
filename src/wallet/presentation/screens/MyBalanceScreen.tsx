@@ -1,4 +1,5 @@
 // Description: Renders the My Balance screen with custom card layout, curved wave send modal, real camera QR code scanner using react-native-camera-kit, dynamic QR transfer modal, and social integrations, matching the user's mockup.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -658,7 +659,7 @@ function MyBalanceScreen() {
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
         <SafeAreaFeedHeader />
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="small" color="#0000ff" />
+          <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
           <Text className="text-sm font-bold text-slate-500 mt-4">{copy.loading}</Text>
         </View>
       </View>
@@ -677,10 +678,10 @@ function MyBalanceScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => void reload()}
-            className="flex-row items-center gap-x-2 rounded-full bg-blue-50 px-6 py-3"
+            className="flex-row items-center gap-x-2 rounded-full bg-brand-subtle px-6 py-3"
           >
-            <RefreshCw size={18} color="#0000ff" />
-            <Text className="text-sm font-extrabold text-blue-600">{copy.retry}</Text>
+            <RefreshCw size={18} color={APP_BRAND_COLOR} />
+            <Text className="text-sm font-extrabold text-brand">{copy.retry}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -727,7 +728,7 @@ function MyBalanceScreen() {
                 {copy.balanceLabel}
               </Text>
               
-              <Text className="text-[32px] font-black text-blue-600 mb-6">
+              <Text className="text-[32px] font-black text-brand mb-6">
                 {formatNumber(balance)} VNSEEA
               </Text>
 
@@ -754,7 +755,7 @@ function MyBalanceScreen() {
                   }
                   setIsQrModalVisible(true);
                 }}
-                className="w-72 h-12 flex-row items-center justify-center bg-blue-600 rounded-2xl"
+                className="w-72 h-12 flex-row items-center justify-center bg-brand rounded-2xl"
               >
                 <QrCode size={18} color="#ffffff" style={{ marginRight: 8 }} />
                 <Text className="text-white font-extrabold text-[15px]">{copy.qrBtn}</Text>
@@ -831,7 +832,7 @@ function MyBalanceScreen() {
       >
         <SafeAreaView className="flex-1 bg-white" edges={['top']}>
           {/* Header with Curved Wave Style */}
-          <View className="bg-blue-600 pt-8 pb-10 relative items-center justify-center">
+          <View className="bg-brand pt-8 pb-10 relative items-center justify-center">
             {/* Close Button X */}
             <TouchableOpacity
               activeOpacity={0.7}
@@ -866,8 +867,8 @@ function MyBalanceScreen() {
           >
             <ScrollView className="flex-1 px-5 pt-3" keyboardShouldPersistTaps="handled">
               {/* Blue Info Box */}
-              <View className="rounded-xl bg-blue-50/70 border border-blue-100/50 p-4 items-center mb-6">
-                <Text className="text-blue-600 font-extrabold text-[15px] text-center">
+              <View className="rounded-xl bg-brand-subtle border border-brand-border p-4 items-center mb-6">
+                <Text className="text-brand font-extrabold text-[15px] text-center">
                   {copy.infoBoxText}
                 </Text>
               </View>
@@ -911,25 +912,25 @@ function MyBalanceScreen() {
                     placeholderTextColor="#94a3b8"
                     className="flex-1 text-base font-semibold text-slate-900"
                   />
-                  {isSearching ? <ActivityIndicator size="small" color="#0000ff" /> : null}
+                  {isSearching ? <ActivityIndicator size="small" color={APP_BRAND_COLOR} /> : null}
                 </View>
               </View>
 
               {/* Selected recipient badge */}
               {selectedRecipient ? (
-                <View className="mb-5 flex-row items-center gap-x-3 rounded-2xl bg-blue-50 border border-blue-100 p-3">
+                <View className="mb-5 flex-row items-center gap-x-3 rounded-2xl bg-brand-subtle border border-brand-border p-3">
                   {selectedRecipient.avatar ? (
                     <Image source={{ uri: selectedRecipient.avatar }} className="w-10 h-10 rounded-full" />
                   ) : (
-                    <View className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center">
-                      <Text className="text-blue-700 font-bold text-sm">
+                    <View className="w-10 h-10 rounded-full bg-brand-soft items-center justify-center">
+                      <Text className="text-brand-pressed font-bold text-sm">
                         {selectedRecipient.name.slice(0, 1).toUpperCase()}
                       </Text>
                     </View>
                   )}
                   <View className="flex-1">
-                    <Text className="text-sm font-extrabold text-blue-900">{selectedRecipient.name}</Text>
-                    <Text className="text-xs font-bold text-blue-400 mt-0.5">@{selectedRecipient.username}</Text>
+                    <Text className="text-sm font-extrabold text-brand-pressed">{selectedRecipient.name}</Text>
+                    <Text className="text-xs font-bold text-brand mt-0.5">@{selectedRecipient.username}</Text>
                   </View>
                   <TouchableOpacity
                     activeOpacity={0.8}
@@ -937,9 +938,9 @@ function MyBalanceScreen() {
                       setSelectedRecipient(null);
                       setSearchQuery('');
                     }}
-                    className="h-8 w-8 items-center justify-center rounded-full bg-blue-200/50"
+                    className="h-8 w-8 items-center justify-center rounded-full bg-brand-soft"
                   >
-                    <X size={16} color="#2563eb" />
+                    <X size={16} color={APP_BRAND_COLOR} />
                   </TouchableOpacity>
                 </View>
               ) : null}
@@ -981,7 +982,7 @@ function MyBalanceScreen() {
                 activeOpacity={0.85}
                 disabled={isSubmitting}
                 onPress={handleConfirmSend}
-                className="bg-blue-600 rounded-full py-3.5 px-8 flex-row items-center justify-center self-center mt-8 min-w-[140px]"
+                className="bg-brand rounded-full py-3.5 px-8 flex-row items-center justify-center self-center mt-8 min-w-[140px]"
               >
                 {isSubmitting ? (
                   <ActivityIndicator size="small" color="#ffffff" />
@@ -1006,7 +1007,7 @@ function MyBalanceScreen() {
       >
         <SafeAreaView className="flex-1 bg-white" edges={['top']}>
           {/* Header */}
-          <View className="bg-blue-600 pt-8 pb-10 relative items-center justify-center">
+          <View className="bg-brand pt-8 pb-10 relative items-center justify-center">
             {/* Close Button X */}
             <TouchableOpacity
               activeOpacity={0.7}
@@ -1110,7 +1111,7 @@ function MyBalanceScreen() {
             />
             {/* Overlay viewfinder square guide line */}
             <View className="absolute inset-0 items-center justify-center pointer-events-none">
-              <View className="h-64 w-64 border-2 border-blue-500 rounded-3xl bg-transparent" />
+              <View className="h-64 w-64 border-2 border-brand rounded-3xl bg-transparent" />
             </View>
           </View>
         </SafeAreaView>

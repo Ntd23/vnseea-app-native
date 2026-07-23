@@ -23,23 +23,34 @@
 
 /* ──────────────────────────────────────────────────────────── 
    2. COLORS
-   Primary   = xanh #0000ff chủ đạo (brand)
+   Primary   = đỏ #b91c1c chủ đạo (brand)
    Secondary = slate tối cho text / neutral
    Accent    = cam/vàng cho highlight
    Status    = success / warning / error / info
    ──────────────────────────────────────────────────────────── */
 :root {
+  /* Canonical semantic brand colors */
+  --brand-primary: #b91c1c;
+  --brand-pressed: #991b1b;
+  --brand-on-primary: #ffffff;
+  --brand-on-primary-muted: #fee2e2;
+  --brand-border-on-primary: rgba(255, 255, 255, 0.25);
+  --brand-soft: rgba(185, 28, 28, 0.08);
+  --brand-soft-pressed: rgba(185, 28, 28, 0.14);
+  --brand-border: rgba(185, 28, 28, 0.18);
+  --brand-shadow: rgba(153, 27, 27, 0.24);
+
   /* Primary */
-  --color-primary-50: #eef0ff;
-  --color-primary-100: #dfe4ff;
-  --color-primary-200: #c5caff;
-  --color-primary-300: #a1a4ff;
-  --color-primary-400: #7b73ff;
-  --color-primary-500: #0000ff;
-  --color-primary-600: #0000e6;
-  --color-primary-700: #0000cc;
-  --color-primary-800: #0000a3;
-  --color-primary-900: #000080;
+  --color-primary-50: rgba(185, 28, 28, 0.05);
+  --color-primary-100: #fee2e2;
+  --color-primary-200: rgba(185, 28, 28, 0.18);
+  --color-primary-300: rgba(185, 28, 28, 0.32);
+  --color-primary-400: rgba(185, 28, 28, 0.62);
+  --color-primary-500: #b91c1c;
+  --color-primary-600: #b91c1c;
+  --color-primary-700: #991b1b;
+  --color-primary-800: #991b1b;
+  --color-primary-900: #7f1d1d;
 
   /* Secondary (neutral / slate) */
   --color-secondary-50: #f8fafc;
@@ -61,7 +72,7 @@
   --color-accent-700: #b45309;
 
   /* Status */
-  --color-success: #0ea5e9;
+  --color-success: #16a34a;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   --color-info: #3b82f6;
@@ -105,8 +116,8 @@
   --text-secondary: var(--color-secondary-500); /* #64748b */
   --text-tertiary: var(--color-secondary-400); /* #94a3b8 */
   --text-inverse: #ffffff;
-  --text-brand: var(--color-primary-500); /* #0000ff */
-  --text-link: var(--color-primary-600); /* #0000e6 */
+  --text-brand: var(--color-primary-500);
+  --text-link: var(--color-primary-500);
   --text-danger: var(--color-error);
   --text-success: var(--color-success);
 }
@@ -127,7 +138,7 @@
   /* Icon colors */
   --icon-primary: #000000;
   --icon-secondary: var(--color-secondary-400); /* #94a3b8 — nhạt */
-  --icon-brand: var(--color-primary-500); /* #0000ff */
+  --icon-brand: var(--color-primary-500);
   --icon-inverse: #ffffff;
   --icon-danger: var(--color-error);
   --icon-success: var(--color-success);
@@ -137,17 +148,18 @@
    5. SURFACES & BORDERS
    ──────────────────────────────────────────────────────────── */
 :root {
-  --bg-base: #f1f4fb;
+  --bg-base: #f8fafc;
   --bg-surface: #ffffff;
-  --bg-surface-hover: #f7f9ff;
-  --bg-surface-active: #edf1ff;
+  --bg-surface-hover: rgba(185, 28, 28, 0.05);
+  --bg-surface-active: rgba(185, 28, 28, 0.08);
   --bg-muted: var(--color-secondary-100);
   --bg-brand: var(--color-primary-500);
-  --bg-brand-hover: var(--color-primary-600);
+  --bg-brand-hover: var(--brand-pressed);
 
-  --border-light: rgba(0, 0, 255, 0.08);
-  --border-default: rgba(0, 0, 255, 0.12);
-  --border-strong: rgba(0, 0, 255, 0.2);
+  --border-light: #f1f5f9;
+  --border-default: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-on-brand: rgba(255, 255, 255, 0.25);
 
   --radius-sm: 8px;
   --radius-md: 14px;
@@ -160,11 +172,11 @@
    6. SHADOWS
    ──────────────────────────────────────────────────────────── */
 :root {
-  --shadow-sm: 0 2px 8px rgba(0, 0, 255, 0.04);
-  --shadow-md: 0 4px 20px rgba(0, 0, 255, 0.06);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 255, 0.09);
-  --shadow-xl: 0 12px 40px rgba(0, 0, 255, 0.13);
-  --shadow-brand: 0 4px 14px rgba(0, 0, 255, 0.28);
+  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 20px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 8px 32px rgba(15, 23, 42, 0.09);
+  --shadow-xl: 0 12px 40px rgba(15, 23, 42, 0.13);
+  --shadow-brand: 0 4px 14px rgba(153, 27, 27, 0.24);
 }
 
 /* ──────────────────────────────────────────────────────────── 
@@ -274,10 +286,10 @@
   color: var(--text-tertiary);
 }
 .text-brand {
-  color: #0000ff;
+  color: #b91c1c;
 }
 .text-link {
-  color: #0000e6;
+  color: #b91c1c;
 }
 .text-inverse {
   color: #ffffff;
@@ -325,25 +337,25 @@
 
 /* --- Surface Utilities --- */
 .surface-base {
-  background-color: #f1f4fb;
+  background-color: #f8fafc;
 }
 .surface-card {
   background-color: #ffffff;
   border-width: 1px;
-  border-color: rgba(0, 0, 255, 0.08);
+  border-color: #e2e8f0;
   border-radius: 24px;
 }
 .surface-card-hover {
   background-color: #ffffff;
   border-width: 1px;
-  border-color: rgba(0, 0, 255, 0.08);
+  border-color: #e2e8f0;
   border-radius: 24px;
 }
 .surface-card-hover:hover {
   background-color: #ffffff;
 }
 .surface-brand {
-  background-color: #0000ff;
+  background-color: #b91c1c;
   color: #ffffff;
 }
 .surface-muted {
@@ -352,12 +364,12 @@
 .surface-topbar {
   background-color: #f8fafc;
   border-bottom-width: 1px;
-  border-bottom-color: rgba(0, 0, 255, 0.12);
+  border-bottom-color: #e2e8f0;
 }
 .surface-panel {
   background-color: #f8fafc;
   border-width: 1px;
-  border-color: rgba(0, 0, 255, 0.08);
+  border-color: #e2e8f0;
   border-radius: 24px;
 }
 .input-shell {
@@ -367,7 +379,7 @@
   border-radius: 14px;
 }
 .icon-chip {
-  background-color: #dfe4ff;
+  background-color: #fee2e2;
   border-radius: 9999px;
 }
 .divider-line {
@@ -380,14 +392,14 @@
   height: 6px;
 }
 .progress-fill {
-  background-color: #0000ff;
+  background-color: #b91c1c;
   border-radius: 9999px;
   height: 6px;
 }
 .preview-panel {
-  background-color: #eef0ff;
+  background-color: rgba(185, 28, 28, 0.05);
   border-width: 1px;
-  border-color: rgba(0, 0, 255, 0.08);
+  border-color: rgba(185, 28, 28, 0.18);
   border-radius: 24px;
 }
 .form-note-panel {
@@ -401,9 +413,9 @@
   border-radius: 9999px;
 }
 .category-chip-active {
-  background-color: #0000ff;
+  background-color: #b91c1c;
   border-width: 1px;
-  border-color: #0000ff;
+  border-color: #b91c1c;
   border-radius: 9999px;
 }
 .choice-dot {
@@ -418,7 +430,7 @@
   width: 16px;
   height: 16px;
   border-width: 5px;
-  border-color: #0000ff;
+  border-color: #b91c1c;
   border-radius: 9999px;
   background-color: #ffffff;
 }
@@ -431,7 +443,7 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 20px;
-  background-color: #0000ff;
+  background-color: #b91c1c;
   color: #ffffff;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 14px;
@@ -539,7 +551,7 @@
   border-width: 1px;
   border-color: rgba(255, 255, 255, 0.45);
   border-radius: 24px;
-  shadow-color: rgba(0, 0, 255, 0.10);
+  shadow-color: rgba(15, 23, 42, 0.10);
   shadow-offset: 0 8px;
   shadow-opacity: 1;
   shadow-radius: 24px;
@@ -553,9 +565,9 @@
   background-color: var(--color-primary-50);
   background-image: linear-gradient(
     90deg,
-    rgba(238, 240, 255, 0) 0%,
+    rgba(185, 28, 28, 0) 0%,
     rgba(255, 255, 255, 0.95) 50%,
-    rgba(238, 240, 255, 0) 100%
+    rgba(185, 28, 28, 0) 100%
   );
   background-size: 200% 100%;
   background-position: 0% 0%;

@@ -1,4 +1,5 @@
 // English description: Displays movie metadata, playback, related movies, sharing, and comments.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -160,7 +161,7 @@ export default function MovieDetailScreen() {
 
         <View className="mt-3 bg-white px-3 pb-5">
           <View className="min-h-[52px] flex-row items-center border-b border-[#e5e7eb]">
-            <Clapperboard size={18} color="#0000ff" />
+            <Clapperboard size={18} color={APP_BRAND_COLOR} />
             <Text className="ml-2 text-sm font-semibold text-[#111827]">{isVi ? 'Hơn như thế này' : 'More like this'}</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 16 }}>
@@ -179,7 +180,7 @@ export default function MovieDetailScreen() {
 
         <View className="mt-3 bg-white px-3 pb-8">
           <View className="min-h-[52px] flex-row items-center border-b border-[#e5e7eb]">
-            <MessageCircle size={18} color="#0000ff" />
+            <MessageCircle size={18} color={APP_BRAND_COLOR} />
             <Text className="ml-2 text-sm font-semibold text-[#111827]">{comments.length} {isVi ? 'Bình luận' : 'Comments'}</Text>
           </View>
           <View className="mt-4 flex-row items-center">
@@ -194,14 +195,14 @@ export default function MovieDetailScreen() {
               onSubmitEditing={sendComment}
             />
             <TouchableOpacity
-              className="ml-2 h-12 w-12 items-center justify-center rounded-full bg-[#0000ff]"
+              className="ml-2 h-12 w-12 items-center justify-center rounded-full bg-brand"
               disabled={isSubmittingComment || !commentText.trim()}
               onPress={sendComment}>
               {isSubmittingComment ? <ActivityIndicator color="#ffffff" /> : <ArrowRight size={21} color="#ffffff" />}
             </TouchableOpacity>
           </View>
           {!!error && <Text className="mt-2 text-xs text-red-600">{error}</Text>}
-          {isLoadingComments && <ActivityIndicator className="mt-4" color="#0000ff" />}
+          {isLoadingComments && <ActivityIndicator className="mt-4" color={APP_BRAND_COLOR} />}
           {comments.map(comment => (
             <View key={String(comment.id)} className="mt-4 flex-row border-t border-[#f1f5f9] pt-3">
               {comment.userAvatar ? <Image source={{ uri: comment.userAvatar }} className="h-9 w-9 rounded-full" /> : <View className="h-9 w-9 rounded-full bg-[#e5e7eb]" />}
@@ -222,7 +223,7 @@ function MovieInfo({ label, value, accent = false }: { label: string; value?: st
   return (
     <View className="mt-3 flex-row flex-wrap">
       <Text className="text-sm text-[#4b5563]">{label}: </Text>
-      <Text className={`text-sm ${accent ? 'text-[#0000ff]' : 'text-[#374151]'}`}>{value}</Text>
+      <Text className={`text-sm ${accent ? 'text-brand' : 'text-[#374151]'}`}>{value}</Text>
     </View>
   );
 }

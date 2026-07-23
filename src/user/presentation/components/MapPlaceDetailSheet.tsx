@@ -1,4 +1,5 @@
 // Description: Google-Maps-style draggable place sheet with three snap levels.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -42,7 +43,7 @@ import {
 } from 'lucide-react-native';
 import type { MapPlaceReview } from '../../domain/types/user.types';
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 const ACTION_TEAL = '#008C95';
 const ACTION_PALE = '#CFF7FB';
 
@@ -601,7 +602,7 @@ export function MapPlaceDetailSheet({
 
                     <View style={styles.pageStatsCard}>
                       <View style={styles.pageStatItem}>
-                        <Users size={21} color="#0000FF" />
+                        <Users size={21} color={APP_BRAND_COLOR} />
                         <Text style={styles.pageStatValue}>
                           {formatCompactCount(place.pageFollowersCount)}
                         </Text>
@@ -1130,7 +1131,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 16,
     borderRadius: 26,
-    backgroundColor: '#0000FF',
+    backgroundColor: APP_BRAND_COLOR,
   },
   openPageButtonText: {
     marginLeft: 8,

@@ -23,7 +23,7 @@ describe('Story reply message preview', () => {
     expect(card).toContain('Bạn đã trả lời tin của');
     expect(card).toContain('Đã trả lời tin của bạn');
     expect(card).toContain('styles.bubble');
-    expect(card).toContain("sentBubble: '#2563EB'");
+    expect(card).toContain('sentBubble: APP_BRAND_COLOR');
   });
 
   it('keeps Story metadata in nested reply previews', () => {

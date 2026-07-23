@@ -1,4 +1,5 @@
 // English description: Renders the API-backed movie catalog with phtml-style filters.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -39,7 +40,7 @@ type MoviesNav = NativeStackNavigationProp<RootStackParamList>;
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2; // 2 columns with gap
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 const categories = [
   { key: 'Tất cả', label: 'Tất cả' },
@@ -177,7 +178,7 @@ function EmptyState({ onRetry }: { onRetry: () => void }) {
         {isVi ? 'Hiện tại không có phim nào trong danh mục này' : 'There are currently no movies in this category'}
       </Text>
       <Pressable
-        className="mt-6 rounded-full bg-[#0000ff] px-8 py-3"
+        className="mt-6 rounded-full bg-brand px-8 py-3"
         activeOpacity={0.8}
         onPress={onRetry}
       >
@@ -202,7 +203,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
         {error}
       </Text>
       <Pressable
-        className="mt-6 rounded-full bg-[#0000ff] px-8 py-3"
+        className="mt-6 rounded-full bg-brand px-8 py-3"
         activeOpacity={0.8}
         onPress={onRetry}
       >
@@ -249,7 +250,7 @@ function MoviesScreen() {
               <Pressable
                 key={cat.key}
                 className={`rounded-full px-4 py-2 ${
-                  isActive ? 'bg-[#0000ff]' : 'bg-white'
+                  isActive ? 'bg-brand' : 'bg-white'
                 }`}
                 activeOpacity={0.8}
                 onPress={() => setActiveGenre(cat.key)}
@@ -461,10 +462,10 @@ function MoviesCatalogScreen() {
             return (
               <Pressable
                 key={key}
-                className={`min-h-[38px] flex-row items-center rounded-full border px-4 ${active ? 'border-[#0000ff] bg-[#eef2ff]' : 'border-[#e5e7eb] bg-white'}`}
+                className={`min-h-[38px] flex-row items-center rounded-full border px-4 ${active ? 'border-brand bg-brand-soft' : 'border-[#e5e7eb] bg-white'}`}
                 onPress={() => setSort(key)}>
-                <Icon size={14} color={active ? '#0000ff' : '#475569'} />
-                <Text className={`ml-2 text-xs font-semibold ${active ? 'text-[#0000ff]' : 'text-[#475569]'}`}>{label}</Text>
+                <Icon size={14} color={active ? APP_BRAND_COLOR : '#475569'} />
+                <Text className={`ml-2 text-xs font-semibold ${active ? 'text-brand' : 'text-[#475569]'}`}>{label}</Text>
               </Pressable>
             );
           })}
@@ -507,9 +508,9 @@ function MoviesCatalogScreen() {
                 {genres.map(item => {
                   const active = activeGenre === item.value;
                   return (
-                    <Pressable key={item.value} className={`flex-row items-center border px-3 py-2 ${active ? 'border-[#0000ff] bg-[#eef2ff]' : 'border-[#e5e7eb]'}`} onPress={() => setActiveGenre(item.value)}>
-                      {active && <Check size={14} color="#0000ff" />}
-                      <Text className={`text-xs ${active ? 'ml-1 text-[#0000ff]' : 'text-[#475569]'}`}>{item.label}</Text>
+                    <Pressable key={item.value} className={`flex-row items-center border px-3 py-2 ${active ? 'border-brand bg-brand-soft' : 'border-[#e5e7eb]'}`} onPress={() => setActiveGenre(item.value)}>
+                      {active && <Check size={14} color={APP_BRAND_COLOR} />}
+                      <Text className={`text-xs ${active ? 'ml-1 text-brand' : 'text-[#475569]'}`}>{item.label}</Text>
                     </Pressable>
                   );
                 })}
@@ -520,15 +521,15 @@ function MoviesCatalogScreen() {
                 {countries.map(item => {
                   const active = activeCountry === item.value;
                   return (
-                    <Pressable key={item.value} className={`flex-row items-center border px-3 py-2 ${active ? 'border-[#0000ff] bg-[#eef2ff]' : 'border-[#e5e7eb]'}`} onPress={() => setActiveCountry(item.value)}>
-                      {active && <Check size={14} color="#0000ff" />}
-                      <Text className={`text-xs ${active ? 'ml-1 text-[#0000ff]' : 'text-[#475569]'}`}>{item.label}</Text>
+                    <Pressable key={item.value} className={`flex-row items-center border px-3 py-2 ${active ? 'border-brand bg-brand-soft' : 'border-[#e5e7eb]'}`} onPress={() => setActiveCountry(item.value)}>
+                      {active && <Check size={14} color={APP_BRAND_COLOR} />}
+                      <Text className={`text-xs ${active ? 'ml-1 text-brand' : 'text-[#475569]'}`}>{item.label}</Text>
                     </Pressable>
                   );
                 })}
               </View>
             </ScrollView>
-            <Pressable className="mx-4 h-11 items-center justify-center rounded-[5px] bg-[#0000ff]" onPress={() => setFilterOpen(false)}>
+            <Pressable className="mx-4 h-11 items-center justify-center rounded-[5px] bg-brand" onPress={() => setFilterOpen(false)}>
               <Text className="font-semibold text-white">{isVi ? 'Áp dụng' : 'Apply'}</Text>
             </Pressable>
           </View>

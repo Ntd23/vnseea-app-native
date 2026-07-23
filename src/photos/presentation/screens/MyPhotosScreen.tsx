@@ -1,4 +1,8 @@
 // Description: Shows the current user's real uploaded photos in a lightweight grid.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -25,7 +29,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 
 type MyPhotosNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 const LIST_PADDING = 12;
 const GAP = 3;
 const ITEM_SIZE = Math.floor(
@@ -195,7 +199,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,255,0.08)',
+    borderBottomColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
     paddingHorizontal: 12,
   },
@@ -273,7 +277,7 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   emptyTitle: {
     marginTop: 18,

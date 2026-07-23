@@ -1,4 +1,5 @@
 // Description: Renders the Messages LiveKit call room from the app-level call session.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect } from 'react';
 import {
   ActivityIndicator,
@@ -233,7 +234,7 @@ function WaitingRoom({
           </Text>
         ) : null}
         {canShowSpinner ? (
-          <ActivityIndicator className="mt-8" color="#0000ff" size="large" />
+          <ActivityIndicator className="mt-8" color={APP_BRAND_COLOR} size="large" />
         ) : null}
       </View>
       <View className="items-center pb-8">
@@ -289,7 +290,7 @@ function AudioRoom({
           </TouchableOpacity>
           <View className="flex-row items-center rounded-full border border-white/10 bg-slate-900/65 px-3 py-2">
             <PhoneCall size={15} color="#93c5fd" />
-            <Text className="ml-2 text-xs font-bold text-blue-100">
+            <Text className="ml-2 text-xs font-bold text-info-muted">
               CUỘC GỌI THOẠI
             </Text>
           </View>
@@ -304,7 +305,7 @@ function AudioRoom({
                 className="h-36 w-36 rounded-full bg-slate-800"
               />
             ) : (
-              <View className="h-36 w-36 items-center justify-center rounded-full bg-blue-600">
+              <View className="h-36 w-36 items-center justify-center rounded-full bg-brand">
                 <Text className="text-5xl font-bold text-white">
                   {avatarInitial}
                 </Text>

@@ -1,4 +1,5 @@
 // Description: Renders the Seller's store screen showing their active and sold products.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -143,8 +144,8 @@ export default function SellerStoreScreen() {
             </Text>
           )}
           <View className="flex-row items-center mt-1.5">
-            <View className="bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100/50">
-              <Text className="text-[10px] font-bold text-blue-600">Người bán uy tín</Text>
+            <View className="bg-brand-subtle px-2 py-0.5 rounded-full border border-brand-border">
+              <Text className="text-[10px] font-bold text-brand">Người bán uy tín</Text>
             </View>
             <View className="flex-row items-center ml-2.5">
               <Star size={11} color="#EAB308" fill="#EAB308" />
@@ -168,7 +169,7 @@ export default function SellerStoreScreen() {
         >
           <Text
             className={`text-sm ${
-              activeTab === 'selling' ? 'font-bold text-blue-600' : 'font-semibold text-slate-500'
+              activeTab === 'selling' ? 'font-bold text-brand' : 'font-semibold text-slate-500'
             }`}
           >
             Sản phẩm đang bán
@@ -186,7 +187,7 @@ export default function SellerStoreScreen() {
         >
           <Text
             className={`text-sm ${
-              activeTab === 'sold' ? 'font-bold text-blue-600' : 'font-semibold text-slate-500'
+              activeTab === 'sold' ? 'font-bold text-brand' : 'font-semibold text-slate-500'
             }`}
           >
             Đã bán
@@ -266,7 +267,7 @@ export default function SellerStoreScreen() {
       {/* Product List */}
       {isLoading && products.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#0000ff" />
+          <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
         </View>
       ) : (
         <FlatList

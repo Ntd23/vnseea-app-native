@@ -1,4 +1,5 @@
 // Description: Presents page post management actions in a WoWonder-style bottom sheet.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -159,7 +160,7 @@ function MenuAction({
       className="flex-row items-start py-3.5"
     >
       <View className="mt-0.5 h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-        {loading ? <ActivityIndicator size="small" color="#0000ff" /> : icon}
+        {loading ? <ActivityIndicator size="small" color={APP_BRAND_COLOR} /> : icon}
       </View>
       <View className="ml-3 flex-1">
         <Text className="text-base font-bold text-slate-900">{title}</Text>

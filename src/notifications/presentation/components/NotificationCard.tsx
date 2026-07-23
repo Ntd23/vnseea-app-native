@@ -3,6 +3,7 @@
 // with a small action badge, primary text with a timestamp, and a trailing
 // unread dot + overflow menu on the right.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { memo, useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -70,26 +71,26 @@ const STYLE_BY_TYPE: Record<string, NotificationStyle> = {
   liked_post: { Icon: Heart, iconColor: '#EF4444', borderColor: '#EF4444' },
   wondered_post: { Icon: Heart, iconColor: '#F59E0B', borderColor: '#F59E0B' },
   shared_post: { Icon: Share2, iconColor: '#0EA5E9', borderColor: '#0EA5E9' },
-  liked_page: { Icon: Flag, iconColor: '#0000FF', borderColor: '#0000FF' },
+  liked_page: { Icon: Flag, iconColor: APP_BRAND_COLOR, borderColor: APP_BRAND_COLOR },
   comment: {
     Icon: MessageCircle,
-    iconColor: '#0000FF',
-    borderColor: '#0000FF',
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
   },
   comment_reply: {
     Icon: MessageCircle,
-    iconColor: '#0000FF',
-    borderColor: '#0000FF',
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
   },
   comment_mention: {
     Icon: MessageCircle,
-    iconColor: '#0000FF',
-    borderColor: '#0000FF',
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
   },
   post_mention: {
     Icon: MessageCircle,
-    iconColor: '#0000FF',
-    borderColor: '#0000FF',
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
   },
   profile_wall_post: {
     Icon: ImageIcon,
@@ -133,8 +134,8 @@ const STYLE_BY_TYPE: Record<string, NotificationStyle> = {
   },
   group_chat_invite: {
     Icon: Users,
-    iconColor: '#0000FF',
-    borderColor: '#0000FF',
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
   },
   accept_group_chat_request: {
     Icon: Users,
@@ -289,7 +290,7 @@ function NotificationCard({
                     if (item.groupChatId) onAcceptGroupChat(item.groupChatId);
                   }}
                   className={`mr-2 flex-1 flex-row items-center justify-center rounded-xl py-2.5 ${
-                    isPending ? 'bg-blue-300' : 'bg-[#0000FF]'
+                    isPending ? 'bg-brand/40' : 'bg-brand'
                   }`}
                 >
                   {isPending ? (
@@ -331,7 +332,7 @@ function NotificationCard({
             {/* Unread blue dot */}
             <View
               className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: isUnread ? '#0000ff' : 'transparent' }}
+              style={{ backgroundColor: isUnread ? APP_BRAND_COLOR : 'transparent' }}
             />
 
             {/* Menu options trigger */}

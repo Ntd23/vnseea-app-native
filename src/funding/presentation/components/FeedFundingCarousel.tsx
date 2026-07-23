@@ -2,6 +2,7 @@
 // for the home feed. Mirrors the SuggestedGroupsCarousel /
 // SuggestedPagesCarousel pattern so the feed stays visually consistent.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   FlatList,
@@ -107,8 +108,8 @@ const FeedFundingCarousel = React.memo(function FeedFundingCarousel({
               fadeDuration={0}
             />
           ) : (
-            <View className="h-28 w-full items-center justify-center bg-[#eef2ff]">
-              <HeartHandshake size={32} color="#0000ff" />
+            <View className="h-28 w-full items-center justify-center bg-brand-soft">
+              <HeartHandshake size={32} color={APP_BRAND_COLOR} />
             </View>
           )}
 
@@ -132,14 +133,14 @@ const FeedFundingCarousel = React.memo(function FeedFundingCarousel({
             {/* Progress bar */}
             <View className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[#e2e8f0]">
               <View
-                className="h-1.5 rounded-full bg-[#0000ff]"
+                className="h-1.5 rounded-full bg-brand"
                 style={{ width: `${percent}%` }}
               />
             </View>
 
             <View className="mt-2 flex-row items-center justify-between">
               <View>
-                <Text className="text-[12px] font-bold text-[#0000ff]">
+                <Text className="text-[12px] font-bold text-brand">
                   {formatMoney(raised, currencySymbol)}
                 </Text>
                 <Text className="text-[10px] font-semibold text-[#94a3b8]">
@@ -147,15 +148,15 @@ const FeedFundingCarousel = React.memo(function FeedFundingCarousel({
                 </Text>
               </View>
               <View className="rounded-full bg-[#eef0ff] px-2 py-0.5">
-                <Text className="text-[11px] font-bold text-[#0000ff]">
+                <Text className="text-[11px] font-bold text-brand">
                   {percent}%
                 </Text>
               </View>
             </View>
 
             <View className="mt-3 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2">
-              <HeartHandshake size={14} color="#0000ff" />
-              <Text className="ml-1 text-[12px] font-extrabold text-[#0000ff]">
+              <HeartHandshake size={14} color={APP_BRAND_COLOR} />
+              <Text className="ml-1 text-[12px] font-extrabold text-brand">
                 {copy.viewFunding}
               </Text>
             </View>
@@ -178,7 +179,7 @@ const FeedFundingCarousel = React.memo(function FeedFundingCarousel({
           </Text>
         </View>
         <TouchableOpacity activeOpacity={0.75} onPress={onOpenFundingList}>
-          <Text className="text-[14px] font-extrabold text-[#0866ff]">
+          <Text className="text-[14px] font-extrabold text-brand">
             {copy.seeAll}
           </Text>
         </TouchableOpacity>

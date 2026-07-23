@@ -1,4 +1,5 @@
 // English description: Displays the user's wallet balance and advertising campaigns.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -37,7 +38,7 @@ import {
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAdvertisingCopy } from '../../../advertising/application/i18n/advertisingCopy';
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 function formatNumber(value: number | string | undefined) {
   const numeric = Number(value ?? 0);
@@ -189,10 +190,10 @@ function AdCampaignCard({
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => onViewDetails(ad)}
-              className="flex-row items-center rounded-lg border border-blue-200 px-3 py-1.5 bg-blue-50"
+              className="flex-row items-center rounded-lg border border-brand-border px-3 py-1.5 bg-brand-subtle"
             >
-              <BarChart3 size={14} color="#2563eb" />
-              <Text className="ml-1.5 text-xs font-semibold text-blue-600">{copy.details}</Text>
+              <BarChart3 size={14} color={APP_BRAND_COLOR} />
+              <Text className="ml-1.5 text-xs font-semibold text-brand">{copy.details}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -247,7 +248,7 @@ function CampaignTableRow({
       <Text className="w-24 px-2 text-xs text-[#475569]">{getAppearsLabel(ad.appears, copy)}</Text>
       <View className="w-28 flex-row justify-center gap-4 px-2">
         <TouchableOpacity onPress={() => onEdit(ad)} hitSlop={8}>
-          <Edit size={17} color="#2563eb" />
+          <Edit size={17} color={APP_BRAND_COLOR} />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => onDelete(ad)} hitSlop={8}>
           <Trash2 size={17} color="#ef4444" />
@@ -314,7 +315,7 @@ function AdvertisingScreen() {
         }
         showsVerticalScrollIndicator={false}>
         <View className="bg-[#eef3ff] px-3 pb-4 pt-3">
-          <View className="rounded-md bg-[#0000ff] px-4 py-4">
+          <View className="rounded-md bg-brand px-4 py-4">
             <Text className="text-sm text-white/80">{copy.walletBalance || "Số Dư VNSEEA"}</Text>
             <Text className="mt-1 text-[27px] font-normal text-white">
               {formatNumber(options?.walletBalance)} {options?.currencySymbol || 'VNSEEA'}
@@ -322,7 +323,7 @@ function AdvertisingScreen() {
           </View>
 
           <View className="mt-3 bg-white">
-            <TouchableOpacity className="min-h-[52px] flex-row items-center border-l-2 border-[#0000ff] px-4">
+            <TouchableOpacity className="min-h-[52px] flex-row items-center border-l-2 border-brand px-4">
               <Megaphone size={18} color="#111827" />
               <Text className="ml-3 text-sm font-semibold text-[#111827]">{copy.campaigns || "Các Chiến Dịch"}</Text>
             </TouchableOpacity>
@@ -342,7 +343,7 @@ function AdvertisingScreen() {
         </View>
 
         <View className="mt-4 min-h-[52px] flex-row items-center border-b border-[#dbe2ef] bg-white px-4">
-          <Megaphone size={18} color="#0000ff" />
+          <Megaphone size={18} color={APP_BRAND_COLOR} />
           <Text className="ml-2 text-sm font-semibold text-[#111827]">{copy.campaigns || "Các chiến dịch"}</Text>
         </View>
         {isLoading && ads.length === 0 ? (

@@ -30,6 +30,7 @@
 //     Navigation focus. Native iOS tabs may mount Video in the background,
 //     so a reel must never auto-play unless the Video tab is actually focused.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -1269,7 +1270,7 @@ const styles = StyleSheet.create({
     elevation: 33,
   },
   headerButtonActive: {
-    backgroundColor: '#0866ff',
+    backgroundColor: APP_BRAND_COLOR,
   },
   headerRightRow: {
     flexDirection: 'row',
@@ -1286,7 +1287,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0866ff',
+    backgroundColor: APP_BRAND_COLOR,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
     shadowColor: '#000',
@@ -1343,7 +1344,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#0000ff',
+    backgroundColor: APP_BRAND_COLOR,
   },
   retryLabel: {
     color: '#fff',

@@ -1,4 +1,5 @@
 // English description: Creates or edits an advertising campaign in a three-step wizard.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -47,7 +48,7 @@ import { getAdvertisingCopy } from '../../application/i18n/advertisingCopy';
 
 type CreateAdNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#1d4ed8';
+const BRAND = APP_BRAND_COLOR;
 
 const AD_COUNTRY_OPTIONS = [
   { id: '233', name: 'Vietnam' },
@@ -460,7 +461,7 @@ function CreateAdScreen() {
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">{copy.image}</Text>
               <TouchableOpacity
-                className="min-h-[180px] items-center justify-center rounded-xl border-2 border-dashed border-blue-700 p-6 bg-slate-50"
+                className="min-h-[180px] items-center justify-center rounded-xl border-2 border-dashed border-brand p-6 bg-slate-50"
                 activeOpacity={0.85}
                 onPress={handleSelectImage}
               >
@@ -485,12 +486,12 @@ function CreateAdScreen() {
                     >
                       <Text className="text-white">X</Text>
                     </TouchableOpacity>
-                    <Text className="mt-3 text-center text-title-primary text-blue-700">{copy.changeImage}</Text>
+                    <Text className="mt-3 text-center text-title-primary text-brand-pressed">{copy.changeImage}</Text>
                   </View>
                 ) : (
                   <>
                     <ImagePlus size={48} color={BRAND} />
-                    <Text className="mt-4 text-title-primary text-blue-700">{copy.selectImage}</Text>
+                    <Text className="mt-4 text-title-primary text-brand-pressed">{copy.selectImage}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -507,7 +508,7 @@ function CreateAdScreen() {
                 {(['all', 'male', 'female'] as AdGender[]).map(g => (
                   <TouchableOpacity
                     key={g}
-                    className={`flex-1 rounded-xl px-4 py-3 ${formData.gender === g ? 'bg-blue-700' : 'bg-slate-100'}`}
+                    className={`flex-1 rounded-xl px-4 py-3 ${formData.gender === g ? 'bg-brand-pressed' : 'bg-slate-100'}`}
                     onPress={() => setFormData(p => ({ ...p, gender: g }))}
                   >
                     <Text className={`text-center font-semibold ${formData.gender === g ? 'text-white' : 'text-slate-700'}`}>
@@ -524,7 +525,7 @@ function CreateAdScreen() {
                 {AD_COUNTRY_OPTIONS.map(country => (
                   <TouchableOpacity
                     key={country.id}
-                    className={`rounded-xl px-4 py-3 ${formData.audienceList === country.id ? 'bg-blue-700' : 'bg-slate-100'}`}
+                    className={`rounded-xl px-4 py-3 ${formData.audienceList === country.id ? 'bg-brand-pressed' : 'bg-slate-100'}`}
                     activeOpacity={0.85}
                     onPress={() =>
                       setFormData(p => ({
@@ -573,10 +574,10 @@ function CreateAdScreen() {
                 ] as { value: AdAppearsType; label: string }[]).map(item => (
                   <TouchableOpacity
                     key={item.value}
-                    className={`flex-row items-center rounded-xl px-4 py-4 ${formData.appears === item.value ? 'bg-blue-50 border border-blue-700' : 'bg-slate-100 border border-transparent'}`}
+                    className={`flex-row items-center rounded-xl px-4 py-4 ${formData.appears === item.value ? 'bg-brand-subtle border border-brand' : 'bg-slate-100 border border-transparent'}`}
                     onPress={() => setFormData(p => ({ ...p, appears: item.value }))}
                   >
-                    <View className={`h-5 w-5 rounded-full border-2 ${formData.appears === item.value ? 'border-blue-700 bg-blue-700' : 'border-slate-300'}`} />
+                    <View className={`h-5 w-5 rounded-full border-2 ${formData.appears === item.value ? 'border-brand bg-brand-pressed' : 'border-slate-300'}`} />
                     <Text className="ml-3 text-body-primary">{item.label}</Text>
                   </TouchableOpacity>
                 ))}
@@ -592,20 +593,20 @@ function CreateAdScreen() {
               <Text className="mb-2 text-label-primary text-slate-500">{copy.biddingMethod}</Text>
               <View className="gap-3">
                 <TouchableOpacity
-                  className={`flex-row items-center rounded-xl px-4 py-4 ${formData.bidding === 'clicks' ? 'bg-blue-50 border border-blue-700' : 'bg-slate-100 border border-transparent'}`}
+                  className={`flex-row items-center rounded-xl px-4 py-4 ${formData.bidding === 'clicks' ? 'bg-brand-subtle border border-brand' : 'bg-slate-100 border border-transparent'}`}
                   onPress={() => setFormData(p => ({ ...p, bidding: 'clicks' }))}
                 >
-                  <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'clicks' ? 'border-blue-700' : 'border-slate-300'}`} />
+                  <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'clicks' ? 'border-brand' : 'border-slate-300'}`} />
                   <View className="ml-3">
                     <Text className="text-body-primary font-semibold">{copy.biddingClicks}</Text>
                     <Text className="text-caption-secondary">{copy.biddingClicksDesc}</Text>
                   </View>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className={`flex-row items-center rounded-xl px-4 py-4 ${formData.bidding === 'views' ? 'bg-blue-50 border border-blue-700' : 'bg-slate-100 border border-transparent'}`}
+                  className={`flex-row items-center rounded-xl px-4 py-4 ${formData.bidding === 'views' ? 'bg-brand-subtle border border-brand' : 'bg-slate-100 border border-transparent'}`}
                   onPress={() => setFormData(p => ({ ...p, bidding: 'views' }))}
                 >
-                  <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'views' ? 'border-blue-700' : 'border-slate-300'}`} />
+                  <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'views' ? 'border-brand' : 'border-slate-300'}`} />
                   <View className="ml-3">
                     <Text className="text-body-primary font-semibold">{copy.biddingViews}</Text>
                     <Text className="text-caption-secondary">{copy.biddingViewsDesc}</Text>
@@ -648,7 +649,7 @@ function CreateAdScreen() {
                     <Text className="font-semibold text-body-primary">
                       {formData.name || 'Tên công ty'}
                     </Text>
-                    <View className="ml-2 rounded-full bg-blue-700 px-2 py-0.5">
+                    <View className="ml-2 rounded-full bg-brand-pressed px-2 py-0.5">
                       <Text className="text-[10px] font-medium text-white">{language === 'vi' ? 'Quảng cáo' : 'Sponsored'}</Text>
                     </View>
                   </View>
@@ -676,7 +677,7 @@ function CreateAdScreen() {
                 <Text className="mt-2 text-body-secondary" numberOfLines={3}>
                   {formData.description || copy.description}
                 </Text>
-                <TouchableOpacity className="mt-4 items-center rounded-lg bg-blue-700 py-3">
+                <TouchableOpacity className="mt-4 items-center rounded-lg bg-brand-pressed py-3">
                   <Text className="font-bold text-white">{copy.learnMore}</Text>
                 </TouchableOpacity>
               </View>
@@ -793,7 +794,7 @@ function CreateAdScreen() {
       return (
         <View>
           <View className="flex-row items-center border-b border-[#e5e7eb] bg-white px-4 py-3">
-            <Text className="mr-2 text-[#0000ff]">i</Text>
+            <Text className="mr-2 text-brand">i</Text>
             <Text className="text-sm font-semibold text-[#111827]">{language === 'vi' ? 'Thông tin chi tiết' : 'Campaign details'}</Text>
           </View>
           <View className="gap-4 bg-white px-4 py-4">
@@ -907,7 +908,7 @@ function CreateAdScreen() {
     return (
       <View className="gap-5 bg-white px-4 py-4">
         <View className="-mx-4 -mt-4 flex-row items-center border-b border-[#e5e7eb] bg-white px-4 py-3">
-          <Target size={18} color="#0000ff" />
+          <Target size={18} color={APP_BRAND_COLOR} />
           <Text className="ml-2 text-sm font-semibold text-[#111827]">{copy.step2Title || "Nhắm mục tiêu"}</Text>
         </View>
         <View>
@@ -959,9 +960,9 @@ function CreateAdScreen() {
               return (
                 <TouchableOpacity
                   key={value}
-                  className={`flex-1 border px-3 py-3 ${selected ? 'border-[#0000ff] bg-[#eef2ff]' : 'border-[#d7dce4]'}`}
+                  className={`flex-1 border px-3 py-3 ${selected ? 'border-brand bg-brand-soft' : 'border-[#d7dce4]'}`}
                   onPress={() => setFormData(previous => ({ ...previous, bidding: value }))}>
-                  <Text className={`text-sm font-semibold ${selected ? 'text-[#0000ff]' : 'text-[#374151]'}`}>
+                  <Text className={`text-sm font-semibold ${selected ? 'text-brand' : 'text-[#374151]'}`}>
                     {value === 'clicks' ? (copy.biddingClicks || 'Lượt nhấp') : (copy.biddingViews || 'Lượt xem')}
                   </Text>
                   <Text className="mt-1 text-xs text-[#64748b]">
@@ -1000,7 +1001,7 @@ function CreateAdScreen() {
       <ScrollView className="flex-1 bg-[#eef3ff]" showsVerticalScrollIndicator={false}>
         <View className="mt-3 bg-white">
           <View className="flex-row items-center border-b border-[#e5e7eb] px-3 py-3">
-            <Megaphone size={18} color="#0000ff" />
+            <Megaphone size={18} color={APP_BRAND_COLOR} />
             <Text className="ml-2 text-sm font-semibold text-[#111827]">{copy.previewTitle || "Xem trước quảng cáo"}</Text>
           </View>
           <View className="px-3 py-3">
@@ -1048,7 +1049,7 @@ function CreateAdScreen() {
           <Text className="ml-2 text-sm text-[#64748b]">{language === 'vi' ? 'Quay lại' : 'Back'}</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          className="h-11 min-w-[120px] items-center justify-center rounded-md bg-[#0000ff] px-5"
+          className="h-11 min-w-[120px] items-center justify-center rounded-md bg-brand px-5"
           onPress={next}
           disabled={isCreating || isUpdating}
         >
@@ -1086,8 +1087,8 @@ function CreateAdScreen() {
                       setFormData(previous => ({ ...previous, audienceList: item.value, location: item.label }));
                       setCountrySheetOpen(false);
                     }}>
-                    <Text className={`text-sm ${selected ? 'font-semibold text-[#0000ff]' : 'text-[#374151]'}`}>{item.label}</Text>
-                    {selected && <Check size={18} color="#0000ff" />}
+                    <Text className={`text-sm ${selected ? 'font-semibold text-brand' : 'text-[#374151]'}`}>{item.label}</Text>
+                    {selected && <Check size={18} color={APP_BRAND_COLOR} />}
                   </TouchableOpacity>
                 );
               })}
@@ -1114,8 +1115,8 @@ function CreateAdScreen() {
                   setFormData(previous => ({ ...previous, pageName: '', website: '' }));
                   setPageSheetOpen(false);
                 }}>
-                <Text className={!formData.pageName ? 'font-semibold text-[#0000ff]' : 'text-[#374151]'}>{language === 'vi' ? 'Không chọn trang' : 'Do not select page'}</Text>
-                {!formData.pageName && <Check size={18} color="#0000ff" />}
+                <Text className={!formData.pageName ? 'font-semibold text-brand' : 'text-[#374151]'}>{language === 'vi' ? 'Không chọn trang' : 'Do not select page'}</Text>
+                {!formData.pageName && <Check size={18} color={APP_BRAND_COLOR} />}
               </TouchableOpacity>
               {(options?.pages ?? []).map(item => {
                 const selected = item.name === formData.pageName;
@@ -1133,10 +1134,10 @@ function CreateAdScreen() {
                       setPageSheetOpen(false);
                     }}>
                     <View className="flex-1 pr-3">
-                      <Text className={selected ? 'font-semibold text-[#0000ff]' : 'text-[#374151]'}>{item.title}</Text>
+                      <Text className={selected ? 'font-semibold text-brand' : 'text-[#374151]'}>{item.title}</Text>
                       <Text className="mt-0.5 text-xs text-[#94a3b8]">@{item.name}</Text>
                     </View>
-                    {selected && <Check size={18} color="#0000ff" />}
+                    {selected && <Check size={18} color={APP_BRAND_COLOR} />}
                   </TouchableOpacity>
                 );
               })}
@@ -1162,8 +1163,8 @@ function CreateAdScreen() {
                       setFormData(previous => ({ ...previous, gender: item.value as AdGender }));
                       setGenderSheetOpen(false);
                     }}>
-                    <Text className={selected ? 'font-semibold text-[#0000ff]' : 'text-[#374151]'}>{item.label}</Text>
-                    {selected && <Check size={18} color="#0000ff" />}
+                    <Text className={selected ? 'font-semibold text-brand' : 'text-[#374151]'}>{item.label}</Text>
+                    {selected && <Check size={18} color={APP_BRAND_COLOR} />}
                   </TouchableOpacity>
                 );
               })}
@@ -1195,10 +1196,10 @@ function CreateAdScreen() {
                       setPlacementSheetOpen(false);
                     }}>
                     <View className="flex-1 pr-3">
-                      <Text className={selected ? 'font-semibold text-[#0000ff]' : 'text-[#374151]'}>{item.label}</Text>
+                      <Text className={selected ? 'font-semibold text-brand' : 'text-[#374151]'}>{item.label}</Text>
                       <Text className="mt-0.5 text-xs text-[#94a3b8]">{language === 'vi' ? 'Định dạng tệp hình ảnh' : 'Image file format'}</Text>
                     </View>
-                    {selected && <Check size={18} color="#0000ff" />}
+                    {selected && <Check size={18} color={APP_BRAND_COLOR} />}
                   </TouchableOpacity>
                 );
               })}

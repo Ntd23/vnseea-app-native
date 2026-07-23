@@ -1,4 +1,5 @@
 // English description: Renders the native form for creating a job through the existing backend API.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -37,7 +38,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 type CreateJobNav = NativeStackNavigationProp<RootStackParamList>;
 type CreateJobRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_JOB>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 type JobQuestionDraft = {
   prompt: string;
@@ -438,7 +439,7 @@ function CreateJobScreen() {
               <Text className="font-semibold text-slate-500">{language === "vi" ? "Quay lại" : "Back"}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`min-h-[44px] min-w-[110px] items-center justify-center rounded-md ${hasFormData && !isLoading ? 'bg-[#0000ff]' : 'bg-slate-300'}`}
+              className={`min-h-[44px] min-w-[110px] items-center justify-center rounded-md ${hasFormData && !isLoading ? 'bg-brand' : 'bg-slate-300'}`}
               disabled={!hasFormData || isLoading}
               onPress={handleSubmit}
             >
@@ -472,10 +473,10 @@ function CreateJobScreen() {
                   setShowJobTypeModal(false);
                 }}
               >
-                <Text className={`text-base ${jobType === type ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
+                <Text className={`text-base ${jobType === type ? 'font-semibold text-brand' : 'text-slate-700'}`}>
                   {option.label}
                 </Text>
-                {jobType === type && <View className="h-2 w-2 rounded-full bg-blue-600" />}
+                {jobType === type && <View className="h-2 w-2 rounded-full bg-brand" />}
               </TouchableOpacity>
               );
             })}
@@ -506,10 +507,10 @@ function CreateJobScreen() {
                     setShowCategoryModal(false);
                   }}
                 >
-                  <Text className={`text-base ${category === key ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
+                  <Text className={`text-base ${category === key ? 'font-semibold text-brand' : 'text-slate-700'}`}>
                     {label}
                   </Text>
-                  {category === key && <View className="h-2 w-2 rounded-full bg-blue-600" />}
+                  {category === key && <View className="h-2 w-2 rounded-full bg-brand" />}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -539,10 +540,10 @@ function CreateJobScreen() {
                   setShowSalaryDateModal(false);
                 }}
               >
-                <Text className={`text-base ${salaryDate === key ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
+                <Text className={`text-base ${salaryDate === key ? 'font-semibold text-brand' : 'text-slate-700'}`}>
                   {label}
                 </Text>
-                {salaryDate === key && <View className="h-2 w-2 rounded-full bg-blue-600" />}
+                {salaryDate === key && <View className="h-2 w-2 rounded-full bg-brand" />}
               </TouchableOpacity>
             ))}
           </View>
@@ -568,10 +569,10 @@ function CreateJobScreen() {
                     setShowCurrencyModal(false);
                   }}
                 >
-                  <Text className={`text-base ${currency === option.value ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
+                  <Text className={`text-base ${currency === option.value ? 'font-semibold text-brand' : 'text-slate-700'}`}>
                     {option.label}{option.symbol ? ` (${option.symbol})` : ''}
                   </Text>
-                  {currency === option.value ? <View className="h-2 w-2 rounded-full bg-blue-600" /> : null}
+                  {currency === option.value ? <View className="h-2 w-2 rounded-full bg-brand" /> : null}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -595,10 +596,10 @@ function CreateJobScreen() {
                   setQuestionTypeIndex(null);
                 }}
               >
-                <Text className={`text-base ${questions[questionTypeIndex]?.type === option.value ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
+                <Text className={`text-base ${questions[questionTypeIndex]?.type === option.value ? 'font-semibold text-brand' : 'text-slate-700'}`}>
                   {option.label}
                 </Text>
-                {questions[questionTypeIndex]?.type === option.value ? <View className="h-2 w-2 rounded-full bg-blue-600" /> : null}
+                {questions[questionTypeIndex]?.type === option.value ? <View className="h-2 w-2 rounded-full bg-brand" /> : null}
               </TouchableOpacity>
             ))}
           </View>

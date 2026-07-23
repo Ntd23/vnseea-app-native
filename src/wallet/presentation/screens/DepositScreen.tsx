@@ -1,4 +1,5 @@
 // Description: Add money to wallet with backend-provided payment methods.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {useCallback, useEffect} from 'react';
 import {
   ActivityIndicator,
@@ -116,7 +117,7 @@ function QRModal({
                 </View>
               ) : (
                 <View className="mb-4 h-64 w-64 items-center justify-center rounded-xl bg-slate-100">
-                  <ActivityIndicator size="large" color="#0000FF" />
+                  <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
                 </View>
               )}
             </View>
@@ -162,7 +163,7 @@ function QRModal({
                 disabled={isChecking}
                 onPress={onCheck}
                 className={`mt-5 flex-row items-center justify-center rounded-full py-4 ${
-                  isChecking ? 'bg-blue-300' : 'bg-blue-600'
+                  isChecking ? 'bg-brand/40' : 'bg-brand'
                 }`}>
                 {isChecking ? (
                   <ActivityIndicator color="#FFFFFF" />
@@ -256,12 +257,12 @@ export default function DepositScreen() {
           <View className="flex-row items-center justify-between">
             <View>
               <Text className="text-sm text-slate-500">Số dư hiện tại</Text>
-              <Text className="mt-1 text-2xl font-bold text-blue-600">
+              <Text className="mt-1 text-2xl font-bold text-brand">
                 {formatCurrency(balance)}
               </Text>
             </View>
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-blue-50">
-              <Wallet size={24} color="#0000FF" />
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-brand-subtle">
+              <Wallet size={24} color={APP_BRAND_COLOR} />
             </View>
           </View>
         </View>
@@ -276,7 +277,7 @@ export default function DepositScreen() {
               onPress={() => selectPreset(preset.value)}
               className={`rounded-full border px-4 py-2.5 ${
                 selectedPreset === preset.value
-                  ? 'border-blue-600 bg-blue-600'
+                  ? 'border-brand bg-brand'
                   : 'border-slate-200 bg-white'
               }`}>
               <Text
@@ -307,9 +308,9 @@ export default function DepositScreen() {
         )}
 
         {numericAmount >= 10000 && (
-          <View className="mb-6 rounded-xl bg-blue-50 p-4">
+          <View className="mb-6 rounded-xl bg-info-soft p-4">
             <Text className="text-sm text-slate-500">Số tiền nạp</Text>
-            <Text className="mt-1 text-xl font-bold text-blue-600">
+            <Text className="mt-1 text-xl font-bold text-brand">
               {formatCurrency(numericAmount)}
             </Text>
           </View>
@@ -321,7 +322,7 @@ export default function DepositScreen() {
 
         {isLoadingMethods ? (
           <View key="payment-methods-loading" className="items-center rounded-xl bg-white p-8">
-            <ActivityIndicator size="large" color="#0000FF" />
+            <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
           </View>
         ) : topupMethods.length > 0 ? (
           <View
@@ -334,7 +335,7 @@ export default function DepositScreen() {
                 onPress={() => setSelectedMethod(method.value)}
                 className={`flex-row items-center p-4 ${
                   index < topupMethods.length - 1 ? 'border-b border-slate-100' : ''
-                } ${selectedMethod === method.value ? 'bg-blue-50' : ''}`}>
+                } ${selectedMethod === method.value ? 'bg-brand-subtle' : ''}`}>
                 <PaymentIcon method={method.value} />
                 <View className="ml-3 flex-1">
                   <Text className="font-semibold text-slate-900">{method.label}</Text>
@@ -346,7 +347,7 @@ export default function DepositScreen() {
                 <View
                   className={`h-6 w-6 items-center justify-center rounded-full border-2 ${
                     selectedMethod === method.value
-                      ? 'border-blue-600 bg-blue-600'
+                      ? 'border-brand bg-brand'
                       : 'border-slate-300'
                   }`}>
                   {selectedMethod === method.value && (
@@ -374,7 +375,7 @@ export default function DepositScreen() {
           onPress={() => handleDeposit()}
           disabled={!canSubmit}
           className={`mt-6 items-center rounded-full py-4 ${
-            canSubmit ? 'bg-blue-600' : 'bg-slate-300'
+            canSubmit ? 'bg-brand' : 'bg-slate-300'
           }`}>
           {isProcessing ? (
             <ActivityIndicator color="#FFFFFF" />

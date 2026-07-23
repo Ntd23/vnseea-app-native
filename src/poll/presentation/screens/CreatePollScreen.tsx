@@ -1,4 +1,5 @@
 // Description: Màn hình tạo cuộc thăm dò ý kiến với giao diện đẹp mắt.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -32,7 +33,7 @@ import { POLL_COPY } from '../../application/i18n/pollCopy';
 
 type CreatePollNav = NativeStackNavigationProp<RootStackParamList>;
 
-const POLL_HEADER_COLOR = '#0000FF';
+const POLL_HEADER_COLOR = APP_BRAND_COLOR;
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 6;
 
@@ -255,8 +256,8 @@ function CreatePollScreen() {
           >
             {/* Poll Icon Header */}
             <View className="mb-6 items-center">
-              <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-blue-50">
-                <BarChart3 size={40} color="#0000FF" />
+              <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-brand-subtle">
+                <BarChart3 size={40} color={APP_BRAND_COLOR} />
               </View>
               <Text className="text-heading">{copy.heroTitle}</Text>
               <Text className="mt-1 text-body-secondary">
@@ -268,8 +269,8 @@ function CreatePollScreen() {
             <View className="mb-5 overflow-hidden rounded-2xl bg-white">
               <View className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white px-5 py-4">
                 <View className="flex-row items-center">
-                  <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-blue-100">
-                    <List size={16} color="#0000FF" />
+                  <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-brand-soft">
+                    <List size={16} color={APP_BRAND_COLOR} />
                   </View>
                   <Text className="text-label-primary font-semibold text-slate-700">
                     {copy.questionLabel}
@@ -293,15 +294,15 @@ function CreatePollScreen() {
               <View className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white px-5 py-4">
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center">
-                    <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-blue-100">
-                      <Check size={16} color="#0000FF" />
+                    <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-brand-soft">
+                      <Check size={16} color={APP_BRAND_COLOR} />
                     </View>
                     <Text className="text-label-primary font-semibold text-slate-700">
                       {copy.optionsLabel}
                     </Text>
                   </View>
-                  <View className="rounded-full bg-blue-100 px-3 py-1">
-                    <Text className="text-caption-primary font-medium text-blue-600">
+                  <View className="rounded-full bg-brand-soft px-3 py-1">
+                    <Text className="text-caption-primary font-medium text-brand">
                       {validOptionsCount}/{MAX_OPTIONS}
                     </Text>
                   </View>
@@ -314,14 +315,14 @@ function CreatePollScreen() {
                     <View
                       className={`flex-row items-center rounded-xl border-2 px-4 py-3 transition-colors ${
                         opt.trim()
-                          ? 'border-blue-500 bg-blue-50/50'
+                          ? 'border-brand bg-brand-subtle'
                           : 'border-slate-200 bg-slate-50'
                       }`}
                     >
                       <View
                         className={`mr-3 flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
                           opt.trim()
-                            ? 'bg-blue-500 text-white'
+                            ? 'bg-brand text-white'
                             : 'bg-slate-200 text-slate-500'
                         }`}
                       >
@@ -364,14 +365,14 @@ function CreatePollScreen() {
                 {/* Add Option Button */}
                 {canAddMore && (
                   <TouchableOpacity
-                    className="mt-2 flex-row items-center justify-center rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/30 py-4"
+                    className="mt-2 flex-row items-center justify-center rounded-xl border-2 border-dashed border-brand bg-brand-subtle py-4"
                     activeOpacity={0.8}
                     onPress={addOption}
                     accessibilityRole="button"
                     accessibilityLabel={copy.addOptionA11yLabel}
                   >
-                    <Plus size={20} color="#0000FF" />
-                    <Text className="ml-2 text-label-primary font-medium text-blue-600">
+                    <Plus size={20} color={APP_BRAND_COLOR} />
+                    <Text className="ml-2 text-label-primary font-medium text-brand">
                       {copy.addOption}
                     </Text>
                   </TouchableOpacity>
@@ -398,7 +399,7 @@ function CreatePollScreen() {
             <View className="mt-6 items-center">
               <View className="mb-2 h-2 w-48 overflow-hidden rounded-full bg-slate-200">
                 <View
-                  className="h-full rounded-full bg-blue-500"
+                  className="h-full rounded-full bg-brand"
                   style={{
                     width: `${Math.min(
                       100,

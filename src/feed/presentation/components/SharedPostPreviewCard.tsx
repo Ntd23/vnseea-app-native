@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   Image,
@@ -215,7 +216,7 @@ export function SharedPostPreviewCard({
           style={styles.poll}
         >
           <View style={styles.attachmentHeading}>
-            <BarChart3 size={18} color="#0000FF" />
+            <BarChart3 size={18} color={APP_BRAND_COLOR} />
             <Text style={styles.attachmentTitle} numberOfLines={2}>
               {content.question}
             </Text>
@@ -249,7 +250,7 @@ export function SharedPostPreviewCard({
             <View style={styles.attachmentHeading}>
               {React.createElement(attachmentIcons[content.attachmentKind], {
                 size: 17,
-                color: '#0000FF',
+                color: APP_BRAND_COLOR,
               })}
               <Text style={styles.attachmentTitle} numberOfLines={2}>
                 {content.title}

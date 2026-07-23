@@ -1,4 +1,5 @@
 // Description: Provides a reusable modal address search input through the backend map discovery bridge.
+import { APP_BRAND_COLOR, APP_COLORS } from '../theme/appColors';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -403,7 +404,7 @@ export function AddressAutocomplete({
         activeOpacity={0.85}
       >
         <View style={[styles.iconWrapper, customIconWrapperStyle]}>
-          {customIcon || <MapPin size={18} color="#002fff" />}
+          {customIcon || <MapPin size={18} color={APP_BRAND_COLOR} />}
         </View>
         <Text
           style={[styles.input, !value ? styles.placeholderText : null, customInputStyle]}
@@ -414,7 +415,7 @@ export function AddressAutocomplete({
         {isLoading ? (
           <ActivityIndicator
             size="small"
-            color="#002fff"
+            color={APP_BRAND_COLOR}
             style={styles.clearIcon}
           />
         ) : value ? (
@@ -446,7 +447,7 @@ export function AddressAutocomplete({
 
             <View style={styles.modalSearchContainer}>
               <View style={styles.modalIconWrapper}>
-                <MapPin size={18} color="#002fff" />
+                <MapPin size={18} color={APP_BRAND_COLOR} />
               </View>
               <TextInput
                 ref={modalInputRef}
@@ -460,7 +461,7 @@ export function AddressAutocomplete({
                 returnKeyType="search"
               />
               {isLoading ? (
-                <ActivityIndicator size="small" color="#002fff" />
+                <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
               ) : null}
             </View>
           </View>
@@ -489,7 +490,7 @@ export function AddressAutocomplete({
                   activeOpacity={0.7}
                 >
                   <View style={styles.predictionIconWrapper}>
-                    <MapPin size={18} color="#002fff" />
+                    <MapPin size={18} color={APP_BRAND_COLOR} />
                   </View>
                   <View style={styles.predictionTextContainer}>
                     <Text style={styles.mainText} numberOfLines={1}>
@@ -539,7 +540,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#f0f3ff',
+    backgroundColor: APP_COLORS.brand.soft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -600,7 +601,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1.5,
-    borderColor: '#e0e7ff',
+    borderColor: APP_COLORS.brand.border,
     borderRadius: 20,
     paddingHorizontal: 10,
     minHeight: 54,
@@ -609,7 +610,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#f0f3ff',
+    backgroundColor: APP_COLORS.brand.soft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -653,7 +654,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f0f3ff',
+    backgroundColor: APP_COLORS.brand.soft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,

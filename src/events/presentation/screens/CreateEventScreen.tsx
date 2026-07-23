@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA six-step create event wizard with date/time pickers and image selection.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -504,7 +505,7 @@ function CreateEventScreen() {
         // Step 4: Event Image
         return (
           <TouchableOpacity
-            className="preview-panel min-h-[210px] items-center justify-center border border-dashed border-[#0000ff] p-6"
+            className="preview-panel min-h-[210px] items-center justify-center border border-dashed border-brand p-6"
             activeOpacity={0.85}
             onPress={handleSelectImage}
           >
@@ -532,7 +533,7 @@ function CreateEventScreen() {
               </View>
             ) : (
               <>
-                <ImagePlus size={48} color="#0000FF" />
+                <ImagePlus size={48} color={APP_BRAND_COLOR} />
                 <Text className="mt-4 text-title-primary text-brand">
                   {copy.selectImage}
                 </Text>
@@ -617,13 +618,13 @@ function CreateEventScreen() {
 
   function getStepIcon() {
     switch (step) {
-      case 0: return <PartyPopper size={28} color="#0000FF" />;
-      case 1: return <Clock size={28} color="#0000FF" />;
-      case 2: return <Clock size={28} color="#0000FF" />;
-      case 3: return <ImagePlus size={28} color="#0000FF" />;
-      case 4: return <MapPin size={28} color="#0000FF" />;
-      case 5: return <Info size={28} color="#0000FF" />;
-      default: return <PartyPopper size={28} color="#0000FF" />;
+      case 0: return <PartyPopper size={28} color={APP_BRAND_COLOR} />;
+      case 1: return <Clock size={28} color={APP_BRAND_COLOR} />;
+      case 2: return <Clock size={28} color={APP_BRAND_COLOR} />;
+      case 3: return <ImagePlus size={28} color={APP_BRAND_COLOR} />;
+      case 4: return <MapPin size={28} color={APP_BRAND_COLOR} />;
+      case 5: return <Info size={28} color={APP_BRAND_COLOR} />;
+      default: return <PartyPopper size={28} color={APP_BRAND_COLOR} />;
     }
   }
 
@@ -653,7 +654,7 @@ function CreateEventScreen() {
               width: 32,
               height: 32,
               borderRadius: 16,
-              backgroundColor: '#002fff',
+              backgroundColor: APP_BRAND_COLOR,
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -905,7 +906,7 @@ function CreateEventScreen() {
                 flex: 1,
                 height: 52,
                 borderRadius: 12,
-                backgroundColor: '#002fff',
+                backgroundColor: APP_BRAND_COLOR,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -933,7 +934,7 @@ function CreateEventScreen() {
                 </TouchableOpacity>
                 <Text className="text-title-primary font-semibold">{copy.selectStartDate}</Text>
                 <TouchableOpacity onPress={() => setShowStartDatePicker(false)}>
-                  <Check size={24} color="#0000FF" />
+                  <Check size={24} color={APP_BRAND_COLOR} />
                 </TouchableOpacity>
               </View>
               <DateTimePicker
@@ -970,7 +971,7 @@ function CreateEventScreen() {
                 </TouchableOpacity>
                 <Text className="text-title-primary font-semibold">{copy.selectStartTime}</Text>
                 <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
-                  <Check size={24} color="#0000FF" />
+                  <Check size={24} color={APP_BRAND_COLOR} />
                 </TouchableOpacity>
               </View>
               <DateTimePicker
@@ -1005,7 +1006,7 @@ function CreateEventScreen() {
                 </TouchableOpacity>
                 <Text className="text-title-primary font-semibold">{copy.selectEndDate}</Text>
                 <TouchableOpacity onPress={() => setShowEndDatePicker(false)}>
-                  <Check size={24} color="#0000FF" />
+                  <Check size={24} color={APP_BRAND_COLOR} />
                 </TouchableOpacity>
               </View>
               <DateTimePicker
@@ -1042,7 +1043,7 @@ function CreateEventScreen() {
                 </TouchableOpacity>
                 <Text className="text-title-primary font-semibold">{copy.selectEndTime}</Text>
                 <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
-                  <Check size={24} color="#0000FF" />
+                  <Check size={24} color={APP_BRAND_COLOR} />
                 </TouchableOpacity>
               </View>
               <DateTimePicker

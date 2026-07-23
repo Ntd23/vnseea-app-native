@@ -25,6 +25,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import apiClient from '../../../shared-kernel/infrastructure/api/client';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 
 import type { RootStackParamList } from '../../../navigation/types';
 
@@ -61,7 +65,7 @@ function SelectionCard({
       activeOpacity={0.82}
       onPress={onPress}
       className={`mb-4 items-center justify-center rounded-2xl border bg-white py-6 ${
-        selected ? 'border-blue-600' : 'border-slate-100'
+        selected ? 'border-brand' : 'border-slate-100'
       }`}
       style={{
         shadowColor: '#000000',
@@ -73,13 +77,13 @@ function SelectionCard({
     >
       <View
         className="mb-3 h-14 w-14 items-center justify-center rounded-full"
-        style={{ backgroundColor: selected ? '#eff6ff' : '#f1f5f9' }}
+        style={{ backgroundColor: selected ? APP_COLORS.brand.soft : '#f1f5f9' }}
       >
-        <IconComponent size={24} color={selected ? '#2563eb' : '#64748b'} />
+        <IconComponent size={24} color={selected ? APP_BRAND_COLOR : '#64748b'} />
       </View>
       <Text
         className={`text-[15px] font-bold ${
-          selected ? 'text-blue-600' : 'text-slate-800'
+          selected ? 'text-brand' : 'text-slate-800'
         }`}
       >
         {label}
@@ -272,7 +276,7 @@ function MyInfoScreen() {
               elevation: 2,
             }}
           >
-            <View className="mb-5 h-28 w-28 items-center justify-center rounded-full bg-blue-50">
+            <View className="mb-5 h-28 w-28 items-center justify-center rounded-full bg-brand-subtle">
               <PackageOpen size={70} color="#1e81ce" />
             </View>
             <Text className="mb-6 text-center text-[15px] font-extrabold text-slate-800">
@@ -286,10 +290,10 @@ function MyInfoScreen() {
               disabled={isDownloading}
               onPress={handleDownloadFile}
               className={`h-12 flex-row items-center justify-center rounded-xl px-8 ${
-                isDownloading ? 'bg-blue-300' : 'bg-blue-600'
+                isDownloading ? 'bg-brand/40' : 'bg-brand'
               }`}
               style={{
-                shadowColor: '#2563eb',
+                shadowColor: APP_COLORS.brand.shadow,
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.18,
                 shadowRadius: 8,
@@ -362,10 +366,10 @@ function MyInfoScreen() {
               disabled={isLoading}
               onPress={handleCreateFile}
               className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
-                isLoading ? 'bg-blue-300' : 'bg-blue-600'
+                isLoading ? 'bg-brand/40' : 'bg-brand'
               }`}
               style={{
-                shadowColor: '#2563eb',
+                shadowColor: APP_COLORS.brand.shadow,
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.15,
                 shadowRadius: 8,

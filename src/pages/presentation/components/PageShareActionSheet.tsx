@@ -1,3 +1,7 @@
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -334,7 +338,7 @@ export function PageShareActionSheet({
                     active && styles.destinationCardActive,
                   ]}
                 >
-                  <Icon size={16} color={active ? '#0000FF' : '#64748B'} />
+                  <Icon size={16} color={active ? APP_BRAND_COLOR : '#64748B'} />
                   <Text
                     style={[
                       styles.destinationText,
@@ -408,7 +412,7 @@ export function PageShareActionSheet({
 
           {(isLoading || error) ? (
             <View style={styles.statusRow}>
-              {isLoading ? <ActivityIndicator color="#0000FF" /> : null}
+              {isLoading ? <ActivityIndicator color={APP_BRAND_COLOR} /> : null}
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
             </View>
           ) : null}
@@ -437,7 +441,7 @@ export function PageShareActionSheet({
               onPress={handleCopyLink}
             >
               {copied ? (
-                <CheckCircle2 size={17} color="#0000FF" />
+                <CheckCircle2 size={17} color={APP_BRAND_COLOR} />
               ) : (
                 <Copy size={17} color="#64748B" />
               )}
@@ -490,7 +494,7 @@ function TimelineTarget({
             {user?.username ? `@${user.username}` : 'Dòng thời gian'}
           </Text>
         </View>
-        <CheckCircle2 size={18} color="#0000FF" />
+        <CheckCircle2 size={18} color={APP_BRAND_COLOR} />
       </View>
     </View>
   );
@@ -545,7 +549,7 @@ function EntityTargetList<TItem>({
                   {getSubtitle(item)}
                 </Text>
               </View>
-              {selected ? <CheckCircle2 size={18} color="#0000FF" /> : null}
+              {selected ? <CheckCircle2 size={18} color={APP_BRAND_COLOR} /> : null}
             </TouchableOpacity>
           );
         })
@@ -699,7 +703,7 @@ const styles = StyleSheet.create({
   },
   destinationCardActive: {
     borderColor: '#A5B4FC',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   destinationText: {
     marginTop: 7,
@@ -709,7 +713,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   destinationTextActive: {
-    color: '#0000FF',
+    color: APP_BRAND_COLOR,
   },
   targetPanel: {
     marginBottom: 16,
@@ -742,7 +746,7 @@ const styles = StyleSheet.create({
   },
   targetRowActive: {
     borderColor: '#A5B4FC',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   targetAvatar: {
     width: 42,
@@ -785,7 +789,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
-    backgroundColor: '#0000FF',
+    backgroundColor: APP_BRAND_COLOR,
     paddingVertical: 13,
   },
   primaryButtonDisabled: {
@@ -814,7 +818,7 @@ const styles = StyleSheet.create({
   },
   externalButtonActive: {
     borderColor: '#A5B4FC',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   externalText: {
     color: '#475569',
@@ -822,7 +826,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   externalTextActive: {
-    color: '#0000FF',
+    color: APP_BRAND_COLOR,
   },
 });
 

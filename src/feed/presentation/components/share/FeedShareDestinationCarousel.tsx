@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   ScrollView,
@@ -70,11 +71,11 @@ export function FeedShareDestinationCarousel({
               <View
                 className={`h-14 w-14 items-center justify-center rounded-full border ${
                   active
-                    ? 'border-[#0000ff] bg-indigo-50'
+                    ? 'border-brand bg-brand-soft'
                     : 'border-slate-200 bg-slate-100'
                 }`}
               >
-                <Icon size={23} color={active ? '#0000ff' : '#475569'} />
+                <Icon size={23} color={active ? APP_BRAND_COLOR : '#475569'} />
               </View>
               <Text
                 className={`mt-1.5 text-center text-[11px] font-bold ${

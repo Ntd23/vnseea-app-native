@@ -1,4 +1,8 @@
 // Description: Renders the VNSEEA create page form and submits to WoWonder API.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -421,7 +425,7 @@ function SubmitButton({
         style={{
           minHeight: 54,
           borderRadius: 999,
-          backgroundColor: '#002fff',
+          backgroundColor: APP_BRAND_COLOR,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
@@ -548,8 +552,8 @@ function EditCheckbox({
           height: 18,
           borderRadius: 2,
           borderWidth: 1.5,
-          borderColor: checked ? '#1d4ed8' : '#94a3b8',
-          backgroundColor: checked ? '#1d4ed8' : '#ffffff',
+          borderColor: checked ? APP_BRAND_COLOR : '#94a3b8',
+          backgroundColor: checked ? APP_BRAND_COLOR : '#ffffff',
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -915,7 +919,7 @@ function CreatePageScreen() {
     : (language === 'vi' ? 'Tạo trang' : 'Create Page');
 
 
-  const BRAND = '#002fff';
+  const BRAND = APP_BRAND_COLOR;
   const selectedCallAction =
     CALL_ACTION_OPTIONS.find(option => option.id === draft.callActionType) ||
     CALL_ACTION_OPTIONS[0];
@@ -1496,7 +1500,7 @@ function CreatePageScreen() {
                   borderRadius: 12,
                   borderWidth: 1,
                   borderColor: active ? BRAND : '#e2e8f0',
-                  backgroundColor: active ? '#eef2ff' : '#ffffff',
+                  backgroundColor: active ? APP_COLORS.brand.soft : '#ffffff',
                   paddingHorizontal: 12,
                   marginBottom: 10,
                   flexDirection: 'row',
@@ -1767,8 +1771,8 @@ function CreatePageScreen() {
                 marginTop: 10,
                 borderRadius: 10,
                 borderWidth: 1,
-                borderColor: '#bfdbfe',
-                backgroundColor: '#eff6ff',
+                borderColor: APP_COLORS.brand.border,
+                backgroundColor: APP_COLORS.brand.soft,
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',

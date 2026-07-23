@@ -44,7 +44,7 @@ function SkeletonRow() {
   return (
     <View className="surface-card mb-3 flex-row items-center px-4 py-3.5">
       {/* Icon chip placeholder */}
-      <View className="bg-shimmer h-12 w-12 overflow-hidden rounded-full bg-[#0000ff]/10" />
+      <View className="bg-shimmer h-12 w-12 overflow-hidden rounded-full bg-brand/10" />
       {/* Text columns placeholder */}
       <View className="ml-3.5 flex-1 pr-3">
         <View className="bg-shimmer h-4 w-2/5 overflow-hidden rounded-md" />

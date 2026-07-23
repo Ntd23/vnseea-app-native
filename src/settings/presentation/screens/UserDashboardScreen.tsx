@@ -3,6 +3,10 @@
 // soft border, circular pastel icon, and a chevron trailing each row.
 // No "featured" rows, no hero gradient card — every item has the same
 // visual weight so the menu reads as one calm list.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useRef } from 'react';
 import {
   Alert,
@@ -67,8 +71,8 @@ type DashboardItem = {
   destructive?: boolean;
 };
 
-const BRAND = '#0000ff';
-const ICON_BG = '#eef2ff';
+const BRAND = APP_BRAND_COLOR;
+const ICON_BG = APP_COLORS.brand.soft;
 const ICON_COLOR = BRAND;
 
 const DASHBOARD_COPY = {
@@ -249,9 +253,9 @@ function UserDashboardScreen() {
         id: 'social-links',
         title: copy.socialLinks,
         subtitle: copy.socialLinksHint,
-        icon: <Link size={20} color="#2563eb" />,
-        iconBg: '#dbeafe',
-        iconColor: '#2563eb',
+        icon: <Link size={20} color={APP_BRAND_COLOR} />,
+        iconBg: APP_COLORS.brand.soft,
+        iconColor: APP_BRAND_COLOR,
         action: { type: 'panel', panel: 'general-social-links' },
       },
       {

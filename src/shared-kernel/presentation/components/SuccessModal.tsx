@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../theme/appColors';
 import React, { useEffect, useRef } from 'react';
 import {
   Modal,
@@ -159,12 +160,12 @@ const styles = StyleSheet.create({
   },
   btn: {
     width: '100%',
-    backgroundColor: '#2563EB',
+    backgroundColor: APP_BRAND_COLOR,
     borderRadius: 16,
     paddingVertical: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#2563EB',
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,

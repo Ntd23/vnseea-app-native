@@ -47,7 +47,7 @@ const styles = StyleSheet.create({
   },
   expiredBg: { backgroundColor: '#9CA3AF' },
   urgentBg: { backgroundColor: '#EF4444' },
-  normalBg: { backgroundColor: 'rgba(0, 0, 255, 0.75)' },
+  normalBg: { backgroundColor: 'rgba(185, 28, 28, 0.82)' },
   expiredText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
   urgentText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
   normalText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },

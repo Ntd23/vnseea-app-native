@@ -1,4 +1,5 @@
 // Description: Dedicated shipping address screen for marketplace checkout.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -99,12 +100,12 @@ function SavedAddressCard({
       activeOpacity={0.85}
       onPress={onPress}
       className={`mb-3 rounded-3xl border bg-white p-4 shadow-sm ${
-        selected ? 'border-[#0000ff]' : 'border-slate-100'
+        selected ? 'border-brand' : 'border-slate-100'
       }`}
     >
       <View className="flex-row items-start">
-        <View className="h-11 w-11 items-center justify-center rounded-full bg-blue-50">
-          <MapPin size={20} color="#0000FF" />
+        <View className="h-11 w-11 items-center justify-center rounded-full bg-brand-subtle">
+          <MapPin size={20} color={APP_BRAND_COLOR} />
         </View>
         <View className="ml-3 flex-1">
           <View className="flex-row items-center">
@@ -112,7 +113,7 @@ function SavedAddressCard({
               {address.name}
             </Text>
             {selected ? (
-              <View className="h-7 w-7 items-center justify-center rounded-full bg-[#0000ff]">
+              <View className="h-7 w-7 items-center justify-center rounded-full bg-brand">
                 <Check size={16} color="#FFFFFF" strokeWidth={3} />
               </View>
             ) : null}
@@ -208,7 +209,7 @@ function ShippingAddressScreen() {
 
       {vm.isLoading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#0000FF" />
+          <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
           <Text className="mt-3 text-sm font-semibold text-slate-500">
             Đang tải địa chỉ...
           </Text>
@@ -243,8 +244,8 @@ function ShippingAddressScreen() {
             <View className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
               <View className="mb-4 flex-row items-center justify-between">
                 <View className="flex-row items-center">
-                  <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-50">
-                    <Plus size={20} color="#0000FF" />
+                  <View className="h-10 w-10 items-center justify-center rounded-full bg-brand-subtle">
+                    <Plus size={20} color={APP_BRAND_COLOR} />
                   </View>
                   <Text className="ml-3 text-lg font-extrabold text-slate-950">
                     Thêm địa chỉ mới
@@ -252,7 +253,7 @@ function ShippingAddressScreen() {
                 </View>
                 {vm.addresses.length > 0 ? (
                   <TouchableOpacity activeOpacity={0.8} onPress={vm.createNewAddress}>
-                    <Text className="text-sm font-extrabold text-[#0000ff]">Nhập mới</Text>
+                    <Text className="text-sm font-extrabold text-brand">Nhập mới</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -316,7 +317,7 @@ function ShippingAddressScreen() {
               ) : null}
 
               <TouchableOpacity
-                className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] px-5 ${
+                className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand px-5 ${
                   vm.isSavingAddress ? 'opacity-70' : ''
                 }`}
                 activeOpacity={0.9}

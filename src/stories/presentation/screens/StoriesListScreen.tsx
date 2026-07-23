@@ -28,6 +28,7 @@
 //   RefreshControl calls ViewModel.reload(); the spinner is bound to
 //   `isRefreshing` so it only appears for that one action.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -142,7 +143,7 @@ export default function StoriesListScreen() {
     if (isLoading) {
       return (
         <View className="flex-1 items-center justify-center px-6 pt-24">
-          <ActivityIndicator color="#0000ff" />
+          <ActivityIndicator color={APP_BRAND_COLOR} />
           <Text className="mt-3 text-[14px] font-semibold text-slate-500">
             {copy.loading}
           </Text>
@@ -151,8 +152,8 @@ export default function StoriesListScreen() {
     }
     return (
       <View className="flex-1 items-center justify-center px-6 pt-20">
-        <View className="h-20 w-20 items-center justify-center rounded-full bg-indigo-50">
-          <Sparkles size={36} color="#0000ff" />
+        <View className="h-20 w-20 items-center justify-center rounded-full bg-brand-soft">
+          <Sparkles size={36} color={APP_BRAND_COLOR} />
         </View>
         <Text className="mt-4 text-center text-[17px] font-extrabold text-slate-900">
           {copy.emptyTitle}
@@ -163,7 +164,7 @@ export default function StoriesListScreen() {
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={reload}
-          className="mt-5 min-h-[44px] items-center justify-center rounded-full bg-[#0000ff] px-6"
+          className="mt-5 min-h-[44px] items-center justify-center rounded-full bg-brand px-6"
         >
           <Text className="text-[14px] font-extrabold text-white">
             {copy.retry}
@@ -224,8 +225,8 @@ export default function StoriesListScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={reload}
-            tintColor="#0000ff"
-            colors={['#0000ff']}
+            tintColor={APP_BRAND_COLOR}
+            colors={[APP_BRAND_COLOR]}
             progressBackgroundColor="#ffffff"
           />
         }

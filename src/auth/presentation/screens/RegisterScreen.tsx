@@ -1,5 +1,6 @@
 // Description: Renders the backend-backed register screen with Nuxt-aligned field labels and order.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -55,7 +56,7 @@ type RegisterFieldKey =
   | 'confirmPassword'
   | 'terms';
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const TERMS_URL = 'https://v2.vnseea.vn/terms/terms';
 const PRIVACY_URL = 'https://v2.vnseea.vn/terms/privacy-policy';
 const REGISTER_USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
@@ -632,7 +633,7 @@ function RegisterScreen() {
                     borderWidth: birthdayPickerVisible ? 1.5 : 1,
                     borderColor: birthdayPickerVisible
                       ? BRAND
-                      : 'rgba(0, 0, 255, 0.12)',
+                      : 'rgba(185, 28, 28, 0.18)',
                     shadowColor: BRAND,
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: birthdayPickerVisible ? 0.1 : 0,
@@ -670,7 +671,7 @@ function RegisterScreen() {
                         style={{
                           height: 50,
                           borderWidth: active ? 1.5 : 1,
-                          borderColor: active ? BRAND : 'rgba(0,0,255,0.12)',
+                          borderColor: active ? BRAND : 'rgba(185,28,28,0.18)',
                           backgroundColor: active ? '#EEF4FF' : '#ffffff',
                         }}
                       >
@@ -733,7 +734,7 @@ function RegisterScreen() {
                 <View
                   className={`mt-0.5 h-[18px] w-[18px] items-center justify-center rounded-md border ${
                     hasExistingStorefront
-                      ? 'border-[#0000ff] bg-[#0000ff]'
+                      ? 'border-brand bg-brand'
                       : 'border-slate-300 bg-white'
                   }`}
                 >
@@ -755,7 +756,7 @@ function RegisterScreen() {
                 <View
                   className={`mt-0.5 h-[18px] w-[18px] items-center justify-center rounded-md border ${
                     acceptedTerms
-                      ? 'border-[#0000ff] bg-[#0000ff]'
+                      ? 'border-brand bg-brand'
                       : 'border-slate-300 bg-white'
                   }`}
                 >
@@ -766,14 +767,14 @@ function RegisterScreen() {
                 <Text className="ml-2.5 flex-1 text-[12px] leading-5 text-slate-500">
                   {copy.termsPrefix}
                   <Text
-                    className="font-semibold text-[#0000ff]"
+                    className="font-semibold text-brand"
                     onPress={() => openExternalLink(TERMS_URL)}
                   >
                     {copy.termsService}
                   </Text>
                   {copy.termsAnd}
                   <Text
-                    className="font-semibold text-[#0000ff]"
+                    className="font-semibold text-brand"
                     onPress={() => openExternalLink(PRIVACY_URL)}
                   >
                     {copy.privacyPolicy}
@@ -908,7 +909,7 @@ function RegisterScreen() {
                 <TouchableOpacity
                   activeOpacity={0.86}
                   onPress={confirmBirthdayPicker}
-                  className="h-12 flex-1 items-center justify-center rounded-[18px] bg-[#0000ff]"
+                  className="h-12 flex-1 items-center justify-center rounded-[18px] bg-brand"
                 >
                   <Text className="text-[14px] font-extrabold text-white">
                     {isVi ? 'Xong' : 'Done'}

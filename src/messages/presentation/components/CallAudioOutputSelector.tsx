@@ -285,7 +285,7 @@ export function CallAudioOutputSelector({
                     key={choice.mode}
                     className={`min-h-[72px] flex-row items-center rounded-2xl border px-4 ${
                       selected
-                        ? 'border-blue-500 bg-blue-500/15'
+                        ? 'border-brand bg-brand/15'
                         : 'border-white/5 bg-slate-800/80'
                     }`}
                     activeOpacity={0.82}
@@ -295,7 +295,7 @@ export function CallAudioOutputSelector({
                   >
                     <View
                       className={`h-11 w-11 items-center justify-center rounded-full ${
-                        selected ? 'bg-blue-600' : 'bg-slate-700'
+                        selected ? 'bg-brand' : 'bg-slate-700'
                       }`}
                     >
                       <Icon

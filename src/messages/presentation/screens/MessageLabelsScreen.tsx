@@ -1,3 +1,7 @@
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -45,7 +49,7 @@ type Props = NativeStackScreenProps<
 
 type ScreenMode = 'assign' | 'create';
 
-const DEFAULT_LABEL_COLOR = '#3B82F6';
+const DEFAULT_LABEL_COLOR = APP_BRAND_COLOR;
 const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i;
 const repository = createMessagesRepository();
 
@@ -199,7 +203,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
   );
   const [query, setQuery] = useState('');
   const [labelName, setLabelName] = useState('');
-  const [labelColor, setLabelColor] = useState(DEFAULT_LABEL_COLOR);
+  const [labelColor, setLabelColor] = useState<string>(DEFAULT_LABEL_COLOR);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -484,7 +488,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
       >
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color="#2563EB" />
+            <ActivityIndicator color={APP_BRAND_COLOR} />
           </View>
         ) : loadError ? (
           <View className="flex-1 items-center justify-center px-8">
@@ -492,7 +496,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
               {copy.loadingError}
             </Text>
             <TouchableOpacity
-              className="rounded-lg bg-blue-600 px-5 py-3"
+              className="rounded-lg bg-brand px-5 py-3"
               onPress={() => loadData().catch(() => undefined)}
             >
               <Text className="font-bold text-white">{copy.retry}</Text>
@@ -541,7 +545,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                     >
                       <Text
                         className="font-bold"
-                        style={{ color: selected ? '#2563EB' : palette.muted }}
+                        style={{ color: selected ? APP_BRAND_COLOR : palette.muted }}
                       >
                         {item === 'assign' ? copy.assignTab : copy.createTab}
                       </Text>
@@ -590,14 +594,14 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                               {label.name}
                             </Text>
                             {mutating ? (
-                              <ActivityIndicator size="small" color="#2563EB" />
+                              <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                             ) : (
                               <View
                                 className="ml-2 flex-row items-center rounded-md px-2.5 py-1.5"
-                                style={{ backgroundColor: attached ? '#DBEAFE' : '#F1F5F9' }}
+                                style={{ backgroundColor: attached ? APP_COLORS.brand.soft : '#F1F5F9' }}
                               >
-                                {attached ? <Check size={14} color="#2563EB" /> : null}
-                                <Text className="ml-1 text-xs font-bold text-blue-700">
+                                {attached ? <Check size={14} color={APP_BRAND_COLOR} /> : null}
+                                <Text className="ml-1 text-xs font-bold text-brand-pressed">
                                   {attached ? copy.attached : copy.attach}
                                 </Text>
                               </View>
@@ -618,7 +622,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                   )}
                 </View>
                 <TouchableOpacity
-                  className="mt-4 flex-row items-center justify-center rounded-lg bg-blue-600 py-3"
+                  className="mt-4 flex-row items-center justify-center rounded-lg bg-brand py-3"
                   onPress={openCreateMode}
                 >
                   <Plus size={18} color="#FFFFFF" />
@@ -671,7 +675,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                     </Text>
                   </View>
                   <TouchableOpacity onPress={toggleAllVisible} disabled={filteredTargets.length === 0}>
-                    <Text className="font-bold text-blue-600">
+                    <Text className="font-bold text-brand">
                       {allVisibleSelected ? copy.clearAll : copy.selectAll}
                     </Text>
                   </TouchableOpacity>
@@ -724,8 +728,8 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                           <View
                             className="h-6 w-6 items-center justify-center rounded-md border"
                             style={{
-                              borderColor: selected ? '#2563EB' : palette.border,
-                              backgroundColor: selected ? '#2563EB' : 'transparent',
+                              borderColor: selected ? APP_BRAND_COLOR : palette.border,
+                              backgroundColor: selected ? APP_BRAND_COLOR : 'transparent',
                             }}
                           >
                             {selected ? <Check size={15} color="#FFFFFF" /> : null}
@@ -738,7 +742,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                 <TouchableOpacity
                   className={`mt-5 min-h-12 items-center justify-center rounded-lg ${
                     (labelName.trim() || retryLabelId) && !isSaving
-                      ? 'bg-blue-600'
+                      ? 'bg-brand'
                       : 'bg-slate-300'
                   }`}
                   disabled={(!labelName.trim() && !retryLabelId) || isSaving}

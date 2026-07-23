@@ -38,6 +38,10 @@
 //   • Release after the threshold → animate off-screen and call
 //     `navigation.goBack()`.
 
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -1276,7 +1280,7 @@ function StoryViewerScreen({ route }: Props) {
                 style={styles.optionsActionRow}
               >
                 <View style={[styles.optionsActionIcon, styles.optionsActionIconPrimary]}>
-                  <UserCircle size={21} color="#2563EB" />
+                  <UserCircle size={21} color={APP_BRAND_COLOR} />
                 </View>
                 <View style={styles.optionsActionCopy}>
                   <Text style={styles.optionsActionTitle}>Xem trang cá nhân</Text>
@@ -1577,7 +1581,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   optionsActionIconPrimary: {
-    backgroundColor: '#DBEAFE',
+    backgroundColor: APP_COLORS.brand.soft,
   },
   optionsActionIconDanger: {
     backgroundColor: '#FEE2E2',
@@ -1633,7 +1637,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   musicAction: {
-    color: '#0866FF',
+    color: APP_BRAND_COLOR,
     fontSize: 11,
     fontWeight: '700',
     marginLeft: 6,
@@ -1784,7 +1788,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
-    backgroundColor: '#2563EB',
+    backgroundColor: APP_BRAND_COLOR,
   },
   replySendButtonDisabled: {
     opacity: 0.45,

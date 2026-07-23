@@ -1,6 +1,7 @@
 // Description: Shows the current user's uploaded video posts — premium redesign
 // with video-poster thumbnails, gradient overlays, and modern card aesthetics.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { APP_COLORS } from '../../../shared-kernel/presentation/theme/appColors';
 import {
   ActivityIndicator,
   Animated,
@@ -43,16 +44,16 @@ const THUMB_HEIGHT = Math.round(CARD_WIDTH * 1.35);
 
 /* ─── Colors ──────────────────────────────────────────────────── */
 const COLORS = {
-  headerBg: '#0A0E27',
-  headerBgLight: '#141852',
-  accent: '#6366F1',
-  accentLight: '#818CF8',
-  accentBg: 'rgba(99,102,241,0.12)',
-  cardBg: '#FFFFFF',
-  screenBg: '#F1F5F9',
-  textPrimary: '#1E1B4B',
-  textSecondary: '#6B7280',
-  textMuted: '#9CA3AF',
+  headerBg: APP_COLORS.brand.primary,
+  headerBgLight: APP_COLORS.brand.pressed,
+  accent: APP_COLORS.brand.primary,
+  accentLight: APP_COLORS.brand.onPrimaryMuted,
+  accentBg: APP_COLORS.brand.soft,
+  cardBg: APP_COLORS.neutral.surface,
+  screenBg: APP_COLORS.neutral.muted,
+  textPrimary: APP_COLORS.neutral.text,
+  textSecondary: APP_COLORS.neutral.textMuted,
+  textMuted: APP_COLORS.neutral.iconMuted,
   heartPink: '#FF6B8A',
   white: '#FFFFFF',
   gradientDark1: '#1a1a2e',
@@ -405,14 +406,14 @@ const styles = StyleSheet.create({
   summaryCard: {
     marginBottom: 16,
     borderRadius: 16,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.brand.soft,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#E0E7FF',
+    borderColor: APP_COLORS.brand.border,
   },
   summaryIconWrap: {
     width: 40,
@@ -446,7 +447,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.cardBg,
     overflow: 'hidden',
     elevation: 4,
-    shadowColor: '#1E1B4B',
+    shadowColor: APP_COLORS.brand.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -586,9 +587,9 @@ const styles = StyleSheet.create({
     borderRadius: 75,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: APP_COLORS.brand.soft,
     borderWidth: 1,
-    borderColor: '#E0E7FF',
+    borderColor: APP_COLORS.brand.border,
   },
   emptyTitle: {
     marginTop: 24,

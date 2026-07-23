@@ -1,4 +1,5 @@
 // Description: Renders the Create Funding screen with premium 2026 design tokens, tactile feedback, and multi-language support.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
   Alert,
@@ -40,7 +41,7 @@ import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type CreateFundingNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND_COLOR = '#2563FF';
+const BRAND_COLOR = APP_BRAND_COLOR;
 
 const CREATE_FUNDING_COPY = {
   vi: {
@@ -382,7 +383,7 @@ function CreateFundingScreen() {
           >
             {/* Header info */}
             <View className="mb-6 flex-row items-center">
-              <View className="h-12 w-12 items-center justify-center rounded-full bg-[#EFF6FF]">
+              <View className="h-12 w-12 items-center justify-center rounded-full bg-brand-soft">
                 <HeartHandshake size={24} color={BRAND_COLOR} />
               </View>
               <View className="ml-4 flex-1">
@@ -468,7 +469,7 @@ function CreateFundingScreen() {
                     updateField('amount', text.replace(/[^0-9]/g, ''))
                   }
                 />
-                <View className="ml-2 rounded-lg bg-[#EFF6FF] px-2.5 py-1">
+                <View className="ml-2 rounded-lg bg-brand-soft px-2.5 py-1">
                   <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>VNSEEA</Text>
                 </View>
               </IconField>
@@ -509,7 +510,7 @@ function CreateFundingScreen() {
                 activeOpacity={0.8}
                 onPress={handlePickImage}
               >
-                <View className="h-11 w-11 items-center justify-center rounded-full bg-[#EFF6FF] mb-3">
+                <View className="h-11 w-11 items-center justify-center rounded-full bg-brand-soft mb-3">
                   <ImagePlus size={20} color={BRAND_COLOR} strokeWidth={2.2} />
                 </View>
                 <Text className="text-[15px] font-bold text-[#0F172A]">
@@ -540,7 +541,7 @@ function CreateFundingScreen() {
           ) : null}
 
           {/* Info Banner Tip */}
-          <View className="mt-4 flex-row items-start bg-[#EFF6FF] border border-[#DBEAFE] rounded-2xl p-4">
+          <View className="mt-4 flex-row items-start bg-brand-soft border border-brand-border rounded-2xl p-4">
             <View className="mt-0.5">
               <Info size={18} color={BRAND_COLOR} />
             </View>

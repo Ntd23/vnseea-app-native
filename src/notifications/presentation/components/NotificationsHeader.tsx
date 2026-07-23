@@ -1,6 +1,7 @@
 // Description: Minimal title header for the notifications tab.
 // Title on the left, filter button on the right (opens the filter sheet).
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { ListFilter } from 'lucide-react-native';
@@ -28,11 +29,11 @@ export default function NotificationsHeader({
       >
         <ListFilter
           size={20}
-          color={filterActive ? '#0000ff' : '#0f172a'}
+          color={filterActive ? APP_BRAND_COLOR : '#0f172a'}
           strokeWidth={2.2}
         />
         {filterActive ? (
-          <View className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#0000ff]" />
+          <View className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-brand" />
         ) : null}
       </Pressable>
     </View>

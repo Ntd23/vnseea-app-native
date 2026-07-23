@@ -1,4 +1,8 @@
 // Description: Renders a Messages chat conversation with media, voice notes, and LiveKit call actions.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -383,7 +387,7 @@ function LinkifiedText({
   text,
   className,
   style,
-  linkColor = '#2563EB',
+  linkColor = APP_COLORS.status.info,
   numberOfLines,
 }: {
   text: string;
@@ -642,7 +646,7 @@ const MapShareCard = React.memo(function MapShareCard({
                 resizeMode="cover"
               />
             ) : (
-              <MapPin size={22} color="#2563EB" />
+              <MapPin size={22} color={APP_COLORS.status.info} />
             )}
           </View>
         </View>
@@ -1123,14 +1127,14 @@ function CallEventContent({
   const iconBgClass = missedIncoming
     ? 'bg-red-500'
     : isSentByMe
-    ? 'bg-blue-500'
+    ? 'bg-brand'
     : 'bg-gray-400';
 
   return (
     <View
       className={`rounded-2xl p-3 border ${
         isSentByMe
-          ? 'bg-blue-50 border-blue-100/60'
+          ? 'bg-brand-subtle border-brand-border'
           : 'bg-[#F0F2F7] border-slate-200/50'
       }`}
       style={{ width: 230 }}
@@ -1329,10 +1333,12 @@ function ReplyMessageBubble({
 }) {
   const previewText = getMessageReplyPreviewText(reply);
   const previewImage = reply.thumbnail || reply.media;
-  const replyBg = isSentByMe ? 'bg-sky-200/70' : 'bg-black/5';
-  const senderColor = 'text-blue-600';
-  const originalMessageColor = 'text-slate-500';
-  const replyTextColor = 'text-slate-900';
+  const replyBg = isSentByMe ? 'bg-white/15' : 'bg-black/5';
+  const senderColor = isSentByMe ? 'text-white' : 'text-brand';
+  const originalMessageColor = isSentByMe
+    ? 'text-brand-on-muted'
+    : 'text-slate-500';
+  const replyTextColor = isSentByMe ? 'text-white' : 'text-slate-900';
 
   return (
     <View className="flex-col min-w-[190px] max-w-[260px] mt-0.5">
@@ -1341,8 +1347,7 @@ function ReplyMessageBubble({
         className={`flex-row rounded-lg overflow-hidden ${replyBg} items-stretch`}
         style={{ minHeight: 42 }}
       >
-        {/* Left vertical blue line */}
-        <View className="w-1 bg-[#0084FF]" />
+        <View className={isSentByMe ? 'w-1 bg-white/70' : 'w-1 bg-brand'} />
 
         {/* Content column */}
         <View className="flex-1 pl-2 py-1.5 justify-center">
@@ -1405,7 +1410,7 @@ function ReplyMessageBubble({
         <LinkifiedText
           text={replyText}
           className={`text-[15px] leading-5 mt-1.5 ${replyTextColor}`}
-          linkColor="#2563EB"
+          linkColor={isSentByMe ? '#FFFFFF' : APP_COLORS.status.info}
         />
       )}
     </View>
@@ -1420,7 +1425,7 @@ function ProductInquiryBubble({
   const cardBg = 'bg-white';
   const cardBorder = 'border-slate-200';
   const nameColor = 'text-slate-800';
-  const priceColor = 'text-blue-600';
+  const priceColor = 'text-brand';
   const navigation = useNavigation<any>();
 
   const handlePressProduct = () => {
@@ -1487,13 +1492,13 @@ function OrderInquiryBubble({
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
       style={{ width: ORDER_REQUEST_CARD_WIDTH }}
     >
-      <View className="flex-row items-center bg-[#0000ff] px-3.5 py-2.5">
+      <View className="flex-row items-center bg-brand px-3.5 py-2.5">
         <View className="min-w-0 flex-1 pr-3">
           <Text className="text-[12px] font-extrabold uppercase text-white">
             Yêu cầu mua
           </Text>
           <Text
-            className="mt-0.5 text-[11px] font-bold text-blue-100"
+            className="mt-0.5 text-[11px] font-bold text-brand-on-muted"
             numberOfLines={1}
             ellipsizeMode="middle"
             accessibilityLabel={`Mã yêu cầu mua ${order.orderHash}`}
@@ -1537,7 +1542,7 @@ function OrderInquiryBubble({
               </Text>
               <View className="mt-1 flex-row items-center">
                 <Text
-                  className="min-w-0 flex-1 text-[12px] font-extrabold text-blue-600"
+                  className="min-w-0 flex-1 text-[12px] font-extrabold text-brand"
                   numberOfLines={1}
                 >
                   {item.total}
@@ -1556,7 +1561,7 @@ function OrderInquiryBubble({
           <Text className="text-[11px] font-bold uppercase text-slate-400">
             Thông tin nhận hàng
           </Text>
-          <Text className="text-[12px] font-extrabold text-blue-600">
+          <Text className="text-[12px] font-extrabold text-brand">
             {order.total}
           </Text>
         </View>
@@ -1650,7 +1655,9 @@ function MessageBubble({
   const messageTextClassName = `text-[15px] leading-5 ${
     isSentByMe && !replyInfo ? 'text-white' : 'text-gray-900'
   }`;
-  const messageLinkColor = isSentByMe && !replyInfo ? '#ffffff' : '#2563EB';
+  const messageLinkColor = isSentByMe && !replyInfo
+    ? '#ffffff'
+    : APP_COLORS.status.info;
   const usesLightReplyBubble =
     Boolean(replyInfo) && !hasMessageMedia && !isMediaOnly;
 
@@ -1669,11 +1676,11 @@ function MessageBubble({
   });
   const replyCueBackgroundColor = replyIconOpacity.interpolate({
     inputRange: [0, 1],
-    outputRange: ['rgba(239, 246, 255, 0.35)', '#DBEAFE'],
+    outputRange: [APP_COLORS.brand.soft, APP_COLORS.brand.softPressed],
   });
   const replyCueBorderColor = replyIconOpacity.interpolate({
     inputRange: [0, 1],
-    outputRange: ['rgba(191, 219, 254, 0.6)', '#93C5FD'],
+    outputRange: [APP_COLORS.brand.border, APP_BRAND_COLOR],
   });
 
   const panResponder = useRef(
@@ -1756,11 +1763,11 @@ function MessageBubble({
           alignItems: 'center',
           borderRadius: 999,
           borderWidth: 1,
-          borderColor: '#BFDBFE',
-          backgroundColor: 'rgba(239, 246, 255, 0.96)',
+          borderColor: APP_COLORS.brand.border,
+          backgroundColor: APP_COLORS.brand.onPrimary,
           paddingHorizontal: 7,
           paddingVertical: 5,
-          shadowColor: '#2563EB',
+          shadowColor: APP_COLORS.brand.shadow,
           shadowOffset: { width: 0, height: 5 },
           shadowOpacity: 0.2,
           shadowRadius: 10,
@@ -1785,19 +1792,19 @@ function MessageBubble({
             backgroundColor: replyCueBackgroundColor,
             borderWidth: 1,
             borderColor: replyCueBorderColor,
-            shadowColor: '#2563EB',
+            shadowColor: APP_COLORS.brand.shadow,
             shadowOffset: { width: 0, height: 3 },
             shadowOpacity: 0.18,
             shadowRadius: 6,
             elevation: 4,
           }}
         >
-          <ReplySwipeIcon size={18} color="#0084FF" />
+          <ReplySwipeIcon size={18} color={APP_BRAND_COLOR} />
         </Animated.View>
         <Animated.Text
           style={{
             marginHorizontal: 7,
-            color: '#0084FF',
+            color: APP_BRAND_COLOR,
             fontSize: 11.5,
             fontWeight: '800',
             letterSpacing: 0.1,
@@ -1967,10 +1974,10 @@ function MessageBubble({
                           ? ''
                           : replyInfo
                           ? isSentByMe
-                            ? 'rounded-2xl rounded-br-md border border-sky-200 bg-sky-100 px-3 py-2'
+                            ? 'rounded-2xl rounded-br-md bg-brand px-3 py-2'
                             : 'rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2'
                           : isSentByMe
-                          ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
+                          ? 'rounded-2xl rounded-br-md bg-brand px-3 py-2'
                           : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
                       }`
                 } ${message.deliveryState === 'sending' ? 'opacity-70' : ''}`}
@@ -1998,7 +2005,7 @@ function MessageBubble({
                           <View
                             className={`mt-1 rounded-2xl px-3 py-2 ${
                               isSentByMe
-                                ? 'rounded-br-md border border-sky-200 bg-sky-100'
+                                ? 'rounded-br-md bg-brand'
                                 : 'rounded-bl-md border border-gray-200 bg-white'
                             }`}
                             style={styles.mediaCaptionBubble}
@@ -2038,7 +2045,7 @@ function MessageBubble({
                           <View
                             className={`mt-1 rounded-2xl px-3 py-2 ${
                               isSentByMe
-                                ? 'rounded-br-md bg-blue-600'
+                                ? 'rounded-br-md bg-brand'
                                 : 'rounded-bl-md border border-gray-200 bg-white'
                             }`}
                             style={styles.mediaCaptionBubble}
@@ -2071,7 +2078,7 @@ function MessageBubble({
                           : usesLightReplyBubble || hasMessageMedia
                           ? 'text-gray-500'
                           : isSentByMe
-                          ? 'text-blue-100'
+                          ? 'text-brand-on-muted'
                           : 'text-gray-500'
                       }`}
                     >
@@ -2477,7 +2484,7 @@ function MessageMedia({
   if (message.mediaType === 'audio') {
     return (
       <View className="w-64">
-        <AudioPlayer uri={message.media} compact accentColor="#0084FF" />
+        <AudioPlayer uri={message.media} compact accentColor={APP_BRAND_COLOR} />
       </View>
     );
   }
@@ -2578,7 +2585,7 @@ function MediaMessageGroup({
           <View
             className={`mt-1 rounded-2xl px-3 py-2 ${
               newestMessage.isSentByMe
-                ? 'rounded-br-md bg-blue-600'
+                ? 'rounded-br-md bg-brand'
                 : 'rounded-bl-md border border-gray-200 bg-white'
             }`}
           >
@@ -2587,7 +2594,11 @@ function MediaMessageGroup({
               className={`text-[15px] leading-5 ${
                 newestMessage.isSentByMe ? 'text-white' : 'text-gray-900'
               }`}
-              linkColor={newestMessage.isSentByMe ? '#ffffff' : '#2563EB'}
+              linkColor={
+                newestMessage.isSentByMe
+                  ? '#ffffff'
+                  : APP_COLORS.status.info
+              }
             />
           </View>
         ) : null}
@@ -3571,12 +3582,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       return [
         {
           key: 'video',
-          icon: <Video size={22} color="#0000ff" />,
+          icon: <Video size={22} color={APP_BRAND_COLOR} />,
           onPress: () => handleStartConversationCall('video'),
         },
         {
           key: 'info',
-          icon: <Info size={21} color="#0000ff" />,
+          icon: <Info size={21} color={APP_BRAND_COLOR} />,
           onPress: handleOpenConversationInfo,
         },
       ];
@@ -3585,12 +3596,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     return [
       {
         key: 'audio',
-        icon: <Phone size={21} color="#0000ff" />,
+        icon: <Phone size={21} color={APP_BRAND_COLOR} />,
         onPress: () => handleStartConversationCall('audio'),
       },
       {
         key: 'video',
-        icon: <Video size={22} color="#0000ff" />,
+        icon: <Video size={22} color={APP_BRAND_COLOR} />,
         onPress: () => handleStartConversationCall('video'),
       },
     ];
@@ -3718,14 +3729,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 <ActivityIndicator
                   className="my-3"
                   size="small"
-                  color="#2563eb"
+                  color={APP_BRAND_COLOR}
                 />
               ) : !hasMore ? (
                 <View className="items-center justify-center py-10 px-4">
                   <View className="relative">
                     <Image
                       source={{ uri: chat.avatar }}
-                      className="h-24 w-24 rounded-full border-4 border-blue-50 shadow-md"
+                      className="h-24 w-24 rounded-full border-4 border-brand-on-muted shadow-md"
                     />
                     {chat.isOnline && (
                       <View className="absolute bottom-1 right-1 h-5 w-5 rounded-full border-4 border-white bg-green-500" />
@@ -3779,7 +3790,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               scrollToLatest(true);
             }}
           >
-            <ChevronDown size={25} color="#2563EB" strokeWidth={2.6} />
+            <ChevronDown size={25} color={APP_BRAND_COLOR} strokeWidth={2.6} />
           </TouchableOpacity>
         )}
 
@@ -3850,7 +3861,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               <AudioPlayer
                 uri={audioAttachment.uri}
                 compact
-                accentColor="#0084FF"
+                accentColor={APP_BRAND_COLOR}
               />
               <TouchableOpacity
                 className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-white"
@@ -3892,7 +3903,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                     {attachedProduct.name}
                   </Text>
                   <Text
-                    className="text-xs font-semibold text-[#0F56FB] mt-0.5"
+                    className="text-xs font-semibold text-brand mt-0.5"
                     numberOfLines={1}
                   >
                     {formatPrice(
@@ -3941,7 +3952,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                       activeOpacity={0.82}
                     >
                       <View style={styles.productInquiryOptionIcon}>
-                        <OptionIcon size={15} color="#2563EB" />
+                        <OptionIcon size={15} color={APP_BRAND_COLOR} />
                       </View>
                       <View style={styles.productInquiryOptionCopy}>
                         <Text
@@ -3979,7 +3990,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         {replyingMessage ? (
           <View className="flex-row items-center justify-between border-t border-gray-100 bg-white px-4 py-2">
             <View className="min-w-0 flex-1 flex-row items-center">
-              <View className="mr-2.5 h-11 w-0.5 rounded-full bg-[#0084FF]" />
+              <View className="mr-2.5 h-11 w-0.5 rounded-full bg-brand" />
               <View className="min-w-0 flex-1 justify-center">
                 <Text
                   className="text-[12px] font-bold text-gray-900"
@@ -4018,11 +4029,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 </View>
               ) : null}
               {replyingMessage.callEvent ? (
-                <View className="ml-2 h-10 w-10 items-center justify-center rounded-md bg-blue-50">
+                <View className="ml-2 h-10 w-10 items-center justify-center rounded-md bg-info-soft">
                   {replyingMessage.callEvent.callType === 'video' ? (
-                    <Video size={16} color="#2563EB" />
+                    <Video size={16} color={APP_COLORS.status.info} />
                   ) : (
-                    <Phone size={16} color="#2563EB" />
+                    <Phone size={16} color={APP_COLORS.status.info} />
                   )}
                 </View>
               ) : null}
@@ -4054,14 +4065,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
           <TouchableOpacity
             className={`mr-2 h-10 w-10 items-center justify-center rounded-full ${
-              isPickingCurrentLocation ? 'bg-blue-50' : ''
+              isPickingCurrentLocation ? 'bg-info-soft' : ''
             }`}
             activeOpacity={0.7}
             disabled={isPickingCurrentLocation}
             onPress={() => handleShareCurrentLocation().catch(() => undefined)}
           >
             {isPickingCurrentLocation ? (
-              <ActivityIndicator size="small" color="#0084FF" />
+              <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
             ) : (
               <MapPin size={21} color="#9DA9BE" />
             )}
@@ -4086,7 +4097,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
           <TouchableOpacity
             className={`mr-2 h-10 w-10 items-center justify-center rounded-full ${
-              recorder.isRecording ? 'bg-red-100' : 'bg-[#0084FF]/10'
+              recorder.isRecording ? 'bg-red-100' : 'bg-brand/10'
             }`}
             activeOpacity={0.7}
             onPress={() => handleToggleRecording().catch(() => undefined)}
@@ -4094,14 +4105,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             {recorder.isRecording ? (
               <Square size={14} color="#DC2626" fill="#DC2626" />
             ) : (
-              <Mic size={20} color="#0084FF" />
+              <Mic size={20} color={APP_BRAND_COLOR} />
             )}
           </TouchableOpacity>
 
           <Animated.View style={{ transform: [{ scale: sendAnim }] }}>
             <TouchableOpacity
               className={`h-10 w-10 items-center justify-center rounded-full ${
-                canSend ? 'bg-[#0084FF]' : 'bg-[#0084FF]/30'
+                canSend ? 'bg-brand' : 'bg-brand/30'
               }`}
               activeOpacity={0.8}
               disabled={!canSend}
@@ -4159,8 +4170,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 className="flex-row items-center rounded-xl bg-gray-50 px-4 py-4 mb-3 active:bg-gray-100"
                 onPress={handleSelectOptionReply}
               >
-                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-50">
-                  <CornerUpLeft size={20} color="#3B82F6" />
+                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-brand-subtle">
+                  <CornerUpLeft size={20} color={APP_BRAND_COLOR} />
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-gray-800">
@@ -4235,7 +4246,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   highlightedMessage: {
-    backgroundColor: 'rgba(0, 0, 255, 0.08)',
+        backgroundColor: APP_COLORS.brand.soft,
     borderRadius: 16,
   },
   inlineLink: {
@@ -4264,7 +4275,7 @@ const styles = StyleSheet.create({
   },
   messageSkeletonBubbleSent: {
     borderBottomRightRadius: 6,
-    backgroundColor: '#EFF6FF',
+        backgroundColor: APP_COLORS.brand.soft,
   },
   messageSkeletonBubbleSmall: {
     width: 176,
@@ -4296,7 +4307,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
   messageSkeletonLineSent: {
-    backgroundColor: '#DBEAFE',
+        backgroundColor: APP_COLORS.brand.softPressed,
   },
   messageSkeletonLineShort: {
     width: '68%',
@@ -4361,8 +4372,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#DBEAFE',
-    backgroundColor: '#F8FBFF',
+    borderColor: APP_COLORS.brand.border,
+    backgroundColor: APP_COLORS.brand.soft,
     paddingHorizontal: 10,
     paddingVertical: 10,
   },
@@ -4372,7 +4383,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EAF2FF',
+    backgroundColor: APP_COLORS.brand.softPressed,
   },
   productInquiryOptionCopy: {
     flex: 1,
@@ -4549,7 +4560,7 @@ const styles = StyleSheet.create({
   },
   mapShareCardCoordinate: {
     marginTop: 3,
-    color: '#2563EB',
+    color: APP_COLORS.status.info,
     fontSize: 12,
     fontWeight: '800',
   },

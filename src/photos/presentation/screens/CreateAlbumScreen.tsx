@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA create album screen for naming, privacy, and photo upload setup.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Alert,
@@ -420,7 +421,7 @@ function LegacyCreateAlbumScreen() {
                 marginRight: 10,
               }}
             >
-              <ImagePlus size={18} color="#002fff" strokeWidth={2} />
+              <ImagePlus size={18} color={APP_BRAND_COLOR} strokeWidth={2} />
             </View>
             <TextInput
               style={{
@@ -566,14 +567,14 @@ function LegacyCreateAlbumScreen() {
                       borderRadius: 16,
                       borderWidth: 1.5,
                       borderStyle: 'dashed',
-                      borderColor: '#002fff',
+                      borderColor: APP_BRAND_COLOR,
                       backgroundColor: '#eff6ff',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
-                    <ImagePlus size={20} color="#002fff" strokeWidth={2} />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#002fff', marginTop: 4 }}>
+                    <ImagePlus size={20} color={APP_BRAND_COLOR} strokeWidth={2} />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: APP_BRAND_COLOR, marginTop: 4 }}>
                       {copy.addMoreText}
                     </Text>
                   </ScaleButton>
@@ -616,7 +617,7 @@ function LegacyCreateAlbumScreen() {
                   marginBottom: 16,
                 }}
               >
-                <ImagePlus size={26} color="#002fff" strokeWidth={2} />
+                <ImagePlus size={26} color={APP_BRAND_COLOR} strokeWidth={2} />
               </View>
               <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', textAlign: 'center' }}>
                 {copy.addPhotosTitle}
@@ -651,7 +652,7 @@ function LegacyCreateAlbumScreen() {
                   shadowRadius: 5,
                   elevation: 1.5,
                   borderWidth: isSelected ? 1.5 : 1,
-                  borderColor: isSelected ? '#002fff' : '#f1f5f9',
+                  borderColor: isSelected ? APP_BRAND_COLOR : '#f1f5f9',
                 }}
               >
                 {/* Circle Icon Container */}
@@ -697,7 +698,7 @@ function LegacyCreateAlbumScreen() {
                       width: 22,
                       height: 22,
                       borderRadius: 11,
-                      backgroundColor: '#002fff',
+                      backgroundColor: APP_BRAND_COLOR,
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
@@ -743,12 +744,12 @@ function LegacyCreateAlbumScreen() {
           onPress={handleCreateAlbum}
           disabled={isSubmitting}
           style={{
-            backgroundColor: '#002fff',
+            backgroundColor: APP_BRAND_COLOR,
             height: 52,
             borderRadius: 26,
             alignItems: 'center',
             justifyContent: 'center',
-            shadowColor: '#002fff',
+            shadowColor: APP_BRAND_COLOR,
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.2,
             shadowRadius: 8,
@@ -942,12 +943,12 @@ function CreateAlbumScreen() {
                 onPress={() => setSelectedPrivacy(key)}
                 className={`min-h-[58px] flex-row items-center rounded-[7px] border px-3 py-2 ${
                   isSelected
-                    ? 'border-[#0000ff] bg-[#f4f6ff]'
+                    ? 'border-brand bg-[#f4f6ff]'
                     : 'border-slate-200 bg-white'
                 }`}
               >
                 <View className="h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-                  <Icon size={18} color={isSelected ? '#0000ff' : '#475569'} />
+                  <Icon size={18} color={isSelected ? APP_BRAND_COLOR : '#475569'} />
                 </View>
                 <View className="ml-3 flex-1">
                   <Text className="text-sm font-bold text-slate-800">
@@ -960,7 +961,7 @@ function CreateAlbumScreen() {
                 <View
                   className={`h-5 w-5 items-center justify-center rounded-full border ${
                     isSelected
-                      ? 'border-[#0000ff] bg-[#0000ff]'
+                      ? 'border-brand bg-brand'
                       : 'border-slate-300'
                   }`}
                 >
@@ -982,7 +983,7 @@ function CreateAlbumScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             disabled={isSubmitting}
-            className="h-11 min-w-[120px] items-center justify-center rounded-[6px] bg-[#0000ff] px-5"
+            className="h-11 min-w-[120px] items-center justify-center rounded-[6px] bg-brand px-5"
             onPress={publishAlbum}
           >
             {isSubmitting ? (

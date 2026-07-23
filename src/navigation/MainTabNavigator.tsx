@@ -1,4 +1,8 @@
 // Description: Custom bottom tab navigator with VnseeaRn brand design.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -36,8 +40,8 @@ import {
   getCustomTabRoutes,
 } from './mainTabConfig';
 
-const BRAND_COLOR = '#2563FF';
-const BRAND_LIGHT_BG = 'rgba(37, 99, 255, 0.08)';
+const BRAND_COLOR = APP_BRAND_COLOR;
+const BRAND_LIGHT_BG = APP_COLORS.brand.soft;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const IOS_NATIVE_TAB_BAR_BASE_HEIGHT = 49;
 

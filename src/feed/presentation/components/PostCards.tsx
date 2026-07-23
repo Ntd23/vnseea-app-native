@@ -1,4 +1,5 @@
 // Description: Renders reusable feed post cards with media, reactions, and privacy metadata.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -176,7 +177,7 @@ const IOS_PHOTO_GRID_FRAME_STYLE: ViewStyle | undefined =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const MEDIA_ASPECT_RATIO_CACHE_LIMIT = 350;
 const MEDIA_ASPECT_RATIO_CACHE = new Map<string, number>();
-const POST_TOKEN_BLUE = '#0000ff';
+const POST_TOKEN_BLUE = APP_BRAND_COLOR;
 const POST_TOKEN_FALLBACK = String.raw`[@#][^\s@#.,!?;:()[\]{}"']+`;
 
 export function getFeedVideoPosterCacheKeyForPost(
@@ -2578,7 +2579,7 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
         {avatar ? (
           <Avatar uri={avatar} />
         ) : (
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-600">
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
             <ShoppingBag size={20} color="#FFFFFF" />
           </View>
         )}
@@ -2705,7 +2706,7 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
           className="mt-1 self-start"
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Text className="text-sm font-bold text-[#0866ff]">
+          <Text className="text-sm font-bold text-brand">
             {isExpanded
               ? copy.captionShowLess ?? '\u1ea8n b\u1edbt'
               : copy.captionShowMore ?? 'Xem th\u00eam'}
@@ -2765,7 +2766,7 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
           deferWhileScrolling={false}
         />
       ) : (
-        <View className="h-28 items-center justify-center bg-blue-50">
+        <View className="h-28 items-center justify-center bg-info-soft">
           <View className="h-14 w-14 items-center justify-center rounded-full bg-white">
             <MapPin size={28} color="#2563EB" />
           </View>

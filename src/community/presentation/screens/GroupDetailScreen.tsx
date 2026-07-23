@@ -1,4 +1,5 @@
 // Description: Renders a WoWonder-style group profile with composer, filters, and group metadata.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -65,7 +66,7 @@ import { GroupPostMenuActionSheet } from './GroupPostMenuActionSheet';
 type GroupDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type GroupDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.GROUP_DETAIL>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const FALLBACK_COVER =
   'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1400&auto=format&fit=crop';
 const GROUP_POST_LIMIT = 12;
@@ -198,7 +199,7 @@ function SectionTitle({
 }) {
   return (
     <View className="flex-row items-center border-b border-slate-100 px-4 py-3">
-      <View className="h-7 w-7 items-center justify-center rounded-full bg-[#0000ff]">
+      <View className="h-7 w-7 items-center justify-center rounded-full bg-brand">
         {icon}
       </View>
       <Text className="ml-2 text-title-primary">{title}</Text>
@@ -781,19 +782,19 @@ function GroupDetailScreen() {
         />
 
         {isLoadingPosts ? (
-          <View className="border-y border-blue-50 bg-white py-12">
+          <View className="border-y border-slate-200 bg-white py-12">
             <ActivityIndicator color={BRAND} />
           </View>
         ) : postsError ? (
-          <View className="border-y border-blue-50 bg-white px-4 py-6">
+          <View className="border-y border-slate-200 bg-white px-4 py-6">
             <Text className="text-center text-caption-primary text-red-600">{postsError}</Text>
           </View>
         ) : displayedPosts.length > 0 ? (
-          <View className="border-y border-blue-50 bg-white">
+          <View className="border-y border-slate-200 bg-white">
             {displayedPosts.map(renderGroupPost)}
           </View>
         ) : (
-          <View className="border-y border-blue-50 bg-white py-12">
+          <View className="border-y border-slate-200 bg-white py-12">
             <View className="items-center justify-center">
               <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-100">
                 <Grid3X3 size={28} color="#94A3B8" />
@@ -941,7 +942,7 @@ function GroupDetailScreen() {
             <TouchableOpacity
               disabled={isSavingEditedPost}
               onPress={() => void handleSaveEditedPost()}
-              className="ml-3 min-h-[46px] flex-1 items-center justify-center rounded-xl bg-[#0000ff]"
+              className="ml-3 min-h-[46px] flex-1 items-center justify-center rounded-xl bg-brand"
               activeOpacity={0.82}
             >
               {isSavingEditedPost ? (

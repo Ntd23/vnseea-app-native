@@ -20,10 +20,11 @@
 // • 'market' — navigates to MARKETPLACE screen
 //
 // The active tab is decided by `activeSource` and rendered in the brand
-// blue (#0866ff — the same blue we use for the Auto-On button on this
+// brand red (the same color we use for the Auto-On button on this
 // screen). Inactive icons use a muted white (rgba 0.6) so the bar still
 // reads on the dark video background.
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { memo, useCallback } from 'react';
 import {
  StyleSheet,
@@ -68,7 +69,7 @@ const TABS: TabSpec[] = [
 ];
 
 const INACTIVE_COLOR = 'rgba(255, 255, 255, 0.55)';
-const ACTIVE_COLOR = '#0866ff';
+const ACTIVE_COLOR = APP_BRAND_COLOR;
 
 function ReelsFilterTabsBase({
  copy,
@@ -143,7 +144,7 @@ const styles = StyleSheet.create({
  borderRadius: 18,
  // Translucent dark surface — sits on top of the video without
  // blocking it visually. The border is the same blue tint as the
- // design system's `rgba(0, 0, 255, 0.20)` rule.
+ // design system's translucent brand-border rule.
  backgroundColor: 'rgba(20, 20, 28, 0.55)',
  borderWidth: 1,
  borderColor: 'rgba(255, 255, 255, 0.10)',

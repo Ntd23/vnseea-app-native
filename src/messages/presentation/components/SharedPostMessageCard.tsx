@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -124,7 +125,7 @@ export function SharedPostMessageCard({
             className="h-[152px] items-center justify-center"
             style={{ backgroundColor: colors.fallback }}
           >
-            <ActivityIndicator color="#2563EB" />
+            <ActivityIndicator color={APP_BRAND_COLOR} />
           </View>
         ) : state.status === 'error' ? (
           <View className="min-h-[132px] items-center justify-center px-5 py-6">

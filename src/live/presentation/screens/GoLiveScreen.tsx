@@ -1,4 +1,5 @@
 // Description: Go Live screen - create a new live stream.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -427,14 +428,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   startLiveButton: {
-    backgroundColor: '#0866ff',
+    backgroundColor: APP_BRAND_COLOR,
     borderRadius: 12,
     height: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#0866ff',
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

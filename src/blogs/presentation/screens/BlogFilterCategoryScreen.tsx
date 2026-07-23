@@ -1,4 +1,5 @@
 // Description: Renders the VNSEEA blog category filter screen for article browsing.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useState } from 'react';
 import {
   ScrollView,
@@ -45,7 +46,7 @@ import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 
 type BlogFilterNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 
 // Mapping giữa category ID và category name từ API
 const categoryMapping: Record<string, string> = {
@@ -169,7 +170,7 @@ function BlogFilterCategoryScreen() {
                 <TouchableOpacity
                   key={id}
                   className={`flex-row items-center gap-1.5 rounded-full px-3 py-2 ${
-                    isSelected ? 'bg-[#0000ff]' : 'bg-slate-100'
+                    isSelected ? 'bg-brand' : 'bg-slate-100'
                   }`}
                   activeOpacity={0.8}
                   onPress={() => setSelectedCategory(id)}
@@ -194,7 +195,7 @@ function BlogFilterCategoryScreen() {
                 <TouchableOpacity
                   key={id}
                   className={`flex-row items-center gap-1.5 rounded-full px-3 py-2 ${
-                    isSelected ? 'bg-[#0000ff]' : 'bg-slate-100'
+                    isSelected ? 'bg-brand' : 'bg-slate-100'
                   }`}
                   activeOpacity={0.8}
                   onPress={() => setSelectedSort(id)}
@@ -221,7 +222,7 @@ function BlogFilterCategoryScreen() {
             ) : (
               <ToggleLeft size={20} color="#94A3B8" />
             )}
-            <Text className={`text-base ${showMyPostsOnly ? 'text-[#0000ff]' : 'text-slate-700'}`}>
+            <Text className={`text-base ${showMyPostsOnly ? 'text-brand' : 'text-slate-700'}`}>
               {copy.myPosts}
             </Text>
           </TouchableOpacity>
@@ -236,7 +237,7 @@ function BlogFilterCategoryScreen() {
         </View>
       </ScrollView>
 
-      <View className="absolute bottom-0 left-0 right-0 border-t border-[rgba(0,0,255,0.08)] bg-white px-4 pb-5 pt-3">
+      <View className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pb-5 pt-3">
         <TouchableOpacity
           className="btn-primary min-h-[52px]"
           activeOpacity={0.86}

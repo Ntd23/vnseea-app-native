@@ -1,4 +1,8 @@
 // Description: Renders the feed app bar with navigation actions and profile access.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -129,7 +133,11 @@ export const FeedHeader = React.memo(function FeedHeader({
               onPress={() => navigation.navigate(ROUTES.SEARCH)}
               style={styles.headerIcon}
             >
-              <Search size={19} color="#64748b" strokeWidth={2.4} />
+              <Search
+                size={19}
+                color={APP_COLORS.brand.onPrimary}
+                strokeWidth={2.4}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
@@ -140,7 +148,11 @@ export const FeedHeader = React.memo(function FeedHeader({
               }
               style={[styles.headerIcon, styles.messageButton]}
             >
-              <Bell size={19} color="#64748b" strokeWidth={2.35} />
+              <Bell
+                size={19}
+                color={APP_COLORS.brand.onPrimary}
+                strokeWidth={2.35}
+              />
               {notificationCount > 0 ? (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>
@@ -154,7 +166,11 @@ export const FeedHeader = React.memo(function FeedHeader({
               onPress={() => navigation.navigate(ROUTES.MESSAGES)}
               style={[styles.headerIcon, styles.messageButton]}
             >
-              <MessageCircle size={19} color="#64748b" strokeWidth={2.35} />
+              <MessageCircle
+                size={19}
+                color={APP_COLORS.brand.onPrimary}
+                strokeWidth={2.35}
+              />
               {messageCount > 0 ? (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>
@@ -188,7 +204,11 @@ export const FeedHeader = React.memo(function FeedHeader({
                     },
                   ]}
                 >
-                  <CircleUser size={19} color="#64748b" strokeWidth={2.2} />
+                  <CircleUser
+                    size={19}
+                    color={APP_COLORS.brand.onPrimary}
+                    strokeWidth={2.2}
+                  />
                 </Animated.View>
                 {avatarUrl ? (
                   <Animated.View
@@ -229,9 +249,9 @@ export const FeedHeader = React.memo(function FeedHeader({
 const styles = StyleSheet.create({
   headerRoot: {
     borderBottomWidth: 1,
-    borderBottomColor: '#e8ebf3',
-    backgroundColor: '#ffffff',
-    shadowColor: '#0f172a',
+    borderBottomColor: APP_COLORS.brand.borderOnPrimary,
+    backgroundColor: APP_BRAND_COLOR,
+    shadowColor: APP_COLORS.brand.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
@@ -249,7 +269,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoPill: {
-    backgroundColor: '#1200ff',
+    backgroundColor: APP_COLORS.brand.pressed,
     borderRadius: 11,
     paddingHorizontal: 11,
     paddingVertical: 6,
@@ -257,7 +277,7 @@ const styles = StyleSheet.create({
     minWidth: 110,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#64748b',
+    shadowColor: APP_COLORS.brand.shadow,
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.16,
     shadowRadius: 12,
@@ -271,10 +291,10 @@ const styles = StyleSheet.create({
     minWidth: 110,
     height: 37,
     borderRadius: 11,
-    backgroundColor: '#1200ff',
+    backgroundColor: APP_COLORS.brand.pressed,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0000ff',
+    shadowColor: APP_BRAND_COLOR,
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.16,
     shadowRadius: 12,
@@ -295,12 +315,12 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#eef1f7',
-    shadowColor: '#0f172a',
+    borderColor: APP_COLORS.brand.borderOnPrimary,
+    shadowColor: APP_COLORS.brand.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 5,

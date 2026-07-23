@@ -10,7 +10,7 @@ const MOCK_CONTACTS: Contact[] = [
     phone: '090 123 4567',
     initials: 'AH',
     chipBg: 'bg-[#eef0ff]',
-    chipText: 'text-[#0000ff]',
+    chipText: 'text-brand',
     isInvited: false,
   },
   {
@@ -19,7 +19,7 @@ const MOCK_CONTACTS: Contact[] = [
     phone: '091 987 6543',
     initials: 'AN',
     chipBg: 'bg-[#d3e4fe]',
-    chipText: 'text-[#0000ff]',
+    chipText: 'text-brand',
     isInvited: false,
   },
   {
@@ -46,7 +46,7 @@ const MOCK_CONTACTS: Contact[] = [
     phone: '097 234 5678',
     initials: 'ĐH',
     chipBg: 'bg-[#eef0ff]',
-    chipText: 'text-[#0000ff]',
+    chipText: 'text-brand',
     isInvited: false,
   },
   {
@@ -55,7 +55,7 @@ const MOCK_CONTACTS: Contact[] = [
     phone: '086 345 6789',
     initials: 'MT',
     chipBg: 'bg-[#d3e4fe]',
-    chipText: 'text-[#0000ff]',
+    chipText: 'text-brand',
     isInvited: false,
   },
 ];

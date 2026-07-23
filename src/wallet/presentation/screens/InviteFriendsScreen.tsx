@@ -27,7 +27,7 @@ function ContactRow({
   return (
     <View
       className={`flex-row items-stretch justify-between px-4 py-4 ${
-        !isLast ? 'border-b border-[rgba(0,0,255,0.08)]' : ''
+        !isLast ? 'border-b border-slate-200' : ''
       }`}>
       {/* Avatar + text — dùng items-center chỉ ở row con này */}
       <View className="flex-row items-center gap-4 flex-1 mr-3">
@@ -55,11 +55,11 @@ function ContactRow({
         className={`self-center rounded-full border px-4 py-1.5 ${
           item.isInvited
             ? 'border-[#94a3b8] bg-[#f1f5f9]'
-            : 'border-[#0000ff]'
+            : 'border-brand'
         }`}>
         <Text
           className={`text-[14px] font-semibold ${
-            item.isInvited ? 'text-[#94a3b8]' : 'text-[#0000ff]'
+            item.isInvited ? 'text-[#94a3b8]' : 'text-brand'
           }`}>
           {item.isInvited ? 'Đã mời' : 'Mời'}
         </Text>
@@ -149,13 +149,13 @@ function InviteFriendsScreen() {
       </View>
 
       {/* Bottom CTA Bar */}
-      <View className="border-t border-[rgba(0,0,255,0.08)] bg-[#f8f9ff] px-4 py-3">
+      <View className="border-t border-slate-200 bg-slate-50 px-4 py-3">
         <View className="flex-row gap-3">
           {/* Copy link */}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={handleCopyLink}
-            className="flex-1 flex-row items-center justify-center gap-2 rounded-full border border-[rgba(0,0,255,0.12)] bg-white py-3">
+            className="flex-1 flex-row items-center justify-center gap-2 rounded-full border border-brand-border bg-white py-3">
             <Link size={18} color="#0b1c30" />
             <Text className="text-title-primary text-[#0b1c30]">
               Sao chép liên kết
@@ -166,7 +166,7 @@ function InviteFriendsScreen() {
           <TouchableOpacity
             activeOpacity={0.9}
             onPress={handleShare}
-            className="flex-1 flex-row items-center justify-center gap-2 rounded-full bg-[#0000ff] py-3">
+            className="flex-1 flex-row items-center justify-center gap-2 rounded-full bg-brand py-3">
             <Share2 size={18} color="#ffffff" />
             <Text className="text-title-primary text-inverse">Chia sẻ</Text>
           </TouchableOpacity>

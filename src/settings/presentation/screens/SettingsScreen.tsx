@@ -1,4 +1,8 @@
 // Description: Renders the main settings tab with profile, feature shortcuts, and settings menu.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -627,7 +631,7 @@ const settingsProfileBackRowStyle = {
   alignItems: 'center' as const,
   backgroundColor: '#ffffff',
   borderBottomWidth: 1,
-  borderBottomColor: '#eef2ff',
+  borderBottomColor: APP_COLORS.neutral.border,
 };
 
 const settingsProfileBackButtonStyle = {
@@ -656,7 +660,7 @@ const SETTINGS_SCREEN_WIDTH = Dimensions.get('window').width;
 
 const settingsSwipeRootStyle = {
   flex: 1,
-  backgroundColor: '#eef2ff',
+  backgroundColor: APP_COLORS.neutral.base,
 };
 
 const settingsCurrentScreenStyle = {
@@ -683,7 +687,7 @@ const settingsReturnPreviewStyle = {
 
 const settingsReturnPreviewCoverStyle = {
   height: 260,
-  backgroundColor: '#dbeafe',
+  backgroundColor: APP_COLORS.brand.soft,
 };
 
 const settingsReturnPreviewCoverImageStyle = {
@@ -732,7 +736,7 @@ const settingsReturnPreviewAvatarStyle = {
 const settingsReturnPreviewKickerStyle = {
   fontSize: 12,
   fontWeight: '800' as const,
-  color: '#2563eb',
+  color: APP_BRAND_COLOR,
 };
 
 const settingsReturnPreviewNameStyle = {
@@ -761,13 +765,13 @@ const settingsReturnPreviewPillStyle = {
   borderRadius: 16,
   alignItems: 'center' as const,
   justifyContent: 'center' as const,
-  backgroundColor: '#eff6ff',
+  backgroundColor: APP_COLORS.brand.soft,
 };
 
 const settingsReturnPreviewPillTextStyle = {
   fontSize: 12,
   fontWeight: '900' as const,
-  color: '#1877f2',
+  color: APP_BRAND_COLOR,
 };
 
 const settingsReturnPreviewSectionStyle = {
@@ -974,7 +978,7 @@ function sessionPlatformIcon(platform: string) {
     value.includes('ios') ||
     value.includes('phone')
   ) {
-    return <Smartphone size={28} color="#0000ff" />;
+    return <Smartphone size={28} color={APP_BRAND_COLOR} />;
   }
   return <Monitor size={28} color="#111827" />;
 }
@@ -1105,12 +1109,12 @@ function GenderButton({
       activeOpacity={0.8}
       onPress={onPress}
       className={`mr-3 h-11 justify-center rounded-xl border px-5 ${
-        selected ? 'border-[#0000ff] bg-indigo-50' : 'border-slate-200 bg-white'
+        selected ? 'border-brand bg-brand-soft' : 'border-slate-200 bg-white'
       }`}
     >
       <Text
         className={`font-semibold ${
-          selected ? 'text-[#0000ff]' : 'text-slate-700'
+          selected ? 'text-brand' : 'text-slate-700'
         }`}
       >
         {label}
@@ -1130,14 +1134,14 @@ function VerificationButton({
     <View
       className={`mr-3 h-11 flex-row items-center rounded-xl border px-5 ${
         selected
-          ? 'border-[#0000ff] bg-indigo-50'
+          ? 'border-brand bg-brand-soft'
           : 'border-slate-200 bg-slate-50'
       }`}
     >
-      <Circle size={16} color={selected ? '#0000ff' : '#94a3b8'} />
+      <Circle size={16} color={selected ? APP_BRAND_COLOR : '#94a3b8'} />
       <Text
         className={`ml-2 font-medium ${
-          selected ? 'text-[#0000ff]' : 'text-slate-400'
+          selected ? 'text-brand' : 'text-slate-400'
         }`}
       >
         {label}
@@ -1229,20 +1233,20 @@ function CountryPickerModal({
                     onClose();
                   }}
                   className={`mb-2 flex-row items-center rounded-xl px-4 py-3 ${
-                    selected ? 'bg-blue-50' : 'bg-slate-50'
+                    selected ? 'bg-brand-subtle' : 'bg-slate-50'
                   }`}
                 >
                   <Text
                     className={`flex-1 text-[15px] ${
                       selected
-                        ? 'font-bold text-[#0000ff]'
+                        ? 'font-bold text-brand'
                         : 'font-medium text-slate-800'
                     }`}
                   >
                     {item.name}
                   </Text>
                   <Text className="mr-3 text-xs text-slate-400">{item.id}</Text>
-                  {selected ? <Check size={18} color="#0000ff" /> : null}
+                  {selected ? <Check size={18} color={APP_BRAND_COLOR} /> : null}
                 </TouchableOpacity>
               );
             }}
@@ -1296,19 +1300,19 @@ function RelationshipPickerModal({
                   onClose();
                 }}
                 className={`mb-2 flex-row items-center rounded-xl px-4 py-3 ${
-                  selected ? 'bg-blue-50' : 'bg-slate-50'
+                  selected ? 'bg-brand-subtle' : 'bg-slate-50'
                 }`}
               >
                 <Text
                   className={`flex-1 text-[15px] ${
                     selected
-                      ? 'font-bold text-[#0000ff]'
+                      ? 'font-bold text-brand'
                       : 'font-medium text-slate-800'
                   }`}
                 >
                   {option.label}
                 </Text>
-                {selected ? <Check size={18} color="#0000ff" /> : null}
+                {selected ? <Check size={18} color={APP_BRAND_COLOR} /> : null}
               </TouchableOpacity>
             );
           })}
@@ -1337,7 +1341,7 @@ function GeneralSettingsMenuRow({
         !isLast ? 'border-b border-slate-100' : ''
       }`}
     >
-      <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
+      <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-brand-subtle">
         {icon}
       </View>
       <Text className="flex-1 text-[16px] font-semibold text-slate-800">
@@ -1383,12 +1387,12 @@ function PrivacyOptionButton({
       activeOpacity={0.82}
       onPress={() => onPress(value)}
       className={`mb-2 mr-2 min-h-11 justify-center rounded-xl border px-5 ${
-        selected ? 'border-[#0000ff] bg-indigo-50' : 'border-slate-200 bg-white'
+        selected ? 'border-brand bg-brand-soft' : 'border-slate-200 bg-white'
       }`}
     >
       <Text
         className={`text-[15px] font-semibold ${
-          selected ? 'text-[#0000ff]' : 'text-slate-700'
+          selected ? 'text-brand' : 'text-slate-700'
         }`}
       >
         {label}
@@ -1451,7 +1455,7 @@ function buildBirthday(day: string, month: string, year: string) {
 
 function FieldIcon({ children }: { children: React.ReactNode }) {
   return (
-    <View className="mr-3 h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+    <View className="mr-3 h-10 w-10 items-center justify-center rounded-xl bg-brand-subtle">
       {children}
     </View>
   );
@@ -1632,7 +1636,7 @@ function VerificationCheckbox({
       <View
         className={`h-5 w-5 items-center justify-center rounded border ${
           selected
-            ? 'border-blue-600 bg-blue-600'
+            ? 'border-brand bg-brand'
             : 'border-slate-300 bg-white'
         }`}
       >
@@ -1731,7 +1735,7 @@ function AccountInformationCard() {
         label={labelPhone}
         value={form.phoneNumber}
         placeholder={placeholderPhone}
-        icon={<Phone size={20} color="#0000ff" />}
+        icon={<Phone size={20} color={APP_BRAND_COLOR} />}
         keyboardType="phone-pad"
         onChangeText={value => updateField('phoneNumber', value)}
       />
@@ -1740,7 +1744,7 @@ function AccountInformationCard() {
         label={labelGender}
         value={form.gender === 'male' ? (isVi ? 'Nam giới' : 'Male') : form.gender === 'female' ? (isVi ? 'Nữ giới' : 'Female') : ''}
         placeholder={isVi ? 'Chọn giới tính' : 'Select gender'}
-        icon={<User size={20} color="#0000ff" />}
+        icon={<User size={20} color={APP_BRAND_COLOR} />}
         rightIcon={<ChevronDown size={18} color="#94a3b8" />}
         onPress={() => setGenderPickerVisible(true)}
       />
@@ -1749,7 +1753,7 @@ function AccountInformationCard() {
         label={labelEmail}
         value={form.email}
         placeholder={placeholderEmail}
-        icon={<Mail size={20} color="#0000ff" />}
+        icon={<Mail size={20} color={APP_BRAND_COLOR} />}
         keyboardType="email-address"
         onChangeText={value => updateField('email', value)}
       />
@@ -1757,7 +1761,7 @@ function AccountInformationCard() {
       <BirthdayInputField
         label={labelBirthday}
         value={form.birthday}
-        icon={<CalendarDays size={20} color="#0000ff" />}
+        icon={<CalendarDays size={20} color={APP_BRAND_COLOR} />}
         onChangeText={value => updateField('birthday', value)}
       />
 
@@ -1765,7 +1769,7 @@ function AccountInformationCard() {
         label={labelCountry}
         value={selectedCountryName}
         placeholder={placeholderCountry}
-        icon={<MapPin size={20} color="#0000ff" />}
+        icon={<MapPin size={20} color={APP_BRAND_COLOR} />}
         rightIcon={<ChevronDown size={18} color="#94a3b8" />}
         onPress={() => setCountryPickerVisible(true)}
       />
@@ -1783,7 +1787,7 @@ function AccountInformationCard() {
       <CommonFormField
         label={labelWallet}
         value={wallet}
-        icon={<Wallet size={20} color="#0000ff" />}
+        icon={<Wallet size={20} color={APP_BRAND_COLOR} />}
         editable={false}
       />
 
@@ -1794,7 +1798,7 @@ function AccountInformationCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
-          isLoading ? 'bg-blue-300' : 'bg-blue-600'
+          isLoading ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isLoading ? (
@@ -1843,18 +1847,18 @@ function AccountInformationCard() {
               }}
               className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
                 form.gender === 'male'
-                  ? 'border-blue-600 bg-blue-50'
+                  ? 'border-brand bg-brand-subtle'
                   : 'border-slate-100 bg-white'
               }`}
             >
               <Text
                 className={`flex-1 text-[16px] font-semibold ${
-                  form.gender === 'male' ? 'text-blue-700' : 'text-slate-800'
+                  form.gender === 'male' ? 'text-brand-pressed' : 'text-slate-800'
                 }`}
               >
                 {isVi ? 'Nam giới' : 'Male'}
               </Text>
-              {form.gender === 'male' ? <Check size={22} color="#0000ff" /> : null}
+              {form.gender === 'male' ? <Check size={22} color={APP_BRAND_COLOR} /> : null}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1865,18 +1869,18 @@ function AccountInformationCard() {
               }}
               className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
                 form.gender === 'female'
-                  ? 'border-blue-600 bg-blue-50'
+                  ? 'border-brand bg-brand-subtle'
                   : 'border-slate-100 bg-white'
               }`}
             >
               <Text
                 className={`flex-1 text-[16px] font-semibold ${
-                  form.gender === 'female' ? 'text-blue-700' : 'text-slate-800'
+                  form.gender === 'female' ? 'text-brand-pressed' : 'text-slate-800'
                 }`}
               >
                 {isVi ? 'Nữ giới' : 'Female'}
               </Text>
-              {form.gender === 'female' ? <Check size={22} color="#0000ff" /> : null}
+              {form.gender === 'female' ? <Check size={22} color={APP_BRAND_COLOR} /> : null}
             </TouchableOpacity>
           </View>
         </View>
@@ -2093,7 +2097,7 @@ function DeliveryAddressCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-          isSavingAddress ? 'bg-blue-300' : 'bg-blue-600'
+          isSavingAddress ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isSavingAddress ? (
@@ -2302,7 +2306,7 @@ function ProfileInformationCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-          isLoading ? 'bg-blue-300' : 'bg-blue-600'
+          isLoading ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isLoading ? (
@@ -2432,7 +2436,7 @@ function SocialLinksCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
-          isSaving ? 'bg-blue-300' : 'bg-blue-600'
+          isSaving ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isSaving ? (
@@ -2554,7 +2558,7 @@ function AvatarCoverCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-          isLoading ? 'bg-blue-300' : 'bg-blue-600'
+          isLoading ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isLoading ? (
@@ -2699,7 +2703,7 @@ function PasswordSettingsCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
-          isLoading ? 'bg-blue-300' : 'bg-blue-600'
+          isLoading ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isLoading ? (
@@ -2743,18 +2747,18 @@ function PasswordSettingsCard() {
                   }}
                   className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
                     selected
-                      ? 'border-blue-600 bg-blue-50'
+                      ? 'border-brand bg-brand-subtle'
                       : 'border-slate-100 bg-white'
                   }`}
                 >
                   <Text
                     className={`flex-1 text-[16px] font-semibold ${
-                      selected ? 'text-blue-700' : 'text-slate-800'
+                      selected ? 'text-brand-pressed' : 'text-slate-800'
                     }`}
                   >
                     {option.label}
                   </Text>
-                  {selected ? <Check size={22} color="#0000ff" /> : null}
+                  {selected ? <Check size={22} color={APP_BRAND_COLOR} /> : null}
                 </TouchableOpacity>
               );
             })}
@@ -2886,7 +2890,7 @@ function TwoFactorSettingsCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-          isLoading ? 'bg-blue-300' : 'bg-blue-600'
+          isLoading ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isLoading ? (
@@ -2957,8 +2961,8 @@ function DeviceNotificationPermissionCard() {
   return (
     <View className="surface-card mb-4 px-4 py-4">
       <View className="flex-row items-center">
-        <View className="h-11 w-11 items-center justify-center rounded-full bg-blue-50">
-          <Bell size={21} color="#0000ff" />
+        <View className="h-11 w-11 items-center justify-center rounded-full bg-brand-subtle">
+          <Bell size={21} color={APP_BRAND_COLOR} />
         </View>
         <View className="ml-3 flex-1">
           <Text className="text-[17px] font-extrabold text-slate-950">
@@ -2982,7 +2986,7 @@ function DeviceNotificationPermissionCard() {
           handleEnableNotifications().catch(() => undefined);
         }}
         className={`mt-4 h-11 items-center justify-center rounded-xl ${
-          isGranted ? 'bg-emerald-100' : 'bg-blue-600'
+          isGranted ? 'bg-emerald-100' : 'bg-brand'
         }`}
       >
         {isRequesting ? (
@@ -3092,7 +3096,7 @@ function EmailNotificationsCard() {
             <Switch
               value={Boolean(form[item.key])}
               disabled={!item.supported}
-              trackColor={{ false: '#e2e8f0', true: '#2f7cff' }}
+              trackColor={{ false: '#e2e8f0', true: APP_BRAND_COLOR }}
               thumbColor="#ffffff"
               ios_backgroundColor="#e2e8f0"
               onValueChange={value =>
@@ -3109,7 +3113,7 @@ function EmailNotificationsCard() {
             handleSave().catch(() => undefined);
           }}
           className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-            isLoading ? 'bg-blue-300' : 'bg-blue-600'
+            isLoading ? 'bg-brand/40' : 'bg-brand'
           }`}
         >
           {isLoading ? (
@@ -3461,7 +3465,7 @@ function PrivacySettingsCard() {
           handleSave().catch(() => undefined);
         }}
         className={`mt-4 h-14 flex-row items-center justify-center rounded-2xl ${
-          isLoading ? 'bg-blue-300' : 'bg-blue-600'
+          isLoading ? 'bg-brand/40' : 'bg-brand'
         }`}
       >
         {isLoading ? (
@@ -3505,18 +3509,18 @@ function PrivacySettingsCard() {
                   }}
                   className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
                     selected
-                      ? 'border-blue-600 bg-blue-50'
+                      ? 'border-brand bg-brand-subtle'
                       : 'border-slate-100 bg-white'
                   }`}
                 >
                   <Text
                     className={`flex-1 text-[16px] font-semibold ${
-                      selected ? 'text-blue-700' : 'text-slate-800'
+                      selected ? 'text-brand-pressed' : 'text-slate-800'
                     }`}
                   >
                     {option.label}
                   </Text>
-                  {selected ? <Check size={22} color="#0000ff" /> : null}
+                  {selected ? <Check size={22} color={APP_BRAND_COLOR} /> : null}
                 </TouchableOpacity>
               );
             })}
@@ -3661,7 +3665,7 @@ function LoginSessionsCard() {
 
       {isLoadingSessions ? (
         <View className="surface-card items-center px-4 py-8">
-          <ActivityIndicator size="small" color="#0000ff" />
+          <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
         </View>
       ) : null}
 
@@ -3782,7 +3786,7 @@ function BlockedUsersCard() {
   if (isLoading) {
     return (
       <View className="surface-card items-center px-4 py-8">
-        <ActivityIndicator size="small" color="#0000ff" />
+        <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
       </View>
     );
   }
@@ -3818,14 +3822,14 @@ function BlockedUsersCard() {
               }}
               className={`min-h-10 min-w-[88px] items-center justify-center border px-4 ${
                 isUnblocking
-                  ? 'border-blue-200 bg-blue-50'
-                  : 'border-blue-500 bg-white'
+                  ? 'border-brand-border bg-brand-subtle'
+                  : 'border-brand bg-white'
               }`}
             >
               {isUnblocking ? (
-                <ActivityIndicator size="small" color="#0000ff" />
+                <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
               ) : (
-                <Text className="text-[15px] font-bold text-[#0000ff]">
+                <Text className="text-[15px] font-bold text-brand">
                   Unblock
                 </Text>
               )}
@@ -3861,7 +3865,7 @@ function VerificationDocumentTile({
         {file?.name || title}
       </Text>
       {file ? (
-        <Text className="mt-1 text-center text-xs text-blue-600">
+        <Text className="mt-1 text-center text-xs text-brand">
           Nhấn để đổi tệp
         </Text>
       ) : null}
@@ -4079,7 +4083,7 @@ function AccountVerificationCard() {
           <BadgeCheck size={18} color="#ffffff" />
         </View>
         <View className="ml-4 flex-1">
-          <Text className="text-[14px] font-bold text-[#0000ff]">
+          <Text className="text-[14px] font-bold text-brand">
             {status.user?.username || profile?.username || profile?.id || ''}
           </Text>
           <Text className="mt-1 text-[28px] font-extrabold text-sky-500">
@@ -4114,7 +4118,7 @@ function AccountVerificationCard() {
         <View className="surface-card px-4 py-4">
           {loadingStatus ? (
             <View className="items-center py-6">
-              <ActivityIndicator size="small" color="#0000ff" />
+              <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
             </View>
           ) : null}
 
@@ -4228,7 +4232,7 @@ function AccountVerificationCard() {
               handleSubmit().catch(() => undefined);
             }}
             className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-              submitting ? 'bg-blue-300' : 'bg-blue-600'
+              submitting ? 'bg-brand/40' : 'bg-brand'
             }`}
           >
             {submitting ? (
@@ -4274,7 +4278,7 @@ function AccountVerificationCard() {
                     <TouchableOpacity
                       activeOpacity={0.8}
                       onPress={() => setBirthdayPickerVisible(false)}
-                      className="rounded-full bg-blue-600 px-4 py-2"
+                      className="rounded-full bg-brand px-4 py-2"
                     >
                       <Text className="font-semibold text-white">Xong</Text>
                     </TouchableOpacity>
@@ -4376,9 +4380,9 @@ function SettingsScreen() {
       id: 'social-links',
       title: dashboardCopy.socialLinks,
       subtitle: dashboardCopy.socialLinksHint,
-      icon: <Link size={20} color="#2563eb" />,
-      iconBg: '#dbeafe',
-      iconColor: '#2563eb',
+      icon: <Link size={20} color={APP_BRAND_COLOR} />,
+      iconBg: APP_COLORS.brand.soft,
+      iconColor: APP_BRAND_COLOR,
       action: { type: 'panel', panel: 'general-social-links' },
     },
     {
@@ -5045,7 +5049,7 @@ function SettingsScreen() {
               {logoUrl && imageErrorCount === 0 ? (
                 <View
                   style={{
-                    backgroundColor: '#002fff',
+                    backgroundColor: APP_BRAND_COLOR,
                     borderRadius: 10,
                     paddingHorizontal: 10,
                     paddingVertical: 5,
@@ -5066,7 +5070,7 @@ function SettingsScreen() {
                   style={{
                     fontSize: 26,
                     fontWeight: '900',
-                    color: '#002fff',
+                    color: APP_BRAND_COLOR,
                     letterSpacing: 0.5,
                   }}
                 >
@@ -5080,7 +5084,7 @@ function SettingsScreen() {
                 onPress={() => navigation.navigate(ROUTES.SEARCH)}
                 style={settingsHeaderIconStyle}
               >
-                <Search size={20} color="#002fff" strokeWidth={2.5} />
+                <Search size={20} color={APP_BRAND_COLOR} strokeWidth={2.5} />
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.75}
@@ -5090,7 +5094,7 @@ function SettingsScreen() {
                   position: 'relative',
                 }}
               >
-                <MessageCircle size={20} color="#002fff" strokeWidth={2.5} />
+                <MessageCircle size={20} color={APP_BRAND_COLOR} strokeWidth={2.5} />
                 {messageCount > 0 ? (
                   <View
                     style={{
@@ -5100,7 +5104,7 @@ function SettingsScreen() {
                       minWidth: 18,
                       height: 18,
                       borderRadius: 9,
-                      backgroundColor: '#002fff',
+                      backgroundColor: APP_BRAND_COLOR,
                       alignItems: 'center',
                       justifyContent: 'center',
                       paddingHorizontal: 4,
@@ -5151,12 +5155,12 @@ function SettingsScreen() {
               <GeneralSettingsSection title="💬 Giao tiếp">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.following}
-                  icon={<UserPlus size={22} color="#0000ff" />}
+                  icon={<UserPlus size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.FOLLOWING)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.poke}
-                  icon={<Pointer size={22} color="#0000ff" />}
+                  icon={<Pointer size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.POKE)}
                 />
@@ -5165,22 +5169,22 @@ function SettingsScreen() {
               <GeneralSettingsSection title="📷 Nội dung & Media">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.albums}
-                  icon={<Images size={22} color="#0000ff" />}
+                  icon={<Images size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.ALBUMS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.photos}
-                  icon={<ImageLucide size={22} color="#0000ff" />}
+                  icon={<ImageLucide size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.MY_PHOTOS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.videos}
-                  icon={<Video size={22} color="#0000ff" />}
+                  icon={<Video size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.MY_VIDEOS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.saved}
-                  icon={<Bookmark size={22} color="#0000ff" />}
+                  icon={<Bookmark size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() =>
                     navigation.navigate(ROUTES.ACTIVITY_CENTER, {
@@ -5193,22 +5197,22 @@ function SettingsScreen() {
               <GeneralSettingsSection title="👥 Cộng đồng">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.groups}
-                  icon={<Users size={22} color="#0000ff" />}
+                  icon={<Users size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.EXPLORE_GROUPS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.pages}
-                  icon={<Flag size={22} color="#0000ff" />}
+                  icon={<Flag size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.PAGES)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI['find-friends']}
-                  icon={<UserSearch size={22} color="#0000ff" />}
+                  icon={<UserSearch size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.INVITE_FRIENDS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.nearby}
-                  icon={<MapPinned size={22} color="#0000ff" />}
+                  icon={<MapPinned size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.NEARBY_USERS)}
                 />
@@ -5217,17 +5221,17 @@ function SettingsScreen() {
               <GeneralSettingsSection title="🛒 Thương mại">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.market}
-                  icon={<Store size={22} color="#0000ff" />}
+                  icon={<Store size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.MARKETPLACE)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.jobs}
-                  icon={<Briefcase size={22} color="#0000ff" />}
+                  icon={<Briefcase size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.JOBS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.offers}
-                  icon={<Tag size={22} color="#0000ff" />}
+                  icon={<Tag size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.OFFERS)}
                 />
@@ -5236,22 +5240,22 @@ function SettingsScreen() {
               <GeneralSettingsSection title="📰 Nội dung & Tin tức">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.blogs}
-                  icon={<FileText size={22} color="#0000ff" />}
+                  icon={<FileText size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.BLOGS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.popular}
-                  icon={<Flame size={22} color="#0000ff" />}
+                  icon={<Flame size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.POPULAR)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.events}
-                  icon={<Calendar size={22} color="#0000ff" />}
+                  icon={<Calendar size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.EVENTS)}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.movies}
-                  icon={<Film size={22} color="#0000ff" />}
+                  icon={<Film size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.MOVIES)}
                 />
@@ -5260,7 +5264,7 @@ function SettingsScreen() {
               <GeneralSettingsSection title="🎮 Giải trí">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.live}
-                  icon={<Radio size={22} color="#0000ff" />}
+                  icon={<Radio size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.LIVE)}
                 />
@@ -5269,7 +5273,7 @@ function SettingsScreen() {
               <GeneralSettingsSection title="💰 Tài chính">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.funding}
-                  icon={<HeartHandshake size={22} color="#0000ff" />}
+                  icon={<HeartHandshake size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.FUNDING)}
                 />
@@ -5278,7 +5282,7 @@ function SettingsScreen() {
               <GeneralSettingsSection title="📈 Kinh doanh">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.boosted}
-                  icon={<Rocket size={22} color="#0000ff" />}
+                  icon={<Rocket size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.BOOSTED)}
                 />
@@ -5287,7 +5291,7 @@ function SettingsScreen() {
               <GeneralSettingsSection title="🕒 Cá nhân">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.memories}
-                  icon={<Clock size={22} color="#0000ff" />}
+                  icon={<Clock size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.MEMORIES)}
                 />
@@ -5296,12 +5300,12 @@ function SettingsScreen() {
               <GeneralSettingsSection title="⚙️ Hệ thống">
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.common}
-                  icon={<LayoutGrid size={22} color="#0000ff" />}
+                  icon={<LayoutGrid size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.EXPLORE })}
                 />
                 <GeneralSettingsMenuRow
                   label={FEATURE_LABELS_VI.ads}
-                  icon={<Megaphone size={22} color="#0000ff" />}
+                  icon={<Megaphone size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.ADVERTISING)}
                 />
@@ -5310,22 +5314,22 @@ function SettingsScreen() {
               <GeneralSettingsSection title="Thông tin">
                 <GeneralSettingsMenuRow
                   label="Chung"
-                  icon={<User size={22} color="#0000ff" />}
+                  icon={<User size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-common')}
                 />
                 <GeneralSettingsMenuRow
                   label="Hồ sơ"
-                  icon={<Pencil size={22} color="#0000ff" />}
+                  icon={<Pencil size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-profile')}
                 />
                 <GeneralSettingsMenuRow
                   label="Liên kết mạng xã hội"
-                  icon={<Link size={22} color="#0000ff" />}
+                  icon={<Link size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-social-links')}
                 />
                 <GeneralSettingsMenuRow
                   label="Ảnh đại diện"
-                  icon={<Camera size={22} color="#0000ff" />}
+                  icon={<Camera size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigateToPanel('general-avatar')}
                 />
@@ -5334,17 +5338,17 @@ function SettingsScreen() {
               <GeneralSettingsSection title="Địa chỉ và quyền riêng tư">
                 <GeneralSettingsMenuRow
                   label="Địa chỉ giao hàng"
-                  icon={<MapPin size={22} color="#0000ff" />}
+                  icon={<MapPin size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-address')}
                 />
                 <GeneralSettingsMenuRow
                   label="Quyền riêng tư"
-                  icon={<LockKeyhole size={22} color="#0000ff" />}
+                  icon={<LockKeyhole size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-privacy')}
                 />
                 <GeneralSettingsMenuRow
                   label="Chặn người dùng"
-                  icon={<Ban size={22} color="#0000ff" />}
+                  icon={<Ban size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigateToPanel('general-blocked-users')}
                 />
@@ -5353,22 +5357,22 @@ function SettingsScreen() {
               <GeneralSettingsSection title="Bảo mật">
                 <GeneralSettingsMenuRow
                   label="Phiên đăng nhập"
-                  icon={<Monitor size={22} color="#0000ff" />}
+                  icon={<Monitor size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-sessions')}
                 />
                 <GeneralSettingsMenuRow
                   label="Mật khẩu"
-                  icon={<LockKeyhole size={22} color="#0000ff" />}
+                  icon={<LockKeyhole size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-password')}
                 />
                 <GeneralSettingsMenuRow
                   label="Xác thực 2 yếu tố"
-                  icon={<ShieldCheck size={22} color="#0000ff" />}
+                  icon={<ShieldCheck size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-two-factor')}
                 />
                 <GeneralSettingsMenuRow
                   label="Xác thực tài khoản"
-                  icon={<BadgeCheck size={22} color="#0000ff" />}
+                  icon={<BadgeCheck size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigateToPanel('general-verification')}
                 />
@@ -5377,7 +5381,7 @@ function SettingsScreen() {
               <GeneralSettingsSection title="Tùy chọn">
                 <GeneralSettingsMenuRow
                   label="Thông báo"
-                  icon={<Bell size={22} color="#0000ff" />}
+                  icon={<Bell size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigateToPanel('general-notifications')}
                 />
                 <TouchableOpacity
@@ -5386,8 +5390,8 @@ function SettingsScreen() {
                   className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white"
                 >
                   <View className="flex-row items-center">
-                    <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
-                      <CircleDollarSign size={20} color="#0000ff" />
+                    <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-brand-subtle">
+                      <CircleDollarSign size={20} color={APP_BRAND_COLOR} />
                     </View>
                     <View>
                       <Text className="text-[16px] font-semibold text-slate-800">
@@ -5401,7 +5405,7 @@ function SettingsScreen() {
                     </View>
                   </View>
                   {currencyLoading ? (
-                    <ActivityIndicator size="small" color="#0000ff" />
+                    <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
                   ) : (
                     <ChevronRight size={18} color="#94a3b8" />
                   )}
@@ -5413,22 +5417,22 @@ function SettingsScreen() {
               <GeneralSettingsSection title="Thu nhập">
                 <GeneralSettingsMenuRow
                   label="Thu nhập của tôi"
-                  icon={<Wallet size={22} color="#0000ff" />}
+                  icon={<Wallet size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.WITHDRAWAL)}
                 />
                 <GeneralSettingsMenuRow
                   label="Giới thiệu và nhận thưởng"
-                  icon={<Store size={22} color="#0000ff" />}
+                  icon={<Store size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.AFFILIATES)}
                 />
                 <GeneralSettingsMenuRow
                   label="Điểm của tôi"
-                  icon={<BadgeCheck size={22} color="#0000ff" />}
+                  icon={<BadgeCheck size={22} color={APP_BRAND_COLOR} />}
                   onPress={() => navigation.navigate(ROUTES.MY_POINTS)}
                 />
                 <GeneralSettingsMenuRow
                   label="Ví & Tín dụng"
-                  icon={<Wallet size={22} color="#0000ff" />}
+                  icon={<Wallet size={22} color={APP_BRAND_COLOR} />}
                   isLast
                   onPress={() => navigation.navigate(ROUTES.MY_BALANCE)}
                 />

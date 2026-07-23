@@ -1,4 +1,8 @@
 // Description: Renders private saved, reaction, comment, and share collections.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -188,10 +192,10 @@ function ActivityThumbnail({ item }: { item: PostActivityItem }) {
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#EEF2FF',
+        backgroundColor: APP_COLORS.brand.soft,
       }}
     >
-      <EmptyIcon size={28} color="#0000FF" />
+      <EmptyIcon size={28} color={APP_BRAND_COLOR} />
     </View>
   );
 }
@@ -303,7 +307,7 @@ function ActivityCenterScreen() {
           </Text>
           <Text
             numberOfLines={2}
-            style={{ color: '#0000FF', fontSize: 12, fontWeight: '700', marginTop: 8 }}
+            style={{ color: APP_BRAND_COLOR, fontSize: 12, fontWeight: '700', marginTop: 8 }}
           >
             {metadata(item)}
           </Text>
@@ -376,7 +380,7 @@ function ActivityCenterScreen() {
               <Text
                 numberOfLines={1}
                 style={{
-                  color: selected ? '#0000FF' : '#64748B',
+                  color: selected ? APP_BRAND_COLOR : '#64748B',
                   fontSize: 12,
                   fontWeight: selected ? '900' : '700',
                 }}
@@ -391,7 +395,7 @@ function ActivityCenterScreen() {
                   bottom: 0,
                   height: 3,
                   borderRadius: 2,
-                  backgroundColor: selected ? '#0000FF' : 'transparent',
+                  backgroundColor: selected ? APP_BRAND_COLOR : 'transparent',
                 }}
               />
             </TouchableOpacity>
@@ -413,8 +417,8 @@ function ActivityCenterScreen() {
           <RefreshControl
             refreshing={current.refreshing}
             onRefresh={() => refresh(activeTab)}
-            tintColor="#0000FF"
-            colors={['#0000FF']}
+            tintColor={APP_BRAND_COLOR}
+            colors={[APP_BRAND_COLOR]}
           />
         }
         onEndReached={() => loadMore(activeTab)}
@@ -422,14 +426,14 @@ function ActivityCenterScreen() {
         ListFooterComponent={
           current.loadingMore ? (
             <View style={{ paddingVertical: 16 }}>
-              <ActivityIndicator color="#0000FF" />
+              <ActivityIndicator color={APP_BRAND_COLOR} />
             </View>
           ) : null
         }
         ListEmptyComponent={
           current.loading ? (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <ActivityIndicator size="large" color="#0000FF" />
+              <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
             </View>
           ) : (
             <View
@@ -447,10 +451,10 @@ function ActivityCenterScreen() {
                   borderRadius: 36,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: '#EEF2FF',
+                  backgroundColor: APP_COLORS.brand.soft,
                 }}
               >
-                <EmptyIcon size={31} color="#0000FF" />
+                <EmptyIcon size={31} color={APP_BRAND_COLOR} />
               </View>
               <Text
                 style={{
@@ -474,7 +478,7 @@ function ActivityCenterScreen() {
                     alignItems: 'center',
                     paddingHorizontal: 18,
                     borderRadius: 12,
-                    backgroundColor: '#0000FF',
+                    backgroundColor: APP_BRAND_COLOR,
                   }}
                 >
                   <RefreshCw size={16} color="#FFFFFF" />

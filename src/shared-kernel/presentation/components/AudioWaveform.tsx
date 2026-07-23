@@ -1,5 +1,9 @@
 import React, { memo, useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../theme/appColors';
 
 const DEFAULT_LEVELS = [
   0.34, 0.58, 0.82, 0.46, 0.68, 0.92, 0.54, 0.74, 0.42, 0.88, 0.62, 0.38,
@@ -19,8 +23,8 @@ type Props = {
 function AudioWaveformBase({
   progress = 0,
   animated = false,
-  color = '#2563eb',
-  inactiveColor = '#bfdbfe',
+  color = APP_BRAND_COLOR,
+  inactiveColor = APP_COLORS.brand.onPrimaryMuted,
   height = 22,
   barCount = 28,
 }: Props) {

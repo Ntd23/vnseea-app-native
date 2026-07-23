@@ -1,4 +1,5 @@
 // Description: Live streams list screen - shows friends live and all live streams.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -105,8 +106,8 @@ function SectionHeader({
       <View className="h-2 w-2 rounded-full bg-red-500" />
       <Text className="text-[14px] font-semibold text-[#1a1c1e]">{title}</Text>
       {count > 0 && (
-        <View className="rounded-full bg-[#0000ff]/10 px-2 py-0.5">
-          <Text className="text-[10px] font-medium text-[#0000ff]">{count}</Text>
+        <View className="rounded-full bg-brand/10 px-2 py-0.5">
+          <Text className="text-[10px] font-medium text-brand">{count}</Text>
         </View>
       )}
     </View>
@@ -141,7 +142,7 @@ export default function LiveScreen() {
 
       <View className="surface-topbar flex-row items-center justify-between px-5 py-3">
         <View className="flex-row items-center gap-2">
-          <Radio size={22} color="#0000ff" />
+          <Radio size={22} color={APP_BRAND_COLOR} />
           <Text className="text-[18px] font-semibold text-[#1a1c1e]">
             Trực tiếp
           </Text>
@@ -169,7 +170,7 @@ export default function LiveScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={refresh}
-            tintColor="#0000ff"
+            tintColor={APP_BRAND_COLOR}
           />
         }
         ListHeaderComponent={
@@ -210,7 +211,7 @@ export default function LiveScreen() {
           <View className="flex-1 items-center justify-center py-20">
             {isLoading ? (
               <>
-                <ActivityIndicator size="large" color="#0000ff" />
+                <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
                 <Text className="mt-3 text-[14px] text-[#64748b]">
                   Đang tải live...
                 </Text>

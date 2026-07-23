@@ -1,4 +1,5 @@
 // Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -490,8 +491,8 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
               <Globe size={12} color="#94a3b8" />
             </View>
           </View>
-          <View className="h-9 w-9 items-center justify-center rounded-full bg-[#eef2ff]">
-            <Megaphone size={18} color="#0000ff" />
+          <View className="h-9 w-9 items-center justify-center rounded-full bg-brand-soft">
+            <Megaphone size={18} color={APP_BRAND_COLOR} />
           </View>
         </View>
 
@@ -551,7 +552,7 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           onPress={handlePress}
           className="rounded-lg bg-[#e7f0ff] px-4 py-2"
         >
-          <Text className="text-sm font-bold text-[#0866ff]">
+          <Text className="text-sm font-bold text-brand">
             {copy.learnMore}
           </Text>
         </FeedGlassActionButton>
@@ -654,8 +655,8 @@ const FeedLivePostCard = React.memo(
               {item.description}
             </Text>
           )}
-          <View className="mt-4 rounded-xl bg-[#eef2ff] px-4 py-3">
-            <Text className="text-center text-sm font-extrabold text-[#0000ff]">
+          <View className="mt-4 rounded-xl bg-brand-soft px-4 py-3">
+            <Text className="text-center text-sm font-extrabold text-brand">
               {copy.watchLive}
             </Text>
           </View>
@@ -828,8 +829,8 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
               <Globe size={12} color="#94a3b8" />
             </View>
           </View>
-          <View className="h-9 w-9 items-center justify-center rounded-full bg-[#eef2ff]">
-            <Briefcase size={18} color="#0000ff" />
+          <View className="h-9 w-9 items-center justify-center rounded-full bg-brand-soft">
+            <Briefcase size={18} color={APP_BRAND_COLOR} />
           </View>
         </View>
 
@@ -860,9 +861,9 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
               </Text>
             </View>
           )}
-          <View className="flex-row items-center rounded-full bg-[#eff6ff] px-3 py-2">
-            <Briefcase size={14} color="#0866ff" />
-            <Text className="ml-1 text-xs font-bold text-[#0866ff]">
+          <View className="flex-row items-center rounded-full bg-brand-soft px-3 py-2">
+            <Briefcase size={14} color={APP_BRAND_COLOR} />
+            <Text className="ml-1 text-xs font-bold text-brand">
               {getJobTypeLabel(job.job_type, copy)}
             </Text>
           </View>
@@ -893,7 +894,7 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
         </View>
 
         <View className="rounded-lg bg-[#e7f0ff] px-4 py-2">
-          <Text className="text-sm font-bold text-[#0866ff]">
+          <Text className="text-sm font-bold text-brand">
             {copy.viewJob}
           </Text>
         </View>
@@ -943,7 +944,7 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
           </Text>
         </View>
         <TouchableOpacity activeOpacity={0.75} onPress={onOpenGroups}>
-          <Text className="text-sm font-bold text-[#0866ff]">
+          <Text className="text-sm font-bold text-brand">
             {copy.seeAll}
           </Text>
         </TouchableOpacity>
@@ -1026,8 +1027,8 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
                   </Text>
                 </View>
                 <View className="mt-4 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2.5">
-                  <Plus size={16} color="#0866ff" />
-                  <Text className="ml-1 text-sm font-extrabold text-[#0866ff]">
+                  <Plus size={16} color={APP_BRAND_COLOR} />
+                  <Text className="ml-1 text-sm font-extrabold text-brand">
                     {copy.viewGroup}
                   </Text>
                 </View>
@@ -1077,7 +1078,7 @@ const SuggestedPagesCarousel = React.memo(
             </Text>
           </View>
           <TouchableOpacity activeOpacity={0.75} onPress={onOpenPages}>
-            <Text className="text-sm font-bold text-[#0866ff]">
+            <Text className="text-sm font-bold text-brand">
               {copy.seeAll}
             </Text>
           </TouchableOpacity>
@@ -1161,8 +1162,8 @@ const SuggestedPagesCarousel = React.memo(
                     </Text>
                   </View>
                   <View className="mt-4 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2.5">
-                    <Plus size={16} color="#0866ff" />
-                    <Text className="ml-1 text-sm font-extrabold text-[#0866ff]">
+                    <Plus size={16} color={APP_BRAND_COLOR} />
+                    <Text className="ml-1 text-sm font-extrabold text-brand">
                       {copy.viewPage}
                     </Text>
                   </View>
@@ -3686,7 +3687,7 @@ function FeedScreen() {
           liveVm.isRefreshing
         }
         onRefresh={handleRefresh}
-        tintColor="#0866FF"
+        tintColor={APP_BRAND_COLOR}
         progressViewOffset={feedRefreshProgressViewOffset}
       />
     ),
@@ -3761,8 +3762,8 @@ function FeedScreen() {
         edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
         <FocusAwareStatusBar
-          barStyle="dark-content"
-          backgroundColor="#FFFFFF"
+          barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+          backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF'}
           translucent={false}
         />
         {Platform.OS === 'ios' ? (
@@ -3772,7 +3773,7 @@ function FeedScreen() {
                 onPress={handleLoadNewPosts}
                 activeOpacity={0.9}
                 style={{ top: newPostsButtonTop }}
-                className="absolute self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
+                className="absolute self-center z-[999] flex-row items-center bg-brand px-4 py-2.5 rounded-full shadow-lg border border-brand"
               >
                 <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
                 <Text className="text-white text-xs font-bold">
@@ -3804,7 +3805,7 @@ function FeedScreen() {
                 onPress={handleLoadNewPosts}
                 activeOpacity={0.9}
                 style={{ top: newPostsButtonTop }}
-                className="absolute self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
+                className="absolute self-center z-[999] flex-row items-center bg-brand px-4 py-2.5 rounded-full shadow-lg border border-brand"
               >
                 <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
                 <Text className="text-white text-xs font-bold">

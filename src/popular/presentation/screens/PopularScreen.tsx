@@ -1,4 +1,5 @@
 // Description: Popular screen showing most liked/trending posts from the API
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -168,7 +169,7 @@ function PostCard({ item, isFirst }: { item: PopularPost; isFirst?: boolean }) {
                 resizeMode="cover"
               />
             ) : (
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-600">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
                 <Text className="text-sm font-bold text-white">
                   {publisherName.charAt(0).toUpperCase()}
                 </Text>
@@ -180,7 +181,7 @@ function PostCard({ item, isFirst }: { item: PopularPost; isFirst?: boolean }) {
                   {publisherName}
                 </Text>
                 <View className="ml-2 flex-row items-center rounded-full bg-[#eef0ff] px-2 py-0.5">
-                  <TrendingUp size={10} color="#0000ff" />
+                  <TrendingUp size={10} color={APP_BRAND_COLOR} />
                   <Text className="ml-1 text-[10px] font-medium text-brand">Xu hướng</Text>
                 </View>
               </View>
@@ -219,7 +220,7 @@ function PostCard({ item, isFirst }: { item: PopularPost; isFirst?: boolean }) {
         <ReactionSummary reactionsCount={reactionsCount} likeCount={likeCount} />
 
         {/* Stats row */}
-        <View className="mb-3 flex-row items-center justify-between border-b border-[rgba(0,0,255,0.08)] pb-3">
+        <View className="mb-3 flex-row items-center justify-between border-b border-slate-200 pb-3">
           <View className="flex-row items-center gap-1">
             {/* Show actual reaction emojis if available */}
             {topReactions.length > 0 ? (
@@ -294,7 +295,7 @@ function LoadingSkeleton() {
       <View className="h-64 bg-gray-100" />
       <View className="p-4">
         <View className="mb-3 h-4 w-24 rounded bg-gray-200" />
-        <View className="h-8 flex-row items-center justify-between border-t border-[rgba(0,0,255,0.08)] pt-3">
+        <View className="h-8 flex-row items-center justify-between border-t border-slate-200 pt-3">
           <View className="h-6 w-16 rounded bg-gray-200" />
           <View className="h-6 w-20 rounded bg-gray-200" />
           <View className="h-6 w-16 rounded bg-gray-200" />
@@ -385,8 +386,8 @@ function PopularScreen() {
             <RefreshControl
               refreshing={isLoading}
               onRefresh={() => void reload()}
-              colors={['#0000ff']}
-              tintColor="#0000ff"
+              colors={[APP_BRAND_COLOR]}
+              tintColor={APP_BRAND_COLOR}
             />
           }
         />

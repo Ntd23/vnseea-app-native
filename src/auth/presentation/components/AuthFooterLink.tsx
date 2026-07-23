@@ -25,7 +25,7 @@ export default function AuthFooterLink({
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         className="ml-1.5"
       >
-        <Text className="text-[14px] font-bold text-[#0000ff]">{action}</Text>
+        <Text className="text-[14px] font-bold text-brand">{action}</Text>
       </TouchableOpacity>
     </View>
   );

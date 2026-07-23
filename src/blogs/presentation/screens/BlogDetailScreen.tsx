@@ -1,4 +1,8 @@
 // Description: Renders a WoWonder article detail page with hero metadata, comments, related posts, and category widgets.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -43,7 +47,7 @@ import type { BlogCategoryOption, BlogsItem } from '../../domain/types/blogs.typ
 type BlogDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type BlogDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.BLOG_DETAIL>;
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1495020689067-958852a7765e?q=80&w=1400&auto=format&fit=crop';
 
 const categoryKeyMap: Record<string, string> = {
@@ -175,7 +179,7 @@ function CategoriesCloud({ categories, copy }: { categories: BlogCategoryOption[
       {categories.map(category => {
         const key = categoryKeyMap[category.id];
         return (
-          <View key={category.id} style={{ borderRadius: 999, backgroundColor: '#EEF2FF', paddingHorizontal: 12, paddingVertical: 8 }}>
+          <View key={category.id} style={{ borderRadius: 999, backgroundColor: APP_COLORS.brand.soft, paddingHorizontal: 12, paddingVertical: 8 }}>
             <Text style={{ color: '#4263C7', fontSize: 12, fontWeight: '800' }}>
               {(key ? copy[key] : undefined) || category.label}
             </Text>
@@ -253,7 +257,7 @@ function BlogDetailScreen() {
           <Text className="ml-3 text-heading">{copy.blogsTitle}</Text>
         </View>
         <View className="flex-1 items-center justify-center px-8">
-          <FileText size={56} color="rgba(0,0,255,0.32)" />
+          <FileText size={56} color={APP_BRAND_COLOR} opacity={0.32} />
           <Text className="mt-5 text-center text-heading">{copy.error}</Text>
           <Text className="mt-2 text-center text-body-secondary">{vm.error}</Text>
           <TouchableOpacity className="btn-primary mt-6 min-h-[46px] rounded-xl px-6" activeOpacity={0.85} onPress={() => void vm.retry()}>
@@ -394,7 +398,7 @@ function BlogDetailScreen() {
 
         {article.url ? (
           <View style={{ marginHorizontal: 18, marginTop: 16 }}>
-            <TouchableOpacity activeOpacity={0.85} onPress={() => void Linking.openURL(article.url!)} style={{ minHeight: 44, borderRadius: 12, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center' }}>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => void Linking.openURL(article.url!)} style={{ minHeight: 44, borderRadius: 12, backgroundColor: APP_COLORS.brand.soft, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: BRAND, fontSize: 14, fontWeight: '800' }}>{'Xem tr\u00ean website'}</Text>
             </TouchableOpacity>
           </View>

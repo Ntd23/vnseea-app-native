@@ -91,7 +91,7 @@ export function FeedShareComposerCard({
           activeOpacity={0.88}
           disabled={disabled}
           onPress={onSubmit}
-          className={`min-h-11 flex-row items-center justify-center rounded-lg bg-[#0000ff] px-4 ${
+          className={`min-h-11 flex-row items-center justify-center rounded-lg bg-brand px-4 ${
             disabled ? 'opacity-40' : ''
           }`}
         >

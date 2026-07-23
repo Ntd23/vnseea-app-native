@@ -1,4 +1,5 @@
 // Description: Renders purchased marketplace order details as a dedicated native screen.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -206,7 +207,7 @@ export default function OrderDetailScreen() {
         <Text style={styles.sectionTitle}>Địa chỉ giao hàng</Text>
         <View style={styles.addressCard}>
           {isLoadingAddress ? (
-            <ActivityIndicator color="#0000ff" />
+            <ActivityIndicator color={APP_BRAND_COLOR} />
           ) : address ? (
             <>
               <Text style={styles.addressName}>{address.name || 'Người nhận'}</Text>

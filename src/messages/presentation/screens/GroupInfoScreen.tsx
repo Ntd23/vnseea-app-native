@@ -1,3 +1,4 @@
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -65,7 +66,7 @@ type Props = NativeStackScreenProps<
 type ActionSheet = 'add' | 'edit' | null;
 
 const repository = createMessagesRepository();
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 const styles = StyleSheet.create({
   darkScreen: { backgroundColor: '#020617' },
   scrollContent: { paddingBottom: 36 },
@@ -156,7 +157,7 @@ function ActionButton({
       disabled={busy}
       onPress={onPress}
     >
-      <View className="h-12 w-12 items-center justify-center rounded-full bg-[#0000ff]/10">
+      <View className="h-12 w-12 items-center justify-center rounded-full bg-brand/10">
         {busy ? (
           <ActivityIndicator color={BRAND} />
         ) : (
@@ -525,7 +526,7 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-center text-sm text-red-600">{error}</Text>
           <TouchableOpacity
-            className="mt-4 rounded-lg bg-[#0000ff] px-4 py-3"
+            className="mt-4 rounded-lg bg-brand px-4 py-3"
             onPress={() => loadGroupInfo(true)}
           >
             <Text className="font-semibold text-white">{copy.retry}</Text>
@@ -694,7 +695,7 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
                           <Text className="font-semibold text-slate-900 dark:text-white">{user.name}</Text>
                           <Text className="text-xs text-slate-500">@{user.username}</Text>
                         </View>
-                        <View className={`h-7 w-7 items-center justify-center rounded-full ${selected ? 'bg-blue-600' : 'border border-slate-300'}`}>
+                        <View className={`h-7 w-7 items-center justify-center rounded-full ${selected ? 'bg-brand' : 'border border-slate-300'}`}>
                           {selected ? <Check size={16} color="#FFFFFF" /> : null}
                         </View>
                       </TouchableOpacity>
@@ -705,7 +706,7 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
                   ) : null}
                 </ScrollView>
                 <TouchableOpacity
-                  className="mx-5 mt-3 min-h-[48px] items-center justify-center rounded-xl bg-[#0000ff] disabled:opacity-40"
+                  className="mx-5 mt-3 min-h-[48px] items-center justify-center rounded-xl bg-brand disabled:opacity-40"
                   disabled={selectedIds.size === 0 || isMutating}
                   onPress={addMembers}
                 >
@@ -720,7 +721,7 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
                       source={{ uri: groupAvatar?.uri || groupInfo?.avatar || chat.avatar }}
                       className="h-24 w-24 rounded-full bg-slate-200"
                     />
-                    <View className="absolute bottom-0 right-0 h-9 w-9 items-center justify-center rounded-full bg-[#0000ff]">
+                    <View className="absolute bottom-0 right-0 h-9 w-9 items-center justify-center rounded-full bg-brand">
                       <Camera size={17} color="#FFFFFF" />
                     </View>
                   </View>
@@ -733,7 +734,7 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
                   onChangeText={setGroupName}
                 />
                 <TouchableOpacity
-                  className="mt-4 min-h-[48px] items-center justify-center rounded-xl bg-[#0000ff]"
+                  className="mt-4 min-h-[48px] items-center justify-center rounded-xl bg-brand"
                   disabled={isMutating || !groupName.trim()}
                   onPress={saveGroup}
                 >

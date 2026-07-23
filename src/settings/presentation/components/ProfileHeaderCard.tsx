@@ -46,11 +46,11 @@ export default function ProfileHeaderCard({
         {profile.avatarUrl ? (
           <Image
             source={{uri: profile.avatarUrl}}
-            className="h-16 w-16 rounded-full border-2 border-[#0000ff]"
+            className="h-16 w-16 rounded-full border-2 border-brand"
             resizeMode="cover"
           />
         ) : (
-          <View className="avatar-xl items-center justify-center rounded-full border-2 border-[#0000ff] bg-[#eef0ff]">
+          <View className="avatar-xl items-center justify-center rounded-full border-2 border-brand bg-[#eef0ff]">
             <Text className="text-heading text-brand">{initials}</Text>
           </View>
         )}

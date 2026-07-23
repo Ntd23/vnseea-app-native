@@ -24,6 +24,10 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import axios from 'axios';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 
 type EarningsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -391,7 +395,7 @@ function EarningsScreen() {
       {/* Plans List */}
       {isLoading && plans.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#2563eb" />
+          <ActivityIndicator size="large" color={APP_BRAND_COLOR} />
         </View>
       ) : (
         <FlatList
@@ -437,7 +441,7 @@ function EarningsScreen() {
                   onPress={() => handleEditPress(item)}
                   className="h-10 w-10 items-center justify-center rounded-full bg-sky-100"
                 >
-                  <Pencil size={18} color="#0284c7" />
+                  <Pencil size={18} color={APP_BRAND_COLOR} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
@@ -560,9 +564,9 @@ function EarningsScreen() {
                   activeOpacity={0.85}
                   disabled={isSaving}
                   onPress={handleSavePlan}
-                  className="min-h-[48px] px-8 bg-blue-600 rounded-2xl items-center justify-center flex-row"
+                  className="min-h-[48px] px-8 bg-brand rounded-2xl items-center justify-center flex-row"
                   style={{
-                    shadowColor: '#2563eb',
+                    shadowColor: APP_COLORS.brand.shadow,
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: 0.15,
                     shadowRadius: 6,
@@ -604,9 +608,9 @@ function EarningsScreen() {
                   setPeriod(item);
                   setIsIntervalPickerVisible(false);
                 }}
-                className={`py-3.5 border-b border-slate-100 items-center ${period === item ? 'bg-blue-50/50' : ''}`}
+                className={`py-3.5 border-b border-slate-100 items-center ${period === item ? 'bg-brand-subtle' : ''}`}
               >
-                <Text className={`text-base ${period === item ? 'font-bold text-blue-600' : 'font-semibold text-slate-800'}`}>
+                <Text className={`text-base ${period === item ? 'font-bold text-brand' : 'font-semibold text-slate-800'}`}>
                   {getPeriodLabel(item)}
                 </Text>
               </TouchableOpacity>
@@ -651,9 +655,9 @@ function EarningsScreen() {
                   setCurrency(item.id);
                   setIsCurrencyPickerVisible(false);
                 }}
-                className={`py-3.5 border-b border-slate-100 items-center ${currency === item.id ? 'bg-blue-50/50' : ''}`}
+                className={`py-3.5 border-b border-slate-100 items-center ${currency === item.id ? 'bg-brand-subtle' : ''}`}
               >
-                <Text className={`text-base ${currency === item.id ? 'font-bold text-blue-600' : 'font-semibold text-slate-800'}`}>
+                <Text className={`text-base ${currency === item.id ? 'font-bold text-brand' : 'font-semibold text-slate-800'}`}>
                   {item.name} ({item.symbol})
                 </Text>
               </TouchableOpacity>

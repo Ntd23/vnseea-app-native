@@ -1,4 +1,5 @@
 // Description: Provides settings screen data with real user profile from WoWonder API.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   FeatureGridItem,
@@ -11,7 +12,7 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
-const BRAND = '#0000FF';
+const BRAND = APP_BRAND_COLOR;
 
 const MOCK_FEATURES: FeatureGridItem[] = [
   {

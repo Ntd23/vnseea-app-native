@@ -1,4 +1,5 @@
 // Description: Renders the referral rewards screen with yellow copy-link card and social share buttons.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -116,7 +117,7 @@ function AffiliatesScreen() {
           onPress={() => navigation.goBack()}
           className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
         >
-          <ArrowLeft size={24} color="#0000ff" />
+          <ArrowLeft size={24} color={APP_BRAND_COLOR} />
         </TouchableOpacity>
         <Text className="flex-1 text-center text-xl font-extrabold text-slate-950" numberOfLines={1}>
           {copy.header}
@@ -127,7 +128,7 @@ function AffiliatesScreen() {
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         {isLoading && !hasData ? (
           <View className="m-4 items-center justify-center bg-white rounded-3xl p-8 border border-slate-100">
-            <ActivityIndicator size="small" color="#0000ff" />
+            <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
             <Text className="mt-3 text-sm font-bold text-slate-500">{copy.loading}</Text>
           </View>
         ) : null}
@@ -139,7 +140,7 @@ function AffiliatesScreen() {
             className="m-4 items-center justify-center bg-white rounded-3xl p-8 border border-slate-100"
           >
             <Text className="text-center text-sm font-extrabold text-red-500 mb-2">{error}</Text>
-            <Text className="text-sm font-extrabold text-blue-600">{copy.retry}</Text>
+            <Text className="text-sm font-extrabold text-brand">{copy.retry}</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -198,7 +199,7 @@ function AffiliatesScreen() {
                 <View className="absolute bottom-4 left-0 h-6 w-6 items-center justify-center rounded-full bg-[#10b981]">
                   <User size={12} color="#ffffff" />
                 </View>
-                <View className="absolute bottom-4 right-1 h-6 w-6 items-center justify-center rounded-full bg-[#3b82f6]">
+                <View className="absolute bottom-4 right-1 h-6 w-6 items-center justify-center rounded-full bg-brand">
                   <User size={12} color="#ffffff" />
                 </View>
 
@@ -276,8 +277,8 @@ function AffiliatesScreen() {
                     {user.avatar ? (
                       <Image source={{ uri: user.avatar }} className="w-10 h-10 rounded-full bg-slate-100" />
                     ) : (
-                      <View className="w-10 h-10 rounded-full bg-blue-50 items-center justify-center">
-                        <Text className="text-blue-600 font-bold text-sm">
+                      <View className="w-10 h-10 rounded-full bg-brand-subtle items-center justify-center">
+                        <Text className="text-brand font-bold text-sm">
                           {(user.name || user.username || '?').slice(0, 1).toUpperCase()}
                         </Text>
                       </View>

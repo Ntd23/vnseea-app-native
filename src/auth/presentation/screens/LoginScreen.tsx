@@ -2,6 +2,7 @@
 // real branding logo (or "V" fallback), animated card, focus rings,
 // inline error banner, and full i18n (vi / en).
 
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, {
   useCallback,
   useEffect,
@@ -47,7 +48,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 
 type LoginNav = NativeStackNavigationProp<RootStackParamList>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 type LoginFieldKey = 'username' | 'password';
 
 function LoginScreen() {
@@ -306,7 +307,7 @@ function LoginScreen() {
                   <Text
                     accessibilityRole="link"
                     onPress={handleForgotPassword}
-                    className="text-[12px] font-semibold text-[#0000ff]"
+                    className="text-[12px] font-semibold text-brand"
                   >
                     {copy.forgotPassword}
                   </Text>

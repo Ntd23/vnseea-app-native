@@ -115,7 +115,7 @@ function LiveKitMiniCallBar() {
           {subtitle}
         </Text>
       </View>
-      <View className="h-9 w-9 items-center justify-center rounded-full bg-blue-600">
+      <View className="h-9 w-9 items-center justify-center rounded-full bg-brand">
         {callType === 'video' ? (
           <Video size={18} color="#ffffff" />
         ) : (

@@ -1,4 +1,5 @@
 // Description: Shows an event detail page with owner edit and delete actions.
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -71,7 +72,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 type EventDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type EventDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.EVENT_DETAIL>;
 
-const BRAND = '#0000ff';
+const BRAND = APP_BRAND_COLOR;
 const EVENT_POST_LIMIT = 20;
 const feedRepository = createFeedRepository();
 
@@ -438,7 +439,7 @@ function EventDetailScreen() {
         </View>
 
         <View className="mt-3 bg-white">
-          <View className="flex-row items-center border-b border-slate-100 px-4 py-3"><View className="h-6 w-6 items-center justify-center rounded-full bg-[#0000ff]"><Info size={14} color="#FFFFFF" /></View><Text className="ml-2 font-bold text-slate-800">{labels.info}</Text></View>
+          <View className="flex-row items-center border-b border-slate-100 px-4 py-3"><View className="h-6 w-6 items-center justify-center rounded-full bg-brand"><Info size={14} color="#FFFFFF" /></View><Text className="ml-2 font-bold text-slate-800">{labels.info}</Text></View>
           <View className="flex-row items-center border-b border-slate-100 px-4 py-3"><Users size={17} color="#64748B" /><Text className="ml-3 text-slate-600">{Number(event.going_count || 0)} {labels.going}</Text></View>
           <View className="flex-row items-center border-b border-slate-100 px-4 py-3"><Heart size={17} color="#64748B" /><Text className="ml-3 text-slate-600">{Number(event.interested_count || 0)} {labels.interested}</Text></View>
           <View className="flex-row items-center border-b border-slate-100 px-4 py-3"><MapPin size={17} color="#64748B" /><Text className="ml-3 flex-1 text-slate-600">{location || '--'}</Text></View>
@@ -446,7 +447,7 @@ function EventDetailScreen() {
         </View>
 
         <View className="mt-3 bg-white">
-          <View className="flex-row items-center border-b border-slate-100 px-4 py-3"><View className="h-6 w-6 items-center justify-center rounded-full bg-[#0000ff]"><Info size={14} color="#FFFFFF" /></View><Text className="ml-2 font-bold text-slate-800">{labels.about}</Text></View>
+          <View className="flex-row items-center border-b border-slate-100 px-4 py-3"><View className="h-6 w-6 items-center justify-center rounded-full bg-brand"><Info size={14} color="#FFFFFF" /></View><Text className="ml-2 font-bold text-slate-800">{labels.about}</Text></View>
           <Text className="px-4 py-5 text-slate-600">{description || labels.noDescription}</Text>
         </View>
       </ScrollView>
