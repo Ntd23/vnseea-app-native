@@ -11,7 +11,7 @@ const IOS_NATIVE_TAB_ROUTE_NAMES = new Set<MainTabRouteName>([
   ROUTES.FEED,
   ROUTES.REELS,
   ROUTES.MARKETPLACE,
-  ROUTES.NOTIFICATIONS,
+  ROUTES.NEARBY_USERS,
   ROUTES.PROFILE,
 ]);
 
@@ -20,14 +20,14 @@ const TAB_LABELS: Record<AppLanguage, Partial<Record<MainTabRouteName, string>>>
     [ROUTES.FEED]: 'Trang chủ',
     [ROUTES.REELS]: 'Video',
     [ROUTES.MARKETPLACE]: 'Mua sắm',
-    [ROUTES.NOTIFICATIONS]: 'Thông báo',
+    [ROUTES.NEARBY_USERS]: 'Bản đồ',
     [ROUTES.PROFILE]: 'Cá nhân',
   },
   en: {
     [ROUTES.FEED]: 'Home',
     [ROUTES.REELS]: 'Video',
     [ROUTES.MARKETPLACE]: 'Shop',
-    [ROUTES.NOTIFICATIONS]: 'Notifications',
+    [ROUTES.NEARBY_USERS]: 'Map',
     [ROUTES.PROFILE]: 'Profile',
   },
 };
@@ -36,7 +36,7 @@ const IOS_SF_SYMBOLS: Partial<Record<MainTabRouteName, string>> = {
   [ROUTES.FEED]: 'house.fill',
   [ROUTES.REELS]: 'play.rectangle.fill',
   [ROUTES.MARKETPLACE]: 'storefront.fill',
-  [ROUTES.NOTIFICATIONS]: 'bell.fill',
+  [ROUTES.NEARBY_USERS]: 'map.fill',
   [ROUTES.PROFILE]: 'person.crop.circle.fill',
 };
 
@@ -48,7 +48,13 @@ export function getIosNativeTabRoutes<T extends RouteWithName>(routes: T[]): T[]
   return routes.filter(route => IOS_NATIVE_TAB_ROUTE_NAMES.has(route.name));
 }
 
-export function formatNotificationTabBadge(count: number) {
+export function shouldHideIosNativeTabBar(
+  routeName: MainTabRouteName | undefined,
+) {
+  return routeName === ROUTES.REELS || routeName === ROUTES.NEARBY_USERS;
+}
+
+export function formatIosTabBadge(count: number) {
   if (count <= 0) {
     return undefined;
   }
@@ -58,8 +64,8 @@ export function formatNotificationTabBadge(count: number) {
 
 export function createIosNativeTabOptions(
   routeName: MainTabRouteName,
-  notificationCount = 0,
   language: AppLanguage = 'vi',
+  cartCount = 0,
 ): NativeBottomTabNavigationOptions {
   const options: NativeBottomTabNavigationOptions = {
     tabBarLabel:
@@ -70,8 +76,8 @@ export function createIosNativeTabOptions(
     } as NativeBottomTabNavigationOptions['tabBarIcon'],
   };
 
-  if (routeName === ROUTES.NOTIFICATIONS) {
-    options.tabBarBadge = formatNotificationTabBadge(notificationCount);
+  if (routeName === ROUTES.MARKETPLACE) {
+    options.tabBarBadge = formatIosTabBadge(cartCount);
     options.tabBarBadgeStyle = { backgroundColor: '#EF4444' };
   }
 

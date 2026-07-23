@@ -8,6 +8,7 @@ import type { NotificationsItem } from '../../domain/types/notifications.types';
 export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
   vi: {
     headerTitle: 'Thông báo',
+    back: 'Quay lại',
     tabAll: 'Tất cả',
     tabUnread: 'Chưa đọc',
     markAllRead: 'Đánh dấu tất cả đã đọc',
@@ -45,6 +46,7 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
   },
   en: {
     headerTitle: 'Notifications',
+    back: 'Back',
     tabAll: 'All',
     tabUnread: 'Unread',
     markAllRead: 'Mark all as read',

@@ -29,6 +29,10 @@ describe('iOS paged bottom tab navigator', () => {
       source.indexOf('function IosLiquidTabBar'),
       source.indexOf('function renderIosPagerTabBar'),
     );
+    const iosPagerSource = source.slice(
+      source.indexOf('function IosHybridPagedTabNavigator'),
+      source.indexOf('function MainTabNavigator'),
+    );
 
     expect(source).toContain("requireNativeComponent<NativeIosLiquidTabBarProps>('VNSEEAIosLiquidTabBar')");
     expect(source).toContain('function IosLiquidTabBar');
@@ -38,13 +42,20 @@ describe('iOS paged bottom tab navigator', () => {
     expect(iosTabBarSource).not.toContain('AdaptiveGlassSurface');
     expect(iosTabBarSource).not.toContain('glassBackground');
     expect(source).toContain('useSafeAreaInsets');
-    expect(source).toContain('notificationBadgeCount');
     expect(source).toContain('useSyncedCartCount');
     expect(source).toContain('const { cartCount } = useSyncedCartCount(0);');
-    expect(source).toContain('cartCount,');
+    expect(source).toContain('createProductRepository');
+    expect(source).toMatch(/productRepository\s*\.getCartCount\(\)/);
+    expect(source).toContain('setSyncedCartCount(count)');
+    expect(source).toContain('createIosNativeTabOptions(name, language, cartCount)');
+    expect(iosTabBarSource).not.toContain('notificationBadgeCount');
+    expect(iosTabBarSource).toContain('shouldHideIosNativeTabBar(activeRouteName)');
+    expect(iosTabBarSource).toContain('tabBarVisibility.setVisible(!shouldHideTabBar)');
+    expect(iosPagerSource).toContain('useNotificationBadgeViewModel();');
     expect(source).toContain('typeof options.tabBarBadge === \'number\'');
     expect(source).toContain('String(options.tabBarBadge)');
     expect(source).toContain('navigation.navigate(route.name)');
+    expect(source).toContain('backBehavior="history"');
   });
 
   it('backs the iOS tab bar with native UITabBar', () => {

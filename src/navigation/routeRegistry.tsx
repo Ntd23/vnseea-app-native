@@ -1,10 +1,12 @@
 // Description: Centralizes app screen registrations for stack and tab navigators.
 import React from 'react';
+import { Platform } from 'react-native';
 import {
   Bell,
   CircleUser,
   Hash,
   Home,
+  MapPinned,
   PlaySquare,
   Settings,
   ShoppingBag,
@@ -181,10 +183,10 @@ export const IOS_NATIVE_TAB_ROUTES: TabRouteDefinition[] = [
     accessibilityLabel: 'Marketplace',
   },
   {
-    name: ROUTES.NOTIFICATIONS,
-    component: NotificationsScreen,
-    Icon: Bell,
-    accessibilityLabel: 'Notifications',
+    name: ROUTES.NEARBY_USERS,
+    component: NearbyUsersScreen,
+    Icon: MapPinned,
+    accessibilityLabel: 'Nearby Map',
   },
   {
     name: ROUTES.PROFILE,
@@ -204,6 +206,9 @@ export function createStackRoutes(
     { name: ROUTES.FORGOT_PASSWORD, component: ForgotPasswordScreen },
     { name: ROUTES.MAIN_TABS, component: MainTabsComponent },
     { name: ROUTES.REELS, component: ReelsScreen },
+    ...(Platform.OS === 'ios'
+      ? [{ name: ROUTES.NOTIFICATIONS, component: NotificationsScreen }]
+      : []),
     { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
     { name: ROUTES.PROFILE, component: ProfileScreen },
     { name: ROUTES.USER_PROFILE, component: ProfileScreen },

@@ -39,19 +39,14 @@ describe('iOS native tab scroll roots', () => {
     expect(source).not.toContain("type: 'ios-header'");
   });
 
-  it('publishes native tab scroll intent from all iOS tab screens', () => {
+  it('publishes scroll intent from scrolling tabs and hides chrome for full-screen tabs', () => {
     const feedSource = read('src/feed/presentation/screens/FeedScreen.tsx');
     const reelsSource = read('src/reels/presentation/screens/ReelsScreen.tsx');
     const marketplaceSource = read('src/product/presentation/screens/MarketplaceScreen.tsx');
-    const notificationsSource = read('src/notifications/presentation/screens/NotificationsScreen.tsx');
+    const nearbySource = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
     const profileSource = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
-    for (const source of [
-      feedSource,
-      marketplaceSource,
-      notificationsSource,
-      profileSource,
-    ]) {
+    for (const source of [feedSource, marketplaceSource, profileSource]) {
       expect(source).toContain('createNativeTabScrollPublisherState');
       expect(source).toContain('publishNativeTabScrollIntent');
       expect(source).toContain('publishNativeTabScrollBehavior');
@@ -61,6 +56,8 @@ describe('iOS native tab scroll roots', () => {
     expect(reelsSource).toContain('tabBarVisibility.setVisible(true)');
     expect(reelsSource).not.toContain('runOnJS(publishNativeTabScrollBehaviorFromWorklet)');
     expect(reelsSource).not.toContain('nativeTabScrollLastBehavior');
+    expect(nearbySource).toContain('tabBarVisibility.setVisible(false)');
+    expect(nearbySource).toContain('iosPagerSwipeLock.setLocked(true)');
   });
 
   it('keeps Reels full-screen on AnimatedFlatList without bottom-tab inset padding', () => {
@@ -158,7 +155,7 @@ describe('iOS native tab scroll roots', () => {
     expect(source).toContain('scrollIndicatorBottomInset');
   });
 
-  it('uses a FlatList root for the iOS notifications tab data state', () => {
+  it('uses a FlatList root for iOS notifications without applying tab behavior in stack mode', () => {
     const source = read('src/notifications/presentation/screens/NotificationsScreen.tsx');
 
     expect(source).toContain('Platform,');
@@ -169,13 +166,15 @@ describe('iOS native tab scroll roots', () => {
     expect(source).toContain('ListHeaderComponent={notificationsListHeaderComponent}');
     expect(source).toContain('ListEmptyComponent={notificationsListEmptyComponent}');
     expect(source).toContain('ListFooterComponent={notificationsListFooterComponent}');
-    expect(source).toContain(
-      "Platform.OS === 'ios' ? iosNotificationsListElement : notificationsBody",
+    expect(source).toMatch(
+      /Platform\.OS === 'ios'\s*\? iosNotificationsListElement\s*: notificationsBody/,
     );
     expect(source).toContain('useMainTabContentInsets');
     expect(source).toContain('bottomContentPadding');
     expect(source).toContain('scrollIndicatorInsets');
     expect(source).toContain('scrollIndicatorBottomInset');
+    expect(source).toContain("if (Platform.OS !== 'ios' || !isTabRoute)");
+    expect(source).toContain('isTabRoute ? scrollIndicatorBottomInset : 0');
   });
 
   it('uses a FlashList root for Profile posts with bottom tab insets', () => {

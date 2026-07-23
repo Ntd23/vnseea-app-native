@@ -31,6 +31,7 @@ import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useNotificationBadgeViewModel } from '../../../notifications';
+import { navigateToNotifications } from '../../../navigation/notificationNavigation';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 import { resolveFeedChromeTopInset } from './feedHeaderInsets';
 
@@ -141,11 +142,7 @@ export const FeedHeader = React.memo(function FeedHeader({
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
-              onPress={() =>
-                navigation.navigate(ROUTES.MAIN_TABS, {
-                  screen: ROUTES.NOTIFICATIONS,
-                })
-              }
+              onPress={() => navigateToNotifications(navigation)}
               style={[styles.headerIcon, styles.messageButton]}
             >
               <Bell

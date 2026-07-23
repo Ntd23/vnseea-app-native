@@ -107,6 +107,7 @@ export type RootStackParamList = {
   };
   [ROUTES.FORGOT_PASSWORD]: undefined;
   [ROUTES.MAIN_TABS]: NavigatorScreenParams<MainTabParamList> | undefined;
+  [ROUTES.NOTIFICATIONS]: undefined;
   [ROUTES.REELS]:
     | {
         initialVideoId?: string;

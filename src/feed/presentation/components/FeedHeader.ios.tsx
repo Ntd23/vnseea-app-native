@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Menu, MessageCircle, Search } from 'lucide-react-native';
+import { Bell, Menu, MessageCircle, Search } from 'lucide-react-native';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 import type {
@@ -19,6 +19,7 @@ import type {
 } from '../../../navigation/types';
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
+import { navigateToNotifications } from '../../../navigation/notificationNavigation';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
@@ -63,7 +64,7 @@ function HeaderGlassActionButton({
 
 export const FeedHeader = React.memo(function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
-  const { messageCount } = useUnreadBadgeCounts();
+  const { messageCount, notificationCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const [menuVisible, setMenuVisible] = useState(false);
   const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
@@ -121,6 +122,21 @@ export const FeedHeader = React.memo(function FeedHeader() {
               onPress={() => navigation.navigate(ROUTES.SEARCH)}
             >
               <Search size={19} color={APP_BRAND_COLOR} strokeWidth={2.55} />
+            </HeaderGlassActionButton>
+            <HeaderGlassActionButton
+              accessibilityLabel="Notifications"
+              onPress={() => navigateToNotifications(navigation)}
+              badge={
+                notificationCount > 0 ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {notificationCount > 99 ? '99+' : notificationCount}
+                    </Text>
+                  </View>
+                ) : null
+              }
+            >
+              <Bell size={19} color={APP_BRAND_COLOR} strokeWidth={2.55} />
             </HeaderGlassActionButton>
             <HeaderGlassActionButton
               accessibilityLabel="Messages"
