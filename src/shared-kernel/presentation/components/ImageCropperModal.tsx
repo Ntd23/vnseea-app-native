@@ -31,6 +31,12 @@ import Animated, {
 import { Maximize2, RotateCcw } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
+import {
+  PROFILE_AVATAR_ASPECT_RATIO,
+  PROFILE_AVATAR_OUTPUT_SIZE,
+  PROFILE_COVER_ASPECT_RATIO,
+  PROFILE_COVER_OUTPUT_SIZE,
+} from '../../application/constants/profileImageGeometry';
 
 export type ImageCropTarget = 'avatar' | 'cover';
 
@@ -96,7 +102,10 @@ export function ImageCropperModal({
   const pinchStartX = useSharedValue(0);
   const pinchStartY = useSharedValue(0);
 
-  const cropAspectRatio = target === 'avatar' ? 1 : 16 / 9;
+  const cropAspectRatio =
+    target === 'avatar'
+      ? PROFILE_AVATAR_ASPECT_RATIO
+      : PROFILE_COVER_ASPECT_RATIO;
   const frameSize = useMemo(() => {
     const horizontalPadding = target === 'avatar' ? 40 : 24;
     const maximumWidth = Math.max(220, windowWidth - horizontalPadding);
@@ -317,8 +326,8 @@ export function ImageCropperModal({
     try {
       const outputSize =
         target === 'avatar'
-          ? { width: 1080, height: 1080 }
-          : { width: 1600, height: 900 };
+          ? PROFILE_AVATAR_OUTPUT_SIZE
+          : PROFILE_COVER_OUTPUT_SIZE;
       const croppedUri = await captureRef(cropViewportRef, {
         format: 'jpg',
         quality: 0.92,

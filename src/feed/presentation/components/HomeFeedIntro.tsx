@@ -1,4 +1,4 @@
-// Description: Renders the default home feed intro stories, composer, and greeting.
+// Description: Renders the default home feed intro stories and composer.
 import React from 'react';
 import {
   Image,
@@ -13,7 +13,6 @@ import { ComposerCard } from './ComposerCard';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import {
-  getHomeGreetingModel,
   HOME_INTRO_FALLBACK_AVATAR,
   type HomeFeedIntroProps,
   useHomeStoriesRail,
@@ -135,30 +134,6 @@ function DefaultStoriesRow({
   );
 }
 
-function DefaultGreetingCard({
-  userName,
-  copy,
-}: Pick<HomeFeedIntroProps, 'userName' | 'copy'>) {
-  const greeting = getHomeGreetingModel({ userName, copy });
-
-  return (
-    <View className="mx-4 mb-4 flex-row items-center justify-between overflow-hidden rounded-[18px] border border-[#dfe7ff] bg-[#eef4ff] px-4 py-4">
-      <View className="mr-3 h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
-        <Text className="text-3xl">{'\uD83D\uDC4B'}</Text>
-      </View>
-      <View className="flex-1 pr-2">
-        <Text className="text-[20px] font-extrabold text-[#050505]">
-          {greeting.title}
-        </Text>
-        <Text className="mt-1.5 text-[14px] font-semibold leading-5 text-[#667085]">
-          {greeting.body}
-        </Text>
-      </View>
-      <Text className="text-4xl">{greeting.emoji}</Text>
-    </View>
-  );
-}
-
 export function HomeFeedIntro({
   onCreatePostPress,
   onCreatePostPressAction,
@@ -178,7 +153,6 @@ export function HomeFeedIntro({
         displayName={userName}
         copy={copy}
       />
-      <DefaultGreetingCard userName={userName} copy={copy} />
     </View>
   );
 }

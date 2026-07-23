@@ -3,6 +3,7 @@ import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appCo
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   Image,
   Modal,
@@ -23,10 +24,12 @@ import {
   CheckCircle2,
   MapPin,
   Package,
+  Pencil,
   Phone,
   Plus,
   Send,
   ShieldCheck,
+  Trash2,
   Truck,
   User,
   X,
@@ -41,15 +44,13 @@ import type {
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
-import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
+import AddressSearchContent from '../../../shared-kernel/presentation/components/AddressSearchContent';
+import type { ResolvedAddress } from '../../../shared-kernel/domain/types/addressSearch.types';
 
 type CheckoutNav = NativeStackNavigationProp<RootStackParamList>;
 type CheckoutRoute = RouteProp<RootStackParamList, typeof ROUTES.CHECKOUT>;
 type CheckoutViewModel = ReturnType<typeof useCheckoutViewModel>;
-type SelectedPlace = Parameters<
-  React.ComponentProps<typeof AddressAutocomplete>['onSelectPlace']
->[0];
 
 function formatMoney(total: CheckoutCurrencyTotal) {
   return formatCurrency(
@@ -140,21 +141,6 @@ function CurrencyTotals({
   );
 }
 
-function inferAddress(place: SelectedPlace) {
-  const address = place.description || [place.mainText, place.secondaryText]
-    .filter(Boolean)
-    .join(', ');
-  const parts = address
-    .split(',')
-    .map(part => part.trim())
-    .filter(Boolean);
-  return {
-    address,
-    city: parts.length >= 2 ? parts[parts.length - 2] : '',
-    country: parts.length ? parts[parts.length - 1] : '',
-  };
-}
-
 function OrderLine({ item }: { item: CheckoutItem }) {
   return (
     <View className="flex-row py-3">
@@ -192,12 +178,14 @@ function AddressField({
   value,
   placeholder,
   keyboardType,
+  multiline = false,
   onChangeText,
 }: {
   label: string;
   value: string;
   placeholder: string;
   keyboardType?: 'default' | 'phone-pad';
+  multiline?: boolean;
   onChangeText: (value: string) => void;
 }) {
   return (
@@ -208,11 +196,23 @@ function AddressField({
       <View className="rounded-2xl border border-slate-200 bg-slate-50 px-4">
         <TextInput
           className="text-base font-semibold text-slate-900"
-          style={ADDRESS_INPUT_STYLE}
+          style={
+            multiline
+              ? {
+                  minHeight: 96,
+                  lineHeight: 22,
+                  paddingBottom: 12,
+                  paddingTop: 12,
+                  textAlignVertical: 'top',
+                }
+              : ADDRESS_INPUT_STYLE
+          }
           value={value}
           placeholder={placeholder}
           placeholderTextColor="#94A3B8"
           keyboardType={keyboardType}
+          multiline={multiline}
+          numberOfLines={multiline ? 4 : 1}
           onChangeText={onChangeText}
         />
       </View>
@@ -224,20 +224,29 @@ function AddressOption({
   address,
   selected,
   onPress,
+  onEdit,
+  onDelete,
+  isDeleting,
 }: {
   address: DeliveryAddress;
   selected: boolean;
   onPress: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  isDeleting: boolean;
 }) {
   return (
-    <TouchableOpacity
+    <View
       className={`mb-3 rounded-2xl border p-4 ${
         selected ? 'border-brand bg-brand-subtle' : 'border-slate-200 bg-white'
       }`}
-      activeOpacity={0.85}
-      onPress={onPress}
     >
-      <View className="flex-row items-start">
+      <TouchableOpacity
+        className="flex-row items-start"
+        activeOpacity={0.85}
+        disabled={isDeleting}
+        onPress={onPress}
+      >
         <View className="h-10 w-10 items-center justify-center rounded-full bg-white">
           <MapPin size={19} color={APP_BRAND_COLOR} />
         </View>
@@ -261,8 +270,38 @@ function AddressOption({
         >
           {selected ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
         </View>
+      </TouchableOpacity>
+      <View className="ml-[52px] mt-3 flex-row border-t border-slate-100 pt-3">
+        <TouchableOpacity
+          className="mr-3 min-h-10 flex-1 flex-row items-center justify-center rounded-xl bg-slate-100"
+          activeOpacity={0.85}
+          disabled={isDeleting}
+          onPress={onEdit}
+        >
+          <Pencil size={16} color="#475569" />
+          <Text className="ml-2 text-sm font-extrabold text-slate-600">
+            Sửa
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="min-h-10 flex-1 flex-row items-center justify-center rounded-xl bg-red-50"
+          activeOpacity={0.85}
+          disabled={isDeleting}
+          onPress={onDelete}
+        >
+          {isDeleting ? (
+            <ActivityIndicator size="small" color="#DC2626" />
+          ) : (
+            <>
+              <Trash2 size={16} color="#DC2626" />
+              <Text className="ml-2 text-sm font-extrabold text-red-600">
+                Xóa
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -276,18 +315,52 @@ function CheckoutAddressSheet({
   onClose: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [addressSearchVisible, setAddressSearchVisible] = useState(false);
   const { keyboardInset, refreshKeyboardInset, sheetContentRef } =
     useCheckoutKeyboardInset(visible);
 
   useEffect(() => {
     if (!visible) return;
     setShowForm(vm.addresses.length === 0);
+    setAddressSearchVisible(false);
   }, [visible, vm.addresses.length]);
 
   const startNewAddress = useCallback(() => {
     vm.createNewAddress();
     setShowForm(true);
+    setAddressSearchVisible(false);
   }, [vm]);
+
+  const editAddress = useCallback(
+    (address: DeliveryAddress) => {
+      vm.editAddress(address);
+      setShowForm(true);
+      setAddressSearchVisible(false);
+    },
+    [vm],
+  );
+
+  const deleteAddress = useCallback(
+    (address: DeliveryAddress) => {
+      Alert.alert(
+        'Xóa địa chỉ?',
+        `Địa chỉ của ${address.name} sẽ bị xóa khỏi danh sách đã lưu.`,
+        [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Xóa',
+            style: 'destructive',
+            onPress: async () => {
+              const shouldOpenNewForm = vm.addresses.length === 1;
+              const deleted = await vm.deleteAddress(address.id);
+              if (deleted) setShowForm(shouldOpenNewForm);
+            },
+          },
+        ],
+      );
+    },
+    [vm],
+  );
 
   const selectAddress = useCallback(
     (address: DeliveryAddress) => {
@@ -297,23 +370,24 @@ function CheckoutAddressSheet({
     [onClose, vm],
   );
 
-  const selectPlace = useCallback(
-    (place: SelectedPlace) => {
-      const nextAddress = inferAddress(place);
-      vm.updateAddressField('address', nextAddress.address);
-      vm.updateAddressField('zip', '10000');
-      if (nextAddress.city) vm.updateAddressField('city', nextAddress.city);
-      if (nextAddress.country) {
-        vm.updateAddressField('country', nextAddress.country);
-      }
-    },
-    [vm],
-  );
-
   const saveAddress = useCallback(async () => {
     const saved = await vm.saveAddress();
     if (saved) onClose();
   }, [onClose, vm]);
+
+  const handleResolvedAddress = useCallback(
+    (address: ResolvedAddress) => {
+      vm.updateAddressField('address', address.formattedAddress);
+      if (address.city || address.district) {
+        vm.updateAddressField('city', address.city || address.district || '');
+      }
+      if (address.country) {
+        vm.updateAddressField('country', address.country);
+      }
+      setAddressSearchVisible(false);
+    },
+    [vm],
+  );
 
   return (
     <Modal
@@ -321,7 +395,13 @@ function CheckoutAddressSheet({
       visible={visible}
       animationType="slide"
       statusBarTranslucent
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        if (addressSearchVisible) {
+          setAddressSearchVisible(false);
+          return;
+        }
+        onClose();
+      }}
     >
       <View className="flex-1 justify-end bg-black/40">
         <SafeAreaView
@@ -336,13 +416,26 @@ function CheckoutAddressSheet({
             onLayout={refreshKeyboardInset}
           >
             <View className="flex-row items-center border-b border-slate-100 px-4 py-3">
-              <View className="h-10 w-10" />
+              {addressSearchVisible ? (
+                <TouchableOpacity
+                  className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+                  onPress={() => setAddressSearchVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quay lại form địa chỉ"
+                >
+                  <ArrowLeft size={20} color="#334155" />
+                </TouchableOpacity>
+              ) : (
+                <View className="h-10 w-10" />
+              )}
               <View className="flex-1 items-center">
                 <Text className="text-lg font-extrabold text-slate-950">
-                  Địa chỉ nhận hàng
+                  {addressSearchVisible ? 'Tìm địa chỉ' : 'Địa chỉ nhận hàng'}
                 </Text>
                 <Text className="mt-0.5 text-xs font-semibold text-slate-500">
-                  Chọn địa chỉ đã lưu hoặc nhập địa chỉ mới
+                  {addressSearchVisible
+                    ? 'Tìm theo số nhà, ngõ, đường hoặc phường/xã'
+                    : 'Chọn địa chỉ đã lưu hoặc nhập địa chỉ mới'}
                 </Text>
               </View>
               <TouchableOpacity
@@ -354,19 +447,30 @@ function CheckoutAddressSheet({
                 <X size={20} color="#334155" />
               </TouchableOpacity>
             </View>
-            <ScrollView
-              className="flex-1"
-              contentContainerStyle={{
-                padding: 16,
-                paddingBottom: 28,
-                flexGrow: 1,
-              }}
-              keyboardDismissMode={
-                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-              }
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
+            {addressSearchVisible ? (
+              <AddressSearchContent
+                initialQuery={vm.addressForm.address}
+                showHeader={false}
+                onQueryChange={value =>
+                  vm.updateAddressField('address', value)
+                }
+                onResolvedAddress={handleResolvedAddress}
+              />
+            ) : (
+              <>
+                <ScrollView
+                  className="flex-1"
+                  contentContainerStyle={{
+                    padding: 16,
+                    paddingBottom: 28,
+                    flexGrow: 1,
+                  }}
+                  keyboardDismissMode={
+                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                  }
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
               {!showForm && vm.addresses.length > 0 ? (
                 <>
                   {vm.addresses.map(address => (
@@ -375,6 +479,9 @@ function CheckoutAddressSheet({
                       address={address}
                       selected={vm.selectedAddressId === address.id}
                       onPress={() => selectAddress(address)}
+                      onEdit={() => editAddress(address)}
+                      onDelete={() => deleteAddress(address)}
+                      isDeleting={vm.isDeletingAddressId === address.id}
                     />
                   ))}
                   <TouchableOpacity
@@ -417,14 +524,24 @@ function CheckoutAddressSheet({
                     <Text className="mb-2 text-sm font-bold text-slate-700">
                       Địa chỉ <Text className="text-red-500">*</Text>
                     </Text>
-                    <AddressAutocomplete
-                      value={vm.addressForm.address}
-                      placeholder="Nhập địa chỉ để tìm kiếm..."
-                      onChangeText={value =>
-                        vm.updateAddressField('address', value)
-                      }
-                      onSelectPlace={selectPlace}
-                    />
+                    <TouchableOpacity
+                      className="min-h-[76px] flex-row items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                      activeOpacity={0.85}
+                      onPress={() => setAddressSearchVisible(true)}
+                    >
+                      <MapPin size={19} color={APP_BRAND_COLOR} />
+                      <Text
+                        className={`ml-3 flex-1 text-base font-semibold ${
+                          vm.addressForm.address
+                            ? 'text-slate-900'
+                            : 'text-slate-400'
+                        }`}
+                        numberOfLines={3}
+                      >
+                        {vm.addressForm.address ||
+                          'Tìm số nhà, tên đường, phường/xã...'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                   <View className="flex-row gap-3">
                     <View className="flex-1">
@@ -455,30 +572,34 @@ function CheckoutAddressSheet({
                   ) : null}
                 </View>
               )}
-            </ScrollView>
-            {showForm ? (
-              <View className="border-t border-slate-100 bg-white px-4 pb-3 pt-3">
-                <TouchableOpacity
-                  className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand ${
-                    vm.isSavingAddress ? 'opacity-70' : ''
-                  }`}
-                  activeOpacity={0.9}
-                  disabled={vm.isSavingAddress}
-                  onPress={saveAddress}
-                >
-                  {vm.isSavingAddress ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <User size={18} color="#FFFFFF" />
-                      <Text className="ml-2 text-base font-extrabold text-white">
-                        Lưu địa chỉ
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ) : null}
+                </ScrollView>
+                {showForm ? (
+                  <View className="border-t border-slate-100 bg-white px-4 pb-3 pt-3">
+                    <TouchableOpacity
+                      className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand ${
+                        vm.isSavingAddress ? 'opacity-70' : ''
+                      }`}
+                      activeOpacity={0.9}
+                      disabled={vm.isSavingAddress}
+                      onPress={saveAddress}
+                    >
+                      {vm.isSavingAddress ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <User size={18} color="#FFFFFF" />
+                          <Text className="ml-2 text-base font-extrabold text-white">
+                            {vm.addressForm.id
+                              ? 'Lưu thay đổi'
+                              : 'Lưu địa chỉ'}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </>
+            )}
           </View>
         </SafeAreaView>
       </View>

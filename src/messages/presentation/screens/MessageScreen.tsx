@@ -103,6 +103,8 @@ import type { RootStackParamList } from '../../../navigation/types';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 
+import { navigateToNotifications } from '../../../navigation/notificationNavigation';
+
 import { useMessagesViewModel } from '../../application/view-models/useMessagesViewModel';
 
 import type {
@@ -2861,15 +2863,7 @@ function MessageScreen() {
 
               activeOpacity={0.75}
 
-              onPress={() =>
-
-                navigation.navigate(ROUTES.MAIN_TABS, {
-
-                  screen: ROUTES.NOTIFICATIONS,
-
-                })
-
-              }
+              onPress={() => navigateToNotifications(navigation)}
 
               style={[styles.headerIcon, styles.messageButton]}
 

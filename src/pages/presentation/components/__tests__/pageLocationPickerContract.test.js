@@ -14,6 +14,8 @@ describe('page location picker contract', () => {
     expect(source).toContain("type: 'reverse_geocode'");
     expect(source).toContain('REVERSE_GEOCODE_DEBOUNCE_MS');
     expect(source).toContain('handleUseCurrentLocation');
+    expect(source).toContain('Google Maps');
+    expect(source).not.toContain('Powered by Google');
     expect(source).toContain('resolveInitialPlace');
     expect(source).toContain('onMapReady={handleMapReady}');
     expect(source).toContain('navigationBarTranslucent');
@@ -32,6 +34,15 @@ describe('page location picker contract', () => {
     expect(source).toContain('setNearbyAddress(address === primaryAddress ? \'\' : address)');
     expect(source).toContain('setSelectedPlaceId(undefined)');
     expect(source).toContain('setHasPinnedCoordinate(true)');
+    expect(source).toContain(
+      'const detailsRequestId = ++initialPlaceRequestIdRef.current;',
+    );
+    expect(source).toContain(
+      'detailsRequestId !== initialPlaceRequestIdRef.current',
+    );
+    expect(source).toContain(
+      'resolved.formattedAddress || fallbackAddress',
+    );
     expect(source).not.toContain('MAX_NEARBY_PIN_FALLBACK_METERS');
     expect(source).not.toContain('restoreNearbyConfirmedPin');
     expect(source).toContain('{selectedAddress || copy.dragHint}');
@@ -45,13 +56,14 @@ describe('page location picker contract', () => {
     expect(source).toContain('disabled={!canConfirm}');
   });
 
-  it('wires the picker into Create Page and keeps address search in address mode', () => {
+  it('wires the picker into Create Page and passes the existing coordinate as address bias', () => {
     const screen = fs.readFileSync(
       path.resolve(__dirname, '../../screens/CreatePageScreen.tsx'),
       'utf8',
     );
 
-    expect(screen).toContain('preferAddressSearch');
+    expect(screen).not.toContain('preferAddressSearch');
+    expect(screen).toContain('locationBias=');
     expect(screen).toContain('PageLocationPickerModal');
     expect(screen).toContain('Chọn vị trí chính xác trên bản đồ');
     expect(screen).toContain('onConfirm={handleLocationConfirm}');
@@ -76,17 +88,28 @@ describe('page location picker contract', () => {
       ),
       'utf8',
     );
-
-    expect(backend).toContain("Wo_ApiMapDiscoveryGoogleGet('geocode/json'");
-    expect(backend).toContain(
-      'if (!$global_search && $prefer_address && count($predictions) === 0)',
+    const searchContent = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../../shared-kernel/presentation/components/AddressSearchContent.tsx',
+      ),
+      'utf8',
     );
-    expect(backend).toContain('!$prefer_address');
-    expect(backend).toContain('$should_run_text_search =');
-    expect(autocomplete).toContain('filterAddressPredictions');
-    expect(autocomplete).toContain('searchRequestIdRef.current += 1');
-    expect(autocomplete).toContain(
-      'parseMapCoordinate(\n        prediction.lat,\n        prediction.lng,\n      )',
+
+    expect(backend).toContain("'address_autocomplete'");
+    expect(backend).toContain("'address_geocode'");
+    expect(backend).toContain("'address_details'");
+    expect(searchContent).toContain('createAddressSearchRepository');
+    expect(searchContent).not.toContain('filterAddressPredictions');
+    expect(searchContent).not.toContain("type: 'place_autocomplete'");
+    expect(searchContent).toContain('searchRequestIdRef.current += 1');
+    expect(searchContent).toContain('resolveAddressSuggestion');
+    expect(autocomplete).toContain('AddressSearchContent');
+    expect(read('PageLocationPickerModal.tsx')).toContain(
+      'resolveAddressLocationBias',
+    );
+    expect(read('PageLocationPickerModal.tsx')).toContain(
+      'addressLocationBiasRef.current',
     );
   });
 
@@ -99,12 +122,19 @@ describe('page location picker contract', () => {
       ),
       'utf8',
     );
+    const searchContent = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../../shared-kernel/presentation/components/AddressSearchContent.tsx',
+      ),
+      'utf8',
+    );
 
     expect(picker).toContain('const MIN_SEARCH_CHARS = 2;');
     expect(picker).toContain('trimmed.length < MIN_SEARCH_CHARS');
-    expect(autocomplete).toContain('const MIN_AUTOCOMPLETE_CHARS = 2;');
-    expect(autocomplete).toContain(
-      'trimmedInput.length < MIN_AUTOCOMPLETE_CHARS',
-    );
+    expect(picker).not.toContain('if (suggestions.length === 0)');
+    expect(autocomplete).toContain('AddressSearchContent');
+    expect(searchContent).toContain('const MIN_SEARCH_CHARS = 2;');
+    expect(searchContent).toContain('trimmed.length < MIN_SEARCH_CHARS');
   });
 });

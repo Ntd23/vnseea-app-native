@@ -29,7 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from '@react-native-community/blur';
 import { ROUTES } from './constants/routes';
 import { IOS_NATIVE_TAB_ROUTES, TAB_ROUTES } from './routeRegistry';
-import type { MainTabParamList } from './types';
+import type { MainTabParamList, MainTabRouteName } from './types';
 import { useNotificationBadgeViewModel } from '../notifications';
 import { iosPagerSwipeLock } from './iosPagerSwipeLock';
 import { tabBarVisibility } from './tabBarVisibility';
@@ -38,7 +38,13 @@ import { useAppLanguage } from '../shared-kernel/application/hooks/useAppLanguag
 import {
   createIosNativeTabOptions,
   getCustomTabRoutes,
+  shouldHideIosNativeTabBar,
 } from './mainTabConfig';
+import {
+  setSyncedCartCount,
+  useSyncedCartCount,
+} from '../shared-kernel/application/state/cartCountSync';
+import { createProductRepository } from '../product';
 
 const BRAND_COLOR = APP_BRAND_COLOR;
 const BRAND_LIGHT_BG = APP_COLORS.brand.soft;
@@ -283,17 +289,36 @@ function IosLiquidTabBar({
   state,
   navigation,
 }: MaterialTopTabBarProps) {
-  const { notificationCount: notificationBadgeCount } =
-    useNotificationBadgeViewModel();
+  const { cartCount } = useSyncedCartCount(0);
+  const productRepository = useMemo(() => createProductRepository(), []);
   const language = useAppLanguage();
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(0)).current;
   const tabBarHeight = IOS_NATIVE_TAB_BAR_BASE_HEIGHT + insets.bottom;
+  const activeRouteName = state.routes[state.index]?.name as
+    | MainTabRouteName
+    | undefined;
+  const shouldHideTabBar = shouldHideIosNativeTabBar(activeRouteName);
 
   useEffect(() => {
-    tabBarVisibility.setVisible(true);
+    tabBarVisibility.setVisible(!shouldHideTabBar);
     nativeTabBarPresentation.setPresentation('expanded');
-  }, [state.index]);
+  }, [shouldHideTabBar, state.index]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    productRepository
+      .getCartCount()
+      .then(count => {
+        if (isActive) setSyncedCartCount(count);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isActive = false;
+    };
+  }, [productRepository]);
 
   useEffect(() => {
     return tabBarVisibility.subscribe(isVisible => {
@@ -308,21 +333,17 @@ function IosLiquidTabBar({
   const items = useMemo(
     () =>
       IOS_NATIVE_TAB_ROUTES.map(({ name, accessibilityLabel }) => {
-          const options = createIosNativeTabOptions(
-            name,
-            notificationBadgeCount,
-            language,
-          );
+        const options = createIosNativeTabOptions(name, language, cartCount);
         const label =
           typeof options.tabBarLabel === 'string'
             ? options.tabBarLabel
             : accessibilityLabel;
-          const badgeValue =
-            typeof options.tabBarBadge === 'number'
-              ? String(options.tabBarBadge)
-              : typeof options.tabBarBadge === 'string'
-                ? options.tabBarBadge
-                : undefined;
+        const badgeValue =
+          typeof options.tabBarBadge === 'number'
+            ? String(options.tabBarBadge)
+            : typeof options.tabBarBadge === 'string'
+              ? options.tabBarBadge
+              : undefined;
 
         return {
           key: name,
@@ -332,7 +353,7 @@ function IosLiquidTabBar({
           badgeValue,
         };
       }),
-    [language, notificationBadgeCount],
+    [cartCount, language],
   );
 
   const handleTabPress = useCallback(
@@ -384,6 +405,7 @@ function renderIosPagerTabBar(props: MaterialTopTabBarProps) {
 }
 
 function IosHybridPagedTabNavigator() {
+  useNotificationBadgeViewModel();
   const [isIosPagerSwipeEnabled, setIsIosPagerSwipeEnabled] = useState(
     () => !iosPagerSwipeLock.getLocked(),
   );
@@ -398,6 +420,7 @@ function IosHybridPagedTabNavigator() {
     <IosPagerTab.Navigator
       style={styles.iosPagerRoot}
       initialRouteName={ROUTES.FEED}
+      backBehavior="history"
       tabBarPosition="bottom"
       tabBar={renderIosPagerTabBar}
       keyboardDismissMode="on-drag"

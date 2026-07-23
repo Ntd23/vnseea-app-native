@@ -105,6 +105,7 @@ import { CommonActions, useNavigation, useRoute } from '@react-navigation/native
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToNotifications } from '../../../navigation/notificationNavigation';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import type {
   MainTabParamList,
@@ -2061,9 +2062,18 @@ function DeliveryAddressCard() {
           value={form.address}
           placeholder="Tìm địa chỉ trên Google Maps"
           onChangeText={value => updateField('address', value)}
-          onSelectPlace={place =>
-            updateField('address', place.description || place.mainText)
-          }
+          onSelectPlace={place => {
+            updateField('address', place.description || place.mainText);
+            if (place.city || place.district) {
+              updateField('city', place.city || place.district || '');
+            }
+            if (place.country) {
+              const nextCountryId = countryIdFromAddressCountry(place.country);
+              if (nextCountryId) {
+                updateField('countryId', nextCountryId);
+              }
+            }
+          }}
           customInputContainerStyle={{
             height: 40,
             borderRadius: 8,
@@ -4736,9 +4746,8 @@ function SettingsScreen() {
       }
 
       if (id === 'notifications') {
-        navigation.navigate(ROUTES.MAIN_TABS, {
-          screen: ROUTES.NOTIFICATIONS,
-        });
+        navigateToNotifications(navigation);
+        return;
       }
 
       // The new menu board routes `find-friends`, `pages`, `my-products`,

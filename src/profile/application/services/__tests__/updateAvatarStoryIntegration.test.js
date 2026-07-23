@@ -14,6 +14,7 @@ describe('profile avatar Story integration', () => {
     expect(source).toContain('updateAvatarAndShareStory(avatarUri');
     expect(source).toContain('storiesRepository.createStory(draft)');
     expect(source).toContain('storyCreatedEvents.emit(story)');
-    expect(source).toContain('return result.avatarUpdated');
+    expect(source).toContain('publishProfileMediaUpdate(result.profileMedia)');
+    expect(source).toContain('return result.profileMedia ?? null');
   });
 });

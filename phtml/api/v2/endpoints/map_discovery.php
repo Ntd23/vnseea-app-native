@@ -6,7 +6,7 @@ $response_data = array(
 );
 
 $action = !empty($_POST['type']) ? Wo_Secure($_POST['type']) : '';
-$valid_actions = array('page_suggestions', 'place_autocomplete', 'place_details', 'reverse_geocode', 'route');
+$valid_actions = array('page_suggestions', 'place_autocomplete', 'address_autocomplete', 'address_geocode', 'address_details', 'place_details', 'reverse_geocode', 'route');
 define('WO_API_MAP_DISCOVERY_RADIUS_METERS', 3000);
 define('WO_API_MAP_DISCOVERY_MAX_RADIUS_METERS', 50000);
 
@@ -229,6 +229,10 @@ function Wo_ApiMapDiscoveryGoogleKey() {
 }
 
 function Wo_ApiMapDiscoveryGoogleGet($path, array $query, $timeout_ms = 20000, $connect_timeout_ms = 10000) {
+    if (!empty($GLOBALS['wo_api_map_discovery_google_get_mock']) && is_callable($GLOBALS['wo_api_map_discovery_google_get_mock'])) {
+        return call_user_func($GLOBALS['wo_api_map_discovery_google_get_mock'], $path, $query);
+    }
+
     $google_key = Wo_ApiMapDiscoveryGoogleKey();
     if ($google_key === '') {
         return Wo_ApiMapDiscoveryError('google_not_configured', 'Google Maps API key is not configured.', 500);
@@ -631,6 +635,160 @@ function Wo_ApiMapDiscoveryRequestedGoogleType() {
     return in_array($category, $allowed_types, true) ? $category : null;
 }
 
+function Wo_ApiMapDiscoveryAddressQuery() {
+    $input = !empty($_POST['query']) ? trim($_POST['query']) : (!empty($_POST['input']) ? trim($_POST['input']) : '');
+    $input_length = function_exists('mb_strlen') ? mb_strlen($input, 'UTF-8') : strlen($input);
+    if ($input_length < 2 || $input_length > 160) {
+        return '';
+    }
+    return $input;
+}
+
+function Wo_ApiMapDiscoveryAddressSessionToken() {
+    if (empty($_POST['sessiontoken'])) {
+        return '';
+    }
+
+    $session_token = trim(Wo_Secure($_POST['sessiontoken']));
+    if ($session_token === '') {
+        return '';
+    }
+
+    return function_exists('mb_substr')
+        ? mb_substr($session_token, 0, 255, 'UTF-8')
+        : substr($session_token, 0, 255);
+}
+
+function Wo_ApiMapDiscoveryAddressBiasQuery() {
+    $origin_lat = Wo_ApiMapDiscoveryNumber('origin_lat');
+    $origin_lng = Wo_ApiMapDiscoveryNumber('origin_lng');
+    if ($origin_lat === null || $origin_lng === null) {
+        return array();
+    }
+    if ($origin_lat < -90 || $origin_lat > 90 || $origin_lng < -180 || $origin_lng > 180) {
+        return array();
+    }
+
+    $radius = Wo_ApiMapDiscoveryRadiusMeters();
+    return array(
+        'location' => number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', ''),
+        'radius' => min((int) $radius, WO_API_MAP_DISCOVERY_MAX_RADIUS_METERS)
+    );
+}
+
+function Wo_ApiMapDiscoveryAddressError($error_id, $api_status = 404) {
+    if ($error_id === 'google_not_configured') {
+        return Wo_ApiMapDiscoveryError('google_not_configured', 'Google Maps API key is not configured.', 500);
+    }
+    if ($error_id === 'google_request_denied') {
+        return Wo_ApiMapDiscoveryError('google_request_denied', 'Google Maps request was denied.', 502);
+    }
+    return Wo_ApiMapDiscoveryError('address_not_found', 'Address not found.', $api_status);
+}
+
+function Wo_ApiMapDiscoveryAddressGoogleError($google, $allow_zero_results = false) {
+    if (!empty($google['errors'])) {
+        $error_id = !empty($google['errors']['error_id']) ? $google['errors']['error_id'] : '';
+        return ($error_id === 'google_not_configured')
+            ? Wo_ApiMapDiscoveryAddressError('google_not_configured', 500)
+            : Wo_ApiMapDiscoveryAddressError('google_request_denied', 502);
+    }
+
+    $status = strtoupper((string) (!empty($google['status']) ? $google['status'] : ''));
+    if ($status === 'OK') {
+        return null;
+    }
+    if ($status === 'ZERO_RESULTS' && $allow_zero_results) {
+        return null;
+    }
+    if ($status === 'ZERO_RESULTS' || $status === 'NOT_FOUND') {
+        return Wo_ApiMapDiscoveryAddressError('address_not_found', 404);
+    }
+    if ($status === 'REQUEST_DENIED') {
+        return Wo_ApiMapDiscoveryAddressError('google_request_denied', 502);
+    }
+
+    return Wo_ApiMapDiscoveryAddressError('google_request_denied', 502);
+}
+
+function Wo_ApiMapDiscoveryAddressComponentValue($components, $type_groups) {
+    if (empty($components) || !is_array($components)) {
+        return '';
+    }
+
+    foreach ($type_groups as $type_group) {
+        foreach ($components as $component) {
+            if (empty($component['types']) || !is_array($component['types'])) {
+                continue;
+            }
+            foreach ($type_group as $type) {
+                if (in_array($type, $component['types'], true)) {
+                    return !empty($component['long_name']) ? trim($component['long_name']) : '';
+                }
+            }
+        }
+    }
+
+    return '';
+}
+
+function Wo_ApiMapDiscoveryAddressPayloadFromGeocodeResult($result, $fallback_place_id = '') {
+    $formatted_address = !empty($result['formatted_address']) ? trim((string) $result['formatted_address']) : '';
+    $formatted_address = trim((string) preg_replace('/\s+/', ' ', $formatted_address));
+    $location = !empty($result['geometry']['location']) && is_array($result['geometry']['location']) ? $result['geometry']['location'] : array();
+    $components = !empty($result['address_components']) && is_array($result['address_components']) ? $result['address_components'] : array();
+    $ward = Wo_ApiMapDiscoveryAddressComponentValue($components, array(
+        array('administrative_area_level_3'),
+        array('sublocality_level_1'),
+        array('sublocality'),
+        array('locality')
+    ));
+    $district = Wo_ApiMapDiscoveryAddressComponentValue($components, array(
+        array('administrative_area_level_2')
+    ));
+    $city = Wo_ApiMapDiscoveryAddressComponentValue($components, array(
+        array('administrative_area_level_1'),
+        array('locality')
+    ));
+    $country = Wo_ApiMapDiscoveryAddressComponentValue($components, array(
+        array('country')
+    ));
+
+    return array(
+        'source' => 'google',
+        'place_id' => !empty($result['place_id']) ? $result['place_id'] : $fallback_place_id,
+        'address' => $formatted_address,
+        'lat' => isset($location['lat']) ? (float) $location['lat'] : null,
+        'lng' => isset($location['lng']) ? (float) $location['lng'] : null,
+        'city' => $city,
+        'district' => $district,
+        'ward' => $ward,
+        'country' => $country
+    );
+}
+
+function Wo_ApiMapDiscoveryAddressPredictionFromGeocodeResult($result) {
+    $payload = Wo_ApiMapDiscoveryAddressPayloadFromGeocodeResult($result);
+    $formatted_address = $payload['address'];
+    if ($formatted_address === '') {
+        return array();
+    }
+
+    $address_parts = array_values(array_filter(array_map('trim', explode(',', $formatted_address))));
+    $main_text = !empty($address_parts) ? array_shift($address_parts) : $formatted_address;
+    $secondary_text = !empty($address_parts) ? implode(', ', $address_parts) : '';
+    return array(
+        'source' => 'geocode',
+        'place_id' => $payload['place_id'],
+        'description' => $formatted_address,
+        'main_text' => $main_text,
+        'secondary_text' => $secondary_text,
+        'types' => !empty($result['types']) && is_array($result['types']) ? array_values($result['types']) : array(),
+        'lat' => $payload['lat'],
+        'lng' => $payload['lng']
+    );
+}
+
 function Wo_ApiMapDiscoveryAutocomplete() {
     $input = !empty($_POST['query']) ? trim($_POST['query']) : (!empty($_POST['input']) ? trim($_POST['input']) : '');
     $input_length = function_exists('mb_strlen') ? mb_strlen($input, 'UTF-8') : strlen($input);
@@ -899,6 +1057,139 @@ function Wo_ApiMapDiscoveryAutocomplete() {
         'debug_geocode_status' => $geocode_search['status'] ?? 'NOT_CALLED',
         'debug_geocode_error' => $geocode_search['error_message'] ?? '',
         'debug_global_search' => $global_search ? 1 : 0
+    );
+}
+
+function Wo_ApiMapDiscoveryAddressAutocomplete() {
+    $input = Wo_ApiMapDiscoveryAddressQuery();
+    if ($input === '') {
+        return Wo_ApiMapDiscoveryError('query_invalid', 'query must be between 2 and 160 characters.');
+    }
+
+    $query = array(
+        'input' => $input,
+        'types' => 'geocode',
+        'components' => 'country:vn',
+        'language' => Wo_ApiMapDiscoveryLanguage()
+    );
+    $session_token = Wo_ApiMapDiscoveryAddressSessionToken();
+    if ($session_token !== '') {
+        $query['sessiontoken'] = $session_token;
+    }
+    $query = array_merge($query, Wo_ApiMapDiscoveryAddressBiasQuery());
+
+    $google = Wo_ApiMapDiscoveryGoogleGet('place/autocomplete/json', $query);
+    $google_error = Wo_ApiMapDiscoveryAddressGoogleError($google, true);
+    if (!empty($google_error)) {
+        return $google_error;
+    }
+
+    $predictions = array();
+    if (($google['status'] ?? '') === 'OK' && !empty($google['predictions']) && is_array($google['predictions'])) {
+        $seen_place_ids = array();
+        foreach ($google['predictions'] as $prediction) {
+            $formatting = !empty($prediction['structured_formatting']) && is_array($prediction['structured_formatting']) ? $prediction['structured_formatting'] : array();
+            Wo_ApiMapDiscoveryAddPrediction(
+                $predictions,
+                $seen_place_ids,
+                !empty($prediction['place_id']) ? $prediction['place_id'] : '',
+                !empty($prediction['description']) ? $prediction['description'] : '',
+                !empty($formatting['main_text']) ? $formatting['main_text'] : (!empty($prediction['description']) ? $prediction['description'] : ''),
+                !empty($formatting['secondary_text']) ? $formatting['secondary_text'] : '',
+                !empty($prediction['types']) && is_array($prediction['types']) ? array_values($prediction['types']) : array()
+            );
+        }
+    }
+
+    if (!empty($predictions)) {
+        return array(
+            'api_status' => 200,
+            'predictions' => array_slice($predictions, 0, 10)
+        );
+    }
+
+    $geocode = Wo_ApiMapDiscoveryGoogleGet('geocode/json', array(
+        'address' => $input,
+        'components' => 'country:vn',
+        'language' => Wo_ApiMapDiscoveryLanguage(),
+        'region' => 'vn'
+    ));
+    if (!empty($geocode['errors'])) {
+        return Wo_ApiMapDiscoveryAddressGoogleError($geocode, true);
+    }
+    if (($geocode['status'] ?? '') !== 'OK' || empty($geocode['results']) || !is_array($geocode['results'])) {
+        $geocode_error = Wo_ApiMapDiscoveryAddressGoogleError($geocode, true);
+        if (!empty($geocode_error) && !empty($geocode_error['errors']['error_id']) && $geocode_error['errors']['error_id'] !== 'address_not_found') {
+            return $geocode_error;
+        }
+        return array('api_status' => 200, 'predictions' => array());
+    }
+
+    foreach ($geocode['results'] as $result) {
+        $prediction = Wo_ApiMapDiscoveryAddressPredictionFromGeocodeResult($result);
+        if (!empty($prediction)) {
+            $predictions[] = $prediction;
+        }
+    }
+
+    return array(
+        'api_status' => 200,
+        'predictions' => array_slice($predictions, 0, 10)
+    );
+}
+
+function Wo_ApiMapDiscoveryAddressGeocode() {
+    $input = Wo_ApiMapDiscoveryAddressQuery();
+    if ($input === '') {
+        return Wo_ApiMapDiscoveryError('query_invalid', 'query must be between 2 and 160 characters.');
+    }
+
+    // Stable address errors: address_not_found, google_request_denied.
+    $google = Wo_ApiMapDiscoveryGoogleGet('geocode/json', array(
+        'address' => $input,
+        'components' => 'country:vn',
+        'language' => Wo_ApiMapDiscoveryLanguage(),
+        'region' => 'vn'
+    ));
+    $google_error = Wo_ApiMapDiscoveryAddressGoogleError($google, false);
+    if (!empty($google_error)) {
+        return $google_error;
+    }
+
+    return array(
+        'api_status' => 200,
+        'address' => Wo_ApiMapDiscoveryAddressPayloadFromGeocodeResult($google['results'][0])
+    );
+}
+
+function Wo_ApiMapDiscoveryAddressDetails() {
+    $place_id = !empty($_POST['place_id']) ? trim((string) $_POST['place_id']) : '';
+    if ($place_id === '') {
+        return Wo_ApiMapDiscoveryError('place_id_missing', 'place_id can not be empty.');
+    }
+
+    $query = array(
+        'place_id' => $place_id,
+        'fields' => 'place_id,formatted_address,geometry,address_components',
+        'language' => Wo_ApiMapDiscoveryLanguage(),
+        'region' => 'vn'
+    );
+    $session_token = Wo_ApiMapDiscoveryAddressSessionToken();
+    if ($session_token !== '') {
+        $query['sessiontoken'] = $session_token;
+    }
+    $google = Wo_ApiMapDiscoveryGoogleGet('place/details/json', $query);
+    $google_error = Wo_ApiMapDiscoveryAddressGoogleError($google, false);
+    if (!empty($google_error)) {
+        return $google_error;
+    }
+    if (empty($google['result']) || !is_array($google['result'])) {
+        return Wo_ApiMapDiscoveryAddressError('address_not_found', 404);
+    }
+
+    return array(
+        'api_status' => 200,
+        'address' => Wo_ApiMapDiscoveryAddressPayloadFromGeocodeResult($google['result'], $place_id)
     );
 }
 
@@ -1173,6 +1464,15 @@ else if ($action == 'page_suggestions') {
 }
 else if ($action == 'place_autocomplete') {
     $response_data = Wo_ApiMapDiscoveryAutocomplete();
+}
+else if ($action == 'address_autocomplete') {
+    $response_data = Wo_ApiMapDiscoveryAddressAutocomplete();
+}
+else if ($action == 'address_geocode') {
+    $response_data = Wo_ApiMapDiscoveryAddressGeocode();
+}
+else if ($action == 'address_details') {
+    $response_data = Wo_ApiMapDiscoveryAddressDetails();
 }
 else if ($action == 'place_details') {
     $response_data = Wo_ApiMapDiscoveryPlaceDetails();

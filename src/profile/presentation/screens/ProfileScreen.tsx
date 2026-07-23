@@ -178,6 +178,9 @@ import {
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
+import {
+  PROFILE_COVER_ASPECT_RATIO,
+} from '../../../shared-kernel/application/constants/profileImageGeometry';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
@@ -198,7 +201,7 @@ const PROFILE_BACK_GESTURE_DISTANCE_RATIO = 0.32;
 const PROFILE_BACK_GESTURE_VELOCITY = 700;
 const PROFILE_BACK_CLOSE_DURATION_MS = 180;
 const PROFILE_BACK_CANCEL_DURATION_MS = 140;
-const PROFILE_COVER_HEIGHT = 210;
+const PROFILE_COVER_HEIGHT = SCREEN_WIDTH / PROFILE_COVER_ASPECT_RATIO;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(
   320,
   Math.round(SCREEN_WIDTH * 0.62),
@@ -3323,41 +3326,54 @@ function ProfileScreen() {
 
       setProfileCropRequest(null);
 
-      if (cropTarget === 'avatar') {
-        setIsLoadingAvatar(true);
+      const attemptUpload = async () => {
+        const isAvatar = cropTarget === 'avatar';
+        const errorMessage = isAvatar
+          ? 'Không thể cập nhật ảnh đại diện.'
+          : 'Không thể cập nhật ảnh bìa.';
+        const setLoading = isAvatar ? setIsLoadingAvatar : setIsLoadingCover;
 
+        setLoading(true);
         try {
-          const success = await updateAvatar(asset.uri);
-          if (success) {
-            await loadProfile({ userId: targetUserId });
-          } else {
-            Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh đại diện.');
+          const result = isAvatar
+            ? await updateAvatar(asset.uri)
+            : await updateCover(asset);
+          if (result) {
+            loadProfile({ userId: targetUserId }).catch(error => {
+              console.warn(
+                '[Profile] Profile media updated but revalidation failed:',
+                error,
+              );
+            });
+            return;
           }
+
+          Alert.alert(copy.errorTitle, errorMessage, [
+            { text: 'Hủy', style: 'cancel' },
+            {
+              text: 'Thử lại',
+              onPress: () => {
+                attemptUpload();
+              },
+            },
+          ]);
         } catch (err) {
-          console.error('[Profile] Cannot update avatar:', err);
-          Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh đại diện.');
+          console.error('[Profile] Cannot update profile media:', err);
+          Alert.alert(copy.errorTitle, errorMessage, [
+            { text: 'Hủy', style: 'cancel' },
+            {
+              text: 'Thử lại',
+              onPress: () => {
+                attemptUpload();
+              },
+            },
+          ]);
         } finally {
-          setIsLoadingAvatar(false);
+          setLoading(false);
         }
+      };
 
-        return;
-      }
-
-      setIsLoadingCover(true);
-
-      try {
-        const success = await updateCover(asset);
-        if (success) {
-          await loadProfile({ userId: targetUserId });
-        } else {
-          Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh bìa.');
-        }
-      } catch (err) {
-        console.error('[Profile] Cannot update cover:', err);
-        Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh bìa.');
-      } finally {
-        setIsLoadingCover(false);
-      }
+      await attemptUpload();
     },
     [
       copy.errorTitle,

@@ -269,7 +269,7 @@ describe('FeedHeader platform chrome', () => {
     const drawerSource = read('src/feed/presentation/components/HeaderProfileDrawer.tsx');
 
     expect(defaultSource).toContain('HeaderProfileDrawer');
-    expect(defaultSource).toContain('ROUTES.NOTIFICATIONS');
+    expect(defaultSource).toContain('navigateToNotifications(navigation)');
     expect(defaultSource).toContain('useNotificationBadgeViewModel');
     expect(defaultSource).toContain('useCurrentUserViewModel');
     expect(drawerSource).toContain('navigateToOwnProfile');
@@ -277,12 +277,14 @@ describe('FeedHeader platform chrome', () => {
     expect(iosSource).toContain('HeaderProfileDrawer');
     expect(iosSource).toContain('Menu');
     expect(iosSource).toContain('accessibilityLabel="Profile Menu"');
-    expect(iosSource).not.toContain('Bell');
+    expect(iosSource).toContain('Bell');
+    expect(iosSource).toContain('useUnreadBadgeCounts');
+    expect(iosSource).not.toContain('useNotificationBadgeViewModel');
+    expect(iosSource).toContain('navigateToNotifications(navigation)');
+    expect(iosSource).toContain("notificationCount > 99 ? '99+' : notificationCount");
     expect(iosSource).not.toContain('CircleUser');
     expect(iosSource).not.toContain('ROUTES.PROFILE');
-    expect(iosSource).not.toContain('ROUTES.NOTIFICATIONS');
     expect(iosSource).not.toContain('useCurrentUserViewModel');
-    expect(iosSource).not.toContain('useNotificationBadgeViewModel');
     expect(iosSource).not.toContain('transitionAnim');
     expect(iosSource).not.toContain('avatarImage');
 
@@ -296,7 +298,11 @@ describe('FeedHeader platform chrome', () => {
   it('places the iOS profile menu action after the messages action', () => {
     const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
 
+    expect(iosSource.indexOf('accessibilityLabel="Notifications"')).toBeGreaterThan(-1);
     expect(iosSource.indexOf('accessibilityLabel="Messages"')).toBeGreaterThan(-1);
+    expect(iosSource.indexOf('accessibilityLabel="Notifications"')).toBeLessThan(
+      iosSource.indexOf('accessibilityLabel="Messages"'),
+    );
     expect(iosSource.indexOf('accessibilityLabel="Profile Menu"')).toBeGreaterThan(
       iosSource.indexOf('accessibilityLabel="Messages"'),
     );

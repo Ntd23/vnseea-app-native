@@ -2,9 +2,10 @@ import type { TabRouteDefinition } from '../routeRegistry';
 import { ROUTES } from '../constants/routes';
 import {
   createIosNativeTabOptions,
-  formatNotificationTabBadge,
+  formatIosTabBadge,
   getCustomTabRoutes,
   getIosNativeTabRoutes,
+  shouldHideIosNativeTabBar,
 } from '../mainTabConfig';
 
 const routes = [
@@ -42,13 +43,13 @@ describe('main tab platform configuration', () => {
       ROUTES.FEED,
       ROUTES.REELS,
       ROUTES.MARKETPLACE,
-      ROUTES.NOTIFICATIONS,
+      ROUTES.NEARBY_USERS,
       ROUTES.PROFILE,
     ]);
   });
 
-  it('uses localized labels, SF Symbol options, and badge formatting for native iOS tabs', () => {
-    expect(createIosNativeTabOptions(ROUTES.FEED, 0, 'vi')).toMatchObject({
+  it('uses localized labels and SF Symbol options for native iOS tabs', () => {
+    expect(createIosNativeTabOptions(ROUTES.FEED, 'vi')).toMatchObject({
       tabBarLabel: 'Trang chủ',
       tabBarIcon: {
         type: 'sfSymbol',
@@ -56,7 +57,7 @@ describe('main tab platform configuration', () => {
       },
     });
 
-    expect(createIosNativeTabOptions(ROUTES.MARKETPLACE, 0, 'vi')).toMatchObject({
+    expect(createIosNativeTabOptions(ROUTES.MARKETPLACE, 'vi')).toMatchObject({
       tabBarLabel: 'Mua sắm',
       tabBarIcon: {
         type: 'sfSymbol',
@@ -64,7 +65,23 @@ describe('main tab platform configuration', () => {
       },
     });
 
-    expect(createIosNativeTabOptions(ROUTES.PROFILE, 0, 'vi')).toMatchObject({
+    expect(createIosNativeTabOptions(ROUTES.NEARBY_USERS, 'vi')).toMatchObject({
+      tabBarLabel: 'Bản đồ',
+      tabBarIcon: {
+        type: 'sfSymbol',
+        name: 'map.fill',
+      },
+    });
+
+    expect(createIosNativeTabOptions(ROUTES.NEARBY_USERS, 'en')).toMatchObject({
+      tabBarLabel: 'Map',
+      tabBarIcon: {
+        type: 'sfSymbol',
+        name: 'map.fill',
+      },
+    });
+
+    expect(createIosNativeTabOptions(ROUTES.PROFILE, 'vi')).toMatchObject({
       tabBarLabel: 'Cá nhân',
       tabBarIcon: {
         type: 'sfSymbol',
@@ -72,16 +89,7 @@ describe('main tab platform configuration', () => {
       },
     });
 
-    expect(createIosNativeTabOptions(ROUTES.NOTIFICATIONS, 105, 'en')).toMatchObject({
-      tabBarLabel: 'Notifications',
-      tabBarBadge: '99+',
-      tabBarIcon: {
-        type: 'sfSymbol',
-        name: 'bell.fill',
-      },
-    });
-
-    expect(createIosNativeTabOptions(ROUTES.REELS, 0, 'en')).toMatchObject({
+    expect(createIosNativeTabOptions(ROUTES.REELS, 'en')).toMatchObject({
       tabBarLabel: 'Video',
       tabBarIcon: {
         type: 'sfSymbol',
@@ -90,9 +98,31 @@ describe('main tab platform configuration', () => {
     });
   });
 
-  it('omits empty notification badges for native iOS tabs', () => {
-    expect(formatNotificationTabBadge(0)).toBeUndefined();
-    expect(formatNotificationTabBadge(3)).toBe(3);
-    expect(formatNotificationTabBadge(100)).toBe('99+');
+  it('keeps Notifications only in the Android custom tab route list', () => {
+    expect(getIosNativeTabRoutes(routes).map(route => route.name)).not.toContain(
+      ROUTES.NOTIFICATIONS,
+    );
+    expect(getCustomTabRoutes(routes).map(route => route.name)).toContain(
+      ROUTES.NOTIFICATIONS,
+    );
+  });
+
+  it('keeps the cart badge on Marketplace without adding a notification tab badge', () => {
+    expect(
+      createIosNativeTabOptions(ROUTES.MARKETPLACE, 'vi', 3).tabBarBadge,
+    ).toBe(3);
+    expect(
+      createIosNativeTabOptions(ROUTES.NEARBY_USERS, 'vi', 3).tabBarBadge,
+    ).toBeUndefined();
+    expect(formatIosTabBadge(0)).toBeUndefined();
+    expect(formatIosTabBadge(100)).toBe('99+');
+  });
+
+  it('treats only Reels and Nearby Map as full-screen iOS tabs', () => {
+    expect(shouldHideIosNativeTabBar(ROUTES.REELS)).toBe(true);
+    expect(shouldHideIosNativeTabBar(ROUTES.NEARBY_USERS)).toBe(true);
+    expect(shouldHideIosNativeTabBar(ROUTES.FEED)).toBe(false);
+    expect(shouldHideIosNativeTabBar(ROUTES.MARKETPLACE)).toBe(false);
+    expect(shouldHideIosNativeTabBar(ROUTES.PROFILE)).toBe(false);
   });
 });

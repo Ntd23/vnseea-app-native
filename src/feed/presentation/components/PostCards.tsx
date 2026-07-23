@@ -99,6 +99,9 @@ import {
 } from './FeedReactionAssets';
 import { SharedPostPreviewCard } from './SharedPostPreviewCard';
 import {
+  getProfileMediaActivityLabel,
+} from '../../application/mappers/profileMediaActivity';
+import {
   FEED_VIDEO_SURFACE_MAX_RECOVERY_ATTEMPTS,
   shouldRecoverFeedVideoSurface,
 } from './feedVideoSurfaceRecovery';
@@ -439,6 +442,8 @@ export type FeedCopy = {
   share: string;
   viewDetails?: string;
   sharedPostLabel: (name: string) => string;
+  updatedProfilePicture: string;
+  updatedCoverPhoto: string;
   publicLabel: string;
   friendsPrivacyLabel: string;
   followersPrivacyLabel: string;
@@ -457,8 +462,6 @@ export type FeedCopy = {
   seeAll: string;
   createStory: string;
   createStorySubtitle: string;
-  greetingTitle: (name: string) => string;
-  greetingBody: string;
   now: string;
   minutesAgo: (count: number) => string;
   hoursAgo: (count: number) => string;
@@ -555,6 +558,8 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     share: 'Chia sẻ',
     viewDetails: 'Xem chi tiết',
     sharedPostLabel: name => `đã chia sẻ bài viết của ${name}`,
+    updatedProfilePicture: 'đã cập nhật ảnh đại diện',
+    updatedCoverPhoto: 'đã cập nhật ảnh bìa',
     publicLabel: 'Công khai',
     friendsPrivacyLabel: 'Bạn bè',
     followersPrivacyLabel: 'M\u1ecdi ng\u01b0\u1eddi theo d\u00f5i t\u00f4i',
@@ -573,9 +578,6 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     seeAll: 'Xem tất cả',
     createStory: 'Tạo tin',
     createStorySubtitle: 'Chia sẻ khoảnh khắc của bạn',
-    greetingTitle: name => `Chào buổi tối, ${name}`,
-    greetingBody:
-      'Buổi tối là cách cuộc sống nói rằng bạn đang gần hơn với giấc mơ của mình.',
     now: 'Vừa xong',
     minutesAgo: count => `${count} phút trước`,
     hoursAgo: count => `${count} giờ trước`,
@@ -670,6 +672,8 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     share: 'Share',
     viewDetails: 'View details',
     sharedPostLabel: name => `shared ${name}'s post`,
+    updatedProfilePicture: 'updated their profile picture',
+    updatedCoverPhoto: 'updated their cover photo',
     publicLabel: 'Public',
     friendsPrivacyLabel: 'Friends',
     followersPrivacyLabel: 'People following me',
@@ -688,9 +692,6 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     seeAll: 'See all',
     createStory: 'Create story',
     createStorySubtitle: 'Share your moment',
-    greetingTitle: name => `Good evening, ${name}`,
-    greetingBody:
-      'Evening is life saying you are getting closer to your dreams.',
     now: 'Just now',
     minutesAgo: count => `${count} min ago`,
     hoursAgo: count => `${count} h ago`,
@@ -2567,6 +2568,7 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
 
   const privacyMeta = getPostPrivacyMeta(getFeedPostPrivacy(post), copy);
   const PrivacyIcon = privacyMeta.Icon;
+  const activityLabel = getProfileMediaActivityLabel(post?.activity, copy);
 
   return (
     <View className={containerClassName}>
@@ -2584,9 +2586,15 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
           </View>
         )}
         <View className="ml-3 min-w-0 flex-1">
-          <View className="flex-row items-center">
-            <Text className="min-w-0 flex-shrink text-title-primary" numberOfLines={1}>
-              {name}
+          <View className="flex-row items-start">
+            <Text
+              className="min-w-0 flex-shrink text-title-primary"
+              numberOfLines={activityLabel ? 2 : 1}
+            >
+              <Text className="font-bold">{name}</Text>
+              {activityLabel ? (
+                <Text className="font-normal"> {activityLabel}</Text>
+              ) : null}
             </Text>
             {badge ? (
               <Text className="surface-muted ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand">
@@ -2931,6 +2939,7 @@ function areFeedPostBaseRenderFieldsEqual(
   return (
     previous.kind === next.kind &&
     previous.id === next.id &&
+    previous.activity === next.activity &&
     previous.caption === next.caption &&
     previous.postedAt === next.postedAt &&
     previous.likeCount === next.likeCount &&

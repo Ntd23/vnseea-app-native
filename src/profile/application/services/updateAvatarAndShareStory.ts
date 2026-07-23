@@ -1,6 +1,7 @@
 // Description: Orchestrates an avatar update and automatically shares the same image to Stories.
 import type { ApiFile } from '../../../shared-kernel/domain/types/api.types';
 import type { AuthUserProfile } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import type { ProfileMediaUpdateResult } from '../../domain/types/profileMedia.types';
 import type {
   CreateStoryDraft,
   CreateStoryResult,
@@ -10,11 +11,12 @@ import type {
 export type UpdateAvatarAndShareStoryResult = {
   avatarUpdated: boolean;
   storyCreated: boolean;
+  profileMedia?: ProfileMediaUpdateResult;
   storyError?: unknown;
 };
 
 type Dependencies = {
-  uploadAvatar: (file: ApiFile) => Promise<boolean>;
+  uploadAvatar: (file: ApiFile) => Promise<ProfileMediaUpdateResult | null>;
   createStory: (draft: CreateStoryDraft) => Promise<CreateStoryResult>;
   currentUserId?: string;
   currentUserProfile?: AuthUserProfile | null;
@@ -94,9 +96,9 @@ export async function updateAvatarAndShareStory(
 ): Promise<UpdateAvatarAndShareStoryResult> {
   const timestamp = (dependencies.now ?? Date.now)();
   const avatarFile = buildAvatarUploadFile(avatarUri, timestamp);
-  const avatarUpdated = await dependencies.uploadAvatar(avatarFile);
+  const profileMedia = await dependencies.uploadAvatar(avatarFile);
 
-  if (!avatarUpdated) {
+  if (!profileMedia) {
     return { avatarUpdated: false, storyCreated: false };
   }
 
@@ -116,11 +118,12 @@ export async function updateAvatarAndShareStory(
       dependencies.emitStory(optimisticStory);
     }
 
-    return { avatarUpdated: true, storyCreated: true };
+    return { avatarUpdated: true, storyCreated: true, profileMedia };
   } catch (storyError) {
     return {
       avatarUpdated: true,
       storyCreated: false,
+      profileMedia,
       storyError,
     };
   }

@@ -1,5 +1,5 @@
 // Description: Coordinates profile screen state with the profile repository.
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type {
   ProfileData,
   ProfileLoadInput,
@@ -12,15 +12,21 @@ import type { ApiFile } from '../../../shared-kernel/domain/types/api.types';
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { storyCreatedEvents } from '../../../stories/application/events/storyCreatedEvents';
 import { updateAvatarAndShareStory } from '../services/updateAvatarAndShareStory';
+import {
+  buildProfileMediaUploadPayload,
+  parseProfileMediaUpdateResponse,
+  uploadProfileMediaWithReconciliation,
+  type RawProfileMediaResponse,
+} from '../services/profileMediaUpdate';
+import { profileMediaUpdatedEvents } from '../events/profileMediaUpdatedEvents';
+import type {
+  ProfileMediaKind,
+  ProfileMediaSnapshot,
+  ProfileMediaUpdateResult,
+} from '../../domain/types/profileMedia.types';
 
 const repository = createProfileRepository();
 const storiesRepository = createStoriesRepository();
-
-// Avatar upload response type
-type UpdateAvatarResponse = {
-  api_status: number | string;
-  message?: string;
-};
 
 function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -30,10 +36,68 @@ function toErrorMessage(error: unknown) {
   return String(error);
 }
 
+function profileDataToMediaSnapshot(
+  profileData: ProfileData | null,
+): ProfileMediaSnapshot | null {
+  const profile = profileData?.profile;
+  if (!profile) return null;
+
+  return {
+    avatarUrl: profile.avatarUrl,
+    coverUrl: profile.coverUrl,
+    avatarPostId: profile.avatarPostId,
+    coverPostId: profile.coverPostId,
+  };
+}
+
+async function uploadCanonicalProfileMedia(
+  kind: ProfileMediaKind,
+  file: ApiFile,
+) {
+  const route =
+    kind === 'avatar' ? apiRoutes.user.update : apiRoutes.user.updateCover;
+  const response = await apiBridge.multipart<RawProfileMediaResponse>(
+    route,
+    buildProfileMediaUploadPayload(kind, file),
+  );
+  return parseProfileMediaUpdateResponse(response, kind);
+}
+
 export function useProfileViewModel() {
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      profileMediaUpdatedEvents.subscribe(({ userId, media }) => {
+        setProfileData(previous => {
+          if (
+            !previous?.profile ||
+            String(previous.profile.id) !== String(userId)
+          ) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            profile: {
+              ...previous.profile,
+              ...(media.kind === 'avatar'
+                ? {
+                    avatarUrl: media.url,
+                    avatarPostId: media.postId,
+                  }
+                : {
+                    coverUrl: media.url,
+                    coverPostId: media.postId,
+                  }),
+            },
+          };
+        });
+      }),
+    [],
+  );
 
   const loadProfile = useCallback(async (input?: ProfileLoadInput) => {
     setIsLoading(true);
@@ -92,20 +156,40 @@ export function useProfileViewModel() {
     await repository.pokeUser(userId);
   }, []);
 
+  const loadOwnProfileMediaSnapshot = useCallback(async () => {
+    const loaded = await repository.loadProfile();
+    return profileDataToMediaSnapshot(loaded);
+  }, []);
+
+  const publishProfileMediaUpdate = useCallback(
+    (media: ProfileMediaUpdateResult) => {
+      const userId = sessionStorage.getSession()?.userId;
+      if (!userId) return;
+
+      if (media.kind === 'avatar') {
+        const cachedProfile = sessionStorage.getUserProfile() ?? {};
+        sessionStorage.setUserProfile({
+          ...cachedProfile,
+          avatarUrl: media.url,
+        });
+      }
+
+      profileMediaUpdatedEvents.emit({ userId, media });
+    },
+    [],
+  );
+
   const updateAvatar = useCallback(
-    async (avatarUri: string): Promise<boolean> => {
+    async (avatarUri: string): Promise<ProfileMediaUpdateResult | null> => {
       try {
         const session = sessionStorage.getSession();
         const cachedProfile = sessionStorage.getUserProfile();
         const result = await updateAvatarAndShareStory(avatarUri, {
-          uploadAvatar: async avatar => {
-            const response = await apiBridge.multipart<UpdateAvatarResponse>(
-              apiRoutes.user.update,
-              { avatar },
-            );
-
-            return String(response.api_status) === '200';
-          },
+          uploadAvatar: avatar =>
+            uploadProfileMediaWithReconciliation('avatar', avatar, {
+              upload: file => uploadCanonicalProfileMedia('avatar', file),
+              loadSnapshot: loadOwnProfileMediaSnapshot,
+            }),
           createStory: draft => storiesRepository.createStory(draft),
           currentUserId: session?.userId,
           currentUserProfile: cachedProfile,
@@ -119,30 +203,42 @@ export function useProfileViewModel() {
           );
         }
 
-        return result.avatarUpdated;
-      } catch (error) {
-        console.error('[useProfileViewModel] updateAvatar error:', error);
-        return false;
+        if (result.profileMedia) {
+          publishProfileMediaUpdate(result.profileMedia);
+        }
+
+        return result.profileMedia ?? null;
+      } catch (caughtError) {
+        console.error(
+          '[useProfileViewModel] updateAvatar error:',
+          caughtError,
+        );
+        return null;
       }
     },
-    [],
+    [loadOwnProfileMediaSnapshot, publishProfileMediaUpdate],
   );
 
-  const updateCover = useCallback(async (cover: ApiFile): Promise<boolean> => {
-    try {
-      const response = await apiBridge.multipart<UpdateAvatarResponse>(
-        apiRoutes.user.updateCover,
-        {
+  const updateCover = useCallback(
+    async (cover: ApiFile): Promise<ProfileMediaUpdateResult | null> => {
+      try {
+        const result = await uploadProfileMediaWithReconciliation(
+          'cover',
           cover,
-        },
-      );
-
-      return String(response.api_status) === '200';
-    } catch (error) {
-      console.error('[useProfileViewModel] updateCover error:', error);
-      return false;
-    }
-  }, []);
+          {
+            upload: file => uploadCanonicalProfileMedia('cover', file),
+            loadSnapshot: loadOwnProfileMediaSnapshot,
+          },
+        );
+        publishProfileMediaUpdate(result);
+        return result;
+      } catch (caughtError) {
+        console.error('[useProfileViewModel] updateCover error:', caughtError);
+        return null;
+      }
+    },
+    [loadOwnProfileMediaSnapshot, publishProfileMediaUpdate],
+  );
 
   return {
     profileData,

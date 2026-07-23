@@ -16,7 +16,7 @@ describe('message labels native-stack screen', () => {
     'src/messages/presentation/screens/MessageLabelsScreen.tsx',
   );
 
-  it('registers a typed route with assign and create modes', () => {
+  it('registers a typed route with assign and create entry modes', () => {
     expect(routes).toContain("MESSAGE_LABELS: 'MessageLabels'");
     expect(types).toContain('export type MessageLabelTarget = {');
     expect(types).toContain("| { mode: 'assign'; target: MessageLabelTarget }");
@@ -56,6 +56,34 @@ describe('message labels native-stack screen', () => {
     expect(screen).toContain('repository.attachLabel(');
     expect(screen).toContain('repository.detachLabel(');
     expect(screen).toContain('repository.deleteLabel(');
-    expect(screen).toContain('Promise.allSettled(');
+  });
+
+  it('renders assign and manage tabs with an actionable detach label state', () => {
+    expect(screen).toContain("type ScreenMode = 'assign' | 'manage';");
+    expect(screen).toContain("manageTab: 'Quản lý nhãn'");
+    expect(screen).toContain("detach: 'Gỡ nhãn'");
+    expect(screen).toContain(
+      "route.params.mode === 'assign' ? 'assign' : 'manage'",
+    );
+    expect(screen).toContain("(['assign', 'manage'] as const)");
+    expect(screen).toContain(
+      'attached ? copy.detach : copy.attach',
+    );
+    expect(screen).not.toContain("attached: 'Đã gắn'");
+  });
+
+  it('keeps deletion in the manage list and pins the create form below it', () => {
+    expect(screen).toContain('testID="message-labels-manage-list"');
+    expect(screen).toContain('testID="message-labels-create-form"');
+    expect(screen).toContain('style={{ flex: 1 }}');
+    expect(screen).toContain('repository.deleteLabel(label.id)');
+    expect(screen).toContain('copy.manageLabels');
+  });
+
+  it('allows selecting a one-to-one target before assigning labels', () => {
+    expect(screen).toContain('selectedTarget');
+    expect(screen).toContain('selectCustomer');
+    expect(screen).toContain('repository.listTargetLabels(target.userId)');
+    expect(screen).toContain('chat.chatType !== \'user\'');
   });
 });

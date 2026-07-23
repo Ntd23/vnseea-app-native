@@ -1759,7 +1759,7 @@ function CreatePageScreen() {
             <AddressAutocomplete
               value={draft.pageAddress}
               placeholder="Địa điểm"
-              preferAddressSearch
+              locationBias={pageLocationCoordinate}
               onChangeText={handleAddressChange}
               onSelectPlace={handlePlaceSelected}
             />

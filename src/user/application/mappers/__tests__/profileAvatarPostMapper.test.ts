@@ -31,4 +31,33 @@ describe('profile avatar post mapping', () => {
       expect(profile.avatarPostId).toBeUndefined();
     },
   );
+
+  it('maps a valid cover post id for canonical cover reconciliation', () => {
+    const profile = mapUserProfile(
+      {
+        user_id: 7,
+        username: 'admin',
+        cover_post_id: 654,
+      },
+      WEB_BASE_URL,
+    );
+
+    expect(profile.coverPostId).toBe('654');
+  });
+
+  it.each([0, '0', '', null, undefined])(
+    'does not expose an invalid cover post id: %p',
+    coverPostId => {
+      const profile = mapUserProfile(
+        {
+          user_id: 7,
+          username: 'admin',
+          cover_post_id: coverPostId,
+        },
+        WEB_BASE_URL,
+      );
+
+      expect(profile.coverPostId).toBeUndefined();
+    },
+  );
 });

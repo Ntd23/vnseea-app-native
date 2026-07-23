@@ -49,7 +49,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import {
@@ -96,6 +96,8 @@ import {
 } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { iosPagerSwipeLock } from '../../../navigation/iosPagerSwipeLock';
+import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
@@ -2197,6 +2199,10 @@ function SearchResultPhotoStrip({
 export default function NearbyUsersScreen() {
   const navigation = useNavigation<NearbyNav>();
   const route = useRoute<NearbyRoute>();
+  const navigatorType = (
+    navigation.getState?.() as { type?: string } | undefined
+  )?.type;
+  const isTabRoute = navigatorType === 'tab';
   const insets = useSafeAreaInsets();
   const { width: viewportWidth, height: viewportHeight } =
     useWindowDimensions();
@@ -2221,6 +2227,32 @@ export default function NearbyUsersScreen() {
       };
     }
   }, [viewportHeight, viewportWidth, viewportWidthChanged]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isTabRoute) return undefined;
+      if (Platform.OS !== 'ios') return undefined;
+
+      tabBarVisibility.setVisible(false);
+      iosPagerSwipeLock.setLocked(true);
+
+      return () => {
+        iosPagerSwipeLock.setLocked(false);
+        tabBarVisibility.setVisible(true);
+      };
+    }, [isTabRoute]),
+  );
+
+  const handleBackPress = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.MARKETPLACE,
+    });
+  }, [navigation]);
   const persistedMapLocation = useMemo(() => readLastMapLocation(), []);
   const persistedCoordinate = useMemo<LatLng | null>(() => {
     if (!persistedMapLocation) return null;
@@ -5828,7 +5860,7 @@ export default function NearbyUsersScreen() {
               <TouchableOpacity
                 activeOpacity={0.86}
                 style={styles.backButton}
-                onPress={() => navigation.goBack()}
+                onPress={handleBackPress}
               >
                 <ArrowLeft size={22} color="#0F172A" />
               </TouchableOpacity>

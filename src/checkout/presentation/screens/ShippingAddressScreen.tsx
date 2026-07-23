@@ -28,29 +28,10 @@ import type { DeliveryAddress } from '../../domain/types/checkout.types';
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
-import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 
 type ShippingAddressNav = NativeStackNavigationProp<RootStackParamList>;
 type ShippingAddressRoute = RouteProp<RootStackParamList, typeof ROUTES.SHIPPING_ADDRESS>;
-type SelectedPlace = Parameters<
-  React.ComponentProps<typeof AddressAutocomplete>['onSelectPlace']
->[0];
-
-function inferCityCountryFromPlace(place: SelectedPlace) {
-  const rawAddress = place.description || [place.mainText, place.secondaryText]
-    .filter(Boolean)
-    .join(', ');
-  const parts = rawAddress
-    .split(',')
-    .map(part => part.trim())
-    .filter(Boolean);
-
-  return {
-    address: rawAddress,
-    city: parts.length >= 2 ? parts[parts.length - 2] : '',
-    country: parts.length >= 1 ? parts[parts.length - 1] : '',
-  };
-}
 
 function Field({
   label,
@@ -58,6 +39,7 @@ function Field({
   placeholder,
   required,
   keyboardType,
+  multiline = false,
   onChangeText,
 }: {
   label: string;
@@ -65,6 +47,7 @@ function Field({
   placeholder: string;
   required?: boolean;
   keyboardType?: 'default' | 'phone-pad';
+  multiline?: boolean;
   onChangeText: (value: string) => void;
 }) {
   return (
@@ -74,11 +57,16 @@ function Field({
       </Text>
       <View className="rounded-2xl border border-slate-200 bg-slate-50 px-4">
         <TextInput
-          className="min-h-[48px] text-base font-semibold text-slate-900"
+          className={`text-base font-semibold text-slate-900 ${
+            multiline ? 'min-h-24 py-3' : 'min-h-[48px]'
+          }`}
+          style={multiline ? { textAlignVertical: 'top' } : undefined}
           value={value}
           placeholder={placeholder}
           placeholderTextColor="#94A3B8"
           keyboardType={keyboardType}
+          multiline={multiline}
+          numberOfLines={multiline ? 4 : 1}
           onChangeText={onChangeText}
         />
       </View>
@@ -168,21 +156,6 @@ function ShippingAddressScreen() {
       goToCheckout();
     }
   }, [goToCheckout, vm]);
-
-  const handleSelectAddressPlace = useCallback(
-    (place: SelectedPlace) => {
-      const nextAddress = inferCityCountryFromPlace(place);
-      vm.updateAddressField('address', nextAddress.address);
-      vm.updateAddressField('zip', '10000');
-      if (nextAddress.city) {
-        vm.updateAddressField('city', nextAddress.city);
-      }
-      if (nextAddress.country) {
-        vm.updateAddressField('country', nextAddress.country);
-      }
-    },
-    [vm],
-  );
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
@@ -279,15 +252,23 @@ function ShippingAddressScreen() {
                 </Text>
                 <AddressAutocomplete
                   value={vm.addressForm.address}
-                  placeholder="Nhập địa chỉ để tìm kiếm..."
-                  onChangeText={value => vm.updateAddressField('address', value)}
-                  onSelectPlace={handleSelectAddressPlace}
+                  placeholder="Tìm số nhà, tên đường, phường/xã..."
+                  onChangeText={value =>
+                    vm.updateAddressField('address', value)
+                  }
+                  onSelectPlace={place => {
+                    vm.updateAddressField('address', place.description);
+                    if (place.city || place.district) {
+                      vm.updateAddressField(
+                        'city',
+                        place.city || place.district || '',
+                      );
+                    }
+                    if (place.country) {
+                      vm.updateAddressField('country', place.country);
+                    }
+                  }}
                 />
-                {(!vm.addressForm.city && !vm.addressForm.country) ? (
-                  <Text className="mt-2 text-xs font-medium text-slate-400">
-                    Chọn gợi ý để tự động điền quốc gia và thành phố
-                  </Text>
-                ) : null}
               </View>
               <View className="flex-row gap-3">
                 <View className="flex-1">
@@ -295,7 +276,7 @@ function ShippingAddressScreen() {
                     label="Quốc gia"
                     required
                     value={vm.addressForm.country}
-                    placeholder="Tự động điền"
+                    placeholder="Nhập quốc gia"
                     onChangeText={value => vm.updateAddressField('country', value)}
                   />
                 </View>
@@ -304,7 +285,7 @@ function ShippingAddressScreen() {
                     label="Thành phố"
                     required
                     value={vm.addressForm.city}
-                    placeholder="Tự động điền"
+                    placeholder="Nhập thành phố"
                     onChangeText={value => vm.updateAddressField('city', value)}
                   />
                 </View>

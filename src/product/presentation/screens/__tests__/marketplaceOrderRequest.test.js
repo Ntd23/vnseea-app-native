@@ -58,7 +58,10 @@ describe('Marketplace mobile order request flow', () => {
   });
 
   it('owns address selection and editing inside checkout', () => {
-    expect(checkoutScreen).toContain('AddressAutocomplete');
+    expect(checkoutScreen).not.toContain('AddressAutocomplete');
+    expect(checkoutScreen).toContain('multiline');
+    expect(checkoutScreen).toContain('onEdit');
+    expect(checkoutScreen).toContain('onDelete');
     expect(checkoutScreen).toContain('addressSheetVisible');
     expect(checkoutScreen).toContain('useCheckoutKeyboardInset');
     expect(checkoutScreen).toMatch(/vm\.isLoading\s*\|\|\s*vm\.error/);

@@ -17,8 +17,10 @@ describe('profile image crop flow', () => {
     expect(source).toContain('Gesture.Pinch()');
     expect(source).toContain('.numberOfTaps(2)');
     expect(source).toContain('captureRef(cropViewportRef');
-    expect(source).toContain('{ width: 1080, height: 1080 }');
-    expect(source).toContain('{ width: 1600, height: 900 }');
+    expect(source).toContain('PROFILE_AVATAR_OUTPUT_SIZE');
+    expect(source).toContain('PROFILE_COVER_OUTPUT_SIZE');
+    expect(source).toContain('PROFILE_AVATAR_ASPECT_RATIO');
+    expect(source).toContain('PROFILE_COVER_ASPECT_RATIO');
     expect(source).toContain('collapsable={false}');
   });
 
@@ -40,5 +42,34 @@ describe('profile image crop flow', () => {
     expect(avatarViewerSource).toContain('onComplete={uploadAvatar}');
     expect(coverViewerSource).toContain('target="cover"');
     expect(coverViewerSource).toContain('onComplete={handleCroppedCover}');
+  });
+
+  it('renders the profile cover at the same canonical 16:9 ratio', () => {
+    const source = read(
+      'src/profile/presentation/screens/ProfileScreen.tsx',
+    );
+
+    expect(source).toContain('PROFILE_COVER_ASPECT_RATIO');
+    expect(source).toContain(
+      'const PROFILE_COVER_HEIGHT = SCREEN_WIDTH / PROFILE_COVER_ASPECT_RATIO',
+    );
+    expect(source).not.toContain('const PROFILE_COVER_HEIGHT = 210');
+  });
+
+  it('uses canonical server urls instead of cropped temporary file urls', () => {
+    const avatarViewerSource = read(
+      'src/profile/presentation/screens/AvatarViewerScreen.tsx',
+    );
+    const coverViewerSource = read(
+      'src/profile/presentation/screens/CoverViewerScreen.tsx',
+    );
+
+    expect(avatarViewerSource).toContain(
+      'setLocalAvatarUrl(result.fullUrl || result.url)',
+    );
+    expect(avatarViewerSource).not.toContain('setLocalAvatarUrl(asset.uri)');
+    expect(coverViewerSource).toContain(
+      'setLocalCoverUrl(result.fullUrl || result.url)',
+    );
   });
 });

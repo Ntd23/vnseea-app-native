@@ -19,8 +19,7 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(defaultSource).not.toContain('AdaptiveGlassSurface');
     expect(defaultSource).not.toContain('@callstack/liquid-glass');
     expect(iosSource).toContain('AdaptiveGlassSurface');
-    expect(iosSource).toContain('HomeGreetingCard');
-    expect(iosSource).toContain('HomeComposerCard');
+    expect(iosSource).toContain('<ComposerCard');
     expect(iosSource).toContain('HomeStoriesRail');
   });
 
@@ -49,7 +48,7 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(source).toContain('initialUserIndex');
   });
 
-  it('keeps the current stories, composer, greeting order on both platforms', () => {
+  it('keeps stories before composer and never renders a greeting card', () => {
     const defaultSource = read(
       'src/feed/presentation/components/HomeFeedIntro.tsx',
     );
@@ -69,15 +68,11 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(defaultRender.indexOf('<DefaultStoriesRow')).toBeLessThan(
       defaultRender.indexOf('<ComposerCard'),
     );
-    expect(defaultRender.indexOf('<ComposerCard')).toBeLessThan(
-      defaultRender.indexOf('<DefaultGreetingCard'),
-    );
     expect(iosRender.indexOf('<HomeStoriesRail')).toBeLessThan(
       iosRender.indexOf('<ComposerCard'),
     );
-    expect(iosRender.indexOf('<ComposerCard')).toBeLessThan(
-      iosRender.indexOf('<HomeGreetingCard'),
-    );
+    expect(defaultRender).not.toContain('Greeting');
+    expect(iosRender).not.toContain('Greeting');
   });
 
   it('renders the iOS intro surfaces edge-to-edge while keeping inner spacing', () => {
@@ -91,10 +86,6 @@ describe('HomeFeedIntro iOS header modules', () => {
       iosSource.indexOf('surface: {'),
       iosSource.indexOf('glassSurface: {'),
     );
-    const greetingStyle = iosSource.slice(
-      iosSource.indexOf('greetingSurface: {'),
-      iosSource.indexOf('greetingTextWrap: {'),
-    );
     const storiesContentStyle = iosSource.slice(
       iosSource.indexOf('storiesContent: {'),
       iosSource.indexOf('storyCard: {'),
@@ -107,13 +98,12 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(surfaceStyle).not.toContain('marginHorizontal');
     expect(surfaceStyle).not.toContain('borderRadius');
     expect(surfaceStyle).not.toContain('marginBottom');
-    expect(greetingStyle).toContain('padding: 15');
     expect(storiesContentStyle).toContain('paddingHorizontal: 5');
     expect(storiesContentStyle).toContain('columnGap: 5');
     expect(storyCardStyle).toContain('borderRadius: 24');
     expect(iosSource).not.toContain('style={styles.root}');
     expect(defaultSource).toContain('paddingHorizontal: 16');
-    expect(defaultSource).toContain('rounded-[18px]');
+    expect(defaultSource).toContain('rounded-[20px]');
   });
 
   it('uses the logged-in avatar for the iOS create-story card', () => {
@@ -136,7 +126,7 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(iosSource).toContain("'center'");
   });
 
-  it('adds iOS-only greeting dismissal with a one-hour TTL', () => {
+  it('removes greeting models, dismissal storage and renderers on all platforms', () => {
     const sharedSource = read(
       'src/feed/presentation/components/HomeFeedIntro.shared.ts',
     );
@@ -146,24 +136,28 @@ describe('HomeFeedIntro iOS header modules', () => {
     const defaultSource = read(
       'src/feed/presentation/components/HomeFeedIntro.tsx',
     );
+    const feedCopySource = read(
+      'src/feed/presentation/components/PostCards.tsx',
+    );
 
-    expect(sharedSource).toContain('HOME_GREETING_DISMISS_MS');
-    expect(sharedSource).toContain('60 * 60 * 1000');
-    expect(sharedSource).toContain('homeIntro.greetingHiddenUntil');
-    expect(sharedSource).toContain('useHomeGreetingDismissal');
-    expect(iosSource).toContain('onDismissGreeting');
-    expect(iosSource).toContain('greetingCloseButton');
-    expect(defaultSource).not.toContain('useHomeGreetingDismissal');
+    expect(sharedSource).not.toContain('HOME_GREETING');
+    expect(sharedSource).not.toContain('getHomeGreetingModel');
+    expect(sharedSource).not.toContain('useHomeGreetingDismissal');
+    expect(iosSource).not.toContain('HomeGreetingCard');
+    expect(defaultSource).not.toContain('DefaultGreetingCard');
+    expect(feedCopySource).not.toContain('greetingTitle');
+    expect(feedCopySource).not.toContain('greetingBody');
   });
 
-  it('renders the iOS composer prompt as a glass control', () => {
+  it('keeps the shared composer and all of its actions on iOS', () => {
     const iosSource = read(
       'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
     );
 
-    expect(iosSource).toContain('composerInputGlass');
-    expect(iosSource).toContain('<GlassSurface');
-    expect(iosSource).toContain('style={styles.composerInputGlass}');
+    expect(iosSource).toContain('<ComposerCard');
+    expect(iosSource).toContain('onPress={onCreatePostPress}');
+    expect(iosSource).toContain('onPressAction={onCreatePostPressAction}');
+    expect(iosSource).toContain('onPressAvatar={onPressAvatar}');
   });
 
   it('centers the iOS create-story plus icon outside native glass child layout', () => {
@@ -177,37 +171,4 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(iosSource).toContain('<Plus size={21}');
   });
 
-  it('keeps the iOS greeting title only slightly larger than the subtitle', () => {
-    const iosSource = read(
-      'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
-    );
-
-    expect(iosSource).toMatch(/greetingTitle:\s*{[^}]*fontSize:\s*14/s);
-    expect(iosSource).toMatch(/greetingTitle:\s*{[^}]*lineHeight:\s*18/s);
-    expect(iosSource).toMatch(/greetingBody:\s*{[^}]*fontSize:\s*12/s);
-    expect(iosSource).toMatch(/greetingBody:\s*{[^}]*lineHeight:\s*17/s);
-  });
-
-  it('uses iOS-only swipe gesture dismissal for the greeting card', () => {
-    const iosSource = read(
-      'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
-    );
-    const defaultSource = read(
-      'src/feed/presentation/components/HomeFeedIntro.tsx',
-    );
-
-    expect(iosSource).toContain("from 'react-native-gesture-handler'");
-    expect(iosSource).toContain('GestureDetector');
-    expect(iosSource).toContain('Gesture.Pan()');
-    expect(iosSource).toContain('useSharedValue');
-    expect(iosSource).toContain('useAnimatedStyle');
-    expect(iosSource).toContain('withTiming');
-    expect(iosSource).toContain('withSpring');
-    expect(iosSource).toContain('runOnJS');
-    expect(iosSource).toContain('runOnJS(onDismiss)()');
-    expect(iosSource).toContain('activeOffsetX([-16, 16])');
-    expect(iosSource).toContain('failOffsetY([-12, 12])');
-    expect(defaultSource).not.toContain('GestureDetector');
-    expect(defaultSource).not.toContain('useSharedValue');
-  });
 });

@@ -24,7 +24,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, {
@@ -218,7 +218,9 @@ async function openExternalNotificationUrl(
   try {
     await Linking.openURL(url);
   } catch {
-    navigation.navigate(ROUTES.FEED as any);
+    navigation.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.FEED,
+    });
   }
 }
 
@@ -349,12 +351,19 @@ async function navigateToNotification(
       return;
     case 'feed':
     default:
-      navigation.navigate(ROUTES.FEED as any);
+      navigation.navigate(ROUTES.MAIN_TABS, {
+        screen: ROUTES.FEED,
+      });
   }
 }
 
 function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNav>();
+  const navigatorType = (
+    navigation.getState?.() as { type?: string } | undefined
+  )?.type;
+  const isTabRoute = navigatorType === 'tab';
+  const insets = useSafeAreaInsets();
   const { bottomContentPadding, scrollIndicatorBottomInset } =
     useMainTabContentInsets();
   const {
@@ -387,9 +396,12 @@ function NotificationsScreen() {
   const nativeTabScrollPublisherStateRef = useRef(
     createNativeTabScrollPublisherState(),
   );
+  const notificationsBottomContentPadding = isTabRoute
+    ? bottomContentPadding
+    : Math.max(insets.bottom + 16, 24);
   const iosNotificationsListContentStyle = useMemo(
-    () => ({ paddingBottom: bottomContentPadding }),
-    [bottomContentPadding],
+    () => ({ paddingBottom: notificationsBottomContentPadding }),
+    [notificationsBottomContentPadding],
   );
 
   useEffect(() => {
@@ -397,21 +409,21 @@ function NotificationsScreen() {
   }, [hasNotifications]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return undefined;
+    if (Platform.OS !== 'ios' || !isTabRoute) return undefined;
 
     return () => {
       publishNativeTabScrollBehavior('onScrollDown');
     };
-  }, []);
+  }, [isTabRoute]);
 
   useFocusEffect(
     useCallback(() => {
-      if (Platform.OS !== 'ios') return undefined;
+      if (Platform.OS !== 'ios' || !isTabRoute) return undefined;
 
       return () => {
         publishNativeTabScrollBehavior('onScrollDown');
       };
-    }, []),
+    }, [isTabRoute]),
   );
 
   useFocusEffect(
@@ -439,11 +451,24 @@ function NotificationsScreen() {
           '[NotificationsScreen] navigation failed',
           navigationError,
         );
-        navigation.navigate(ROUTES.FEED as any);
+        navigation.navigate(ROUTES.MAIN_TABS, {
+          screen: ROUTES.FEED,
+        });
       });
     },
     [markAsSeen, navigation],
   );
+
+  const handleBackPress = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.FEED,
+    });
+  }, [navigation]);
 
   const handleLongPress = useCallback(
     (item: NotificationsItem) => {
@@ -495,6 +520,8 @@ function NotificationsScreen() {
   const notificationsListHeaderComponent = (
     <NotificationsHeader
       title={copy.headerTitle}
+      onBackPress={!isTabRoute ? handleBackPress : undefined}
+      backAccessibilityLabel={copy.back}
       onFilterPress={() => setFilterSheetVisible(true)}
       filterActive={activeFilter !== 'all'}
     />
@@ -591,14 +618,14 @@ function NotificationsScreen() {
 
   const handleNotificationsScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (Platform.OS !== 'ios') return;
+      if (Platform.OS !== 'ios' || !isTabRoute) return;
 
       publishNativeTabScrollIntent(
         nativeTabScrollPublisherStateRef,
         event.nativeEvent.contentOffset.y,
       );
     },
-    [],
+    [isTabRoute],
   );
 
   const iosNotificationsListElement = (
@@ -611,7 +638,9 @@ function NotificationsScreen() {
       ListFooterComponent={notificationsListFooterComponent}
       contentContainerClassName="px-4 pt-3"
       contentContainerStyle={iosNotificationsListContentStyle}
-      scrollIndicatorInsets={{ bottom: scrollIndicatorBottomInset }}
+      scrollIndicatorInsets={{
+        bottom: isTabRoute ? scrollIndicatorBottomInset : 0,
+      }}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl
@@ -631,6 +660,8 @@ function NotificationsScreen() {
     <>
       <NotificationsHeader
         title={copy.headerTitle}
+        onBackPress={!isTabRoute ? handleBackPress : undefined}
+        backAccessibilityLabel={copy.back}
         onFilterPress={() => setFilterSheetVisible(true)}
         filterActive={activeFilter !== 'all'}
       />

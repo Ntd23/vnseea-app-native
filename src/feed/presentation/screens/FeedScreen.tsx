@@ -3583,7 +3583,6 @@ function FeedScreen() {
           onCreatePostPress={goToCreatePost}
           onCreatePostPressAction={goToCreatePost}
           onPressAvatar={() => navigateToOwnProfile(navigation)}
-          userId={userVm.user?.userId}
           avatarUrl={userVm.user?.avatar}
           userName={userVm.user?.name}
           copy={copy}
@@ -3594,7 +3593,6 @@ function FeedScreen() {
       copy,
       goToCreatePost,
       navigation,
-      userVm.user?.userId,
       userVm.user?.avatar,
       userVm.user?.name,
     ],
