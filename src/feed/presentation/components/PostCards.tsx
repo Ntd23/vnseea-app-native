@@ -457,8 +457,6 @@ export type FeedCopy = {
   seeAll: string;
   createStory: string;
   createStorySubtitle: string;
-  greetingTitle: (name: string) => string;
-  greetingBody: string;
   now: string;
   minutesAgo: (count: number) => string;
   hoursAgo: (count: number) => string;
@@ -573,9 +571,6 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     seeAll: 'Xem tất cả',
     createStory: 'Tạo tin',
     createStorySubtitle: 'Chia sẻ khoảnh khắc của bạn',
-    greetingTitle: name => `Chào buổi tối, ${name}`,
-    greetingBody:
-      'Buổi tối là cách cuộc sống nói rằng bạn đang gần hơn với giấc mơ của mình.',
     now: 'Vừa xong',
     minutesAgo: count => `${count} phút trước`,
     hoursAgo: count => `${count} giờ trước`,
@@ -688,9 +683,6 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     seeAll: 'See all',
     createStory: 'Create story',
     createStorySubtitle: 'Share your moment',
-    greetingTitle: name => `Good evening, ${name}`,
-    greetingBody:
-      'Evening is life saying you are getting closer to your dreams.',
     now: 'Just now',
     minutesAgo: count => `${count} min ago`,
     hoursAgo: count => `${count} h ago`,

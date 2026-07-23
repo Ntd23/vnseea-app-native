@@ -1,7 +1,6 @@
-// Description: Renders the iOS home feed intro composer, greeting, and stories rail.
+// Description: Renders the iOS home feed intro composer and stories rail.
 import React from 'react';
 import {
-  Dimensions,
   Image,
   ScrollView,
   StyleSheet,
@@ -11,36 +10,16 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import {
-  Image as ImageIcon,
-  Plus,
-  X,
-} from 'lucide-react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  Extrapolation,
-  interpolate,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
+import { Plus } from 'lucide-react-native';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import {
-  getHomeGreetingModel,
   HOME_INTRO_FALLBACK_AVATAR,
   type HomeFeedIntroProps,
-  useHomeGreetingDismissal,
   useHomeStoriesRail,
 } from './HomeFeedIntro.shared';
 import { ComposerCard } from './ComposerCard';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const GREETING_DISMISS_DISTANCE = 90;
-const GREETING_DISMISS_VELOCITY = 650;
 
 function GlassSurface({
   children,
@@ -108,144 +87,6 @@ function StoryCardCover({ story }: { story: StoryItem }) {
       resizeMode="cover"
       fadeDuration={0}
     />
-  );
-}
-
-function HomeGreetingCard({
-  userName,
-  avatarUrl,
-  copy,
-  onDismiss,
-}: Pick<HomeFeedIntroProps, 'userName' | 'avatarUrl' | 'copy'> & {
-  onDismiss: () => void;
-}) {
-  const greeting = getHomeGreetingModel({ userName, copy });
-  const dragX = useSharedValue(0);
-
-  const panGesture = React.useMemo(
-    () =>
-      Gesture.Pan()
-        .activeOffsetX([-16, 16])
-        .failOffsetY([-12, 12])
-        .onUpdate(event => {
-          'worklet';
-          dragX.value = event.translationX;
-        })
-        .onEnd(event => {
-          'worklet';
-          const shouldDismiss =
-            Math.abs(event.translationX) > GREETING_DISMISS_DISTANCE ||
-            Math.abs(event.velocityX) > GREETING_DISMISS_VELOCITY;
-
-          if (shouldDismiss) {
-            const direction =
-              event.translationX === 0
-                ? event.velocityX >= 0
-                  ? 1
-                  : -1
-                : event.translationX > 0
-                  ? 1
-                  : -1;
-
-            dragX.value = withTiming(
-              direction * (SCREEN_WIDTH + 40),
-              { duration: 180 },
-              finished => {
-                if (finished) runOnJS(onDismiss)();
-              },
-            );
-          } else {
-            dragX.value = withSpring(0, { damping: 18, stiffness: 220 });
-          }
-        }),
-    [dragX, onDismiss],
-  );
-
-  const greetingAnimatedStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      Math.abs(dragX.value),
-      [0, 140],
-      [1, 0.48],
-      Extrapolation.CLAMP,
-    );
-
-    return {
-      opacity,
-      transform: [{ translateX: dragX.value }],
-    };
-  });
-
-  return (
-    <GestureDetector gesture={panGesture}>
-      <Animated.View style={greetingAnimatedStyle}>
-        <View style={[styles.surface, styles.greetingSurface]}>
-          <HomeAvatar uri={avatarUrl} />
-          <View style={styles.greetingTextWrap}>
-            <Text style={styles.greetingTitle} numberOfLines={2}>
-              {greeting.title}
-            </Text>
-            <Text style={styles.greetingBody} numberOfLines={2}>
-              {greeting.body}
-            </Text>
-            <GlassSurface
-              style={styles.todayChip}
-              fallbackColor="rgba(255, 255, 255, 0.78)"
-              blurAmount={18}
-            >
-              <Text style={styles.todayChipText}>☀︎ {greeting.chipLabel}</Text>
-            </GlassSurface>
-          </View>
-          <View style={styles.greetingSide}>
-            <TouchableOpacity
-              activeOpacity={0.76}
-              onPress={onDismiss}
-              style={styles.greetingCloseTouchable}
-              accessibilityRole="button"
-              accessibilityLabel="Close greeting"
-            >
-              <GlassSurface
-                style={styles.greetingCloseButton}
-                fallbackColor="rgba(255, 255, 255, 0.76)"
-                blurAmount={18}
-              >
-                <X size={17} color="#0f172a" strokeWidth={2.6} />
-              </GlassSurface>
-            </TouchableOpacity>
-            <Text style={styles.greetingEmoji}>{greeting.emoji}</Text>
-          </View>
-        </View>
-      </Animated.View>
-    </GestureDetector>
-  );
-}
-
-function HomeComposerCard({
-  onCreatePostPress,
-  avatarUrl,
-  copy,
-}: Pick<HomeFeedIntroProps, 'onCreatePostPress' | 'avatarUrl' | 'copy'>) {
-  return (
-    <View style={[styles.surface, styles.composerSurface]}>
-      <View style={styles.composerTopRow}>
-        <HomeAvatar uri={avatarUrl} />
-        <TouchableOpacity
-          activeOpacity={0.82}
-          onPress={onCreatePostPress}
-          style={styles.composerInputTouchable}
-        >
-          <GlassSurface
-            style={styles.composerInputGlass}
-            fallbackColor="rgba(255, 255, 255, 0.72)"
-            blurAmount={24}
-          >
-            <Text style={styles.composerPlaceholder} numberOfLines={1}>
-              {copy.composerPlaceholder}
-            </Text>
-            <ImageIcon size={20} color="#0872ff" strokeWidth={2.4} />
-          </GlassSurface>
-        </TouchableOpacity>
-      </View>
-    </View>
   );
 }
 
@@ -339,14 +180,10 @@ export function HomeFeedIntro({
   onCreatePostPress,
   onCreatePostPressAction,
   onPressAvatar,
-  userId,
   avatarUrl,
   userName,
   copy,
 }: HomeFeedIntroProps) {
-  const { isGreetingVisible, onDismissGreeting } =
-    useHomeGreetingDismissal(userId);
-
   return (
     <View>
       <HomeStoriesRail avatarUrl={avatarUrl} copy={copy} />
@@ -358,14 +195,6 @@ export function HomeFeedIntro({
         displayName={userName}
         copy={copy}
       />
-      {isGreetingVisible ? (
-        <HomeGreetingCard
-          avatarUrl={avatarUrl}
-          userName={userName}
-          copy={copy}
-          onDismiss={onDismissGreeting}
-        />
-      ) : null}
     </View>
   );
 }
@@ -393,92 +222,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  greetingSurface: {
-    minHeight: 92,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-  },
-  greetingTextWrap: {
-    flex: 1,
-    marginLeft: 12,
-    paddingRight: 8,
-  },
-  greetingTitle: {
-    color: '#0f172a',
-    fontSize: 14,
-    fontWeight: '800',
-    lineHeight: 18,
-  },
-  greetingBody: {
-    marginTop: 5,
-    color: '#64748b',
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 17,
-  },
-  greetingSide: {
-    alignItems: 'flex-end',
-    alignSelf: 'stretch',
-    justifyContent: 'space-between',
-  },
-  todayChip: {
-    minHeight: 31,
-    alignSelf: 'flex-start',
-    marginTop: 9,
-    borderRadius: 999,
-    paddingHorizontal: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayChipText: {
-    color: '#075ec9',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  greetingEmoji: {
-    fontSize: 27,
-    lineHeight: 31,
-  },
-  greetingCloseTouchable: {
-    borderRadius: 18,
-  },
-  greetingCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  composerSurface: {
-    padding: 13,
-  },
-  composerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  composerInputTouchable: {
-    flex: 1,
-    marginLeft: 11,
-    borderRadius: 23,
-  },
-  composerInputGlass: {
-    minHeight: 46,
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 23,
-    backgroundColor: 'rgba(255, 255, 255, 0.72)',
-    paddingHorizontal: 15,
-  },
-  composerPlaceholder: {
-    flex: 1,
-    color: '#64748b',
-    fontSize: 14,
-    fontWeight: '700',
-    marginRight: 10,
   },
   storiesSurface: {
     paddingTop: 13,
