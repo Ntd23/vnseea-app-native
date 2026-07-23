@@ -56,6 +56,7 @@ function CoverViewerScreen({ route, navigation }: Props) {
   const { updateCover } = useProfileViewModel();
   const [isLoading, setIsLoading] = useState(false);
   const [cropImage, setCropImage] = useState<CropSourceImage | null>(null);
+  const [localCoverUrl, setLocalCoverUrl] = useState(coverUrl);
   const currentUserId = sessionStorage.getSession()?.userId;
   const isOwnProfile = !userId || String(userId) === String(currentUserId);
 
@@ -178,23 +179,46 @@ function CoverViewerScreen({ route, navigation }: Props) {
 
   const handleCroppedCover = useCallback(async (asset: CroppedImageAsset) => {
     setCropImage(null);
-    setIsLoading(true);
 
-    try {
-      const success = await updateCover(asset);
+    const attemptUpload = async (): Promise<void> => {
+      setIsLoading(true);
+      try {
+        const result = await updateCover(asset);
 
-      if (success) {
-        Alert.alert('Thành công', 'Đã cập nhật ảnh bìa!');
-        nav.goBack();
-      } else {
-        Alert.alert('Lỗi', 'Không thể cập nhật ảnh bìa. Vui lòng thử lại.');
+        if (result) {
+          setLocalCoverUrl(result.fullUrl || result.url);
+          Alert.alert('Thành công', 'Đã cập nhật ảnh bìa!', [
+            { text: 'OK', onPress: () => nav.goBack() },
+          ]);
+          return;
+        }
+
+        Alert.alert('Lỗi', 'Không thể cập nhật ảnh bìa. Vui lòng thử lại.', [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Thử lại',
+            onPress: () => {
+              attemptUpload();
+            },
+          },
+        ]);
+      } catch (error) {
+        console.error('[CoverViewer] Upload cropped cover error:', error);
+        Alert.alert('Lỗi', 'Đã xảy ra lỗi khi đổi ảnh bìa.', [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Thử lại',
+            onPress: () => {
+              attemptUpload();
+            },
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error('[CoverViewer] Upload cropped cover error:', error);
-      Alert.alert('Lỗi', 'Đã xảy ra lỗi khi đổi ảnh bìa.');
-    } finally {
-      setIsLoading(false);
-    }
+    };
+
+    await attemptUpload();
   }, [nav, updateCover]);
 
   const handleDownload = useCallback(() => {
@@ -252,7 +276,7 @@ function CoverViewerScreen({ route, navigation }: Props) {
         <GestureDetector gesture={composed}>
           <View style={styles.imageContainer}>
             <Animated.Image
-              source={{ uri: coverUrl }}
+              source={{ uri: localCoverUrl }}
               style={[styles.image, animatedImageStyle]}
               resizeMode="contain"
               onLoadStart={() => console.log('[CoverViewer] Loading...')}

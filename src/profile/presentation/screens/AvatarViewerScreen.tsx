@@ -95,22 +95,46 @@ export default function AvatarViewerScreen() {
     }
   };
 
-  const uploadAvatar = async (asset: CroppedImageAsset) => {
+  const uploadAvatar = async (asset: CroppedImageAsset): Promise<void> => {
     setCropImage(null);
     setIsLoading(true);
 
     try {
-      const success = await updateAvatar(asset.uri);
+      const result = await updateAvatar(asset.uri);
 
-      if (success) {
-        setLocalAvatarUrl(asset.uri);
+      if (result) {
+        setLocalAvatarUrl(result.fullUrl || result.url);
         Alert.alert('Thành công', 'Ảnh đại diện đã được thay đổi');
       } else {
-        Alert.alert('Lỗi', 'Không thể thay đổi ảnh đại diện. Vui lòng thử lại.');
+        Alert.alert(
+          'Lỗi',
+          'Không thể thay đổi ảnh đại diện. Vui lòng thử lại.',
+          [
+            { text: 'Hủy', style: 'cancel' },
+            {
+              text: 'Thử lại',
+              onPress: () => {
+                uploadAvatar(asset);
+              },
+            },
+          ],
+        );
       }
     } catch (error) {
       console.error('[AvatarViewer] Error uploading avatar:', error);
-      Alert.alert('Lỗi', 'Không thể thay đổi ảnh đại diện. Vui lòng thử lại.');
+      Alert.alert(
+        'Lỗi',
+        'Không thể thay đổi ảnh đại diện. Vui lòng thử lại.',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Thử lại',
+            onPress: () => {
+              uploadAvatar(asset);
+            },
+          },
+        ],
+      );
     } finally {
       setIsLoading(false);
     }

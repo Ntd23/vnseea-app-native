@@ -13,6 +13,23 @@ $response_data   = array(
     'api_status' => 400
 );
 
+if (
+    isset($_POST['profile_media_contract'])
+    && $_POST['profile_media_contract'] === 'canonical_crop_v1'
+) {
+    require_once 'assets/includes/vnseea_profile_media.php';
+    $response_data = VNSEEA_HandleCanonicalProfileMediaRequest(
+        $_FILES,
+        $wo['user']['user_id']
+    );
+    $http_status = !empty($response_data['http_status'])
+        ? (int) $response_data['http_status']
+        : ((string) $response_data['api_status'] === '200' ? 200 : 500);
+    unset($response_data['http_status']);
+    http_response_code($http_status);
+    return;
+}
+
 $user_data = array();
 if (!empty($_POST)) {
 	$user_data = $_POST;

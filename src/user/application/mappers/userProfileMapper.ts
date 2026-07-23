@@ -113,6 +113,7 @@ export function mapUserProfile(
     relationshipId: firstString(record, ['relationship_id']),
     coverUrl: normalizeRawUrl(firstString(record, ['cover']), webBaseUrl),
     avatarPostId: positiveEntityId(record, ['avatar_post_id', 'avatarPostId']),
+    coverPostId: positiveEntityId(record, ['cover_post_id', 'coverPostId']),
     facebook: firstString(record, ['facebook']),
     twitter: firstString(record, ['twitter']),
     linkedin: firstString(record, ['linkedin']),

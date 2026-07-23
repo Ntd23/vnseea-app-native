@@ -7,9 +7,16 @@ import {
 describe('updateAvatarAndShareStory', () => {
   const timestamp = 1_789_200_000_000;
   const avatarUri = 'content://photos/new-avatar';
+  const profileMedia = {
+    kind: 'avatar' as const,
+    url: 'https://cdn.example.com/avatar.jpg',
+    fullUrl: 'https://cdn.example.com/avatar_full.jpg',
+    postId: '42',
+    postType: 'profile_picture' as const,
+  };
 
   it('uses the same avatar image for the profile upload and Story upload', async () => {
-    const uploadAvatar = jest.fn().mockResolvedValue(true);
+    const uploadAvatar = jest.fn().mockResolvedValue(profileMedia);
     const createStory = jest
       .fn()
       .mockResolvedValue({ storyId: 'story-42', message: 'created' });
@@ -47,7 +54,11 @@ describe('updateAvatarAndShareStory', () => {
         ],
       }),
     );
-    expect(result).toEqual({ avatarUpdated: true, storyCreated: true });
+    expect(result).toEqual({
+      avatarUpdated: true,
+      storyCreated: true,
+      profileMedia,
+    });
   });
 
   it('does not create a Story when updating the avatar fails', async () => {
@@ -56,7 +67,7 @@ describe('updateAvatarAndShareStory', () => {
 
     await expect(
       updateAvatarAndShareStory(avatarUri, {
-        uploadAvatar: jest.fn().mockResolvedValue(false),
+        uploadAvatar: jest.fn().mockResolvedValue(null),
         createStory,
         emitStory,
         now: () => timestamp,
@@ -71,7 +82,7 @@ describe('updateAvatarAndShareStory', () => {
     const storyError = new Error('story upload failed');
 
     const result = await updateAvatarAndShareStory(avatarUri, {
-      uploadAvatar: jest.fn().mockResolvedValue(true),
+      uploadAvatar: jest.fn().mockResolvedValue(profileMedia),
       createStory: jest.fn().mockRejectedValue(storyError),
       emitStory: jest.fn(),
       now: () => timestamp,
@@ -80,6 +91,7 @@ describe('updateAvatarAndShareStory', () => {
     expect(result).toEqual({
       avatarUpdated: true,
       storyCreated: false,
+      profileMedia,
       storyError,
     });
   });

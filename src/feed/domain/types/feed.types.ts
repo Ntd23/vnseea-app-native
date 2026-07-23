@@ -29,12 +29,17 @@ export interface FeedPostPermissions {
   canShare: boolean;
 }
 
+export type ProfileMediaActivity =
+  | 'updated_profile_picture'
+  | 'updated_cover_photo';
+
 export interface FeedPostPermissionCarrier {
   permissions?: FeedPostPermissions;
   isAnonymous?: boolean;
   privacyContract?: ContentAudienceWireContract;
   sharedPostId?: string;
   sharedPost?: SharedPostPreviewModel;
+  activity?: ProfileMediaActivity;
 }
 
 export interface PostLinkPreview {

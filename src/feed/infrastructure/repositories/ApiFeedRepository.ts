@@ -61,6 +61,7 @@ import type {
   SharedPostPreviewModel,
 } from '../../domain/types/feed.types';
 import { buildSharedPostPreviewModel } from '../../application/sharing/sharedPostPreview';
+import { mapProfileMediaActivity } from '../../application/mappers/profileMediaActivity';
 import {
   CONTENT_AUDIENCE_CONTRACT,
   audienceFromWire,
@@ -992,6 +993,7 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     kind: 'text',
     id: postId,
     permissions: presentation.permissions,
+    activity: mapProfileMediaActivity(readString(raw, 'postType', 'post_type')),
     caption,
     mentionNames: readPostMentionNames(raw),
     photos,
