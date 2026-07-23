@@ -31,6 +31,22 @@ const EMPTY_ADDRESS_FORM: DeliveryAddressInput = {
   address: '',
 };
 
+function createEmptyAddressForm(
+  profile: UserProfile | null,
+): DeliveryAddressInput {
+  const userFullName = profile
+    ? [profile.firstName, profile.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || profile.name
+    : '';
+  return {
+    ...EMPTY_ADDRESS_FORM,
+    name: userFullName || '',
+    phone: profile?.phoneNumber || '',
+  };
+}
+
 function messageFromError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -53,6 +69,9 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
   const [step, setStep] = useState<CheckoutStep>('confirm');
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [isDeletingAddressId, setIsDeletingAddressId] = useState<
+    string | null
+  >(null);
   const [isPaying, setIsPaying] = useState(false);
   const [isUpdatingQuantity, setIsUpdatingQuantity] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -113,17 +132,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
         setStep(options.initialStep ?? 'payment');
       } else {
         setSelectedAddressId('');
-        const userFullName = nextUserProfile
-          ? [nextUserProfile.firstName, nextUserProfile.lastName]
-              .filter(Boolean)
-              .join(' ')
-              .trim() || nextUserProfile.name
-          : '';
-        setAddressForm({
-          ...EMPTY_ADDRESS_FORM,
-          name: userFullName || '',
-          phone: nextUserProfile?.phoneNumber || '',
-        });
+        setAddressForm(createEmptyAddressForm(nextUserProfile));
         setStep(options.initialStep ?? 'confirm');
       }
     } catch (caughtError) {
@@ -157,20 +166,63 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
 
   const createNewAddress = useCallback(() => {
     setSelectedAddressId('');
-    const userFullName = currentUserProfile
-      ? [currentUserProfile.firstName, currentUserProfile.lastName]
-          .filter(Boolean)
-          .join(' ')
-          .trim() || currentUserProfile.name
-      : '';
-    setAddressForm({
-      ...EMPTY_ADDRESS_FORM,
-      name: userFullName || '',
-      phone: currentUserProfile?.phoneNumber || '',
-    });
+    setAddressForm(createEmptyAddressForm(currentUserProfile));
     setAddressError(null);
     setStep('confirm');
   }, [currentUserProfile]);
+
+  const editAddress = useCallback((address: DeliveryAddress) => {
+    setAddressForm(address);
+    setAddressError(null);
+    setStep('confirm');
+  }, []);
+
+  const deleteAddress = useCallback(
+    async (addressId: string) => {
+      if (!addressId || isDeletingAddressId) return false;
+
+      setIsDeletingAddressId(addressId);
+      setAddressError(null);
+      try {
+        const nextAddresses = await repository.deleteAddress(addressId);
+        setAddresses(nextAddresses);
+
+        const deletedSelectedAddress = selectedAddressId === addressId;
+        const deletedEditedAddress = addressForm.id === addressId;
+        if (nextAddresses.length === 0) {
+          setSelectedAddressId('');
+          setAddressForm(createEmptyAddressForm(currentUserProfile));
+          setStep('confirm');
+        } else if (deletedSelectedAddress) {
+          const fallbackAddress = nextAddresses[0];
+          setSelectedAddressId(fallbackAddress.id);
+          setAddressForm(fallbackAddress);
+          setStep('payment');
+        } else if (deletedEditedAddress) {
+          const currentSelection =
+            nextAddresses.find(
+              address => address.id === selectedAddressId,
+            ) ?? nextAddresses[0];
+          setAddressForm(currentSelection);
+          setStep('payment');
+        }
+        return true;
+      } catch (caughtError) {
+        setAddressError(
+          messageFromError(caughtError, 'Không thể xóa địa chỉ.'),
+        );
+        return false;
+      } finally {
+        setIsDeletingAddressId(null);
+      }
+    },
+    [
+      addressForm.id,
+      currentUserProfile,
+      isDeletingAddressId,
+      selectedAddressId,
+    ],
+  );
 
   const saveAddress = useCallback(async () => {
     const requiredFields: Array<keyof DeliveryAddressInput> = [
@@ -302,6 +354,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     confirmVisible,
     error,
     isLoading,
+    isDeletingAddressId,
     isPaying,
     isSavingAddress,
     isUpdatingQuantity,
@@ -318,6 +371,8 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     closeConfirm: () => setConfirmVisible(false),
     closeSuccess: () => setSuccessVisible(false),
     createNewAddress,
+    deleteAddress,
+    editAddress,
     load,
     openConfirm,
     pay,

@@ -156,6 +156,14 @@ export function createCheckoutRepository(): CheckoutRepository {
       return getAddresses();
     },
 
+    async deleteAddress(addressId: string): Promise<DeliveryAddress[]> {
+      await apiBridge.post<AddressResponse>(apiRoutes.user.address, {
+        type: 'delete',
+        id: addressId,
+      });
+      return getAddresses();
+    },
+
     async changeQuantity(
       productId: number,
       quantity: number,

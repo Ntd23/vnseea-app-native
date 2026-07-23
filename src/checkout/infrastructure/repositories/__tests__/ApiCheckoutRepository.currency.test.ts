@@ -61,4 +61,40 @@ describe('ApiCheckoutRepository product currencies', () => {
       { currencyCode: 'USD', currencySymbol: '$', amount: 20 },
     ]);
   });
+
+  it('deletes an owned address and reloads the remaining addresses', async () => {
+    post
+      .mockResolvedValueOnce({
+        api_status: 200,
+        message: 'address successfully deleted',
+      })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [
+          {
+            id: '8',
+            name: 'Nguyễn Văn A',
+            phone: '0900000000',
+            country: 'Việt Nam',
+            city: 'Hà Nội',
+            zip: '10000',
+            address: 'Số 8',
+          },
+        ],
+      });
+
+    const addresses = await createCheckoutRepository().deleteAddress('9');
+
+    expect(post).toHaveBeenNthCalledWith(1, 'address', {
+      type: 'delete',
+      id: '9',
+    });
+    expect(post).toHaveBeenNthCalledWith(2, 'address', {
+      type: 'get',
+      limit: 50,
+    });
+    expect(addresses).toEqual([
+      expect.objectContaining({ id: '8', address: 'Số 8' }),
+    ]);
+  });
 });
