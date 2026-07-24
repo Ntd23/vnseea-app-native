@@ -32,7 +32,7 @@ export function FeedSourceFilterBar<T extends string>({
       <View
         className={
           isHeader
-            ? 'min-h-[66px] flex-row items-center justify-around bg-white px-0'
+            ? 'h-[66px] flex-row items-center justify-around bg-white px-0'
             : 'min-h-[50px] flex-row items-center justify-around rounded-[16px] border border-[#e3e8f2] bg-white px-4 shadow-sm'
         }
       >
@@ -46,7 +46,7 @@ export function FeedSourceFilterBar<T extends string>({
                 activeOpacity={0.75}
                 className={
                   isHeader
-                    ? 'h-full flex-1 items-center justify-center'
+                    ? 'h-[66px] flex-1 items-center justify-center'
                     : 'h-10 flex-1 items-center justify-center'
                 }
                 onPress={() => {

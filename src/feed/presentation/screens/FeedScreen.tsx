@@ -3818,6 +3818,7 @@ function FeedScreen() {
               translateDistance={FEED_FILTER_BAR_HEIGHT}
             >
               <FeedFilterTabs
+                variant="header"
                 activeSource={activeFeedSource}
                 onChangeSource={setActiveFeedSource}
               />

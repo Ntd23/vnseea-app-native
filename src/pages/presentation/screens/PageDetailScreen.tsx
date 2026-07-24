@@ -105,7 +105,6 @@ import PageShareActionSheet from '../components/PageShareActionSheet';
 import PageDetailMenuActionSheet from '../components/PageDetailMenuActionSheet';
 import { PagePostMenuActionSheet } from '../components/PagePostMenuActionSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedFilterTabs } from '../../../feed/presentation/components/FeedFilterTabs';
 
 type PageDetailProps = NativeStackScreenProps<
   RootStackParamList,
@@ -1491,9 +1490,13 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     vm.page.adminInfo && typeof vm.page.adminInfo === 'object'
       ? (vm.page.adminInfo as Record<string, unknown>)
       : null;
+  const isPageOwner = Boolean(
+    currentUserId &&
+      vm.page.ownerId &&
+      String(currentUserId) === String(vm.page.ownerId),
+  );
   const canManagePage =
-    Boolean(currentUserId && vm.page.ownerId && String(currentUserId) === String(vm.page.ownerId)) ||
-    Boolean(adminInfo && Object.keys(adminInfo).length > 0);
+    isPageOwner || Boolean(adminInfo && Object.keys(adminInfo).length > 0);
 
   const language = useAppLanguage();
   const copy = PAGE_DETAIL_UI_COPY[language] || PAGE_DETAIL_UI_COPY.vi;
@@ -1867,22 +1870,20 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         copy={copy}
       />
       <InvitePageRow label={copy.inviteRow} onPress={() => setInviteVisible(true)} />
-      <ComposerCard
-        onPress={handleCreatePost}
-        onPressAction={handleCreatePost}
-        avatarUrl={vm.page.avatar}
-        displayName={vm.page.pageTitle || 'Quản trị'}
-        copy={postCardCopy}
-      />
+      {isPageOwner ? (
+        <ComposerCard
+          onPress={handleCreatePost}
+          onPressAction={handleCreatePost}
+          avatarUrl={vm.page.avatar}
+          displayName={vm.page.pageTitle || 'Quản trị'}
+          copy={postCardCopy}
+        />
+      ) : null}
       {vm.error ? (
         <View className="mx-4 mt-3 rounded-2xl bg-red-50 px-4 py-3">
           <Text className="text-caption-primary text-red-600">{vm.error}</Text>
         </View>
       ) : null}
-      <FeedFilterTabs
-        activeSource={vm.activeTab}
-        onChangeSource={vm.setActiveTab}
-      />
       <PostSearchBox
         value={vm.searchQuery}
         placeholder="Tìm kiếm các bài viết"
