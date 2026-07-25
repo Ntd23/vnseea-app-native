@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Bookmark, EyeOff, Flag, Trash2, X } from 'lucide-react-native';
 import type { FeedPost } from '../../../feed/domain/types/feed.types';
+import { useSafeBottomPadding } from '../layout/useSafeBottomLayout';
 
 interface PostMenuActionSheetProps {
   visible: boolean;
@@ -37,6 +38,7 @@ export function PostMenuActionSheet({
 }: PostMenuActionSheetProps) {
   const [loadingId, setLoadingId] = useState<ActionId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const safeBottomPadding = useSafeBottomPadding(24);
 
   const runAction = async (
     actionId: ActionId,
@@ -71,7 +73,10 @@ export function PostMenuActionSheet({
         style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
       />
 
-      <View className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pb-6 pt-4 shadow-lg">
+      <View
+        className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pt-4 shadow-lg"
+        style={{ paddingBottom: safeBottomPadding }}
+      >
         <View className="mb-4 flex-row items-center justify-between">
           <Text className="text-xl font-bold text-gray-900">
             Tùy chọn bài viết

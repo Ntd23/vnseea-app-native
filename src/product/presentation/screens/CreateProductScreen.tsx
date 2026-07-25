@@ -58,6 +58,10 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
+import {
+  useFixedBottomLayout,
+  useSafeBottomPadding,
+} from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -314,6 +318,8 @@ function BottomSheetSelector<T>({
   onSelect: (value: T) => void;
   onClose: () => void;
 }) {
+  const safeBottomPadding = useSafeBottomPadding(40);
+
   return (
     <Modal
       transparent
@@ -328,7 +334,7 @@ function BottomSheetSelector<T>({
       >
         <TouchableOpacity
           activeOpacity={1}
-          style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 40, paddingTop: 20, maxHeight: '60%' }}
+          style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: safeBottomPadding, paddingTop: 20, maxHeight: '60%' }}
         >
           {/* Handle bar indicator */}
           <View style={{ height: 6, width: 48, borderRadius: 99, backgroundColor: '#e2e8f0', alignSelf: 'center', marginBottom: 16 }} />
@@ -410,6 +416,10 @@ function formatCurrencyOption(code: string, symbol: unknown, fallback?: string) 
 
 export default function CreateProductScreen() {
   const navigation = useNavigation<CreateProductNav>();
+  const bottomLayout = useFixedBottomLayout({
+    minimumFooterBottomPadding: Platform.OS === 'ios' ? 28 : 16,
+    contentBottomPadding: 120,
+  });
   const route = useRoute<any>();
   const editingProduct = route.params?.product;
   const language = useAppLanguage();
@@ -798,7 +808,7 @@ export default function CreateProductScreen() {
       >
         <ScrollView
           style={{ flex: 1, backgroundColor: '#ffffff' }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 10, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 10, paddingBottom: bottomLayout.contentBottomPadding }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -1024,7 +1034,7 @@ export default function CreateProductScreen() {
             backgroundColor: '#ffffff',
             paddingHorizontal: 20,
             paddingTop: 12,
-            paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+            paddingBottom: bottomLayout.footerBottomPadding,
             borderTopWidth: 1,
             borderTopColor: '#f1f5f9',
             flexDirection: 'row',

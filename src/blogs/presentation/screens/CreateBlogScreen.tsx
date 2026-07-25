@@ -34,6 +34,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 import { createBlogsRepository } from '../../infrastructure/repositories/ApiBlogsRepository';
 import type { BlogCategoryOption } from '../../domain/types/blogs.types';
 import type { BlogCreateData } from '../../domain/repositories/BlogsRepository';
+import { useFixedBottomLayout } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type CreateBlogNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -85,6 +86,10 @@ function EditorTool({
 
 function CreateBlogScreen() {
   const navigation = useNavigation<CreateBlogNav>();
+  const bottomLayout = useFixedBottomLayout({
+    minimumFooterBottomPadding: 0,
+    contentBottomPadding: 96,
+  });
   const route = useRoute();
   const params = route.params as { blogId?: string } | undefined;
   const editBlogId = params?.blogId;
@@ -316,7 +321,7 @@ function CreateBlogScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 96, paddingTop: 16 }}
+            contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: bottomLayout.contentBottomPadding, paddingTop: 16 }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -443,7 +448,7 @@ function CreateBlogScreen() {
             </View>
           </ScrollView>
 
-          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 72, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF', paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 72 + bottomLayout.footerBottomPadding, paddingBottom: bottomLayout.footerBottomPadding, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF', paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <TouchableOpacity activeOpacity={0.82} onPress={() => navigation.goBack()} style={{ minHeight: 44, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <ArrowLeft size={18} color="#64748B" />
               <Text style={{ color: '#64748B', fontSize: 14, fontWeight: '700' }}>Quay lại</Text>

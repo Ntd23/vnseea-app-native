@@ -63,6 +63,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 import type {
   FeedPollPost,
   FeedPost,
@@ -1403,6 +1404,7 @@ function InviteModal({
 }
 
 function PageDetailScreen({ navigation, route }: PageDetailProps) {
+  const editSheetBottomPadding = useSafeBottomPadding(24);
   const vm = usePageDetailViewModel(route.params.page);
   const isFocused = useIsFocused();
   const didFocusRef = useRef(false);
@@ -2115,7 +2117,10 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
           onPress={handleCloseEditPost}
           style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.45)' }}
         />
-        <View className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pb-6 pt-4">
+        <View
+          className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pt-4"
+          style={{ paddingBottom: editSheetBottomPadding }}
+        >
           <Text className="text-xl font-bold text-slate-900">{copy.editPostTitle}</Text>
           <TextInput
             value={editPostText}

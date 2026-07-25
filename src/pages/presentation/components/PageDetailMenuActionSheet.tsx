@@ -22,6 +22,7 @@ import {
 import { Flag, Settings, X } from 'lucide-react-native';
 import { usePagesCopy } from '../../application/i18n/pagesCopy';
 import type { PagesItem } from '../../domain/types/pages.types';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 interface PageDetailMenuActionSheetProps {
   visible: boolean;
@@ -43,6 +44,7 @@ export function PageDetailMenuActionSheet({
   const copy = usePagesCopy();
   const [loadingId, setLoadingId] = useState<'report' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const safeBottomPadding = useSafeBottomPadding(32);
 
   const handleReport = async () => {
     if (!page) return;
@@ -77,8 +79,8 @@ export function PageDetailMenuActionSheet({
 
       {/* Action Sheet */}
       <View
-        className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pb-6 pt-4 shadow-lg"
-        style={{ paddingBottom: 32 }}
+        className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pt-4 shadow-lg"
+        style={{ paddingBottom: safeBottomPadding }}
       >
         {/* Header */}
         <View className="mb-4 flex-row items-center justify-between">

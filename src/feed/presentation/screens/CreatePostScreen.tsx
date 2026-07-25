@@ -31,7 +31,6 @@ import {
   TouchableWithoutFeedback,
   useWindowDimensions,
   View,
-  KeyboardAvoidingView,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
 import {
@@ -79,6 +78,7 @@ import { AudioPlayer } from '../../../shared-kernel/presentation/components/Audi
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import CreateActionSheet, {
   CREATE_ACTIONS,
 } from '../../../shared-kernel/presentation/components/CreateActionSheet';
@@ -2380,10 +2380,7 @@ export function CreatePostModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
+      <KeyboardSafeView style={{ flex: 1 }}>
         <Pressable
           style={{
             flex: 1,
@@ -2835,7 +2832,7 @@ export function CreatePostModal({
           onCancel={() => setDiscardDialogVisible(false)}
           onConfirm={handleConfirmDiscard}
         />
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
     </Modal>
   );
 }

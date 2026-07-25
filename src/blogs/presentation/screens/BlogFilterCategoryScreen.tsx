@@ -43,6 +43,7 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getBlogsCopy } from '../../application/i18n/blogsCopy';
+import { useFixedBottomLayout } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type BlogFilterNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -91,6 +92,10 @@ const sortOptions = [
 
 function BlogFilterCategoryScreen() {
   const navigation = useNavigation<BlogFilterNav>();
+  const bottomLayout = useFixedBottomLayout({
+    minimumFooterBottomPadding: 20,
+    contentBottomPadding: 112,
+  });
   const route = useRoute();
   const params = route.params as { currentCategory?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined;
   const currentCategory = params?.currentCategory;
@@ -141,7 +146,10 @@ function BlogFilterCategoryScreen() {
 
       <ScrollView
         className="flex-1"
-        contentContainerClassName="px-4 pb-28 pt-5"
+        contentContainerClassName="px-4 pt-5"
+        contentContainerStyle={{
+          paddingBottom: bottomLayout.contentBottomPadding,
+        }}
         showsVerticalScrollIndicator={false}
       >
         <Text className="text-heading">Khám phá chủ đề phù hợp</Text>
@@ -237,7 +245,10 @@ function BlogFilterCategoryScreen() {
         </View>
       </ScrollView>
 
-      <View className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pb-5 pt-3">
+      <View
+        className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pt-3"
+        style={{ paddingBottom: bottomLayout.footerBottomPadding }}
+      >
         <TouchableOpacity
           className="btn-primary min-h-[52px]"
           activeOpacity={0.86}

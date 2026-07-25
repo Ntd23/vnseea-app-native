@@ -62,6 +62,7 @@ import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCo
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { GroupPostMenuActionSheet } from './GroupPostMenuActionSheet';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type GroupDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type GroupDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.GROUP_DETAIL>;
@@ -226,6 +227,7 @@ function InfoRow({
 }
 
 function GroupDetailScreen() {
+  const editSheetBottomPadding = useSafeBottomPadding(24);
   const language = useAppLanguage();
   const copy = GROUP_DETAIL_COPY[language] ?? GROUP_DETAIL_COPY.vi;
   const postCopy = FEED_COPY[language] ?? FEED_COPY.vi;
@@ -913,7 +915,10 @@ function GroupDetailScreen() {
           onPress={handleCloseEditPost}
           style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.45)' }}
         />
-        <View className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pb-6 pt-4">
+        <View
+          className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pt-4"
+          style={{ paddingBottom: editSheetBottomPadding }}
+        >
           <Text className="text-xl font-bold text-slate-900">{copy.editPostTitle}</Text>
           <TextInput
             value={editPostText}

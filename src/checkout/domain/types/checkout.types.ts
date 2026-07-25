@@ -7,6 +7,7 @@ export interface CheckoutItem {
   image: string;
   price: number;
   quantity: number;
+  maxQuantity: number;
   total: number;
   currencyCode: string;
   currencySymbol: string;

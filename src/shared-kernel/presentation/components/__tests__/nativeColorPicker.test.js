@@ -45,27 +45,18 @@ describe('native iOS label color picker', () => {
     expect(androidSource).toContain('PRESET_COLORS');
   });
 
-  it('keeps both message label creation flows wired to the selected color', () => {
-    const messageSource = read(
-      'src/messages/presentation/screens/MessageScreen.tsx',
+  it('keeps message label management wired to the selected color', () => {
+    const messageLabelsSource = read(
+      'src/messages/presentation/screens/MessageLabelsScreen.tsx',
     );
-    const pickerUsages = messageSource.match(/<ColorPicker/g) ?? [];
+    const pickerUsages = messageLabelsSource.match(/<ColorPicker/g) ?? [];
 
-    expect(pickerUsages).toHaveLength(3);
-    expect(messageSource.match(/value=\{labelColor\}/g) ?? []).toHaveLength(3);
-    expect(messageSource.match(/onChange=\{setLabelColor\}/g) ?? []).toHaveLength(
-      3,
-    );
-    expect(messageSource).toMatch(
-      /Platform\.OS === 'ios'[\s\S]*?<ColorPicker[\s\S]*?value=\{labelColor\}/,
-    );
-    expect(messageSource).toContain(
-      "Platform.OS !== 'ios' && showColorPicker",
-    );
-    expect(messageSource).toContain('onCreate(name, color)');
-    expect(messageSource).toContain('labelName.trim(),');
-    expect(messageSource).toContain('labelColor,');
-    expect(messageSource).toContain('Array.from(selectedUserIds)');
+    expect(pickerUsages).toHaveLength(1);
+    expect(messageLabelsSource).toContain('value={labelColor}');
+    expect(messageLabelsSource).toContain('onChange={setLabelColor}');
+    expect(messageLabelsSource).toContain('repository.createLabel(');
+    expect(messageLabelsSource).toContain('normalizedName,');
+    expect(messageLabelsSource).toContain('labelColor.toUpperCase()');
   });
 
   it('adds both native source files to the VNSEEA target', () => {

@@ -17,6 +17,7 @@ type RawProduct = {
   name?: unknown;
   price?: unknown;
   units?: unknown;
+  stock_units?: unknown;
   currency?: unknown;
   currency_symbol?: unknown;
   currency_code?: unknown;
@@ -85,6 +86,10 @@ function mapAddress(raw: RawAddress): DeliveryAddress {
 
 function mapCheckoutItem(raw: RawProduct): CheckoutItem {
   const quantity = Math.max(1, numberValue(raw.units) || 1);
+  const maxQuantity = Math.max(
+    quantity,
+    numberValue(raw.stock_units) || quantity,
+  );
   const price = numberValue(raw.price);
   const productId = numberValue(raw.product_id) || numberValue(raw.id);
   const sellerUserId =
@@ -104,6 +109,7 @@ function mapCheckoutItem(raw: RawProduct): CheckoutItem {
     image: stringValue(raw.images?.[0]?.image),
     price,
     quantity,
+    maxQuantity,
     total: price * quantity,
     currencyCode,
     currencySymbol,

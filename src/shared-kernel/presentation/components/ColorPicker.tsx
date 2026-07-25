@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Check, Sliders, X } from 'lucide-react-native';
 import { APP_BRAND_COLOR } from '../theme/appColors';
+import { useSafeBottomPadding } from '../layout/useSafeBottomLayout';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -110,6 +111,7 @@ interface ColorCustomizeModalProps {
 }
 
 function ColorCustomizeModal({ visible, color, onChange, onClose }: ColorCustomizeModalProps) {
+  const safeBottomPadding = useSafeBottomPadding(40);
   const PICKER_W = SCREEN_W - 80;
   const PICKER_H = PICKER_W * 0.6;
   const HUE_TRACK_W = SCREEN_W - 80;
@@ -263,7 +265,12 @@ function ColorCustomizeModal({ visible, color, onChange, onClose }: ColorCustomi
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={styles.modalContent}>
+        <View
+          style={[
+            styles.modalContent,
+            { paddingBottom: safeBottomPadding },
+          ]}
+        >
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Tùy chỉnh màu</Text>
             <TouchableOpacity style={styles.modalClose} onPress={onClose}>

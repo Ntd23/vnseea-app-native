@@ -24,6 +24,7 @@ describe('ApiCheckoutRepository product currencies', () => {
           name: 'Sản phẩm VND',
           price: '125000',
           units: '2',
+          stock_units: '7',
           currency_code: 'VND',
           currency_symbol: '₫',
         },
@@ -44,6 +45,7 @@ describe('ApiCheckoutRepository product currencies', () => {
       expect.objectContaining({
         productId: 11,
         price: 125000,
+        maxQuantity: 7,
         total: 250000,
         currencyCode: 'VND',
         currencySymbol: '₫',
