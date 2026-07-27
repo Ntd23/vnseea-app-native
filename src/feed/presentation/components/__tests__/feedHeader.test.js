@@ -160,22 +160,26 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).not.toContain('styles.staticHeaderContainer');
   });
 
-  it('keeps Android feed chrome below the status bar without double-padding', () => {
+  it('keeps Android feed chrome below the status bar with one runtime inset', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
-    expect(feedScreenSource).toContain('function getFeedChromeTopInset(rawTopInset: number)');
-    expect(feedScreenSource).toContain('return FEED_IS_ANDROID ? 0 : rawTopInset');
-    expect(feedScreenSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
+    expect(feedScreenSource).not.toContain(
+      'function getFeedChromeTopInset(rawTopInset: number)',
+    );
+    expect(feedScreenSource).not.toContain(
+      'return FEED_IS_ANDROID ? 0 : rawTopInset',
+    );
+    expect(feedScreenSource).toContain('const topInset = rawTopInset');
     expect(feedScreenSource).toContain('top={topInset}');
     expect(feedScreenSource).toContain('translucent={false}');
     expect(feedScreenSource).toContain("StatusBar.setBarStyle('light-content', false)");
     expect(feedScreenSource).toContain('StatusBar.setBackgroundColor(APP_BRAND_COLOR, false)');
     expect(feedScreenSource).toContain('StatusBar.setTranslucent(false)');
-    expect(feedScreenSource).toContain(
-      "barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}",
+    expect(feedScreenSource).toMatch(
+      /barStyle=\{\s*Platform\.OS === 'android'\s*\? 'light-content'\s*: 'dark-content'\s*\}/,
     );
-    expect(feedScreenSource).toContain(
-      'backgroundColor={Platform.OS === \'android\' ? APP_BRAND_COLOR : \'#FFFFFF\'}',
+    expect(feedScreenSource).toMatch(
+      /backgroundColor=\{\s*Platform\.OS === 'android'\s*\? APP_BRAND_COLOR\s*: '#FFFFFF'\s*\}/,
     );
     expect(feedScreenSource).toContain('const feedHeaderOverlayHeight = feedRefreshProgressViewOffset');
     expect(feedScreenSource).toContain('const newPostsButtonTop = feedHeaderOverlayHeight + 12');
