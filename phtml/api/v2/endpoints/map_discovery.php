@@ -1278,32 +1278,161 @@ function Wo_ApiMapDiscoveryReverseGeocode() {
         'language' => $language,
         'region' => $country
     ));
-    if (!empty($google['errors'])) {
-        return $google;
-    }
-    if (($google['status'] ?? '') !== 'OK' || empty($google['results'][0])) {
-        return Wo_ApiMapDiscoveryError('address_not_found', 'Google Maps could not find an address for this location.', 404);
+    $google_error = !empty($google['errors']) ? $google : null;
+    $exact_geocode_place = null;
+    $coarse_geocode_place = null;
+
+    if (
+        empty($google['errors']) &&
+        ($google['status'] ?? '') === 'OK' &&
+        !empty($google['results']) &&
+        is_array($google['results'])
+    ) {
+        foreach ($google['results'] as $result) {
+            if (empty($result) || !is_array($result)) {
+                continue;
+            }
+
+            $payload = Wo_ApiMapDiscoveryAddressPayloadFromGeocodeResult($result);
+            $types = !empty($result['types']) && is_array($result['types']) ? array_values($result['types']) : array();
+            $is_plus_code = in_array('plus_code', $types, true);
+            $area_parts = array_values(array_unique(array_filter(array(
+                !empty($payload['ward']) ? trim((string) $payload['ward']) : '',
+                !empty($payload['district']) ? trim((string) $payload['district']) : '',
+                !empty($payload['city']) ? trim((string) $payload['city']) : '',
+                !empty($payload['country']) ? trim((string) $payload['country']) : ''
+            ))));
+            $area_address = implode(', ', $area_parts);
+            $address = !empty($payload['address']) ? trim((string) $payload['address']) : '';
+
+            // A Plus Code is technically valid but difficult for users to
+            // recognise. Prefer the surrounding ward/district and continue
+            // to the nearby-place fallback below for a friendlier label.
+            if (($address === '' || $is_plus_code) && $area_address !== '') {
+                $address = $area_address;
+            }
+            if ($address === '') {
+                continue;
+            }
+
+            $place = array(
+                'source' => 'google_geocode',
+                'place_id' => !empty($payload['place_id']) ? $payload['place_id'] : '',
+                'name' => $address,
+                'address' => $address,
+                'lat' => isset($payload['lat']) && is_numeric($payload['lat']) ? (float) $payload['lat'] : (float) $latitude,
+                'lng' => isset($payload['lng']) && is_numeric($payload['lng']) ? (float) $payload['lng'] : (float) $longitude,
+                'city' => !empty($payload['city']) ? $payload['city'] : '',
+                'district' => !empty($payload['district']) ? $payload['district'] : '',
+                'ward' => !empty($payload['ward']) ? $payload['ward'] : '',
+                'country' => !empty($payload['country']) ? $payload['country'] : '',
+                'types' => $types,
+                'is_nearby' => 0,
+                'distance_meters' => 0
+            );
+
+            if (!$is_plus_code) {
+                $exact_geocode_place = $place;
+                break;
+            }
+            if ($coarse_geocode_place === null) {
+                $coarse_geocode_place = $place;
+            }
+        }
     }
 
-    $result = $google['results'][0];
-    $location = !empty($result['geometry']['location']) && is_array($result['geometry']['location'])
-        ? $result['geometry']['location']
-        : array();
-    $place_id = !empty($result['place_id']) ? $result['place_id'] : '';
-    $address = !empty($result['formatted_address']) ? $result['formatted_address'] : '';
+    // Rural roads, new developments and GPS points between buildings may not
+    // have a street-address result. In that case return the nearest named
+    // Google place so the user can still recognise and confirm the pin.
+    $nearby = Wo_ApiMapDiscoveryGoogleGet('place/nearbysearch/json', array(
+        'location' => number_format($latitude, 7, '.', '') . ',' . number_format($longitude, 7, '.', ''),
+        'radius' => 500,
+        'language' => $language
+    ), 8000, 3500);
+    $nearby_error = !empty($nearby['errors']) ? $nearby : null;
+    $nearby_places = array();
 
-    return array(
-        'api_status' => 200,
-        'place' => array(
-            'source' => 'google',
-            'place_id' => $place_id,
-            'name' => $address,
-            'address' => $address,
-            'lat' => isset($location['lat']) ? (float) $location['lat'] : (float) $latitude,
-            'lng' => isset($location['lng']) ? (float) $location['lng'] : (float) $longitude,
-            'types' => !empty($result['types']) && is_array($result['types']) ? $result['types'] : array()
-        )
-    );
+    if (
+        empty($nearby['errors']) &&
+        ($nearby['status'] ?? '') === 'OK' &&
+        !empty($nearby['results']) &&
+        is_array($nearby['results'])
+    ) {
+        foreach ($nearby['results'] as $result) {
+            $location = !empty($result['geometry']['location']) && is_array($result['geometry']['location'])
+                ? $result['geometry']['location']
+                : array();
+            if (!isset($location['lat']) || !isset($location['lng'])) {
+                continue;
+            }
+            $distance = Wo_ApiMapDiscoveryDistanceMeters(
+                $latitude,
+                $longitude,
+                $location['lat'],
+                $location['lng']
+            );
+            if ($distance === null) {
+                continue;
+            }
+            $name = !empty($result['name']) ? trim((string) $result['name']) : '';
+            $address = !empty($result['vicinity'])
+                ? trim((string) $result['vicinity'])
+                : (!empty($result['formatted_address']) ? trim((string) $result['formatted_address']) : '');
+            if ($name !== '' || $address !== '') {
+                $nearby_places[] = array(
+                    'source' => 'google_nearby',
+                    'place_id' => !empty($result['place_id']) ? $result['place_id'] : '',
+                    'name' => $name !== '' ? $name : $address,
+                    'address' => $address !== '' ? $address : $name,
+                    'lat' => (float) $location['lat'],
+                    'lng' => (float) $location['lng'],
+                    'types' => !empty($result['types']) && is_array($result['types']) ? array_values($result['types']) : array(),
+                    'is_nearby' => 1,
+                    'distance_meters' => (int) $distance
+                );
+            }
+        }
+
+        usort($nearby_places, function($left, $right) {
+            return ((int) ($left['distance_meters'] ?? PHP_INT_MAX)) <=> ((int) ($right['distance_meters'] ?? PHP_INT_MAX));
+        });
+        $nearby_places = array_slice($nearby_places, 0, 5);
+    }
+
+    if ($exact_geocode_place !== null) {
+        return array(
+            'api_status' => 200,
+            'place' => $exact_geocode_place,
+            'address' => $exact_geocode_place,
+            'nearby_places' => $nearby_places
+        );
+    }
+    if (!empty($nearby_places)) {
+        $nearest_place = $nearby_places[0];
+        return array(
+            'api_status' => 200,
+            'place' => $nearest_place,
+            'address' => $nearest_place,
+            'nearby_places' => $nearby_places
+        );
+    }
+
+    if ($coarse_geocode_place !== null) {
+        return array(
+            'api_status' => 200,
+            'place' => $coarse_geocode_place,
+            'address' => $coarse_geocode_place,
+            'nearby_places' => array()
+        );
+    }
+    if ($google_error !== null) {
+        return $google_error;
+    }
+    if ($nearby_error !== null) {
+        return $nearby_error;
+    }
+
+    return Wo_ApiMapDiscoveryError('address_not_found', 'Google Maps could not find an address or nearby place for this location.', 404);
 }
 
 function Wo_ApiMapDiscoveryDecodePolyline($encoded_path) {

@@ -22,8 +22,7 @@
 //   Mount window of ±1
 //     The active reel plays. Its immediate neighbors are mounted+paused so
 //     the decoder warms up the GPU and the next swipe is instant. Items
-//     further away unmount their VideoPlayer entirely (the poster image
-//     stays via FlatList virtualization).
+//     further away unmount their VideoPlayer entirely and keep a black stage.
 //
 //   Pause-on-blur
 //     When the user switches tabs we derive playback from React
@@ -38,7 +37,6 @@ import {
   BackHandler,
   Dimensions,
   FlatList,
-  Image,
   LayoutChangeEvent,
   Platform,
   RefreshControl,
@@ -117,10 +115,8 @@ const REELS_HEADER_TOP_GAP = 10;
 const REELS_NEW_BUTTON_HEADER_GAP = 50;
 const REELS_HEADER_LAYER_Z = 10030;
 const REELS_COMMENTS_PREVIEW_RATIO = 0.36;
-const REELS_ACTIVE_PLAYER_MOUNT_DELAY_MS =
-  Platform.OS === 'android' ? 180 : 140;
 const REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS =
-  Platform.OS === 'android' ? 520 : 420;
+  Platform.OS === 'android' ? 220 : 160;
 
 // Screen width — used by the swipe-back gesture to compute the dismiss
 // threshold and target translation.
@@ -134,8 +130,6 @@ const BACK_GESTURE_RETURN_MAX_DURATION_MS = 180;
 const BACK_GESTURE_RETURN_EASING = ReanimatedEasing.bezier(0.22, 1, 0.36, 1);
 const HEADER_EDGE_HIT_SLOP = { top: 12, bottom: 12, left: 10, right: 8 };
 const HEADER_ACTION_HIT_SLOP = { top: 12, bottom: 12, left: 3, right: 3 };
-
-const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 function getReelTimestamp(item?: ReelsItem | null) {
   const value = Number(item?.postedAt);
@@ -239,7 +233,9 @@ export default function ReelsScreen() {
   const [isAppActive, setIsAppActive] = useState(
     () => AppState.currentState === 'active',
   );
-  const [isPlaybackMountReady, setIsPlaybackMountReady] = useState(false);
+  const [isPlaybackMountReady, setIsPlaybackMountReady] = useState(
+    isFocusedScreen,
+  );
   const [isNeighborPreloadReady, setIsNeighborPreloadReady] = useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
   const isSelectedRoute = useNavigationState(state =>
@@ -277,12 +273,6 @@ export default function ReelsScreen() {
 
   const initialVideoId = route.params?.initialVideoId;
   const initialPost = route.params?.post;
-  const initialLaunchCoverUri =
-    typeof initialPost?.thumbnailUrl === 'string' &&
-    initialPost.thumbnailUrl.length > 0
-      ? initialPost.thumbnailUrl
-      : undefined;
-  const [launchCoverUri] = useState(initialLaunchCoverUri);
   const flatListRef = useRef<FlatList>(null);
   // Index for the FlatList's `initialScrollIndex` prop. We set this
   // exactly ONCE — after the ViewModel finishes merging the deeplinked
@@ -380,12 +370,6 @@ export default function ReelsScreen() {
       setIsCommentsPreviewVisible(false);
     }
   }, [vm.isCommentsOpen]);
-
-  useEffect(() => {
-    if (isFocusedScreen || isDismissing) return;
-    setIsPlaybackMountReady(false);
-    setIsNeighborPreloadReady(false);
-  }, [isDismissing, isFocusedScreen]);
 
   useEffect(() => {
     return () => {
@@ -632,12 +616,6 @@ export default function ReelsScreen() {
     () => Dimensions.get('window').height,
   );
   const viewportHeightRef = useRef(viewportHeight);
-  const [hasMeasuredViewport, setHasMeasuredViewport] = useState(false);
-  const [isLaunchCoverVisible, setIsLaunchCoverVisible] = useState(() =>
-    Boolean(launchCoverUri),
-  );
-  const launchCoverOpacity = useSharedValue(launchCoverUri ? 1 : 0);
-  const launchCoverScale = useSharedValue(launchCoverUri ? 1.01 : 1);
   const itemHeight = viewportHeight;
 
   const [isMuted, setIsMuted] = useState(false); // start unmuted by default
@@ -646,10 +624,14 @@ export default function ReelsScreen() {
   // reduce lag, but that caused a black-screen flash because the next video
   // had to rebuffer from scratch after being unmounted.
   const preloadRadius = PRELOAD_RADIUS;
+  const hasActivatedPlayback =
+    isPlaybackMountReady || isPlaybackRouteFocused;
   const shouldKeepPlayersMounted =
-    isPlaybackMountReady && (isPlaybackRouteFocused || isDismissing);
+    hasActivatedPlayback &&
+    isAppActive &&
+    (isTabRoute || isPlaybackRouteFocused || isDismissing);
   const shouldPlayActiveReel =
-    isPlaybackMountReady && isPlaybackRouteFocused && !isDismissing;
+    isPlaybackRouteFocused && !isDismissing;
   const activePreloadRadius = isNeighborPreloadReady ? preloadRadius : 0;
 
   // Drives the swipe-back gesture's transform. Declared up here (not down
@@ -668,8 +650,9 @@ export default function ReelsScreen() {
       navigationActionInFlightRef.current = false;
       isUserDraggingRef.current = false;
       setIsDismissing(false);
-      setIsPlaybackMountReady(false);
-      setIsNeighborPreloadReady(false);
+      // Mount the active player immediately. The old focus delay exposed the
+      // poster/layout for a noticeable moment every time Home opened Reels.
+      setIsPlaybackMountReady(true);
       if (scrollReleaseTimerRef.current !== null) {
         clearTimeout(scrollReleaseTimerRef.current);
         scrollReleaseTimerRef.current = null;
@@ -680,9 +663,6 @@ export default function ReelsScreen() {
       }
       dragX.value = 0;
       screenDismissX.value = 0;
-      const activePlayerTimer = setTimeout(() => {
-        setIsPlaybackMountReady(true);
-      }, REELS_ACTIVE_PLAYER_MOUNT_DELAY_MS);
       const neighborPlayerTimer = setTimeout(() => {
         setIsNeighborPreloadReady(true);
       }, REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS);
@@ -691,7 +671,6 @@ export default function ReelsScreen() {
       }
 
       return () => {
-        clearTimeout(activePlayerTimer);
         clearTimeout(neighborPlayerTimer);
         if (isTabRoute) {
           tabBarVisibility.setVisible(true);
@@ -952,7 +931,6 @@ export default function ReelsScreen() {
   const handleContainerLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const nextHeight = Math.round(event.nativeEvent.layout.height);
-      setHasMeasuredViewport(true);
       const resolvedHeight = resolveReelsViewportHeight({
         currentHeight: viewportHeightRef.current,
         nextHeight,
@@ -1145,6 +1123,13 @@ export default function ReelsScreen() {
   const goBackToFeed = useCallback(() => {
     if (navigationActionInFlightRef.current) return;
     navigationActionInFlightRef.current = true;
+
+    if (isTabRoute) {
+      prepareFeedStatusBarForReturn();
+      navigation.navigate(ROUTES.FEED);
+      return;
+    }
+
     setIsDismissing(true);
     dismissNavigationFrameRef.current = requestAnimationFrame(() => {
       dismissNavigationFrameRef.current = null;
@@ -1156,11 +1141,16 @@ export default function ReelsScreen() {
         navigateToFeed();
       }
     });
-  }, [navigation, navigateToFeed, prepareFeedStatusBarForReturn]);
+  }, [
+    isTabRoute,
+    navigation,
+    navigateToFeed,
+    prepareFeedStatusBarForReturn,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
-      if (Platform.OS !== 'android' || isTabRoute) return undefined;
+      if (Platform.OS !== 'android') return undefined;
 
       const subscription = BackHandler.addEventListener(
         'hardwareBackPress',
@@ -1171,7 +1161,7 @@ export default function ReelsScreen() {
       );
 
       return () => subscription.remove();
-    }, [goBackToFeed, isTabRoute]),
+    }, [goBackToFeed]),
   );
 
   const beginDismissTransition = useCallback(() => {
@@ -1269,38 +1259,6 @@ export default function ReelsScreen() {
       ],
     };
   });
-
-  const launchCoverAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: launchCoverOpacity.value,
-    transform: [{ scale: launchCoverScale.value }],
-  }));
-
-  useEffect(() => {
-    if (
-      !isLaunchCoverVisible ||
-      !hasMeasuredViewport ||
-      vm.items.length === 0
-    ) {
-      return undefined;
-    }
-
-    const timeout = setTimeout(() => {
-      launchCoverScale.value = withTiming(1.035, { duration: 220 });
-      launchCoverOpacity.value = withTiming(0, { duration: 180 }, finished => {
-        if (finished) {
-          runOnJS(setIsLaunchCoverVisible)(false);
-        }
-      });
-    }, 90);
-
-    return () => clearTimeout(timeout);
-  }, [
-    hasMeasuredViewport,
-    isLaunchCoverVisible,
-    launchCoverOpacity,
-    launchCoverScale,
-    vm.items.length,
-  ]);
 
   const backIndicatorStyle = useAnimatedStyle(() => {
     const threshold = SCREEN_WIDTH * 0.32;
@@ -1443,20 +1401,6 @@ export default function ReelsScreen() {
           ListFooterComponent={reelsFooter}
         />
 
-        {isLaunchCoverVisible && launchCoverUri ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.launchCover, launchCoverAnimatedStyle]}
-          >
-            <AnimatedImage
-              source={{ uri: launchCoverUri }}
-              style={styles.launchCoverImage}
-              resizeMode="cover"
-            />
-            <View style={styles.launchCoverShade} />
-          </Animated.View>
-        ) : null}
-
         {hasNewReels ? (
           <TouchableOpacity
             onPress={handleOpenNewReels}
@@ -1474,20 +1418,18 @@ export default function ReelsScreen() {
           collapsable={false}
           style={[styles.headerOverlay, { top: reelsHeaderTop }]}
         >
-          {/* Left: Back button (if stack navigator has back capability) */}
-          {!isTabRoute ? (
-            <TouchableOpacity
-              delayPressIn={0}
-              activeOpacity={0.65}
-              onPress={goBackToFeed}
-              style={styles.headerButton}
-              hitSlop={HEADER_EDGE_HIT_SLOP}
-            >
-              <ChevronLeft size={26} color="#fff" />
-            </TouchableOpacity>
-          ) : (
-            <View />
-          )}
+          {/* Reels may be kept alive as a tab for fast Home transitions, but
+              it must still expose an explicit way back to Home. */}
+          <TouchableOpacity
+            delayPressIn={0}
+            activeOpacity={0.65}
+            onPress={goBackToFeed}
+            style={styles.headerButton}
+            hitSlop={HEADER_EDGE_HIT_SLOP}
+            accessibilityRole="button"
+          >
+            <ChevronLeft size={26} color="#fff" />
+          </TouchableOpacity>
 
           {/* Right: Auto scroll toggle + Mute button */}
           <View pointerEvents="box-none" style={styles.headerRightRow}>
@@ -1591,28 +1533,6 @@ export default function ReelsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
   list: { flex: 1, backgroundColor: '#000' },
-  launchCover: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: '#000',
-    overflow: 'hidden',
-    zIndex: 5,
-  },
-  launchCoverImage: {
-    width: '100%',
-    height: '100%',
-  },
-  launchCoverShade: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: 'rgba(0,0,0,0.08)',
-  },
   headerOverlay: {
     position: 'absolute',
     left: 12,

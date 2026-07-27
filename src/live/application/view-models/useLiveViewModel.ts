@@ -1,6 +1,6 @@
 // Description: ViewModels for live streams, live room comments, and Go Live.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import { createLiveRepository } from '../../infrastructure/repositories/ApiLiveRepository';
 import type {
   LiveReactionEvent,
@@ -12,6 +12,10 @@ import type {
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createFeedRepository } from '../../../feed';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import {
+  endedLivePostsStorage,
+  LOCAL_LIVE_ENDED_EVENT,
+} from '../../infrastructure/storage/endedLivePostsStorage';
 
 const LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 
@@ -80,6 +84,7 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
   const [isLoading, setIsLoading] = useState(autoLoad);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const localOwnerId = sessionStorage.getSession()?.userId;
 
   const load = useCallback(
     async (mode: 'initial' | 'refresh' | 'background' = 'initial') => {
@@ -100,8 +105,12 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
               repository.getLiveStreams(),
               repository.getLiveFriends(),
             ]);
-        setLiveStreams(streams);
-        setFriendsLive(friends);
+        setLiveStreams(
+          endedLivePostsStorage.filterActiveStreams(streams, localOwnerId),
+        );
+        setFriendsLive(
+          endedLivePostsStorage.filterActiveStreams(friends, localOwnerId),
+        );
       } catch (err) {
         console.error('[Live] load error:', err);
         if (mode !== 'background') {
@@ -114,13 +123,34 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
         }
       }
     },
-    [enabled, repository, userId],
+    [enabled, localOwnerId, repository, userId],
   );
 
   useEffect(() => {
     setLiveStreams([]);
     setFriendsLive([]);
   }, [userId]);
+
+  useEffect(() => {
+    const ownerKey = localOwnerId || 'guest';
+    const subscription = DeviceEventEmitter.addListener(
+      LOCAL_LIVE_ENDED_EVENT,
+      (event: { postId?: string; userId?: string }) => {
+        const endedPostId = String(event?.postId ?? '').trim();
+        if (!endedPostId) return;
+        if (event?.userId && event.userId !== ownerKey) return;
+
+        setLiveStreams(current =>
+          current.filter(item => String(item.postId) !== endedPostId),
+        );
+        setFriendsLive(current =>
+          current.filter(item => String(item.postId) !== endedPostId),
+        );
+      },
+    );
+
+    return () => subscription.remove();
+  }, [localOwnerId]);
 
   useEffect(() => {
     if (!autoLoad || !enabled) return;
@@ -221,6 +251,13 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
   const updateLiveState = useCallback((nextState: LiveStreamState) => {
     stateRef.current = nextState;
     setState(nextState);
+
+    if (nextState === 'offline' && activePostIdRef.current > 0) {
+      endedLivePostsStorage.markEnded(
+        activePostIdRef.current,
+        sessionStorage.getSession()?.userId,
+      );
+    }
   }, []);
 
   const currentUserProfile = useMemo(() => {

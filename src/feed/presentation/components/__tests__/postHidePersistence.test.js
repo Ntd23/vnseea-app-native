@@ -37,12 +37,21 @@ describe('local post hide behavior', () => {
 
   it('applies the same local preference from profile and post detail', () => {
     const profile = read('src/profile/presentation/screens/ProfileScreen.tsx');
-    const detail = read(
-      'src/feed/presentation/screens/PostDetailScreen.tsx',
-    );
+    const detail = read('src/feed/presentation/screens/PostDetailScreen.tsx');
 
     expect(profile).toContain('hiddenPostsStorage.filterVisiblePosts(');
     expect(profile).toContain('hiddenPostsStorage.hidePost(postId');
     expect(detail).toContain('hiddenPostsStorage.hidePost(');
+  });
+
+  it('automatically hides a post after a successful report', () => {
+    const menu = read(
+      'src/shared-kernel/presentation/components/PostMenuActionSheet.tsx',
+    );
+
+    expect(menu).toContain('await onReport(post.id');
+    expect(menu).toContain('await (onReportHide ?? onHide)(post.id)');
+    expect(menu).toContain('Bài viết đã được ẩn');
+    expect(menu).toContain('post-report-success-popup');
   });
 });

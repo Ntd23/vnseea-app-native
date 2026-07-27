@@ -779,11 +779,6 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              onPress={() => handleItemPress({ type: 'feature', feature: 'blogs' })}
             />
             <MenuRow
-             title={copy.featMyArticles}
-             icon={<FileText size={18} color="#64748b" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'myArticles' })}
-            />
-            <MenuRow
              title={copy.featMovies}
              icon={<Film size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'movies' })}

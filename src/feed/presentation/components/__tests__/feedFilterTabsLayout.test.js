@@ -6,17 +6,13 @@ const read = relativePath =>
 
 describe('FeedFilterTabs layout ownership', () => {
   it('uses the fixed header variant only from the Android Feed chrome', () => {
-    const tabs = read(
-      'src/feed/presentation/components/FeedFilterTabs.tsx',
-    );
+    const tabs = read('src/feed/presentation/components/FeedFilterTabs.tsx');
     const feed = read('src/feed/presentation/screens/FeedScreen.tsx');
     const page = read('src/pages/presentation/screens/PageDetailScreen.tsx');
     const group = read(
       'src/community/presentation/screens/GroupDetailScreen.tsx',
     );
-    const event = read(
-      'src/events/presentation/screens/EventDetailScreen.tsx',
-    );
+    const event = read('src/events/presentation/screens/EventDetailScreen.tsx');
 
     expect(tabs).toContain("variant = 'default'");
     expect(tabs).toContain('variant={variant}');
@@ -33,5 +29,20 @@ describe('FeedFilterTabs layout ownership', () => {
 
     expect(source).not.toContain("'h-full flex-1 items-center justify-center'");
     expect(source).toContain("'h-[66px] flex-1 items-center justify-center'");
+  });
+
+  it('makes the Home filter icon reuse the feed logo scroll and reload behavior', () => {
+    const tabs = read('src/feed/presentation/components/FeedFilterTabs.tsx');
+    const feed = read('src/feed/presentation/screens/FeedScreen.tsx');
+
+    expect(tabs).toContain('onHomePress?: () => void');
+    expect(tabs).toContain("onChangeSource('all')");
+    expect(feed).toContain('const handlePressHomeFilter = useCallback');
+    expect(feed).toContain('onHomePress={handlePressHomeFilter}');
+    expect(feed).toContain(
+      'mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true })',
+    );
+    expect(feed).toContain("if (activeFeedSource === 'all')");
+    expect(feed).toContain('feedLogoEvents.emitScrollToTop()');
   });
 });

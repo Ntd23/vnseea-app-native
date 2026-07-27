@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import {
   LogLevel,
   OneSignal,
+  type NotificationClickEvent,
   type NotificationWillDisplayEvent,
   type PushSubscriptionChangedState,
   type UserChangedState,
@@ -13,6 +14,7 @@ import { apiConfig } from '../config/env';
 import { syncMessageNotificationIdentity } from '../notifications/messageNotificationIdentity';
 import { sessionStorage } from '../storage/sessionStorage';
 import { foregroundPushEvents } from './foregroundPushEvents';
+import { pushNotificationOpenEvents } from './pushNotificationOpenEvents';
 
 const PUSH_DEBUG_PREFIX = '[VNSEEA_PUSH_DEBUG]';
 const MESSAGE_PUSH_KINDS = new Set([
@@ -395,6 +397,35 @@ function handleForegroundWillDisplay(event: NotificationWillDisplayEvent) {
   }
 }
 
+function handleNotificationClick(event: NotificationClickEvent) {
+  const notification = event.notification;
+  const additionalData = toPushData(notification.additionalData);
+
+  logPushDebug('push_notification_opened', {
+    notificationId: maskPushIdentifier(notification.notificationId),
+    eventType: readPushDataString(additionalData, 'event_type'),
+    notificationType: readSocialNotificationType(additionalData),
+    postId: readPushDataString(additionalData, 'post_id'),
+    hasLaunchUrl: Boolean(event.result.url?.trim()),
+  });
+
+  // Call notifications already have a dedicated listener which restores the
+  // native call UI. Do not navigate the social-notification flow as well.
+  if (isLiveKitPush(additionalData)) {
+    logPushDebug('push_notification_open_delegated', { target: 'livekit' });
+    return;
+  }
+
+  pushNotificationOpenEvents.emit({
+    notificationId: notification.notificationId,
+    title: notification.title,
+    body: notification.body,
+    launchUrl: event.result.url,
+    additionalData,
+    openedAt: Date.now(),
+  });
+}
+
 export function initializePushNotifications() {
   syncMessageNotificationIdentity(sessionStorage.getUserProfile());
 
@@ -441,6 +472,7 @@ export function initializePushNotifications() {
     'foregroundWillDisplay',
     handleForegroundWillDisplay,
   );
+  OneSignal.Notifications.addEventListener('click', handleNotificationClick);
 
   const userId = sessionStorage.getSession()?.userId;
   if (userId) {

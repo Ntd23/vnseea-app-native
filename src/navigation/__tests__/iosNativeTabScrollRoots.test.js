@@ -119,7 +119,10 @@ describe('iOS native tab scroll roots', () => {
     expect(reelItemSource).toContain('styles.blurredVideoBackground');
     expect(reelItemSource).toContain('blurRadius={28}');
     expect(reelItemSource).toContain('resizeMode={videoResizeMode}');
-    expect(reelItemSource).toContain('resizeMode={posterResizeMode}');
+    expect(reelItemSource).toContain(
+      'item.thumbnailUrl && isReady && usesBlurContainVideo',
+    );
+    expect(reelItemSource).not.toContain('posterResizeMode');
     expect((reelItemSource.match(/<VideoPlayer/g) ?? []).length).toBe(1);
   });
 

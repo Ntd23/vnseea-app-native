@@ -157,8 +157,8 @@ describe('Reel video playback resilience', () => {
     );
   });
 
-  it('stages player mounting so Home-to-Reels navigation stays smooth', () => {
-    expect(reelsScreenSource).toContain(
+  it('mounts the active player immediately and keeps the tab player warm', () => {
+    expect(reelsScreenSource).not.toContain(
       'REELS_ACTIVE_PLAYER_MOUNT_DELAY_MS',
     );
     expect(reelsScreenSource).toContain(
@@ -172,9 +172,15 @@ describe('Reel video playback resilience', () => {
     );
     expect(reelsScreenSource).toContain('setIsPlaybackMountReady(true)');
     expect(reelsScreenSource).toContain('setIsNeighborPreloadReady(true)');
+    expect(reelsScreenSource).toContain(
+      '(isTabRoute || isPlaybackRouteFocused || isDismissing)',
+    );
+    expect(reelsScreenSource).not.toContain('setIsPlaybackMountReady(false)');
     expect(feedScreenSource).toContain('startReelsPreload');
-    expect(feedScreenSource).toContain(
-      'Image.prefetch(item.thumbnailUrl)',
+    expect(feedScreenSource).not.toContain('Image.prefetch(item.thumbnailUrl)');
+    expect(reelsScreenSource).not.toContain('launchCoverUri');
+    expect(reelItemSource).not.toContain(
+      'item.thumbnailUrl && shouldMount && !isReady',
     );
     expect(homeVideoSource).toContain('FEED_VIDEO_BLUR_SURFACE_GRACE_MS');
     expect(homeVideoSource).toContain('isBlurSurfaceGraceActive');
@@ -190,6 +196,12 @@ describe('Reel video playback resilience', () => {
     );
     expect(reelsScreenSource).toContain(
       'runOnJS(beginDismissTransition)()',
+    );
+    expect(reelsScreenSource).toContain('onPress={goBackToFeed}');
+    expect(reelsScreenSource).toContain('navigation.navigate(ROUTES.FEED)');
+    expect(reelsScreenSource).not.toContain('{!isTabRoute ? (');
+    expect(reelsScreenSource).not.toContain(
+      "Platform.OS !== 'android' || isTabRoute",
     );
   });
 

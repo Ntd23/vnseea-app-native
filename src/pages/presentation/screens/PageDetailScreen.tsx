@@ -795,11 +795,13 @@ function SuggestedPagesSection({
   copy,
   onOpenPage,
   onLikePage,
+  onFollowPage,
 }: {
   pages: PagesItem[];
   copy: typeof PAGE_DETAIL_UI_COPY.vi;
   onOpenPage: (page: PagesItem) => void;
   onLikePage: (pageId: string | number) => void;
+  onFollowPage: (pageId: string | number) => void;
 }) {
   if (pages.length === 0) return null;
 
@@ -831,15 +833,36 @@ function SuggestedPagesSection({
                 </View>
               </View>
             </TouchableOpacity>
-            <TouchableOpacity
-              className="mx-4 mt-3 h-10 items-center justify-center rounded-lg bg-brand"
-              activeOpacity={0.86}
-              onPress={() => onLikePage(page.pageId)}
-            >
-              <Text className="text-sm font-bold text-white">
-                {page.isLiked ? copy.likedBtn : copy.likeBtn}
-              </Text>
-            </TouchableOpacity>
+            <View className="mx-4 mt-3 flex-row gap-2">
+              <TouchableOpacity
+                className={`flex-1 h-10 flex-row items-center justify-center rounded-lg ${page.isLiked ? 'bg-brand-subtle' : 'bg-brand'}`}
+                activeOpacity={0.86}
+                onPress={() => onLikePage(page.pageId)}
+              >
+                <Heart
+                  size={16}
+                  color={page.isLiked ? APP_BRAND_COLOR : '#FFFFFF'}
+                  fill={page.isLiked ? APP_BRAND_COLOR : 'transparent'}
+                />
+                <Text className={`ml-1 text-sm font-bold ${page.isLiked ? 'text-brand' : 'text-white'}`}>
+                  {page.isLiked ? copy.likedBtn : copy.likeBtn}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className={`flex-1 h-10 flex-row items-center justify-center rounded-lg ${page.isFollowing ? 'bg-brand-subtle' : 'bg-slate-100'}`}
+                activeOpacity={0.86}
+                onPress={() => onFollowPage(page.pageId)}
+              >
+                <Bell
+                  size={16}
+                  color={page.isFollowing ? APP_BRAND_COLOR : '#64748B'}
+                  fill={page.isFollowing ? APP_BRAND_COLOR : 'transparent'}
+                />
+                <Text className={`ml-1 text-sm font-bold ${page.isFollowing ? 'text-brand' : 'text-slate-600'}`}>
+                  {page.isFollowing ? copy.followingBtn : copy.followBtn}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         );
       })}
@@ -2010,6 +2033,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             copy={copy}
             onOpenPage={handleOpenSuggestedPage}
             onLikePage={vm.toggleSuggestedPageLike}
+            onFollowPage={vm.toggleSuggestedPageFollow}
           />
         </>
       ) : null}

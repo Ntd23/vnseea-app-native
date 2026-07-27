@@ -24,11 +24,12 @@ import {
   X,
 } from 'lucide-react-native';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
-import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
-import type { AddressSuggestion } from '../../../shared-kernel/domain/types/addressSearch.types';
+import type {
+  AddressSuggestion,
+  NearbyAddressSuggestion,
+} from '../../../shared-kernel/domain/types/addressSearch.types';
 import {
   createAddressSearchRepository,
   createAddressSessionToken,
@@ -55,19 +56,6 @@ type PageLocationPickerModalProps = {
   onClose: () => void;
   onConfirm: (selection: PageLocationSelection) => void;
 };
-
-type PlaceDetailsResponse = {
-  api_status?: number | string;
-  place?: {
-    place_id?: string;
-    name?: string;
-    address?: string;
-    lat?: number | string | null;
-    lng?: number | string | null;
-  };
-};
-
-type ReverseGeocodeResponse = PlaceDetailsResponse;
 
 const DEFAULT_COORDINATE: PageLocationCoordinate = {
   latitude: 16.047079,
@@ -96,6 +84,8 @@ const COPY = {
     dragHint: 'Kéo bản đồ để ghim vào đúng vị trí',
     enteredAddress: 'Địa chỉ đã nhập',
     nearbyLocation: 'Vị trí gần ghim',
+    nearbySuggestions: 'Gợi ý vị trí gần đó',
+    distanceFromPin: 'Cách ghim',
     pinCoordinates: 'Tọa độ ghim chính xác',
     coordinateOnly: 'Đã lấy tọa độ ghim; chưa tìm được tên vị trí gần đó.',
     empty: 'Không tìm thấy địa chỉ phù hợp.',
@@ -113,6 +103,8 @@ const COPY = {
     dragHint: 'Drag the map to place the pin exactly',
     enteredAddress: 'Entered address',
     nearbyLocation: 'Near the pin',
+    nearbySuggestions: 'Nearby place suggestions',
+    distanceFromPin: 'From pin',
     pinCoordinates: 'Exact pin coordinates',
     coordinateOnly: 'The pin coordinates are ready; no nearby location name was found.',
     empty: 'No matching address found.',
@@ -154,6 +146,21 @@ function mapPrediction(record: AddressSuggestion, index: number) {
 }
 
 type MappedPrediction = NonNullable<ReturnType<typeof mapPrediction>>;
+
+function nearbySuggestionAddress(suggestion: NearbyAddressSuggestion) {
+  const prefix = `${suggestion.name}, `;
+  return suggestion.formattedAddress.startsWith(prefix)
+    ? suggestion.formattedAddress.slice(prefix.length)
+    : suggestion.formattedAddress;
+}
+
+function formatNearbyDistance(distanceMeters?: number) {
+  const numericDistance = Number(distanceMeters);
+  if (!Number.isFinite(numericDistance)) return '';
+  const distance = Math.max(0, numericDistance);
+  if (distance < 1000) return `${Math.round(distance)} m`;
+  return `${(distance / 1000).toFixed(distance < 10000 ? 1 : 0)} km`;
+}
 
 export default function PageLocationPickerModal({
   visible,
@@ -200,6 +207,9 @@ export default function PageLocationPickerModal({
   const [selectedAddress, setSelectedAddress] = useState(initialAddress);
   const [selectedPlaceId, setSelectedPlaceId] = useState(initialPlaceId);
   const [nearbyAddress, setNearbyAddress] = useState('');
+  const [nearbySuggestions, setNearbySuggestions] = useState<
+    NearbyAddressSuggestion[]
+  >([]);
   const [hasPinnedCoordinate, setHasPinnedCoordinate] = useState(
     Boolean(
       initialCoordinate &&
@@ -209,6 +219,7 @@ export default function PageLocationPickerModal({
   const [reverseLookupFailed, setReverseLookupFailed] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const cancelPendingReverseGeocode = useCallback(() => {
@@ -223,6 +234,7 @@ export default function PageLocationPickerModal({
   const prepareManualPinMove = useCallback(() => {
     setSelectedPlaceId(undefined);
     setNearbyAddress('');
+    setNearbySuggestions([]);
     setReverseLookupFailed(false);
     searchRequestIdRef.current += 1;
     if (searchTimerRef.current) {
@@ -276,30 +288,28 @@ export default function PageLocationPickerModal({
       const requestId = ++reverseRequestIdRef.current;
       setIsResolving(true);
       try {
-        const response = await apiBridge.post<ReverseGeocodeResponse>(
-          apiRoutes.user.mapDiscovery,
-          {
-            type: 'reverse_geocode',
-            lat: coordinate.latitude,
-            lng: coordinate.longitude,
-            language,
-            country: language === 'vi' ? 'vn' : undefined,
-          },
-        );
+        const resolved =
+          await addressSearchRepository.reverseGeocodeCoordinate({
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude,
+            language: language === 'en' ? 'en' : 'vi',
+            country: 'vn',
+            sessionToken: addressSessionTokenRef.current,
+          });
         if (
           sessionId !== sessionIdRef.current ||
           requestId !== reverseRequestIdRef.current
         ) {
           return;
         }
-        const place = response.place;
-        const address = String(place?.address || place?.name || '').trim();
+        const address = String(resolved.formattedAddress || '').trim();
+        setNearbySuggestions(resolved.nearbySuggestions.slice(0, 5));
         if (!address) {
           setNearbyAddress('');
           setReverseLookupFailed(true);
           return;
         }
-        const placeId = String(place?.place_id || '') || undefined;
+        const placeId = String(resolved.placeId || '') || undefined;
         const primaryAddress = primaryAddressRef.current.trim();
         if (!primaryAddress) {
           applyPrimaryAddress(address, placeId);
@@ -314,6 +324,7 @@ export default function PageLocationPickerModal({
           requestId === reverseRequestIdRef.current
         ) {
           setNearbyAddress('');
+          setNearbySuggestions([]);
           setReverseLookupFailed(true);
         }
       } finally {
@@ -518,11 +529,13 @@ export default function PageLocationPickerModal({
     setSelectedAddress(initialAddress);
     setSelectedPlaceId(initialPlaceId);
     setNearbyAddress('');
+    setNearbySuggestions([]);
     setReverseLookupFailed(false);
     setHasPinnedCoordinate(Boolean(coordinate));
     setPredictions([]);
     setErrorMessage('');
     setIsResolving(false);
+    setIsLocating(false);
     if (coordinate) {
       if (mapReadyRef.current) {
         mapRef.current?.animateToRegion(nextRegion, 250);
@@ -636,6 +649,7 @@ export default function PageLocationPickerModal({
         searchTimerRef.current = null;
       }
       setPredictions([]);
+      setNearbySuggestions([]);
       setErrorMessage('');
       suppressedSearchQueryRef.current = prediction.description;
       latestQueryRef.current = prediction.description;
@@ -687,6 +701,7 @@ export default function PageLocationPickerModal({
         setSelectedAddress(address);
         setSelectedPlaceId(undefined);
         setNearbyAddress('');
+        setNearbySuggestions([]);
         setReverseLookupFailed(false);
         setHasPinnedCoordinate(false);
         setErrorMessage(copy.searchError);
@@ -707,28 +722,74 @@ export default function PageLocationPickerModal({
     ],
   );
 
+  const handleSelectNearbySuggestion = useCallback(
+    (suggestion: NearbyAddressSuggestion) => {
+      Keyboard.dismiss();
+      cancelPendingReverseGeocode();
+      initialPlaceRequestIdRef.current += 1;
+      searchRequestIdRef.current += 1;
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = null;
+      }
+      setPredictions([]);
+      setNearbyAddress('');
+      setReverseLookupFailed(false);
+      applyPrimaryAddress(
+        suggestion.formattedAddress,
+        suggestion.placeId || undefined,
+      );
+      animateToCoordinate(
+        {
+          latitude: suggestion.latitude,
+          longitude: suggestion.longitude,
+        },
+        SELECTED_PLACE_DELTAS,
+      );
+    },
+    [
+      animateToCoordinate,
+      applyPrimaryAddress,
+      cancelPendingReverseGeocode,
+    ],
+  );
+
   const handleUseCurrentLocation = useCallback(async () => {
     setErrorMessage('');
+    setIsLocating(true);
     try {
       const current = await getCurrentDeviceLocation(6000);
       const coordinate = {
         latitude: current.latitude,
         longitude: current.longitude,
       };
+      cancelPendingReverseGeocode();
       prepareManualPinMove();
+      // Selecting the device location is an explicit replacement, unlike
+      // manually nudging the pin. Clear any previously typed address so the
+      // reverse-geocoded current address becomes the primary selection.
+      primaryAddressRef.current = '';
+      suppressedSearchQueryRef.current = null;
+      latestQueryRef.current = '';
+      setQuery('');
+      setSelectedAddress('');
+      setSelectedPlaceId(undefined);
       animateToCoordinate(coordinate, {
         latitudeDelta: 0.006,
         longitudeDelta: 0.006,
       });
-      scheduleReverseGeocode(regionRef.current, sessionIdRef.current);
+      await reverseGeocode(coordinate, sessionIdRef.current);
     } catch {
       setErrorMessage(copy.locationError);
+    } finally {
+      setIsLocating(false);
     }
   }, [
     animateToCoordinate,
+    cancelPendingReverseGeocode,
     copy.locationError,
     prepareManualPinMove,
-    scheduleReverseGeocode,
+    reverseGeocode,
   ]);
 
   const handleQueryChange = useCallback(
@@ -742,6 +803,7 @@ export default function PageLocationPickerModal({
       setSelectedAddress(text);
       setSelectedPlaceId(undefined);
       setNearbyAddress('');
+      setNearbySuggestions([]);
       setReverseLookupFailed(false);
       setErrorMessage('');
     },
@@ -903,6 +965,71 @@ export default function PageLocationPickerModal({
               ) : null}
             </View>
           </View>
+          {!isResolving && nearbySuggestions.length > 0 ? (
+            <View style={styles.nearbySuggestionsSection}>
+              <Text style={styles.nearbySuggestionsTitle}>
+                {copy.nearbySuggestions}
+              </Text>
+              {nearbySuggestions.slice(0, 3).map((suggestion, index) => {
+                const isSelected = Boolean(
+                  (suggestion.placeId &&
+                    suggestion.placeId === selectedPlaceId) ||
+                    suggestion.formattedAddress === selectedAddress,
+                );
+                const secondaryAddress =
+                  nearbySuggestionAddress(suggestion);
+                const distance = formatNearbyDistance(
+                  suggestion.distanceMeters,
+                );
+                return (
+                  <TouchableOpacity
+                    key={
+                      suggestion.placeId ||
+                      `${suggestion.latitude}:${suggestion.longitude}:${index}`
+                    }
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      handleSelectNearbySuggestion(suggestion)
+                    }
+                    style={[
+                      styles.nearbySuggestionRow,
+                      isSelected
+                        ? styles.nearbySuggestionRowSelected
+                        : null,
+                    ]}
+                  >
+                    <View style={styles.nearbySuggestionIcon}>
+                      <MapPin
+                        size={16}
+                        color={
+                          isSelected ? APP_BRAND_COLOR : '#64748b'
+                        }
+                      />
+                    </View>
+                    <View style={styles.nearbySuggestionCopy}>
+                      <Text
+                        style={styles.nearbySuggestionName}
+                        numberOfLines={1}
+                      >
+                        {suggestion.name}
+                      </Text>
+                      <Text
+                        style={styles.nearbySuggestionAddress}
+                        numberOfLines={1}
+                      >
+                        {secondaryAddress}
+                      </Text>
+                    </View>
+                    {distance ? (
+                      <Text style={styles.nearbySuggestionDistance}>
+                        {copy.distanceFromPin} {distance}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
           {hasPinnedCoordinate ? (
             <View style={styles.coordinateBox}>
               <Text style={styles.coordinateLabel}>{copy.pinCoordinates}</Text>
@@ -916,9 +1043,17 @@ export default function PageLocationPickerModal({
             <TouchableOpacity
               activeOpacity={0.84}
               onPress={handleUseCurrentLocation}
-              style={styles.currentLocationButton}
+              disabled={isLocating}
+              style={[
+                styles.currentLocationButton,
+                isLocating ? styles.currentLocationButtonDisabled : null,
+              ]}
             >
-              <LocateFixed size={18} color={APP_BRAND_COLOR} />
+              {isLocating ? (
+                <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
+              ) : (
+                <LocateFixed size={18} color={APP_BRAND_COLOR} />
+              )}
               <Text style={styles.currentLocationText}>{copy.useCurrent}</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1155,6 +1290,70 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '600',
   },
+  nearbySuggestionsSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+  },
+  nearbySuggestionsTitle: {
+    marginBottom: 5,
+    color: '#334155',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  nearbySuggestionRow: {
+    minHeight: 48,
+    marginBottom: 5,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  nearbySuggestionRowSelected: {
+    borderColor: '#93c5fd',
+    backgroundColor: '#eff6ff',
+  },
+  nearbySuggestionIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  nearbySuggestionCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  nearbySuggestionName: {
+    color: '#0f172a',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  nearbySuggestionAddress: {
+    marginTop: 1,
+    color: '#64748b',
+    fontSize: 10.5,
+    lineHeight: 14,
+    fontWeight: '600',
+  },
+  nearbySuggestionDistance: {
+    maxWidth: 82,
+    marginLeft: 8,
+    color: '#64748b',
+    fontSize: 9.5,
+    lineHeight: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
   coordinateStatusText: {
     marginTop: 6,
     color: '#475569',
@@ -1214,6 +1413,9 @@ const styles = StyleSheet.create({
     color: '#1d4ed8',
     fontSize: 13,
     fontWeight: '800',
+  },
+  currentLocationButtonDisabled: {
+    opacity: 0.68,
   },
   confirmButton: {
     flex: 1,

@@ -10,6 +10,7 @@ import {
   LiveKitMiniCallBar,
 } from './src/messages';
 import { initializePushNotifications } from './src/shared-kernel/infrastructure/push/oneSignalPush';
+import { initializePushNotificationNavigation } from './src/notifications/application/navigation/pushNotificationNavigation';
 import { initI18n } from './src/shared-kernel/infrastructure/i18n';
 import { SnackbarProvider } from './src/shared-kernel/presentation/components/Snackbar';
 
@@ -21,6 +22,7 @@ initI18n();
 // See: https://docs.swmansion.com/react-native-gesture-handler/docs/installation
 function App() {
   useEffect(() => {
+    initializePushNotificationNavigation();
     initializePushNotifications();
   }, []);
 

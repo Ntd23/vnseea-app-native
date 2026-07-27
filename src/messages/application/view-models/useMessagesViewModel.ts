@@ -1,5 +1,6 @@
 // Description: Handles message list, conversation state, labels, and bulk sending.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import { onUserOnlineStatus } from '../../infrastructure/realtime/liveKitCallRealtime';
 import type {
@@ -13,6 +14,11 @@ import type {
 } from '../../domain/types/messages.types';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { mergeChatItems } from '../utils/messageChatMerge';
+import {
+  getMessagesStartupSnapshot,
+  preloadMessagesStartupChats,
+  setMessagesStartupSnapshot,
+} from '../services/messagesStartupCache';
 
 const repository = createMessagesRepository();
 const CHAT_SYNC_INTERVAL_MS = 3500;
@@ -136,20 +142,23 @@ type LoadChatsOptions = GetChatsOptions & {
 };
 
 export function useMessagesViewModel() {
-  const [state, setState] = useState<MessagesState>({
-    chats: [],
-    selectedChat: null,
-    messages: [],
-    labels: [],
-    labelRecipients: [],
-    broadcastLabelId: '',
-    broadcastRecipients: [],
-    isLoadingChats: false,
-    isLoadingMessages: false,
-    isLoadingLabels: false,
-    isSending: false,
-    isCreatingGroup: false,
-    error: null,
+  const [state, setState] = useState<MessagesState>(() => {
+    const startupChats = getMessagesStartupSnapshot();
+    return {
+      chats: startupChats,
+      selectedChat: null,
+      messages: [],
+      labels: [],
+      labelRecipients: [],
+      broadcastLabelId: '',
+      broadcastRecipients: [],
+      isLoadingChats: startupChats.length === 0,
+      isLoadingMessages: false,
+      isLoadingLabels: false,
+      isSending: false,
+      isCreatingGroup: false,
+      error: null,
+    };
   });
   const isLoadingChatsRef = useRef(false);
   const isLoadingGroupChatsRef = useRef(false);
@@ -618,23 +627,59 @@ export function useMessagesViewModel() {
     setState(prev => ({ ...prev, error: null }));
   }, []);
 
-  // Initial load
+  // Initial load: render the warmed conversation snapshot immediately, then
+  // wait for the native navigation transition before parsing fresh network
+  // payloads and loading secondary discovery/label data.
   useEffect(() => {
-    loadChats(true, {
-      includeDiscovery: false,
-      latestOnly: true,
-    })
-      .then(() =>
+    let cancelled = false;
+    let enrichmentTimer: ReturnType<typeof setTimeout> | null = null;
+    const hasStartupChats = getMessagesStartupSnapshot().length > 0;
+    const scheduleEnrichment = () => {
+      if (cancelled) return;
+      enrichmentTimer = setTimeout(() => {
+        if (cancelled) return;
         loadChats(false, {
           includeDiscovery: true,
           merge: true,
-          forceRefresh: true,
-        }),
-      )
-      .catch(() => undefined);
-    loadLabels().catch(() => undefined);
-    loadFollowingUserIds(true).catch(() => undefined);
+        }).catch(() => undefined);
+        loadLabels().catch(() => undefined);
+        loadFollowingUserIds(false).catch(() => undefined);
+      }, 120);
+    };
+    const task = InteractionManager.runAfterInteractions(() => {
+      preloadMessagesStartupChats()
+        .then(warmedChats => {
+          if (cancelled) return;
+          setState(prev => ({
+            ...prev,
+            chats: mergeChatItems(prev.chats, warmedChats),
+            isLoadingChats: false,
+            error: null,
+          }));
+          scheduleEnrichment();
+        })
+        .catch(() => {
+          loadChats(!hasStartupChats, {
+            includeDiscovery: false,
+            latestOnly: true,
+          })
+            .then(scheduleEnrichment)
+            .catch(() => undefined);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      task.cancel();
+      if (enrichmentTimer) clearTimeout(enrichmentTimer);
+    };
   }, [loadChats, loadLabels, loadFollowingUserIds]);
+
+  useEffect(() => {
+    if (state.chats.length > 0) {
+      setMessagesStartupSnapshot(state.chats);
+    }
+  }, [state.chats]);
 
   useEffect(() => {
     syncUnreadBadgeCount(state.chats);

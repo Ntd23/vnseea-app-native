@@ -2036,9 +2036,13 @@ export function createFeedRepository(): FeedRepository {
       limit = 20,
       afterPostId?: string,
       source: FeedSource = 'all',
+      requestedMaxScanPages = 4,
     ): Promise<FeedPostsPage> {
       const rawLimit = Math.max(limit * 3, 30);
-      const maxScanPages = 4;
+      const maxScanPages = Math.min(
+        4,
+        Math.max(1, Math.floor(requestedMaxScanPages)),
+      );
       const mappedById = new Map<string, FeedPost>();
       let cursor = afterPostId;
       let lastRawCursor: string | undefined;
@@ -2578,7 +2582,8 @@ export function createFeedRepository(): FeedRepository {
       return { saved: ok };
     },
 
-    async reportPost(postId: string): Promise<{ reported: boolean }> {
+    async reportPost(postId, input): Promise<{ reported: boolean }> {
+      const reportText = `${input.categoryLabel}: ${input.reasonLabel}`;
       const response = await backendApi.post<{
         api_status: number | string;
         code?: number;
@@ -2587,6 +2592,12 @@ export function createFeedRepository(): FeedRepository {
       }>(apiRoutes.feed.postActions, {
         action: 'report',
         post_id: postId,
+        ensure_reported: 1,
+        reason_code: input.reasonCode,
+        reason: input.reasonLabel,
+        reason_category_code: input.categoryCode,
+        reason_category: input.categoryLabel,
+        text: reportText,
       });
 
       const ok = String(response.api_status) === '200' || response.code === 1;

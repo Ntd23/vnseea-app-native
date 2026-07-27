@@ -37,6 +37,7 @@ export function useMyPagesViewModel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadFirstPage = useCallback(
@@ -128,12 +129,134 @@ export function useMyPagesViewModel() {
     void loadFirstPage(false);
   }, [loadFirstPage]);
 
+  const toggleLikePage = useCallback(
+    async (pageId: string | number) => {
+      if (isActionLoading) return;
+
+      const pageKey = String(pageId);
+      const target = pages.find(
+        page => String(page.pageId || page.id) === pageKey,
+      );
+      if (!target) return;
+
+      const previousPages = pages;
+      const nextLiked = !target.isLiked;
+      setPages(current =>
+        current.map(page =>
+          String(page.pageId || page.id) === pageKey
+            ? {
+                ...page,
+                isLiked: nextLiked,
+                likes: Math.max(0, (page.likes ?? 0) + (nextLiked ? 1 : -1)),
+              }
+            : page,
+        ),
+      );
+
+      setIsActionLoading(true);
+      try {
+        const result = await repository.toggleLikePage(pageId);
+        let isFollowing = target.isFollowing;
+
+        // A page that is liked from a recommendation is also followed, so
+        // the action is useful everywhere the page is surfaced.
+        if (result.isLiked && !target.isFollowing) {
+          try {
+            const followResult = await repository.toggleFollowPage(pageId);
+            isFollowing = followResult.isFollowing;
+          } catch {
+            // Keep the successful like even if following is unavailable.
+          }
+        }
+
+        setPages(current =>
+          current.map(page =>
+            String(page.pageId || page.id) === pageKey
+              ? {
+                  ...page,
+                  isLiked: result.isLiked,
+                  isFollowing,
+                  likes: Math.max(
+                    0,
+                    (target.likes ?? page.likes ?? 0) +
+                      (result.isLiked === target.isLiked
+                        ? 0
+                        : result.isLiked
+                          ? 1
+                          : -1),
+                  ),
+                }
+              : page,
+          ),
+        );
+      } catch (err) {
+        setPages(previousPages);
+        setError(
+          err instanceof Error ? err.message : 'Không thể thích trang.',
+        );
+      } finally {
+        setIsActionLoading(false);
+      }
+    },
+    [isActionLoading, pages],
+  );
+
+  const toggleFollowPage = useCallback(
+    async (pageId: string | number) => {
+      if (isActionLoading) return;
+
+      const pageKey = String(pageId);
+      const target = pages.find(
+        page => String(page.pageId || page.id) === pageKey,
+      );
+      if (!target) return;
+
+      const previousPages = pages;
+      const nextFollowing = !target.isFollowing;
+      setPages(current =>
+        current.map(page =>
+          String(page.pageId || page.id) === pageKey
+            ? {
+                ...page,
+                isFollowing: nextFollowing,
+                followersCount: Math.max(
+                  0,
+                  (page.followersCount ?? 0) + (nextFollowing ? 1 : -1),
+                ),
+              }
+            : page,
+        ),
+      );
+
+      setIsActionLoading(true);
+      try {
+        const result = await repository.toggleFollowPage(pageId);
+        setPages(current =>
+          current.map(page =>
+            String(page.pageId || page.id) === pageKey
+              ? { ...page, isFollowing: result.isFollowing }
+              : page,
+          ),
+        );
+      } catch (err) {
+        setPages(previousPages);
+        setError(
+          err instanceof Error ? err.message : 'Không thể theo dõi trang.',
+        );
+      } finally {
+        setIsActionLoading(false);
+      }
+    },
+    [isActionLoading, pages],
+  );
+
   return {
     activeFilter,
     pages,
     isLoading,
     isRefreshing,
     isLoadingMore,
+    isActionLoading,
     error,
     hasMore,
     setActiveFilter,
@@ -141,5 +264,7 @@ export function useMyPagesViewModel() {
     refresh,
     loadMore,
     retry,
+    toggleLikePage,
+    toggleFollowPage,
   };
 }

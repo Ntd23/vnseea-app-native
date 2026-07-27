@@ -1,7 +1,13 @@
 // Description: Shared feed chrome filter tabs used by home feed and group detail surfaces.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useMemo } from 'react';
-import { House, Image as ImageIcon, MapPin, ShoppingBag, Video } from 'lucide-react-native';
+import {
+  House,
+  Image as ImageIcon,
+  MapPin,
+  ShoppingBag,
+  Video,
+} from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
@@ -14,10 +20,12 @@ export type FeedFilterTabsVariant = 'default' | 'header';
 export function FeedFilterTabs({
   activeSource,
   onChangeSource,
+  onHomePress,
   variant = 'default',
 }: {
   activeSource: FeedFilterActiveSource;
   onChangeSource: (source: FeedFilterTabKey) => void;
+  onHomePress?: () => void;
   variant?: FeedFilterTabsVariant;
 }) {
   const navigation = useNavigation<any>();
@@ -34,17 +42,17 @@ export function FeedFilterTabs({
             fill="transparent"
           />
         ),
+        onPress: onHomePress
+          ? () => {
+              onChangeSource('all');
+              onHomePress();
+            }
+          : undefined,
       },
       {
         key: 'nearby' as const,
         accessibilityLabel: 'Nearby',
-        icon: () => (
-          <MapPin
-            size={28}
-            color="#626a77"
-            strokeWidth={2.0}
-          />
-        ),
+        icon: () => <MapPin size={28} color="#626a77" strokeWidth={2.0} />,
         onPress: () => navigation.navigate(ROUTES.NEARBY_USERS),
       },
       {
@@ -61,29 +69,17 @@ export function FeedFilterTabs({
       {
         key: 'videos' as const,
         accessibilityLabel: 'Video',
-        icon: () => (
-          <Video
-            size={28}
-            color="#626a77"
-            strokeWidth={2.0}
-          />
-        ),
+        icon: () => <Video size={28} color="#626a77" strokeWidth={2.0} />,
         onPress: () => navigateToReels(navigation, { source: 'home' }),
       },
       {
         key: 'marketplace' as const,
         accessibilityLabel: 'Marketplace',
-        icon: () => (
-          <ShoppingBag
-            size={28}
-            color="#626a77"
-            strokeWidth={2.0}
-          />
-        ),
+        icon: () => <ShoppingBag size={28} color="#626a77" strokeWidth={2.0} />,
         onPress: () => navigation.navigate(ROUTES.MARKETPLACE),
       },
     ],
-    [navigation],
+    [navigation, onChangeSource, onHomePress],
   );
 
   return (

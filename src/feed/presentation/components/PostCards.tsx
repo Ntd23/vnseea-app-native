@@ -504,6 +504,10 @@ export type FeedCopy = {
   suggestedPagesSubtitle: string;
   pageFallback: string;
   viewPage: string;
+  pageLike: string;
+  pageLiked: string;
+  pageFollow: string;
+  pageFollowing: string;
   fundingTitle: string;
   fundingSubtitle: string;
   fundingFallback: string;
@@ -618,6 +622,10 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     suggestedPagesSubtitle: 'Theo dõi các trang phù hợp trên VNSEEA',
     pageFallback: 'Trang',
     viewPage: 'Xem trang',
+    pageLike: 'Thích',
+    pageLiked: 'Đã thích',
+    pageFollow: 'Theo dõi',
+    pageFollowing: 'Đang theo dõi',
     fundingTitle: 'Gây quỹ nổi bật',
     fundingSubtitle: 'Các chiến dịch cộng đồng đang cần được ủng hộ',
     fundingFallback: 'Chiến dịch gây quỹ',
@@ -734,6 +742,10 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     suggestedPagesSubtitle: 'Follow relevant pages on VNSEEA',
     pageFallback: 'Page',
     viewPage: 'View page',
+    pageLike: 'Like',
+    pageLiked: 'Liked',
+    pageFollow: 'Follow',
+    pageFollowing: 'Following',
     fundingTitle: 'Featured fundraisers',
     fundingSubtitle: 'Community campaigns that need support',
     fundingFallback: 'Fundraising campaign',

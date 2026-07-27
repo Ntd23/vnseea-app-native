@@ -11,6 +11,7 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   GetPostByIdResult,
   PostComment,
+  ReportPostInput,
 } from '../../domain/repositories/FeedRepository';
 
 const feedRepository = createFeedRepository();
@@ -34,7 +35,9 @@ export function usePostDetailViewModel({
 }: UsePostDetailViewModelOptions) {
   const [post, setPost] = useState<FeedPost | undefined>(fallbackPost);
   const [comments, setComments] = useState<PostComment[]>([]);
-  const [likedUsers, setLikedUsers] = useState<Array<Record<string, unknown>>>([]);
+  const [likedUsers, setLikedUsers] = useState<Array<Record<string, unknown>>>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(fallbackPost === undefined);
   const [isLoadingComments, setIsLoadingComments] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,15 +78,16 @@ export function usePostDetailViewModel({
             setLikedUsers(mapped);
           })
           .catch(err => {
-            console.warn('[usePostDetailViewModel] Failed to fetch liked users preview', err);
+            console.warn(
+              '[usePostDetailViewModel] Failed to fetch liked users preview',
+              err,
+            );
           });
       })
       .catch(caught => {
         if (cancelled) return;
         setError(
-          caught instanceof Error
-            ? caught.message
-            : 'Không tải được bài viết.',
+          caught instanceof Error ? caught.message : 'Không tải được bài viết.',
         );
       })
       .finally(() => {
@@ -131,7 +135,10 @@ export function usePostDetailViewModel({
         setPost(prev => {
           if (!prev) return prev;
           if ('commentCount' in prev) {
-            return { ...prev, commentCount: (prev as any).commentCount + 1 } as FeedPost;
+            return {
+              ...prev,
+              commentCount: (prev as any).commentCount + 1,
+            } as FeedPost;
           }
           return prev;
         });
@@ -166,12 +173,16 @@ export function usePostDetailViewModel({
 
         // Decrement old reaction if there was one
         if (oldReaction && nextReactionBreakdown[oldReaction] !== undefined) {
-          nextReactionBreakdown[oldReaction] = Math.max(0, (nextReactionBreakdown[oldReaction] as number) - 1);
+          nextReactionBreakdown[oldReaction] = Math.max(
+            0,
+            (nextReactionBreakdown[oldReaction] as number) - 1,
+          );
         }
 
         // Increment new reaction
         if (reaction) {
-          nextReactionBreakdown[reaction] = ((nextReactionBreakdown[reaction] as number) ?? 0) + 1;
+          nextReactionBreakdown[reaction] =
+            ((nextReactionBreakdown[reaction] as number) ?? 0) + 1;
         }
 
         // Update isLiked / likeCount for fallback fields
@@ -196,7 +207,11 @@ export function usePostDetailViewModel({
       try {
         await feedRepository.setReaction(postId, reaction);
         // Refresh liked users preview list after updating reaction
-        const reactionsPage = await feedRepository.getPostReactions(postId, undefined, 3);
+        const reactionsPage = await feedRepository.getPostReactions(
+          postId,
+          undefined,
+          3,
+        );
         const mapped = (reactionsPage.users ?? []).map(u => ({
           avatar: u.avatarUrl,
           name: u.name,
@@ -217,7 +232,7 @@ export function usePostDetailViewModel({
         });
       }
     },
-    [post, postId]
+    [post, postId],
   );
 
   const applyRealtimePost = useCallback((nextPost: FeedPost) => {
@@ -247,7 +262,8 @@ export function usePostDetailViewModel({
   );
 
   const reportPost = useCallback(
-    (targetPostId: string) => feedRepository.reportPost(targetPostId),
+    (targetPostId: string, input: ReportPostInput) =>
+      feedRepository.reportPost(targetPostId, input),
     [],
   );
 

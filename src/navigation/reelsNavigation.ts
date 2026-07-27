@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, StatusBar } from 'react-native';
 import { ROUTES } from './constants/routes';
 import type { MainTabParamList } from './types';
 
@@ -22,6 +22,7 @@ type ReelsNavigatorLike = {
   navigate: (...args: any[]) => void;
   push?: (...args: any[]) => void;
   getParent?: () => ReelsNavigatorLike | undefined;
+  getState?: () => { type?: string };
 };
 
 function getRootNavigator(navigation: ReelsNavigatorLike) {
@@ -34,6 +35,14 @@ function getRootNavigator(navigation: ReelsNavigatorLike) {
   }
 
   return current;
+}
+
+export function shouldOpenReelsInMainTab(params: ReelsNavigationParams) {
+  return (
+    params.source === 'home' &&
+    !params.initialVideoId &&
+    !params.post
+  );
 }
 
 /**
@@ -64,6 +73,30 @@ export function navigateToReels(
 ) {
   const target = createReelsNavigationTarget(platform, params);
   const rootNavigator = getRootNavigator(navigation);
+
+  if (Platform.OS === 'android') {
+    // Apply the fullscreen chrome before the navigation commit so the first
+    // visible Reel frame already has the correct viewport/status-bar layout.
+    StatusBar.setBarStyle('light-content', false);
+    StatusBar.setBackgroundColor('transparent', false);
+    StatusBar.setTranslucent(true);
+  }
+
+  // Opening the generic Video surface from Home should switch to the
+  // persistent Reels tab. Reusing that mounted screen keeps both Home and
+  // the video player tree warm, so moving back and forth is immediate.
+  if (shouldOpenReelsInMainTab(params)) {
+    if (navigation.getState?.().type === 'tab') {
+      navigation.navigate(ROUTES.REELS, target.params);
+      return;
+    }
+
+    rootNavigator.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.REELS,
+      params: target.params,
+    });
+    return;
+  }
 
   if (typeof rootNavigator.push === 'function') {
     rootNavigator.push(target.name, target.params);

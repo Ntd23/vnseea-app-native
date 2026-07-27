@@ -8,12 +8,36 @@ function read(relativePath) {
 describe('page location picker contract', () => {
   it('uses a Google map with a fixed center pin and reverse-geocodes after map movement', () => {
     const source = read('PageLocationPickerModal.tsx');
+    const addressRepository = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../../shared-kernel/infrastructure/address/ApiAddressSearchRepository.ts',
+      ),
+      'utf8',
+    );
+    const backend = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../../../phtml/api/v2/endpoints/map_discovery.php',
+      ),
+      'utf8',
+    );
 
     expect(source).toContain('provider={PROVIDER_GOOGLE}');
     expect(source).toContain('onRegionChangeComplete={handleRegionChangeComplete}');
-    expect(source).toContain("type: 'reverse_geocode'");
+    expect(addressRepository).toContain("type: 'reverse_geocode'");
+    expect(addressRepository).toContain('reverseGeocodeCoordinate');
+    expect(addressRepository).toContain("loadSuggestions('address_geocode'");
+    expect(addressRepository).toContain(
+      'place/nearbysearch/json?${params.toString()}',
+    );
+    expect(backend).toContain("Wo_ApiMapDiscoveryGoogleGet('place/nearbysearch/json'");
+    expect(backend).toContain("'is_nearby' => 1");
+    expect(backend).toContain("'nearby_places' => $nearby_places");
     expect(source).toContain('REVERSE_GEOCODE_DEBOUNCE_MS');
     expect(source).toContain('handleUseCurrentLocation');
+    expect(source).toContain('await reverseGeocode(coordinate, sessionIdRef.current)');
+    expect(source).toContain("primaryAddressRef.current = ''");
     expect(source).toContain('Google Maps');
     expect(source).not.toContain('Powered by Google');
     expect(source).toContain('resolveInitialPlace');
@@ -31,6 +55,10 @@ describe('page location picker contract', () => {
     expect(source).toContain('primaryAddressRef');
     expect(source).toContain('prepareManualPinMove()');
     expect(source).toContain('applyPrimaryAddress(address, placeId)');
+    expect(source).toContain('handleSelectNearbySuggestion');
+    expect(source).toContain('nearbySuggestions.slice(0, 3)');
+    expect(source).toContain('{copy.nearbySuggestions}');
+    expect(source).toContain('{copy.distanceFromPin} {distance}');
     expect(source).toContain('setNearbyAddress(address === primaryAddress ? \'\' : address)');
     expect(source).toContain('setSelectedPlaceId(undefined)');
     expect(source).toContain('setHasPinnedCoordinate(true)');
@@ -51,7 +79,7 @@ describe('page location picker contract', () => {
     expect(source).toContain('region.longitude.toFixed(6)');
     expect(source).toContain('const canConfirm =');
     expect(source).toContain('hasPinnedCoordinate &&');
-    expect(source).not.toContain('!isResolving &&');
+    expect(source).not.toContain('const canConfirm =\n    !isResolving');
     expect(source).toContain('Boolean(selectedAddress.trim())');
     expect(source).toContain('disabled={!canConfirm}');
   });

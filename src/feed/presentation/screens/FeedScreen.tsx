@@ -39,9 +39,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   ArrowUp,
+  Bell,
   Briefcase,
   Building2,
   Globe,
+  Heart,
   Lock,
   MapPin,
   Megaphone,
@@ -64,7 +66,6 @@ import {
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import {
-  getReelsStartupSnapshot,
   preloadReelsStartupPage,
 } from '../../../reels/application/services/reelsStartupFeed';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
@@ -112,6 +113,7 @@ import type {
 import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type {
   FeedSource,
+  ReportPostInput,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
@@ -1062,12 +1064,16 @@ const SuggestedPagesCarousel = React.memo(
     copy,
     onOpenPages,
     onOpenPage,
+    onLikePage,
+    onFollowPage,
   }: {
     pages: PagesItem[];
     isLoading: boolean;
     copy: FeedCopy;
     onOpenPages: () => void;
     onOpenPage: (page: PagesItem) => void;
+    onLikePage: (pageId: string | number) => void;
+    onFollowPage: (pageId: string | number) => void;
   }) {
     if (!isLoading && pages.length === 0) return null;
 
@@ -1167,12 +1173,50 @@ const SuggestedPagesCarousel = React.memo(
                       {formatCount(Number(item.likes) || 0)}
                     </Text>
                   </View>
-                  <View className="mt-4 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2.5">
+                  <View className="mt-4 flex-row gap-2">
+                    <TouchableOpacity
+                      className={`flex-1 flex-row items-center justify-center rounded-xl py-2.5 ${item.isLiked ? 'bg-[#e7f0ff]' : 'bg-[#f1f5f9]'}`}
+                      activeOpacity={0.8}
+                      onPress={() => onLikePage(item.pageId || item.id)}
+                    >
+                      <Heart
+                        size={15}
+                        color={item.isLiked ? APP_BRAND_COLOR : '#64748b'}
+                        fill={item.isLiked ? APP_BRAND_COLOR : 'transparent'}
+                      />
+                      <Text
+                        className={`ml-1 text-xs font-extrabold ${item.isLiked ? 'text-brand' : 'text-[#64748b]'}`}
+                      >
+                        {item.isLiked ? copy.pageLiked : copy.pageLike}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className={`flex-1 flex-row items-center justify-center rounded-xl py-2.5 ${item.isFollowing ? 'bg-[#e7f0ff]' : 'bg-[#f1f5f9]'}`}
+                      activeOpacity={0.8}
+                      onPress={() => onFollowPage(item.pageId || item.id)}
+                    >
+                      <Bell
+                        size={15}
+                        color={item.isFollowing ? APP_BRAND_COLOR : '#64748b'}
+                        fill={item.isFollowing ? APP_BRAND_COLOR : 'transparent'}
+                      />
+                      <Text
+                        className={`ml-1 text-xs font-extrabold ${item.isFollowing ? 'text-brand' : 'text-[#64748b]'}`}
+                      >
+                        {item.isFollowing ? copy.pageFollowing : copy.pageFollow}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity
+                    className="mt-2 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2.5"
+                    activeOpacity={0.8}
+                    onPress={() => onOpenPage(item)}
+                  >
                     <Plus size={16} color={APP_BRAND_COLOR} />
                     <Text className="ml-1 text-sm font-extrabold text-brand">
                       {copy.viewPage}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             );
@@ -1186,7 +1230,9 @@ const SuggestedPagesCarousel = React.memo(
     prev.isLoading === next.isLoading &&
     prev.copy === next.copy &&
     prev.onOpenPages === next.onOpenPages &&
-    prev.onOpenPage === next.onOpenPage,
+    prev.onOpenPage === next.onOpenPage &&
+    prev.onLikePage === next.onLikePage &&
+    prev.onFollowPage === next.onFollowPage,
 );
 
 function PostSkeleton() {
@@ -1437,22 +1483,13 @@ function FeedScreen() {
 
     let cancelled = false;
     let started = false;
-    const prefetchReelsPosters = (
-      items: ReturnType<typeof getReelsStartupSnapshot>['items'],
-    ) => {
-      items.slice(0, 2).forEach(item => {
-        if (item.thumbnailUrl) {
-          Image.prefetch(item.thumbnailUrl).catch(() => undefined);
-        }
-      });
-    };
     const startReelsPreload = () => {
       if (cancelled || started) return;
       started = true;
-      prefetchReelsPosters(getReelsStartupSnapshot().items);
-      preloadReelsStartupPage()
-        .then(page => prefetchReelsPosters(page.items))
-        .catch(() => undefined);
+      // Warm only the Reel data. Poster prefetching competes with the first
+      // video request and is unnecessary now that Reels opens straight onto
+      // the player without a one-second thumbnail cover.
+      preloadReelsStartupPage().catch(() => undefined);
     };
     const preloadTask =
       InteractionManager.runAfterInteractions(startReelsPreload);
@@ -1589,6 +1626,13 @@ function FeedScreen() {
   }, [isFeedTabFocused, reloadFeedPosts]);
   const setFeedScrollBusy = vm.setScrollBusy;
   const setActiveFeedSource = vm.setFeedSource;
+  const handlePressHomeFilter = useCallback(() => {
+    if (activeFeedSource === 'all') {
+      feedLogoEvents.emitScrollToTop();
+      return;
+    }
+    mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [activeFeedSource]);
   useEffect(() => {
     if (route.params?.filter !== 'photos') return;
     setActiveFeedSource('photos');
@@ -2966,16 +3010,16 @@ function FeedScreen() {
   );
 
   const handleReportPost = useCallback(
-    async (postId: string) => {
+    async (postId: string, input: ReportPostInput) => {
       try {
-        const result = await reportFeedPost?.(postId);
-        if (result?.reported) {
-          Alert.alert(copy.reportSentTitle, copy.reportSentMessage);
-        } else {
-          Alert.alert(copy.reportCancelledTitle, copy.reportCancelledMessage);
+        const result = await reportFeedPost?.(postId, input);
+        if (!result?.reported) {
+          throw new Error(copy.reportErrorMessage);
         }
-      } catch {
-        Alert.alert(copy.errorTitle, copy.reportErrorMessage);
+      } catch (error) {
+        throw error instanceof Error
+          ? error
+          : new Error(copy.reportErrorMessage);
       }
     },
     [copy, reportFeedPost],
@@ -3603,9 +3647,17 @@ function FeedScreen() {
         copy={copy}
         onOpenPages={handleOpenPages}
         onOpenPage={handleOpenPage}
+        onLikePage={pagesVm.toggleLikePage}
+        onFollowPage={pagesVm.toggleFollowPage}
       />
     ),
-    [copy, handleOpenPage, handleOpenPages],
+    [
+      copy,
+      handleOpenPage,
+      handleOpenPages,
+      pagesVm.toggleFollowPage,
+      pagesVm.toggleLikePage,
+    ],
   );
 
   const renderFundingCarousel = useCallback(
@@ -3743,29 +3795,18 @@ function FeedScreen() {
   const feedRefreshControl = useMemo(
     () => (
       <RefreshControl
-        refreshing={
-          vm.isRefreshing ||
-          productsVm.isRefreshing ||
-          eventsVm.isRefreshing ||
-          jobsVm.isRefreshing ||
-          groupsVm.isRefreshing ||
-          pagesVm.isRefreshing ||
-          liveVm.isRefreshing
-        }
+        // Pull-to-refresh represents the Home timeline only. Discovery
+        // modules continue refreshing in the background and must not keep
+        // the native spinner open after the newest posts are already ready.
+        refreshing={vm.isRefreshing}
         onRefresh={handleRefresh}
         tintColor={APP_BRAND_COLOR}
         progressViewOffset={feedRefreshProgressViewOffset}
       />
     ),
     [
-      eventsVm.isRefreshing,
       feedRefreshProgressViewOffset,
-      groupsVm.isRefreshing,
       handleRefresh,
-      jobsVm.isRefreshing,
-      liveVm.isRefreshing,
-      pagesVm.isRefreshing,
-      productsVm.isRefreshing,
       vm.isRefreshing,
     ],
   );
@@ -3876,6 +3917,7 @@ function FeedScreen() {
                 variant="header"
                 activeSource={activeFeedSource}
                 onChangeSource={setActiveFeedSource}
+                onHomePress={handlePressHomeFilter}
               />
             </FeedHeaderCollapseFrame>
             {hasNewPosts && (

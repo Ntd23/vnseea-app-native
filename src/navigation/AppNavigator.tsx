@@ -10,6 +10,7 @@ import MainTabNavigator from './MainTabNavigator';
 import { navigationRef } from './navigationRef';
 import { VNSEEA_NAVIGATION_THEME } from './navigationTheme';
 import { sessionStorage } from '../shared-kernel/infrastructure/storage/sessionStorage';
+import { flushPendingPushNotificationNavigation } from '../notifications/application/navigation/pushNotificationNavigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const STACK_ROUTES = createStackRoutes(MainTabNavigator);
@@ -62,13 +63,24 @@ const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {
   gestureEnabled: false,
 };
 
+const MESSAGES_OPTIONS: NativeStackNavigationOptions = {
+  animation: 'fade',
+  animationDuration: 140,
+  contentStyle: { backgroundColor: '#FFFFFF' },
+  gestureEnabled: true,
+};
+
 function AppNavigator() {
   const initialRouteName = sessionStorage.getAccessToken()
     ? ROUTES.MAIN_TABS
     : ROUTES.LOGIN;
 
   return (
-    <NavigationContainer ref={navigationRef} theme={VNSEEA_NAVIGATION_THEME}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={VNSEEA_NAVIGATION_THEME}
+      onReady={flushPendingPushNotificationNavigation}
+    >
       <Stack.Navigator
         initialRouteName={initialRouteName}
         screenOptions={{ headerShown: false }}
@@ -96,9 +108,8 @@ function AppNavigator() {
             // Per-route animation override. The default for the
             // custom-animated set is fade (used by the story
             // viewers so their internal gesture is not raced by a
-            // native push/pop). REELS uses a short native-thread fade so
-            // Home remains visible underneath while the first poster/player
-            // is prepared, avoiding an abrupt black-frame swap.
+            // native push/pop). REELS owns its transition and player surface,
+            // so avoid adding a second native fade on top of it.
             if (name === ROUTES.REELS) {
               return (
                 <Stack.Screen
@@ -107,8 +118,7 @@ function AppNavigator() {
                   component={component}
                   options={{
                     presentation: 'transparentModal',
-                    animation: 'fade',
-                    animationDuration: 160,
+                    animation: 'none',
                     contentStyle: { backgroundColor: 'transparent' },
                     gestureEnabled: false,
                   }}
@@ -161,6 +171,16 @@ function AppNavigator() {
                 name={name}
                 component={component}
                 options={POST_DETAIL_OPTIONS}
+              />
+            );
+          }
+          if (name === ROUTES.MESSAGES) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={MESSAGES_OPTIONS}
               />
             );
           }

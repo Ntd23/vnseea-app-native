@@ -20,6 +20,8 @@ import {
 
   Image,
 
+  InteractionManager,
+
   Platform,
 
   RefreshControl,
@@ -140,7 +142,6 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { useNotificationBadgeViewModel } from '../../../notifications';
 
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
-import { feedLogoEvents } from '../../../feed/application/events/feedLogoEvents';
 import { sortMessageUserChats } from '../utils/messageListOrdering';
 import {
   isMessageRealtimeConnected,
@@ -2182,13 +2183,19 @@ function MessageScreen() {
 
   const handlePressLogo = useCallback(() => {
 
-    feedLogoEvents.emitScrollToTop();
+    if (navigation.canGoBack()) {
 
-    navigation.navigate(ROUTES.MAIN_TABS, {
+      navigation.popTo(ROUTES.MAIN_TABS, {
 
-      screen: ROUTES.FEED,
+        screen: ROUTES.FEED,
 
-    });
+      });
+
+      return;
+
+    }
+
+    navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
 
   }, [navigation]);
 
@@ -2258,6 +2265,64 @@ function MessageScreen() {
 
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('users');
 
+  const [mountedFilters, setMountedFilters] = useState<
+
+    ReadonlySet<ChatFilter>
+
+  >(() => new Set<ChatFilter>(['users']));
+
+  const [isDeferredContentReady, setIsDeferredContentReady] = useState(false);
+
+  const ensureFilterMounted = useCallback((filter: ChatFilter) => {
+
+    setMountedFilters(current => {
+
+      if (current.has(filter)) return current;
+
+      const next = new Set(current);
+
+      next.add(filter);
+
+      return next;
+
+    });
+
+  }, []);
+
+  useEffect(() => {
+
+    let completed = false;
+
+    const revealDeferredContent = () => {
+
+      if (completed) return;
+
+      completed = true;
+
+      setIsDeferredContentReady(true);
+
+    };
+
+    const task = InteractionManager.runAfterInteractions(
+
+      revealDeferredContent,
+
+    );
+
+    const fallbackTimer = setTimeout(revealDeferredContent, 260);
+
+    return () => {
+
+      completed = true;
+
+      clearTimeout(fallbackTimer);
+
+      task.cancel();
+
+    };
+
+  }, []);
+
   const [broadcastText, setBroadcastText] = useState('');
 
   const [broadcastAttachment, setBroadcastAttachment] =
@@ -2319,6 +2384,8 @@ function MessageScreen() {
 
     isProgrammaticScrollRef.current = true;
 
+    ensureFilterMounted(filter);
+
     setActiveFilter(filter);
 
     setQuery('');
@@ -2331,7 +2398,7 @@ function MessageScreen() {
 
     }
 
-  }, [screenWidth]);
+  }, [ensureFilterMounted, screenWidth]);
 
   const handleScroll = useCallback((e: any) => {
 
@@ -2343,11 +2410,33 @@ function MessageScreen() {
 
     const offsetX = e.nativeEvent.contentOffset.x;
 
+    const activeIndex = FILTERS.findIndex(filter => filter.key === activeFilter);
+
+    const activeOffset = Math.max(0, activeIndex) * screenWidth;
+
+    const directionalIndex =
+
+      offsetX > activeOffset + 4
+
+        ? Math.min(FILTERS.length - 1, activeIndex + 1)
+
+        : offsetX < activeOffset - 4
+
+          ? Math.max(0, activeIndex - 1)
+
+          : activeIndex;
+
+    const directionalFilter = FILTERS[directionalIndex]?.key;
+
+    if (directionalFilter) ensureFilterMounted(directionalFilter);
+
     const index = Math.round(offsetX / screenWidth);
 
     const newFilter = FILTERS[index]?.key;
 
     if (newFilter && newFilter !== activeFilter) {
+
+      ensureFilterMounted(newFilter);
 
       setActiveFilter(newFilter);
 
@@ -2355,7 +2444,7 @@ function MessageScreen() {
 
     }
 
-  }, [activeFilter, screenWidth]);
+  }, [activeFilter, ensureFilterMounted, screenWidth]);
 
   const handleMomentumScrollEnd = useCallback(() => {
 
@@ -3055,6 +3144,8 @@ function MessageScreen() {
 
         <View style={{ width: screenWidth, flex: 1 }}>
 
+          {mountedFilters.has('broadcast') ? (
+
           <FlatList
 
             data={isLoadingChats && !refreshing ? [] : broadcastChats}
@@ -3511,6 +3602,8 @@ function MessageScreen() {
 
           />
 
+          ) : null}
+
         </View>
 
         {/* PAGE 1: People (Người dùng) */}
@@ -3539,7 +3632,14 @@ function MessageScreen() {
 
                 />
 
-                <StoriesBubbleRow chats={chats} createStoryLabel={copy.createStory} />
+                {isDeferredContentReady ? (
+                  <StoriesBubbleRow
+                    chats={chats}
+                    createStoryLabel={copy.createStory}
+                  />
+                ) : (
+                  <View style={styles.messageStoriesPlaceholder} />
+                )}
 
               </View>
 
@@ -3600,6 +3700,8 @@ function MessageScreen() {
         {/* PAGE 2: Groups (Các nhóm) */}
 
         <View style={{ width: screenWidth, flex: 1 }}>
+
+          {mountedFilters.has('groups') ? (
 
           <FlatList
 
@@ -3693,6 +3795,8 @@ function MessageScreen() {
 
           />
 
+          ) : null}
+
         </View>
 
       </ScrollView>
@@ -3716,6 +3820,18 @@ function MessageScreen() {
 export default MessageScreen;
 
 const styles = StyleSheet.create({
+
+  messageStoriesPlaceholder: {
+
+    height: 108,
+
+    backgroundColor: '#FFFFFF',
+
+    borderBottomWidth: StyleSheet.hairlineWidth,
+
+    borderBottomColor: '#F1F5F9',
+
+  },
 
   messageStoryInstagramRing: {
 

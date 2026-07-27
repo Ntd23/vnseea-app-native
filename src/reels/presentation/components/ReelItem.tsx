@@ -8,14 +8,14 @@
 //   • The VideoPlayer is paused (and muted) whenever `isActive` is false.
 //     This lets us keep neighbors preloaded without burning battery or
 //     emitting audio from off-screen items.
-//   • A poster image (thumbnailUrl) stands in for the player whenever the
-//     player isn't mounted yet, so the user never sees a black square.
+//   • Before native video is ready we keep a clean black player surface.
+//     Thumbnail posters are intentionally not flashed during startup.
 //
 // Layout (TikTok-style):
 //   ┌──────────────────────────────────┐
 //   │  [mute]                    top   │
 //   │                                  │
-//   │         video / thumbnail        │
+//   │              video               │
 //   │                                  │
 //   │                        [avatar]  │
 //   │                          [like]  │
@@ -712,7 +712,6 @@ function ReelItemBase({
   const infoBottom = Math.max(protectedBottom + 12, 24);
   const videoFitMode = getReelVideoFitMode(videoNaturalAspectRatio);
   const videoResizeMode = videoFitMode === 'blurContain' ? 'contain' : 'cover';
-  const posterResizeMode = videoResizeMode;
   const usesBlurContainVideo = videoFitMode === 'blurContain';
 
   // Each reel needs a unique SVG gradient ID — if two SVGs share the same
@@ -723,29 +722,21 @@ function ReelItemBase({
     <Animated.View style={[styles.reelRoot, { height }]}>
       <Animated.View style={[styles.mediaStage, mediaStageAnimatedStyle]}>
 
-      {/* ── Thumbnail / poster background ────────────────────────────── */}
-      {item.thumbnailUrl ? (
+      {/* Landscape reels keep a blurred backdrop only after the native
+          player has resolved the video's real aspect ratio. Before that we
+          show the black player surface instead of flashing a poster image. */}
+      {item.thumbnailUrl && isReady && usesBlurContainVideo ? (
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, mediaBackdropAnimatedStyle]}
         >
-          {usesBlurContainVideo ? (
-            <>
-              <Image
-                source={{ uri: item.thumbnailUrl }}
-                style={[StyleSheet.absoluteFill, styles.blurredVideoBackground]}
-                resizeMode="cover"
-                blurRadius={28}
-              />
-              <View style={styles.blurredVideoScrim} />
-            </>
-          ) : (
-            <Image
-              source={{ uri: item.thumbnailUrl }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-            />
-          )}
+          <Image
+            source={{ uri: item.thumbnailUrl }}
+            style={[StyleSheet.absoluteFill, styles.blurredVideoBackground]}
+            resizeMode="cover"
+            blurRadius={28}
+          />
+          <View style={styles.blurredVideoScrim} />
         </Animated.View>
       ) : null}
 
@@ -831,15 +822,6 @@ function ReelItemBase({
         />
       ) : null}
 
-      {item.thumbnailUrl && shouldMount && !isReady ? (
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <Image
-            source={{ uri: item.thumbnailUrl }}
-            style={StyleSheet.absoluteFill}
-            resizeMode={posterResizeMode}
-          />
-        </View>
-      ) : null}
       </Animated.View>
 
       {/* ── Tap surface ─────────────────────────────────────────────────

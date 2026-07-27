@@ -146,6 +146,10 @@ import {
   hiddenPostsStorage,
   LOCAL_POST_HIDDEN_EVENT,
 } from '../../../feed/infrastructure/storage/hiddenPostsStorage';
+import {
+  endedLivePostsStorage,
+  LOCAL_LIVE_ENDED_EVENT,
+} from '../../../live/infrastructure/storage/endedLivePostsStorage';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
@@ -169,7 +173,10 @@ import type {
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
 import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
-import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
+import type {
+  ReportPostInput,
+  SharePostInput,
+} from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
@@ -1395,8 +1402,7 @@ function ProfileScreen() {
     target: ImageCropTarget;
     image: CropSourceImage;
   } | null>(null);
-  const [isRelationshipSheetVisible, setRelationshipSheetVisible] =
-    useState(false);
+  const [isRelationshipSheetVisible, setRelationshipSheetVisible] = useState(false);
   const [relationshipAction, setRelationshipAction] = useState<
     'unfollow' | 'block' | null
   >(null);
@@ -1498,10 +1504,16 @@ function ProfileScreen() {
   const closeReactionsSheet = useCallback(() => {
     setReactionsSheetVisible(false);
   }, []);
-  const filteredProfilePosts = useMemo(
-    () => hiddenPostsStorage.filterVisiblePosts(posts, currentUserId),
-    [currentUserId, posts],
-  );
+  const filteredProfilePosts = useMemo(() => {
+    const visiblePosts = hiddenPostsStorage.filterVisiblePosts(
+      posts,
+      currentUserId,
+    );
+    return endedLivePostsStorage.filterVisiblePosts(
+      visiblePosts,
+      currentUserId,
+    );
+  }, [currentUserId, posts]);
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -2957,6 +2969,20 @@ function ProfileScreen() {
     return () => subscription.remove();
   }, [currentUserId, removeProfilePostFromList]);
 
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      LOCAL_LIVE_ENDED_EVENT,
+      (event: { postId?: string; userId?: string }) => {
+        const postId = String(event?.postId ?? '').trim();
+        if (!postId) return;
+        const currentOwnerKey = currentUserId || 'guest';
+        if (event?.userId && event.userId !== currentOwnerKey) return;
+        removeProfilePostFromList(postId);
+      },
+    );
+    return () => subscription.remove();
+  }, [currentUserId, removeProfilePostFromList]);
+
   const handleSavePost = useCallback(
     async (postId: string) => {
       try {
@@ -2974,22 +3000,16 @@ function ProfileScreen() {
   );
 
   const handleReportPost = useCallback(
-    async (postId: string) => {
+    async (postId: string, input: ReportPostInput) => {
       try {
-        const result = await feedRepo.reportPost(postId);
-        if (result.reported) {
-          Alert.alert(
-            postCardCopy.reportSentTitle,
-            postCardCopy.reportSentMessage,
-          );
-        } else {
-          Alert.alert(
-            postCardCopy.reportCancelledTitle,
-            postCardCopy.reportCancelledMessage,
-          );
+        const result = await feedRepo.reportPost(postId, input);
+        if (!result.reported) {
+          throw new Error(postCardCopy.reportErrorMessage);
         }
-      } catch {
-        Alert.alert(postCardCopy.errorTitle, postCardCopy.reportErrorMessage);
+      } catch (error) {
+        throw error instanceof Error
+          ? error
+          : new Error(postCardCopy.reportErrorMessage);
       }
     },
     [feedRepo, postCardCopy],
@@ -3381,12 +3401,9 @@ function ProfileScreen() {
             ? await updateAvatar(asset.uri)
             : await updateCover(asset);
           if (result) {
-            loadProfile({ userId: targetUserId }).catch(error => {
-              console.warn(
-                '[Profile] Profile media updated but revalidation failed:',
-                error,
-              );
-            });
+            // The profile media event already updates every mounted profile
+            // view immediately. Reloading here can return a stale cached user
+            // object and overwrite the newly uploaded image.
             return;
           }
 

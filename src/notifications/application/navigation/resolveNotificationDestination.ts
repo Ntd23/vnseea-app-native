@@ -77,6 +77,12 @@ const TRACKING_NOTIFICATION_TYPES = new Set([
   'added_tracking',
   'added_tracking_info',
 ]);
+const MESSAGE_NOTIFICATION_TYPES = new Set([
+  'message',
+  'chat',
+  'chat_message',
+  'new_message',
+]);
 
 function normalized(value: string | undefined) {
   return (value ?? '').trim().toLowerCase();
@@ -89,6 +95,10 @@ export function resolveNotificationDestination(
   const type2 = normalized(item.type2);
 
   if (type === GROUP_CHAT_INVITE_NOTIFICATION) {
+    return { kind: 'messages' };
+  }
+
+  if (MESSAGE_NOTIFICATION_TYPES.has(type)) {
     return { kind: 'messages' };
   }
 

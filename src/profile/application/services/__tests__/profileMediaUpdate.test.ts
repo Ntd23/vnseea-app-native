@@ -71,6 +71,83 @@ describe('profile media update contract', () => {
     });
   });
 
+  it('reconciles a successful response from a legacy API deployment', async () => {
+    const loadSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce({
+        coverUrl: 'https://cdn.vnseea.vn/old.jpg',
+        coverPostId: '10',
+      })
+      .mockResolvedValueOnce({
+        coverUrl: 'https://cdn.vnseea.vn/new.jpg',
+        coverPostId: '11',
+      });
+
+    await expect(
+      uploadProfileMediaWithReconciliation('cover', coverFile, {
+        upload: async () =>
+          parseProfileMediaUpdateResponse({ api_status: 200 }, 'cover'),
+        loadSnapshot,
+      }),
+    ).resolves.toEqual({
+      kind: 'cover',
+      url: 'https://cdn.vnseea.vn/new.jpg',
+      fullUrl: 'https://cdn.vnseea.vn/new.jpg',
+      postId: '11',
+      postType: 'profile_cover_picture',
+      reconciled: true,
+    });
+  });
+
+  it('retries reconciliation while the profile endpoint still returns stale media', async () => {
+    const oldSnapshot = {
+      coverUrl: 'https://cdn.vnseea.vn/old.jpg',
+      coverPostId: '10',
+    };
+    const loadSnapshot = jest
+      .fn()
+      .mockResolvedValueOnce(oldSnapshot)
+      .mockResolvedValueOnce(oldSnapshot)
+      .mockResolvedValueOnce({
+        coverUrl: 'https://cdn.vnseea.vn/new.jpg',
+        coverPostId: '11',
+      });
+    const wait = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      uploadProfileMediaWithReconciliation('cover', coverFile, {
+        upload: async () =>
+          parseProfileMediaUpdateResponse({ api_status: 200 }, 'cover'),
+        loadSnapshot,
+        wait,
+      }),
+    ).resolves.toMatchObject({
+      url: 'https://cdn.vnseea.vn/new.jpg',
+      postId: '11',
+      reconciled: true,
+    });
+    expect(wait).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reconcile an explicit server rejection', async () => {
+    const loadSnapshot = jest.fn().mockResolvedValue({
+      coverUrl: 'https://cdn.vnseea.vn/old.jpg',
+      coverPostId: '10',
+    });
+
+    await expect(
+      uploadProfileMediaWithReconciliation('cover', coverFile, {
+        upload: async () =>
+          parseProfileMediaUpdateResponse(
+            { api_status: 422, message: 'Invalid image geometry' },
+            'cover',
+          ),
+        loadSnapshot,
+      }),
+    ).rejects.toThrow('Invalid image geometry');
+    expect(loadSnapshot).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the upload error when the canonical profile did not change', async () => {
     const snapshot = {
       avatarUrl: 'https://cdn.vnseea.vn/avatar.jpg',

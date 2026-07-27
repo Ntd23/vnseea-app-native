@@ -84,6 +84,15 @@ describe('resolveNotificationDestination', () => {
     ).toEqual({ kind: 'messages' });
   });
 
+  it.each(['message', 'chat', 'chat_message', 'new_message'])(
+    'routes push-only message type %s to messages',
+    type => {
+      expect(resolveNotificationDestination(notification({ type }))).toEqual({
+        kind: 'messages',
+      });
+    },
+  );
+
   it('uses the exact group link when the API only provides a group slug', () => {
     expect(
       resolveNotificationDestination(

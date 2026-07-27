@@ -1,5 +1,9 @@
 import { ROUTES } from '../constants/routes';
-import { createReelsNavigationTarget, navigateToReels } from '../reelsNavigation';
+import {
+  createReelsNavigationTarget,
+  navigateToReels,
+  shouldOpenReelsInMainTab,
+} from '../reelsNavigation';
 
 describe('reels navigation target', () => {
   const params = {
@@ -31,6 +35,40 @@ describe('reels navigation target', () => {
 
     expect(navigation.push).toHaveBeenCalledWith(ROUTES.REELS, params);
     expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it('reuses the persistent Reels tab for the generic Video entry on Home', () => {
+    const navigation = {
+      navigate: jest.fn(),
+      push: jest.fn(),
+    };
+    const homeParams = { source: 'home' as const };
+
+    expect(shouldOpenReelsInMainTab(homeParams)).toBe(true);
+    navigateToReels(navigation, homeParams, 'android');
+
+    expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.MAIN_TABS, {
+      screen: ROUTES.REELS,
+      params: homeParams,
+    });
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  it('switches directly when the caller already belongs to the tab navigator', () => {
+    const navigation = {
+      navigate: jest.fn(),
+      push: jest.fn(),
+      getState: () => ({ type: 'tab' }),
+    };
+    const homeParams = { source: 'home' as const };
+
+    navigateToReels(navigation, homeParams, 'android');
+
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      ROUTES.REELS,
+      homeParams,
+    );
+    expect(navigation.push).not.toHaveBeenCalled();
   });
 
   it('falls back to navigate for minimal navigators without push', () => {

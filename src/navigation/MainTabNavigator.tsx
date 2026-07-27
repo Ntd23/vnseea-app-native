@@ -259,10 +259,16 @@ function CustomMainTabNavigator() {
     <CustomTab.Navigator
       initialRouteName={ROUTES.FEED}
       tabBar={renderCustomTabBar}
+      detachInactiveScreens={false}
       screenOptions={{ headerShown: false }}
     >
       {getCustomTabRoutes(TAB_ROUTES).map(({ name, component }) => (
-        <CustomTab.Screen key={name} name={name} component={component} />
+        <CustomTab.Screen
+          key={name}
+          name={name}
+          component={component}
+          options={{ lazy: name !== ROUTES.REELS }}
+        />
       ))}
     </CustomTab.Navigator>
   );

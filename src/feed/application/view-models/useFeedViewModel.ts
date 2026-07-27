@@ -29,7 +29,10 @@ import type {
   FeedVideoPost,
   FeedPollPost,
 } from '../../domain/types/feed.types';
-import type { FeedSource } from '../../domain/repositories/FeedRepository';
+import type {
+  FeedSource,
+  ReportPostInput,
+} from '../../domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -37,6 +40,10 @@ import {
   hiddenPostsStorage,
   LOCAL_POST_HIDDEN_EVENT,
 } from '../../infrastructure/storage/hiddenPostsStorage';
+import {
+  endedLivePostsStorage,
+  LOCAL_LIVE_ENDED_EVENT,
+} from '../../../live/infrastructure/storage/endedLivePostsStorage';
 import {
   getFeedVideoBufferTarget,
   mergeFeedContentWithVideos,
@@ -50,10 +57,12 @@ const repository = createFeedRepository();
 const pollRepository = createPollRepository();
 
 function filterLocallyHiddenPosts<T extends { id: string }>(posts: T[]): T[] {
-  return hiddenPostsStorage.filterVisiblePosts(
+  const currentUserId = sessionStorage.getSession()?.userId;
+  const visiblePosts = hiddenPostsStorage.filterVisiblePosts(
     posts,
-    sessionStorage.getSession()?.userId,
+    currentUserId,
   );
+  return endedLivePostsStorage.filterVisiblePosts(visiblePosts, currentUserId);
 }
 
 // Home pagination is id-cursored: first page = newest posts, every
@@ -697,6 +706,20 @@ export function useFeedViewModel() {
 
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
+      LOCAL_LIVE_ENDED_EVENT,
+      (event: { postId?: string; userId?: string }) => {
+        const postId = String(event?.postId ?? '').trim();
+        if (!postId) return;
+        const currentOwnerKey = sessionStorage.getSession()?.userId || 'guest';
+        if (event?.userId && event.userId !== currentOwnerKey) return;
+        removePostEverywhere(postId);
+      },
+    );
+    return () => subscription.remove();
+  }, [removePostEverywhere]);
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
       'postReactionChanged',
       (event: {
         postId: string;
@@ -972,11 +995,13 @@ export function useFeedViewModel() {
         setIsLoading(true);
       }
       setError(null);
-      setIsAllLoaded(false); // Reset pagination
-      prefetchBufferRef.current = null; // Clear stale buffer
-      hasReachedNetworkEndRef.current = false;
-      nextPageCursorRef.current = undefined;
-      emptyPageStrikeRef.current = 0;
+      if (!isPullToRefresh) {
+        prefetchBufferRef.current = null; // Clear stale buffer on cold/source load.
+        setIsAllLoaded(false); // Reset pagination on first load/source change.
+        hasReachedNetworkEndRef.current = false;
+        nextPageCursorRef.current = undefined;
+        emptyPageStrikeRef.current = 0;
+      }
       videoFetchCursorRef.current = undefined;
       videoCandidateIdsRef.current = new Set(
         videoPostsRef.current.map(post => post.id),
@@ -986,6 +1011,45 @@ export function useFeedViewModel() {
         pendingImpressionIdsRef.current.clear();
       }
       try {
+        if (isPullToRefresh) {
+          // A pull gesture only needs the newest head of the timeline. The
+          // cursor-aware initial loader can scan up to four raw pages to fill
+          // ten lightweight rows, which is useful on a cold open but makes a
+          // refresh feel unnecessarily slow. Fetch one head page, merge it
+          // over the visible snapshot, and leave existing pagination intact.
+          const page = await repository.getLightPostsPage(
+            PAGE_SIZE,
+            undefined,
+            sourceAtLoad,
+            1,
+          );
+          if (
+            paginationGenerationRef.current !== generation ||
+            feedSourceRef.current !== sourceAtLoad
+          ) {
+            return;
+          }
+
+          const freshPosts = page.posts.filter(isLightFeedPost);
+          const merged = sortByTime(
+            uniqueById([...freshPosts, ...lightPostsRef.current]),
+          );
+
+          // Re-anchor pagination to the newly fetched head only after the
+          // request succeeds. If refresh fails, the existing buffered page
+          // and cursor remain usable instead of creating a gap in the feed.
+          prefetchBufferRef.current = null;
+          nextPageCursorRef.current = page.nextCursor;
+          hasReachedNetworkEndRef.current =
+            page.reachedEnd === true && !page.nextCursor;
+          emptyPageStrikeRef.current = 0;
+          setIsAllLoaded(false);
+          commitFeedSources(merged, videoPostsRef.current);
+          scheduleVideoBuffer(freshPosts.length, true);
+          prefetchNextPage();
+          return;
+        }
+
         const page = await repository.getLightPostsPage(
           PAGE_SIZE,
           undefined,
@@ -1015,23 +1079,7 @@ export function useFeedViewModel() {
           refresh: isPullToRefresh,
         });
 
-        // On pull-to-refresh, merge the API page with posts already in view,
-        // then keep the timeline newest-first. This prevents older cached
-        // rows from staying above a post the user just created.
-        if (isPullToRefresh) {
-          const previousIds = new Set(
-            lightPostsRef.current.map(post => post.id),
-          );
-          const apiIds = new Set(freshPosts.map(post => post.id));
-          const knownPosts = lightPostsRef.current.filter(post =>
-            apiIds.has(post.id),
-          );
-          const newPosts = freshPosts.filter(post => !previousIds.has(post.id));
-          const merged = sortByTime([...knownPosts, ...newPosts]);
-          commitFeedSources(merged, videoPostsRef.current);
-        } else {
-          commitFeedSources(freshPosts, videoPostsRef.current);
-        }
+        commitFeedSources(freshPosts, videoPostsRef.current);
         // Always probe the newest video page on open/refresh even when the
         // ready cache is full. Existing prepared cards stay visible until a
         // newer poster has finished loading.
@@ -1813,10 +1861,9 @@ export function useFeedViewModel() {
      */
     savePost: (postId: string) => repository.savePost(postId),
 
-    /**
-     * Toggle report/unreport a post. No optimistic update needed.
-     */
-    reportPost: (postId: string) => repository.reportPost(postId),
+    /** Report a post with the reason selected by the user. */
+    reportPost: (postId: string, input: ReportPostInput) =>
+      repository.reportPost(postId, input),
 
     /**
      * Hide only affects the current app feed view. The backend v2

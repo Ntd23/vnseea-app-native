@@ -6,9 +6,12 @@ import type {
   AddressSearchInput,
   AddressSearchLanguage,
   AddressSuggestion,
+  NearbyAddressSuggestion,
   ResolvedAddress,
+  ReverseGeocodeResult,
 } from '../../domain/types/addressSearch.types';
 import { apiBridge } from '../api/apiBridge';
+import { apiConfig } from '../config/env';
 import { readLastMapLocation } from '../storage/mapLocationStorage';
 
 type RawAddressSuggestion = {
@@ -29,9 +32,11 @@ type RawAddressSuggestion = {
 type RawResolvedAddress = {
   place_id?: unknown;
   placeId?: unknown;
+  name?: unknown;
   formatted_address?: unknown;
   formattedAddress?: unknown;
   address?: unknown;
+  vicinity?: unknown;
   lat?: unknown;
   lng?: unknown;
   latitude?: unknown;
@@ -40,6 +45,14 @@ type RawResolvedAddress = {
   district?: unknown;
   ward?: unknown;
   country?: unknown;
+  distance_meters?: unknown;
+  distanceMeters?: unknown;
+  geometry?: {
+    location?: {
+      lat?: unknown;
+      lng?: unknown;
+    };
+  };
 };
 
 type AddressSuggestionsResponse = {
@@ -56,6 +69,8 @@ type AddressDetailsResponse = {
   errors?: { error_id?: unknown };
   place?: RawResolvedAddress;
   address?: RawResolvedAddress;
+  nearby_places?: RawResolvedAddress[];
+  nearbyPlaces?: RawResolvedAddress[];
 };
 
 type AddressDetailsInput = {
@@ -64,12 +79,213 @@ type AddressDetailsInput = {
   sessionToken: string;
 };
 
+type ReverseGeocodeInput = AddressDetailsInput & AddressLocationBias;
+
 const ADDRESS_BIAS_RADIUS_METERS = 50000;
+const NEARBY_ADDRESS_RADIUS_METERS = 600;
+const NEARBY_ADDRESS_LIMIT = 5;
+const DIRECT_GOOGLE_NEARBY_TIMEOUT_MS = 2600;
+const GOOGLE_MAPS_ANDROID_PACKAGE = 'com.vnseea.android';
 
 function stringValue(value: unknown) {
   return typeof value === 'string' || typeof value === 'number'
     ? String(value).trim()
     : '';
+}
+
+function uniqueAddressParts(values: unknown[]) {
+  const seen = new Set<string>();
+  return values
+    .map(stringValue)
+    .filter(value => {
+      if (!value) return false;
+      const key = value.toLocaleLowerCase('vi');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function resolvedAddressLabel(raw: RawResolvedAddress) {
+  const name = stringValue(raw.name);
+  const address = stringValue(
+    raw.formatted_address ??
+      raw.formattedAddress ??
+      raw.address ??
+      raw.vicinity,
+  );
+  const areaAddress = uniqueAddressParts([
+    raw.ward,
+    raw.district,
+    raw.city,
+    raw.country,
+  ]).join(', ');
+  const baseAddress = address || areaAddress;
+
+  if (!name) return baseAddress;
+  if (!baseAddress) return name;
+
+  const normalizedName = name.toLocaleLowerCase('vi');
+  const normalizedAddress = baseAddress.toLocaleLowerCase('vi');
+  if (
+    normalizedAddress.includes(normalizedName) ||
+    normalizedName.includes(normalizedAddress)
+  ) {
+    return baseAddress.length >= name.length ? baseAddress : name;
+  }
+
+  return `${name}, ${baseAddress}`;
+}
+
+function mapResolvedAddress(
+  raw: RawResolvedAddress | undefined,
+  fallbackCoordinate?: AddressLocationBias,
+  fallbackPlaceId = '',
+): ResolvedAddress | null {
+  if (!raw) return null;
+  const coordinate =
+    parseMapCoordinate(
+      raw.lat ?? raw.latitude,
+      raw.lng ?? raw.longitude,
+    ) ??
+    parseMapCoordinate(
+      fallbackCoordinate?.latitude,
+      fallbackCoordinate?.longitude,
+    );
+  const formattedAddress = resolvedAddressLabel(raw);
+  if (!coordinate || !formattedAddress) return null;
+
+  return {
+    placeId:
+      stringValue(raw.place_id ?? raw.placeId) || fallbackPlaceId,
+    formattedAddress,
+    latitude: coordinate.latitude,
+    longitude: coordinate.longitude,
+    city: stringValue(raw.city) || undefined,
+    district: stringValue(raw.district) || undefined,
+    ward: stringValue(raw.ward) || undefined,
+    country: stringValue(raw.country) || undefined,
+  };
+}
+
+function distanceMetersBetween(
+  origin: AddressLocationBias,
+  destination: AddressLocationBias,
+) {
+  const earthRadiusMeters = 6371000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const latitudeDelta = toRadians(
+    destination.latitude - origin.latitude,
+  );
+  const longitudeDelta = toRadians(
+    destination.longitude - origin.longitude,
+  );
+  const originLatitude = toRadians(origin.latitude);
+  const destinationLatitude = toRadians(destination.latitude);
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(originLatitude) *
+      Math.cos(destinationLatitude) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return Math.round(
+    earthRadiusMeters * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)),
+  );
+}
+
+function mapNearbyAddressSuggestion(
+  raw: RawResolvedAddress,
+  origin: AddressLocationBias,
+): NearbyAddressSuggestion | null {
+  const coordinate = parseMapCoordinate(
+    raw.lat ?? raw.latitude ?? raw.geometry?.location?.lat,
+    raw.lng ?? raw.longitude ?? raw.geometry?.location?.lng,
+  );
+  if (!coordinate) return null;
+
+  const name = stringValue(raw.name);
+  const formattedAddress = resolvedAddressLabel(raw);
+  if (!name && !formattedAddress) return null;
+
+  const rawDistance = Number(raw.distance_meters ?? raw.distanceMeters);
+  return {
+    placeId: stringValue(raw.place_id ?? raw.placeId),
+    name: name || formattedAddress,
+    formattedAddress: formattedAddress || name,
+    latitude: coordinate.latitude,
+    longitude: coordinate.longitude,
+    distanceMeters: Number.isFinite(rawDistance)
+      ? Math.max(0, Math.round(rawDistance))
+      : distanceMetersBetween(origin, coordinate),
+  };
+}
+
+function googleRequestHeaders(): Record<string, string> {
+  const certificate = String(apiConfig.googleMapsAndroidCertSha1 || '')
+    .replace(/[^0-9a-f]/gi, '')
+    .toUpperCase();
+  if (!certificate) return { Accept: 'application/json' };
+  return {
+    Accept: 'application/json',
+    'X-Android-Package': GOOGLE_MAPS_ANDROID_PACKAGE,
+    'X-Android-Cert': certificate,
+  };
+}
+
+async function loadDirectNearbyAddressSuggestions(
+  input: ReverseGeocodeInput,
+): Promise<NearbyAddressSuggestion[]> {
+  if (!apiConfig.googleMapsApiKey) return [];
+
+  const params = new URLSearchParams({
+    location: `${input.latitude.toFixed(7)},${input.longitude.toFixed(7)}`,
+    radius: String(NEARBY_ADDRESS_RADIUS_METERS),
+    language: input.language,
+    key: apiConfig.googleMapsApiKey,
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    DIRECT_GOOGLE_NEARBY_TIMEOUT_MS,
+  );
+
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`,
+      {
+        signal: controller.signal,
+        headers: googleRequestHeaders(),
+      },
+    );
+    if (!response.ok) return [];
+    const data = (await response.json()) as {
+      status?: string;
+      results?: RawResolvedAddress[];
+    };
+    if (data.status !== 'OK') return [];
+
+    const seen = new Set<string>();
+    return (data.results || [])
+      .map(raw => mapNearbyAddressSuggestion(raw, input))
+      .filter((value): value is NearbyAddressSuggestion => value !== null)
+      .sort(
+        (left, right) =>
+          (left.distanceMeters ?? Number.MAX_SAFE_INTEGER) -
+          (right.distanceMeters ?? Number.MAX_SAFE_INTEGER),
+      )
+      .filter(item => {
+        const key =
+          item.placeId ||
+          `${item.formattedAddress.toLocaleLowerCase('vi')}:${item.latitude.toFixed(5)}:${item.longitude.toFixed(5)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, NEARBY_ADDRESS_LIMIT);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function isSuccess(status: number | string | undefined) {
@@ -237,22 +453,124 @@ export function createAddressSearchRepository() {
         throw new Error('address_not_found');
       }
 
-      return {
-        placeId:
-          stringValue(place.place_id ?? place.placeId) || suggestion.placeId,
-        formattedAddress:
-          stringValue(
-            place.formatted_address ??
-              place.formattedAddress ??
-              place.address,
-          ) || suggestion.description,
-        latitude: coordinate.latitude,
-        longitude: coordinate.longitude,
-        city: stringValue(place.city) || undefined,
-        district: stringValue(place.district) || undefined,
-        ward: stringValue(place.ward) || undefined,
-        country: stringValue(place.country) || undefined,
+      return (
+        mapResolvedAddress(place, coordinate, suggestion.placeId) || {
+          placeId: suggestion.placeId,
+          formattedAddress: suggestion.description,
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+        }
+      );
+    },
+
+    async reverseGeocodeCoordinate(
+      input: ReverseGeocodeInput,
+    ): Promise<ReverseGeocodeResult> {
+      let primaryError: unknown;
+      let directNearbyPromise: Promise<NearbyAddressSuggestion[]> | null = null;
+      const loadDirectNearby = () => {
+        directNearbyPromise ??= loadDirectNearbyAddressSuggestions(input);
+        return directNearbyPromise;
       };
+      const resolveNearbySuggestions = async (
+        rawSuggestions?: RawResolvedAddress[],
+      ) => {
+        const backendSuggestions = (rawSuggestions || [])
+          .map(raw => mapNearbyAddressSuggestion(raw, input))
+          .filter(
+            (value): value is NearbyAddressSuggestion => value !== null,
+          )
+          .sort(
+            (left, right) =>
+              (left.distanceMeters ?? Number.MAX_SAFE_INTEGER) -
+              (right.distanceMeters ?? Number.MAX_SAFE_INTEGER),
+          )
+          .slice(0, NEARBY_ADDRESS_LIMIT);
+        return backendSuggestions.length > 0
+          ? backendSuggestions
+          : loadDirectNearby();
+      };
+
+      try {
+        const response = await apiBridge.post<AddressDetailsResponse>(
+          apiRoutes.user.mapDiscovery,
+          {
+            type: 'reverse_geocode',
+            lat: input.latitude,
+            lng: input.longitude,
+            language: input.language,
+            country: input.country,
+          },
+        );
+        assertSuccess(response);
+        const resolved = mapResolvedAddress(
+          response.place ?? response.address,
+          input,
+        );
+        const nearbySuggestions = await resolveNearbySuggestions(
+          response.nearby_places ?? response.nearbyPlaces,
+        );
+        if (resolved) {
+          return { ...resolved, nearbySuggestions };
+        }
+        const nearest = nearbySuggestions[0];
+        if (nearest) {
+          return {
+            placeId: nearest.placeId,
+            formattedAddress: nearest.formattedAddress,
+            latitude: nearest.latitude,
+            longitude: nearest.longitude,
+            nearbySuggestions,
+          };
+        }
+        primaryError = new Error('address_not_found');
+      } catch (error) {
+        primaryError = error;
+      }
+
+      // Some deployed map_discovery versions return the canonical payload
+      // under `address`, while older versions only expose `place`. If neither
+      // contains a usable label, retry through the dedicated address geocoder
+      // so current-location selection still gets a human-readable address.
+      try {
+        const coordinateQuery = `${input.latitude.toFixed(7)},${input.longitude.toFixed(7)}`;
+        const suggestions = await loadSuggestions('address_geocode', {
+          query: coordinateQuery,
+          language: input.language,
+          country: input.country,
+          locationBias: input,
+          sessionToken: input.sessionToken,
+        });
+        const fallback = suggestions[0];
+        if (fallback?.description) {
+          const nearbySuggestions = await loadDirectNearby();
+          return {
+            placeId: fallback.placeId,
+            formattedAddress: fallback.description,
+            latitude: fallback.latitude ?? input.latitude,
+            longitude: fallback.longitude ?? input.longitude,
+            nearbySuggestions,
+          };
+        }
+      } catch {
+        // Preserve the primary reverse-geocode error below.
+      }
+
+      const nearbySuggestions = await loadDirectNearby();
+      const nearest = nearbySuggestions[0];
+      if (nearest) {
+        return {
+          placeId: nearest.placeId,
+          formattedAddress: nearest.formattedAddress,
+          latitude: nearest.latitude,
+          longitude: nearest.longitude,
+          nearbySuggestions,
+        };
+      }
+
+      throw primaryError instanceof Error
+        ? primaryError
+        : new Error('address_not_found');
     },
   };
 }

@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
+  InteractionManager,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -34,6 +35,7 @@ import { useNotificationBadgeViewModel } from '../../../notifications';
 import { navigateToNotifications } from '../../../navigation/notificationNavigation';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 import { resolveFeedChromeTopInset } from './feedHeaderInsets';
+import { preloadMessagesStartupChats } from '../../../messages/application/services/messagesStartupCache';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
 type FeedHeaderProps = {
@@ -74,6 +76,24 @@ export const FeedHeader = React.memo(function FeedHeader({
     }
   }, [avatarUrl, transitionAnim]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let started = false;
+    const startPreload = () => {
+      if (cancelled || started) return;
+      started = true;
+      preloadMessagesStartupChats().catch(() => undefined);
+    };
+    const task = InteractionManager.runAfterInteractions(startPreload);
+    const fallbackTimer = setTimeout(startPreload, 700);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(fallbackTimer);
+      task.cancel();
+    };
+  }, []);
+
   const handlePressLogo = useCallback(() => {
     // Always navigate to the Feed tab first. If we're already on the
     // Feed tab, the navigation is a no-op for routing but the listener
@@ -91,6 +111,11 @@ export const FeedHeader = React.memo(function FeedHeader({
   const handleOpenMenu = useCallback(() => {
     setMenuVisible(true);
   }, []);
+
+  const handleOpenMessages = useCallback(() => {
+    preloadMessagesStartupChats().catch(() => undefined);
+    navigation.navigate(ROUTES.MESSAGES);
+  }, [navigation]);
 
   const handleCloseMenu = useCallback(() => {
     setMenuVisible(false);
@@ -160,7 +185,7 @@ export const FeedHeader = React.memo(function FeedHeader({
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
-              onPress={() => navigation.navigate(ROUTES.MESSAGES)}
+              onPress={handleOpenMessages}
               style={[styles.headerIcon, styles.messageButton]}
             >
               <MessageCircle

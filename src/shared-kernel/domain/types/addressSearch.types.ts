@@ -34,3 +34,16 @@ export interface ResolvedAddress {
   ward?: string;
   country?: string;
 }
+
+export interface NearbyAddressSuggestion {
+  placeId: string;
+  name: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+  distanceMeters?: number;
+}
+
+export interface ReverseGeocodeResult extends ResolvedAddress {
+  nearbySuggestions: NearbyAddressSuggestion[];
+}

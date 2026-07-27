@@ -247,9 +247,23 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     setIsActionLoading(true);
     try {
       const result = await pagesRepository.toggleLikePage(currentPageId);
+      let isFollowing = previous.isFollowing;
+
+      // Liking a page from any page surface also starts following it. This
+      // keeps the recommendation action consistent with the page hero.
+      if (result.isLiked && !previous.isFollowing) {
+        try {
+          const followResult = await pagesRepository.toggleFollowPage(currentPageId);
+          isFollowing = followResult.isFollowing;
+        } catch {
+          // Preserve the successful like when the follow request is unavailable.
+        }
+      }
+
       setPage(current => ({
         ...current,
         isLiked: result.isLiked,
+        isFollowing,
         likes: Math.max(
           0,
           (previous.likes ?? current.likes ?? 0) +
@@ -591,12 +605,23 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
 
     try {
       const result = await pagesRepository.toggleLikePage(pageId);
+      let isFollowing = target.isFollowing;
+      if (result.isLiked && !target.isFollowing) {
+        try {
+          const followResult = await pagesRepository.toggleFollowPage(pageId);
+          isFollowing = followResult.isFollowing;
+        } catch {
+          // Preserve the successful like when the follow request is unavailable.
+        }
+      }
+
       setSuggestedPages(current =>
         current.map(item =>
           String(item.pageId) === String(pageId)
             ? {
                 ...item,
                 isLiked: result.isLiked,
+                isFollowing,
                 likes: Math.max(
                   0,
                   (target.likes ?? item.likes ?? 0) +
@@ -617,6 +642,49 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
       );
     }
   }, [suggestedPages]);
+
+  const toggleSuggestedPageFollow = useCallback(
+    async (pageId: string | number) => {
+      const previousPages = suggestedPages;
+      const target = suggestedPages.find(
+        item => String(item.pageId) === String(pageId),
+      );
+      if (!target) return;
+
+      const nextFollowing = !target.isFollowing;
+      setSuggestedPages(current =>
+        current.map(item =>
+          String(item.pageId) === String(pageId)
+            ? {
+                ...item,
+                isFollowing: nextFollowing,
+                followersCount: Math.max(
+                  0,
+                  (item.followersCount ?? 0) + (nextFollowing ? 1 : -1),
+                ),
+              }
+            : item,
+        ),
+      );
+
+      try {
+        const result = await pagesRepository.toggleFollowPage(pageId);
+        setSuggestedPages(current =>
+          current.map(item =>
+            String(item.pageId) === String(pageId)
+              ? { ...item, isFollowing: result.isFollowing }
+              : item,
+          ),
+        );
+      } catch (err) {
+        setSuggestedPages(previousPages);
+        setError(
+          err instanceof Error ? err.message : 'KhĂ´ng thá»ƒ theo dĂµi trang nĂ y.',
+        );
+      }
+    },
+    [suggestedPages],
+  );
 
   const updatePageAvatar = useCallback(
     async (file: { uri: string; name?: string; type?: string }) => {
@@ -777,6 +845,7 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     toggleFollow,
     toggleLike,
     toggleSuggestedPageLike,
+    toggleSuggestedPageFollow,
     votePoll,
     inviteUser,
     updatePageAvatar,

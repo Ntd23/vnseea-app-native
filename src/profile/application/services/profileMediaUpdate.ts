@@ -26,7 +26,21 @@ export type RawProfileMediaResponse = {
 type ProfileMediaUploadDependencies = {
   upload: (file: ApiFile) => Promise<ProfileMediaUpdateResult>;
   loadSnapshot: () => Promise<ProfileMediaSnapshot | null>;
+  wait?: (milliseconds: number) => Promise<void>;
+  reconciliationAttempts?: number;
 };
+
+const DEFAULT_RECONCILIATION_ATTEMPTS = 3;
+const RECONCILIATION_DELAY_MS = 250;
+
+class ProfileMediaReconciliationRequiredError extends Error {
+  readonly code = 'PROFILE_MEDIA_RECONCILIATION_REQUIRED';
+
+  constructor() {
+    super('profile_media_invalid_response');
+    this.name = 'ProfileMediaReconciliationRequiredError';
+  }
+}
 
 export function buildProfileMediaUploadPayload(
   kind: ProfileMediaKind,
@@ -55,17 +69,23 @@ export function parseProfileMediaUpdateResponse(
       : '';
   const postType = expectedPostType(expectedKind);
 
+  if (String(response.api_status) !== '200') {
+    const serverMessage =
+      response.errors?.error_text || response.message || response.error_code;
+    throw new Error(serverMessage || 'profile_media_update_failed');
+  }
+
   if (
-    String(response.api_status) !== '200' ||
     media?.kind !== expectedKind ||
     media?.post_type !== postType ||
     !url ||
     !fullUrl ||
     !/^[1-9][0-9]*$/.test(postId)
   ) {
-    const serverMessage =
-      response.errors?.error_text || response.message || response.error_code;
-    throw new Error(serverMessage || 'profile_media_invalid_response');
+    // Older VNSEEA API deployments only return `api_status: 200` after a
+    // successful upload. Treat that response as accepted and reconcile it
+    // from the user profile instead of reporting a false failure.
+    throw new ProfileMediaReconciliationRequiredError();
   }
 
   return {
@@ -104,6 +124,9 @@ function isAmbiguousUploadError(error: unknown) {
     message?: string;
     response?: unknown;
   };
+  if (candidate.code === 'PROFILE_MEDIA_RECONCILIATION_REQUIRED') {
+    return true;
+  }
   if (candidate.response) return false;
 
   const value = `${candidate.code ?? ''} ${
@@ -116,6 +139,20 @@ function isAmbiguousUploadError(error: unknown) {
     value.includes('err_network') ||
     value.trim() === ''
   );
+}
+
+function wasAcceptedByLegacyApi(error: unknown) {
+  return (
+    error instanceof ProfileMediaReconciliationRequiredError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: string }).code ===
+        'PROFILE_MEDIA_RECONCILIATION_REQUIRED')
+  );
+}
+
+function wait(milliseconds: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, milliseconds));
 }
 
 export async function uploadProfileMediaWithReconciliation(
@@ -133,36 +170,57 @@ export async function uploadProfileMediaWithReconciliation(
   try {
     return await dependencies.upload(file);
   } catch (error) {
-    if (!isAmbiguousUploadError(error) || !before) {
+    const acceptedByLegacyApi = wasAcceptedByLegacyApi(error);
+    if (!isAmbiguousUploadError(error) || (!before && !acceptedByLegacyApi)) {
       throw error;
     }
 
-    let after: ProfileMediaSnapshot | null = null;
-    try {
-      after = await dependencies.loadSnapshot();
-    } catch {
-      throw error;
-    }
-
+    const attempts = Math.max(
+      1,
+      dependencies.reconciliationAttempts ?? DEFAULT_RECONCILIATION_ATTEMPTS,
+    );
+    const waitForRetry = dependencies.wait ?? wait;
     const previousValue = snapshotValue(before, kind);
-    const nextValue = snapshotValue(after, kind);
-    const changed =
-      Boolean(nextValue?.url) &&
-      Boolean(nextValue?.postId) &&
-      (nextValue?.postId !== previousValue?.postId ||
-        nextValue?.url !== previousValue?.url);
 
-    if (!changed || !nextValue?.url || !nextValue.postId) {
-      throw error;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (attempt > 0) {
+        await waitForRetry(RECONCILIATION_DELAY_MS * attempt);
+      }
+
+      let after: ProfileMediaSnapshot | null = null;
+      try {
+        after = await dependencies.loadSnapshot();
+      } catch {
+        continue;
+      }
+
+      const nextValue = snapshotValue(after, kind);
+      const hasUsableMedia =
+        Boolean(nextValue?.url) && Boolean(nextValue?.postId);
+      const changed =
+        hasUsableMedia &&
+        (!previousValue ||
+          nextValue?.postId !== previousValue.postId ||
+          nextValue?.url !== previousValue.url);
+
+      if (
+        (!changed && !(acceptedByLegacyApi && !previousValue)) ||
+        !nextValue?.url ||
+        !nextValue.postId
+      ) {
+        continue;
+      }
+
+      return {
+        kind,
+        url: nextValue.url,
+        fullUrl: nextValue.url,
+        postId: nextValue.postId,
+        postType: expectedPostType(kind),
+        reconciled: true,
+      };
     }
 
-    return {
-      kind,
-      url: nextValue.url,
-      fullUrl: nextValue.url,
-      postId: nextValue.postId,
-      postType: expectedPostType(kind),
-      reconciled: true,
-    };
+    throw error;
   }
 }

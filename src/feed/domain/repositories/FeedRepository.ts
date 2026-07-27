@@ -58,6 +58,13 @@ export interface FeedRecommendationEventInput {
   durationMs?: number;
 }
 
+export interface ReportPostInput {
+  categoryCode: string;
+  categoryLabel: string;
+  reasonCode: string;
+  reasonLabel: string;
+}
+
 export interface FeedPostsPage<TPost extends FeedPost = FeedPost> {
   posts: TPost[];
   nextCursor?: string;
@@ -116,6 +123,7 @@ export interface FeedRepository {
     limit?: number,
     afterPostId?: string,
     source?: FeedSource,
+    maxScanPages?: number,
   ): Promise<FeedPostsPage>;
 
   getVideoPosts(
@@ -218,11 +226,11 @@ export interface FeedRepository {
    */
   savePost(postId: string): Promise<{ saved: boolean }>;
 
-  /**
-   * Toggle report/unreport a post via WoWonder's post-actions endpoint.
-   * Returns { reported: true } when the post was reported, { reported: false } when unreported.
-   */
-  reportPost(postId: string): Promise<{ reported: boolean }>;
+  /** Report a post with the moderation reason selected by the user. */
+  reportPost(
+    postId: string,
+    input: ReportPostInput,
+  ): Promise<{ reported: boolean }>;
 
   /**
    * Delete a post via WoWonder's post-actions endpoint.

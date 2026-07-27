@@ -21,6 +21,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
+  Bell,
   Edit3,
   ExternalLink,
   Flag,
@@ -34,6 +35,7 @@ import {
   ChevronRight,
   Tag,
   FileText,
+  Heart,
 } from 'lucide-react-native';
 import { ScrollView as RNScrollView } from 'react-native';
 import Animated, {
@@ -75,6 +77,9 @@ const COPY: Record<
     viewPage: string;
     likesSuffix: string;
     likedText: string;
+    likeText: string;
+    followText: string;
+    followingText: string;
     likesCardLabel: string;
     addressCardLabel: string;
     noSuggestedTitle: string;
@@ -102,6 +107,9 @@ const COPY: Record<
     viewPage: 'Xem trang',
     likesSuffix: 'lượt thích',
     likedText: 'Đã thích',
+    likeText: 'Thích',
+    followText: 'Theo dõi',
+    followingText: 'Đang theo dõi',
     likesCardLabel: 'Lượt thích',
     addressCardLabel: 'Địa chỉ',
     noSuggestedTitle: 'Chưa có trang đề xuất',
@@ -128,6 +136,9 @@ const COPY: Record<
     viewPage: 'View Page',
     likesSuffix: 'likes',
     likedText: 'Liked',
+    likeText: 'Like',
+    followText: 'Follow',
+    followingText: 'Following',
     likesCardLabel: 'Likes',
     addressCardLabel: 'Address',
     noSuggestedTitle: 'No suggested pages',
@@ -500,6 +511,13 @@ function PageCard({
   page,
   onEdit,
   onOpen,
+  onPressLike,
+  onPressFollow,
+  isActionLoading,
+  likeLabel,
+  likedLabel,
+  followLabel,
+  followingLabel,
   index,
 }: {
   page: PagesItem;
@@ -507,6 +525,13 @@ function PageCard({
   onOpen: () => void;
   onMore?: () => void;
   onPressLikes?: () => void;
+  onPressLike?: () => void;
+  onPressFollow?: () => void;
+  isActionLoading?: boolean;
+  likeLabel: string;
+  likedLabel: string;
+  followLabel: string;
+  followingLabel: string;
   onPressAddress?: () => void;
   index: number;
 }) {
@@ -591,6 +616,57 @@ function PageCard({
           </Text>
         </View>
       ) : null}
+
+      <View style={{ flexDirection: 'row', width: '100%', gap: 8, marginTop: 18 }}>
+        <TouchableOpacity
+          activeOpacity={0.82}
+          onPress={onPressLike}
+          disabled={!onPressLike || isActionLoading}
+          style={{
+            flex: 1,
+            minHeight: 40,
+            borderRadius: 12,
+            backgroundColor: page.isLiked ? '#E8EEFF' : '#F1F5F9',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'row',
+            gap: 6,
+          }}
+        >
+          <Heart
+            size={17}
+            color={page.isLiked ? BRAND : MUTED}
+            fill={page.isLiked ? BRAND : 'transparent'}
+          />
+          <Text style={{ fontSize: 12, fontWeight: '800', color: page.isLiked ? BRAND : MUTED }}>
+            {page.isLiked ? likedLabel : likeLabel}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.82}
+          onPress={onPressFollow}
+          disabled={!onPressFollow || isActionLoading}
+          style={{
+            flex: 1,
+            minHeight: 40,
+            borderRadius: 12,
+            backgroundColor: page.isFollowing ? '#E8EEFF' : '#F1F5F9',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'row',
+            gap: 6,
+          }}
+        >
+          <Bell
+            size={17}
+            color={page.isFollowing ? BRAND : MUTED}
+            fill={page.isFollowing ? BRAND : 'transparent'}
+          />
+          <Text style={{ fontSize: 12, fontWeight: '800', color: page.isFollowing ? BRAND : MUTED }}>
+            {page.isFollowing ? followingLabel : followLabel}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Circular Blue Action Button */}
       <TouchableOpacity
@@ -681,11 +757,29 @@ function PagesScreen() {
         }
         onOpen={() => handleOpenPage(item)}
         onMore={vm.activeFilter === 'mine' ? () => handleMorePage(item) : undefined}
-        onPressLikes={undefined}
+        onPressLike={() => vm.toggleLikePage(item.pageId || item.id)}
+        onPressFollow={() => vm.toggleFollowPage(item.pageId || item.id)}
+        isActionLoading={vm.isActionLoading}
+        likeLabel={copy.likeText}
+        likedLabel={copy.likedText}
+        followLabel={copy.followText}
+        followingLabel={copy.followingText}
         onPressAddress={undefined}
       />
     ),
-    [handleEditPage, handleOpenPage, handleMorePage, vm.activeFilter],
+    [
+      copy.followText,
+      copy.followingText,
+      copy.likeText,
+      copy.likedText,
+      handleEditPage,
+      handleOpenPage,
+      handleMorePage,
+      vm.activeFilter,
+      vm.isActionLoading,
+      vm.toggleFollowPage,
+      vm.toggleLikePage,
+    ],
   );
 
   return (

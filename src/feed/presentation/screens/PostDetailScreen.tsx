@@ -71,6 +71,7 @@ import type {
 } from '../../domain/types/feed.types';
 import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { ReportPostInput } from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import PostReactionsSheet from '../components/PostReactionsSheet';
@@ -897,15 +898,25 @@ function PostDetailScreen() {
   );
 
   const handleReportPost = useCallback(
-    async (targetPostId: string) => {
-      const result = await reportPost(targetPostId);
-      Alert.alert(
-        result.reported ? copy.reportSentTitle : copy.reportCancelledTitle,
-        result.reported ? copy.reportSentMessage : copy.reportCancelledMessage,
-      );
+    async (targetPostId: string, input: ReportPostInput) => {
+      const result = await reportPost(targetPostId, input);
+      if (!result.reported) {
+        throw new Error(copy.reportErrorMessage);
+      }
     },
     [copy, reportPost],
   );
+
+  const handleReportHidePost = useCallback(async (targetPostId: string) => {
+    hiddenPostsStorage.hidePost(
+      targetPostId,
+      sessionStorage.getSession()?.userId,
+    );
+  }, []);
+
+  const handleReportSuccessClose = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
 
   const handleHidePost = useCallback(
     async (targetPostId: string) => {
@@ -1417,6 +1428,8 @@ function PostDetailScreen() {
         onHide={handleHidePost}
         onDelete={handleDeletePost}
         onReport={handleReportPost}
+        onReportHide={handleReportHidePost}
+        onReportSuccessClose={handleReportSuccessClose}
       />
     </View>,
   );
