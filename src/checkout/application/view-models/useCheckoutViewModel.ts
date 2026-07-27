@@ -10,6 +10,10 @@ import type {
 } from '../../domain/types/checkout.types';
 import { createCheckoutSummary } from '../../domain/checkoutMoney';
 import { setSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
+import {
+  isValidCheckoutPhone,
+  normalizeCheckoutPhone,
+} from '../../domain/checkoutPhone';
 
 const repository = createCheckoutRepository();
 const userRepository = createUserRepository();
@@ -73,7 +77,9 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     string | null
   >(null);
   const [isPaying, setIsPaying] = useState(false);
-  const [isUpdatingQuantity, setIsUpdatingQuantity] = useState(false);
+  const [updatingProductId, setUpdatingProductId] = useState<number | null>(
+    null,
+  );
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
@@ -161,6 +167,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     setSelectedAddressId(address.id);
     setAddressForm(address);
     setAddressError(null);
+    setPaymentError(null);
     setStep('payment');
   }, []);
 
@@ -241,12 +248,19 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
       return false;
     }
 
+    const normalizedPhone = normalizeCheckoutPhone(addressForm.phone);
+    if (!normalizedPhone || !isValidCheckoutPhone(addressForm.phone)) {
+      setAddressError('Số điện thoại phải có từ 8 đến 15 chữ số.');
+      return false;
+    }
+
     setIsSavingAddress(true);
     setAddressError(null);
 
     try {
       const nextAddresses = await repository.saveAddress({
         ...addressForm,
+        phone: normalizedPhone,
         zip: String(addressForm.zip || '').trim() || '10000',
       });
       setAddresses(nextAddresses);
@@ -257,6 +271,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
         setSelectedAddressId(savedAddress.id);
         setAddressForm(savedAddress);
       }
+      setPaymentError(null);
       setStep('payment');
       return true;
     } catch (caughtError) {
@@ -269,8 +284,14 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
 
   const changeQuantity = useCallback(
     async (productId: number, quantity: number) => {
-      if (quantity < 0 || isUpdatingQuantity) return;
-      setIsUpdatingQuantity(true);
+      if (
+        !Number.isInteger(quantity) ||
+        quantity < 1 ||
+        updatingProductId !== null
+      ) {
+        return;
+      }
+      setUpdatingProductId(productId);
       setPaymentError(null);
 
       try {
@@ -282,10 +303,10 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
           messageFromError(caughtError, 'Không thể cập nhật số lượng.'),
         );
       } finally {
-        setIsUpdatingQuantity(false);
+        setUpdatingProductId(null);
       }
     },
-    [isUpdatingQuantity],
+    [updatingProductId],
   );
 
   const openConfirm = useCallback(() => {
@@ -293,15 +314,38 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     if (!addressId) {
       setPaymentError('Bạn cần lưu địa chỉ giao hàng trước khi gửi yêu cầu mua.');
       setStep('confirm');
-      return;
+      return false;
     }
+    if (!selectedAddress || !isValidCheckoutPhone(selectedAddress.phone)) {
+      const phoneError = 'Số điện thoại phải có từ 8 đến 15 chữ số.';
+      setAddressForm(
+        selectedAddress ?? createEmptyAddressForm(currentUserProfile),
+      );
+      setAddressError(phoneError);
+      setPaymentError(phoneError);
+      setStep('confirm');
+      return false;
+    }
+    setPaymentError(null);
     setConfirmVisible(true);
-  }, [selectedAddress, selectedAddressId]);
+    return true;
+  }, [currentUserProfile, selectedAddress, selectedAddressId]);
 
   const pay = useCallback(async () => {
     const addressId = selectedAddressId || selectedAddress?.id;
     if (!addressId) {
       setPaymentError('Bạn cần lưu địa chỉ giao hàng trước khi gửi yêu cầu mua.');
+      setStep('confirm');
+      return false;
+    }
+    if (!selectedAddress || !isValidCheckoutPhone(selectedAddress.phone)) {
+      const phoneError = 'Số điện thoại phải có từ 8 đến 15 chữ số.';
+      setConfirmVisible(false);
+      setAddressForm(
+        selectedAddress ?? createEmptyAddressForm(currentUserProfile),
+      );
+      setAddressError(phoneError);
+      setPaymentError(phoneError);
       setStep('confirm');
       return false;
     }
@@ -344,7 +388,14 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     } finally {
       setIsPaying(false);
     }
-  }, [itemCount, load, selectedAddress, selectedAddressId, selectedSummary]);
+  }, [
+    currentUserProfile,
+    itemCount,
+    load,
+    selectedAddress,
+    selectedAddressId,
+    selectedSummary,
+  ]);
 
   return {
     addressError,
@@ -357,7 +408,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     isDeletingAddressId,
     isPaying,
     isSavingAddress,
-    isUpdatingQuantity,
+    isUpdatingQuantity: updatingProductId !== null,
     itemCount,
     paymentError,
     selectedAddress,
@@ -367,6 +418,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     successMessage,
     successVisible,
     summary,
+    updatingProductId,
     changeQuantity,
     closeConfirm: () => setConfirmVisible(false),
     closeSuccess: () => setSuccessVisible(false),

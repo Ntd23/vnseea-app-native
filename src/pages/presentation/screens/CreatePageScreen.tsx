@@ -57,7 +57,7 @@ import {
   UserPlus,
   MapPin,
 } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
@@ -574,6 +574,7 @@ function EditCheckbox({
 function CreatePageScreen() {
   const navigation = useNavigation<CreatePageNav>();
   const route = useRoute<any>();
+  const insets = useSafeAreaInsets();
   const editingPage = route.params?.page as PagesItem | undefined;
   const isEditing = Boolean(editingPage?.pageId);
   const pagesVm = usePagesViewModel();
@@ -1634,7 +1635,12 @@ function CreatePageScreen() {
       >
         <ScrollView
           style={{ flex: 1, backgroundColor: '#FFFFFF' }}
-          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingBottom: 110, paddingTop: 20 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingHorizontal: 20,
+            paddingBottom: 110 + insets.bottom,
+            paddingTop: 20,
+          }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -1847,11 +1853,12 @@ function CreatePageScreen() {
             left: 0,
             right: 0,
             bottom: 0,
-            minHeight: 72,
+            height: 72 + insets.bottom,
             borderTopWidth: 1,
             borderTopColor: '#E2E8F0',
             backgroundColor: '#FFFFFF',
             paddingHorizontal: 20,
+            paddingBottom: insets.bottom,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',

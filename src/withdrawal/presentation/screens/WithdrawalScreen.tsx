@@ -42,6 +42,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 import { useWithdrawalViewModel } from '../../application/view-models/useWithdrawalViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 import type {
   SepayBank,
   WithdrawalHistoryItem,
@@ -76,6 +77,7 @@ function MethodPickerModal({
   onSelect: (method: WithdrawalMethod) => void;
   onClose: () => void;
 }) {
+  const safeBottomPadding = useSafeBottomPadding(28);
   const [mounted, setMounted] = useState(false);
   const translateY = useRef(new Animated.Value(480)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -141,7 +143,13 @@ function MethodPickerModal({
       </Animated.View>
 
       <Animated.View
-        style={[pickerStyles.sheet, { transform: [{ translateY }] }]}
+        style={[
+          pickerStyles.sheet,
+          {
+            paddingBottom: safeBottomPadding,
+            transform: [{ translateY }],
+          },
+        ]}
       >
         <View style={pickerStyles.handle} />
         <Text style={pickerStyles.sheetTitle}>Phương thức rút tiền</Text>
@@ -187,6 +195,7 @@ function BankPickerModal({
   onSelect: (bank: SepayBank) => void;
   onClose: () => void;
 }) {
+  const safeBottomPadding = useSafeBottomPadding(28);
   const [mounted, setMounted] = useState(false);
   const translateY = useRef(new Animated.Value(620)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -252,7 +261,13 @@ function BankPickerModal({
       </Animated.View>
 
       <Animated.View
-        style={[pickerStyles.sheet, { transform: [{ translateY }] }]}
+        style={[
+          pickerStyles.sheet,
+          {
+            paddingBottom: safeBottomPadding,
+            transform: [{ translateY }],
+          },
+        ]}
       >
         <View style={pickerStyles.handle} />
         <Text style={pickerStyles.sheetTitle}>Ngân hàng</Text>

@@ -36,6 +36,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { CONTENT_AUDIENCE_CONTRACT, audienceToWire, type ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
+import { useFixedBottomLayout } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type CreateAlbumNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -178,6 +179,10 @@ type CreateAlbumResponse = {
 
 function LegacyCreateAlbumScreen() {
   const navigation = useNavigation<CreateAlbumNav>();
+  const bottomLayout = useFixedBottomLayout({
+    minimumFooterBottomPadding: Platform.OS === 'ios' ? 34 : 20,
+    contentBottomPadding: 120,
+  });
   const language = useAppLanguage();
   const copy = useMemo(() => CREATE_ALBUM_COPY[language] || CREATE_ALBUM_COPY.vi, [language]);
 
@@ -373,7 +378,7 @@ function LegacyCreateAlbumScreen() {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, paddingTop: 12 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: bottomLayout.contentBottomPadding, paddingTop: 12 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -735,7 +740,7 @@ function LegacyCreateAlbumScreen() {
           backgroundColor: '#ffffff',
           paddingHorizontal: 20,
           paddingTop: 12,
-          paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+          paddingBottom: bottomLayout.footerBottomPadding,
           borderTopWidth: 1,
           borderTopColor: '#f1f5f9',
         }}

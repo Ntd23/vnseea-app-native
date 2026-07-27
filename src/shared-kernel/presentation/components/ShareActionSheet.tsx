@@ -39,6 +39,7 @@ import { useMessagesViewModel } from '../../../messages';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import { useShareViewModel } from '../../application/view-models/useShareViewModel';
 import { useCurrentUserViewModel } from '../../application/view-models/useCurrentUserViewModel';
+import { useSafeBottomPadding } from '../layout/useSafeBottomLayout';
 
 type Destination = FeedShareDestination | 'message';
 
@@ -78,6 +79,7 @@ export function ShareActionSheet({
   const currentUserVm = useCurrentUserViewModel();
   const pagesVm = useMyPagesViewModel();
   const groupsVm = useMyGroupsViewModel();
+  const safeBottomPadding = useSafeBottomPadding(28);
   // Recent chats — used to populate the recipient picker when
   // `destination === 'message'`. We lazy-load on first open so
   // the chat endpoint doesn't fire on every Feed mount.
@@ -301,7 +303,10 @@ export function ShareActionSheet({
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: safeBottomPadding },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

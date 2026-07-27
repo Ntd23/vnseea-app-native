@@ -29,6 +29,7 @@ import { useCheckoutViewModel } from '../../application/view-models/useCheckoutV
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
+import { useFixedBottomLayout } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type CartNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -125,6 +126,10 @@ function CartItemRow({
 function CartScreen() {
   const navigation = useNavigation<CartNav>();
   const vm = useCheckoutViewModel({ initialStep: 'cart' });
+  const bottomLayout = useFixedBottomLayout({
+    minimumFooterBottomPadding: 16,
+    contentBottomPadding: 130,
+  });
   const initializedSelectionRef = useRef(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
@@ -246,7 +251,10 @@ function CartScreen() {
         <>
           <ScrollView
             className="flex-1"
-            contentContainerStyle={{ padding: 16, paddingBottom: 130 }}
+            contentContainerStyle={{
+              padding: 16,
+              paddingBottom: bottomLayout.contentBottomPadding,
+            }}
             showsVerticalScrollIndicator={false}
           >
             <View className="mb-4 flex-row items-center justify-between rounded-3xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
@@ -292,7 +300,10 @@ function CartScreen() {
             ) : null}
           </ScrollView>
 
-          <View className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pb-4 pt-3 shadow-lg">
+          <View
+            className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pt-3 shadow-lg"
+            style={{ paddingBottom: bottomLayout.footerBottomPadding }}
+          >
             <View className="mb-3 flex-row items-center justify-between">
               <View>
                 <Text className="text-sm font-semibold text-slate-500">

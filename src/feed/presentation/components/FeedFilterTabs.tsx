@@ -9,13 +9,16 @@ import { FeedSourceFilterBar } from './FeedSourceFilterBar';
 
 export type FeedFilterTabKey = 'all' | 'photos';
 export type FeedFilterActiveSource = FeedFilterTabKey | 'following';
+export type FeedFilterTabsVariant = 'default' | 'header';
 
 export function FeedFilterTabs({
   activeSource,
   onChangeSource,
+  variant = 'default',
 }: {
   activeSource: FeedFilterActiveSource;
   onChangeSource: (source: FeedFilterTabKey) => void;
+  variant?: FeedFilterTabsVariant;
 }) {
   const navigation = useNavigation<any>();
   const items = useMemo(
@@ -87,7 +90,7 @@ export function FeedFilterTabs({
     <FeedSourceFilterBar
       activeKey={activeSource}
       items={items}
-      variant="header"
+      variant={variant}
       onChange={key => {
         if (key === 'all' || key === 'photos') {
           onChangeSource(key);

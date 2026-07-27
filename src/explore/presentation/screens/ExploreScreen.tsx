@@ -76,6 +76,7 @@ import HashtagTabs from '../components/HashtagTabs';
 import StatPill from '../components/StatPill';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 const BRAND = APP_BRAND_COLOR;
 const AVATAR_FALLBACK = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
@@ -425,6 +426,7 @@ function HashtagShareOverlay({
   onClose: () => void;
   onInternalShare: (input: SharePostInput) => Promise<FeedPost>;
 }) {
+  const safeBottomPadding = useSafeBottomPadding(20);
   const currentUserVm = useCurrentUserViewModel();
   const pagesVm = useMyPagesViewModel();
   const groupsVm = useMyGroupsViewModel();
@@ -539,8 +541,8 @@ function HashtagShareOverlay({
         accessibilityLabel="Đóng chia sẻ"
       />
       <View
-        className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white px-4 pb-5 pt-3 shadow-2xl"
-        style={{ maxHeight: '86%' }}
+        className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white px-4 pt-3 shadow-2xl"
+        style={{ maxHeight: '86%', paddingBottom: safeBottomPadding }}
       >
         <View className="mb-3 flex-row items-center justify-between">
           <Text className="text-title-primary text-[#0f172a]">

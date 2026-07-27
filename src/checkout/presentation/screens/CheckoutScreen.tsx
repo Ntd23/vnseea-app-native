@@ -17,12 +17,16 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   Check,
   CheckCircle2,
   MapPin,
+  Minus,
   Package,
   Pencil,
   Phone,
@@ -47,6 +51,7 @@ import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 import AddressSearchContent from '../../../shared-kernel/presentation/components/AddressSearchContent';
 import type { ResolvedAddress } from '../../../shared-kernel/domain/types/addressSearch.types';
+import { getCheckoutBottomLayout } from '../layout/checkoutBottomLayout';
 
 type CheckoutNav = NativeStackNavigationProp<RootStackParamList>;
 type CheckoutRoute = RouteProp<RootStackParamList, typeof ROUTES.CHECKOUT>;
@@ -141,7 +146,21 @@ function CurrencyTotals({
   );
 }
 
-function OrderLine({ item }: { item: CheckoutItem }) {
+function OrderLine({
+  item,
+  isUpdating,
+  onDecrease,
+  onIncrease,
+}: {
+  item: CheckoutItem;
+  isUpdating: boolean;
+  onDecrease: () => void;
+  onIncrease: () => void;
+}) {
+  const decreaseDisabled = isUpdating || item.quantity <= 1;
+  const increaseDisabled =
+    isUpdating || item.quantity >= item.maxQuantity;
+
   return (
     <View className="flex-row py-3">
       {item.image ? (
@@ -159,16 +178,54 @@ function OrderLine({ item }: { item: CheckoutItem }) {
         <Text className="text-base font-extrabold text-slate-950" numberOfLines={2}>
           {item.name}
         </Text>
-        <Text className="mt-1 text-sm font-semibold text-slate-500">
-          Số lượng: {item.quantity}
-        </Text>
+        <View className="mt-2 flex-row items-center justify-between">
+          <View className="h-10 flex-row items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <TouchableOpacity
+              className={`h-10 w-10 items-center justify-center ${
+                decreaseDisabled ? 'opacity-35' : ''
+              }`}
+              activeOpacity={0.75}
+              disabled={decreaseDisabled}
+              onPress={onDecrease}
+              accessibilityRole="button"
+              accessibilityLabel={`Giảm số lượng ${item.name}`}
+            >
+              <Minus size={18} color="#334155" strokeWidth={2.4} />
+            </TouchableOpacity>
+            <View className="h-10 min-w-[38px] items-center justify-center border-x border-slate-200 px-2">
+              {isUpdating ? (
+                <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
+              ) : (
+                <Text className="text-sm font-extrabold text-slate-900">
+                  {item.quantity}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              className={`h-10 w-10 items-center justify-center ${
+                increaseDisabled ? 'opacity-35' : ''
+              }`}
+              activeOpacity={0.75}
+              disabled={increaseDisabled}
+              onPress={onIncrease}
+              accessibilityRole="button"
+              accessibilityLabel={`Tăng số lượng ${item.name}`}
+            >
+              <Plus size={18} color="#334155" strokeWidth={2.4} />
+            </TouchableOpacity>
+          </View>
+          <Text
+            className="ml-3 flex-1 text-right text-sm font-extrabold text-slate-900"
+            numberOfLines={2}
+          >
+            {formatCurrency(
+              item.total,
+              item.currencyCode,
+              item.currencySymbol,
+            )}
+          </Text>
+        </View>
       </View>
-      <Text
-        className="ml-3 max-w-[38%] text-right text-sm font-extrabold text-slate-900"
-        numberOfLines={2}
-      >
-        {formatCurrency(item.total, item.currencyCode, item.currencySymbol)}
-      </Text>
     </View>
   );
 }
@@ -321,9 +378,9 @@ function CheckoutAddressSheet({
 
   useEffect(() => {
     if (!visible) return;
-    setShowForm(vm.addresses.length === 0);
+    setShowForm(vm.addresses.length === 0 || vm.step === 'confirm');
     setAddressSearchVisible(false);
-  }, [visible, vm.addresses.length]);
+  }, [visible, vm.addresses.length, vm.step]);
 
   const startNewAddress = useCallback(() => {
     vm.createNewAddress();
@@ -724,6 +781,11 @@ function RequestSuccessModal({
 function CheckoutScreen() {
   const navigation = useNavigation<CheckoutNav>();
   const route = useRoute<CheckoutRoute>();
+  const insets = useSafeAreaInsets();
+  const bottomLayout = getCheckoutBottomLayout({
+    isAndroid: Platform.OS === 'android',
+    bottomInset: insets.bottom,
+  });
   const selectedProductIds = route.params?.selectedProductIds;
   const selectedAddressId = route.params?.selectedAddressId;
   const vm = useCheckoutViewModel({
@@ -733,7 +795,7 @@ function CheckoutScreen() {
   });
   const [addressSheetVisible, setAddressSheetVisible] = useState(false);
   const didAutoOpenAddressRef = useRef(false);
-  const { createNewAddress } = vm;
+  const { createNewAddress, openConfirm } = vm;
 
   useEffect(() => {
     if (
@@ -759,6 +821,12 @@ function CheckoutScreen() {
   const handleBackToCart = useCallback(() => {
     navigation.navigate(ROUTES.CART);
   }, [navigation]);
+
+  const handleOpenConfirm = useCallback(() => {
+    if (!openConfirm()) {
+      setAddressSheetVisible(true);
+    }
+  }, [openConfirm]);
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
@@ -809,7 +877,10 @@ function CheckoutScreen() {
         <>
           <ScrollView
             className="flex-1"
-            contentContainerStyle={{ padding: 16, paddingBottom: 132 }}
+            contentContainerStyle={{
+              padding: 16,
+              paddingBottom: bottomLayout.contentBottomPadding,
+            }}
             showsVerticalScrollIndicator={false}
           >
             <View className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -874,7 +945,17 @@ function CheckoutScreen() {
               </Text>
               <View className="mt-3">
                 {summary.items.map(item => (
-                  <OrderLine key={item.id} item={item} />
+                  <OrderLine
+                    key={item.id}
+                    item={item}
+                    isUpdating={vm.updatingProductId === item.productId}
+                    onDecrease={() =>
+                      vm.changeQuantity(item.productId, item.quantity - 1)
+                    }
+                    onIncrease={() =>
+                      vm.changeQuantity(item.productId, item.quantity + 1)
+                    }
+                  />
                 ))}
               </View>
             </View>
@@ -926,7 +1007,12 @@ function CheckoutScreen() {
               </Text>
             ) : null}
           </ScrollView>
-          <View className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pb-4 pt-3 shadow-lg">
+          <View
+            className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pt-3 shadow-lg"
+            style={{
+              paddingBottom: bottomLayout.footerBottomPadding,
+            }}
+          >
             {!vm.selectedAddress ? (
               <TouchableOpacity
                 activeOpacity={0.9}
@@ -942,7 +1028,7 @@ function CheckoutScreen() {
               <TouchableOpacity
                 activeOpacity={0.9}
                 disabled={vm.isPaying}
-                onPress={vm.openConfirm}
+                onPress={handleOpenConfirm}
                 className={`min-h-[50px] flex-row items-center justify-center rounded-full bg-brand px-5 ${
                   vm.isPaying ? 'opacity-70' : ''
                 }`}

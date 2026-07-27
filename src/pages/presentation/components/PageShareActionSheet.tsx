@@ -33,6 +33,7 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { useShareViewModel } from '../../../shared-kernel/application/view-models/useShareViewModel';
 import { useMyPagesViewModel } from '../../application/view-models/useMyPagesViewModel';
 import type { PagesItem } from '../../domain/types/pages.types';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type Destination = 'timeline' | 'page' | 'group' | 'message';
 
@@ -65,6 +66,7 @@ export function PageShareActionSheet({
   page,
   onCopied,
 }: PageShareActionSheetProps) {
+  const safeBottomPadding = useSafeBottomPadding(30);
   const { copyToClipboard } = useShareViewModel();
   const currentUserVm = useCurrentUserViewModel();
   const pagesVm = useMyPagesViewModel();
@@ -275,7 +277,10 @@ export function PageShareActionSheet({
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: safeBottomPadding },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react-native';
 import type { FeedPost } from '../../../feed/domain/types/feed.types';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 
 type PagePostMenuAction = 'edit' | 'delete' | 'comments' | 'pin';
 
@@ -40,6 +41,7 @@ export function PagePostMenuActionSheet({
 }: PagePostMenuActionSheetProps) {
   const [loadingAction, setLoadingAction] = useState<PagePostMenuAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const safeBottomPadding = useSafeBottomPadding(24);
 
   if (!visible || !post) {
     return null;
@@ -71,7 +73,10 @@ export function PagePostMenuActionSheet({
         style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.42)' }}
       />
 
-      <View className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pb-6 pt-4 shadow-lg">
+      <View
+        className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pt-4 shadow-lg"
+        style={{ paddingBottom: safeBottomPadding }}
+      >
         <View className="mb-3 flex-row items-center justify-between">
           <Text className="text-xl font-bold text-slate-900">Tùy chọn bài viết</Text>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
