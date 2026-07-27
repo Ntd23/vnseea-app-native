@@ -65,13 +65,22 @@ describe('comment keyboard safety contract', () => {
       "const shouldOwnKeyboardAvoidance = isInline && Platform.OS === 'android';",
     );
     expect(sharedSheet).toContain('Keyboard.metrics?.()');
+    expect(sharedSheet).toContain('androidWindowScreenOffsetY');
+    expect(sharedSheet).toContain('initialWindowMetrics?.frame.y');
+    expect(sharedSheet).toContain('keyboardTopInWindow');
     expect(sharedSheet).toContain(
+      'const keyboardTopInWindow = keyboardTop - androidWindowScreenOffsetY;',
+    );
+    expect(sharedSheet).not.toContain(
       'INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE',
     );
-    expect(sharedSheet).toContain('effectiveKeyboardTop');
+    expect(sharedSheet).not.toContain(
+      'keyboardHeightRef.current + keyboardAccessoryClearance',
+    );
     expect(sharedSheet).toContain('measureInWindow');
     expect(sharedSheet).toContain('unshiftedBottom');
     expect(sharedSheet).toContain('keyboardLiftRef.current');
+    expect(sharedSheet).toContain('commitKeyboardLift(overlap);');
     expect(sharedSheet).toContain('collapsable={false}');
     expect(sharedSheet).toContain(
       'shouldOwnKeyboardAvoidance && appliedKeyboardLift > 0',

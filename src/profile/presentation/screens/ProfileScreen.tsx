@@ -13,6 +13,7 @@ import React, {
 import {
   Animated,
   Dimensions,
+  DeviceEventEmitter,
   Image,
   Modal,
   Platform,
@@ -135,9 +136,16 @@ import {
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
 import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
+import { LiveStreamPostCard } from '../../../feed/presentation/components/LiveStreamPostCard';
 import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
+import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
+import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  hiddenPostsStorage,
+  LOCAL_POST_HIDDEN_EVENT,
+} from '../../../feed/infrastructure/storage/hiddenPostsStorage';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
@@ -178,14 +186,13 @@ import {
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
-import {
-  PROFILE_COVER_ASPECT_RATIO,
-} from '../../../shared-kernel/application/constants/profileImageGeometry';
+import { PROFILE_COVER_ASPECT_RATIO } from '../../../shared-kernel/application/constants/profileImageGeometry';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
 type ProfileListItem =
   | { type: 'state' }
+  | { type: 'live'; item: LiveStreamItem }
   | { type: 'post'; post: ProfileFeedPost };
 type ProfileRoute = RouteProp<
   RootStackParamList,
@@ -1362,6 +1369,25 @@ function ProfileScreen() {
     routeUserId: route.params?.userId,
     loadedProfileId: profile?.id,
   });
+  const profileLiveVm = useLiveViewModel({
+    enabled: Boolean(targetUserId) && isProfileFocused,
+    userId: targetUserId ? String(targetUserId) : undefined,
+    refreshIntervalMs: 10_000,
+  });
+  const activeProfileLive = useMemo(() => {
+    return (
+      [...profileLiveVm.liveStreams]
+        .filter(item => item.state !== 'offline')
+        .sort((left, right) => {
+          if (left.state === 'live' && right.state !== 'live') return -1;
+          if (left.state !== 'live' && right.state === 'live') return 1;
+          return (
+            new Date(right.startedAt).getTime() -
+            new Date(left.startedAt).getTime()
+          );
+        })[0] ?? null
+    );
+  }, [profileLiveVm.liveStreams]);
 
   const [isLoadingAvatar, setIsLoadingAvatar] = useState(false);
   const [isLoadingCover, setIsLoadingCover] = useState(false);
@@ -1369,7 +1395,8 @@ function ProfileScreen() {
     target: ImageCropTarget;
     image: CropSourceImage;
   } | null>(null);
-  const [isRelationshipSheetVisible, setRelationshipSheetVisible] = useState(false);
+  const [isRelationshipSheetVisible, setRelationshipSheetVisible] =
+    useState(false);
   const [relationshipAction, setRelationshipAction] = useState<
     'unfollow' | 'block' | null
   >(null);
@@ -1471,7 +1498,10 @@ function ProfileScreen() {
   const closeReactionsSheet = useCallback(() => {
     setReactionsSheetVisible(false);
   }, []);
-  const filteredProfilePosts = posts;
+  const filteredProfilePosts = useMemo(
+    () => hiddenPostsStorage.filterVisiblePosts(posts, currentUserId),
+    [currentUserId, posts],
+  );
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -2769,14 +2799,17 @@ function ProfileScreen() {
     [navigation],
   );
 
+  const handleOpenProfileLive = useCallback(
+    (item: LiveStreamItem) => {
+      navigation.navigate(ROUTES.LIVE_ROOM, { postId: item.postId });
+    },
+    [navigation],
+  );
+
   const handleOpenConnections = useCallback(
     (initialTab: 'followers' | 'following') => {
       if (!targetUserId) return;
-      setProfileConnectionsSnapshot(
-        String(targetUserId),
-        followers,
-        following,
-      );
+      setProfileConnectionsSnapshot(String(targetUserId), followers, following);
       navigation.navigate(ROUTES.PROFILE_FRIENDS, {
         userId: String(targetUserId),
         displayName: displayName || copy.userFallback,
@@ -2910,6 +2943,20 @@ function ProfileScreen() {
     setPosts(previous => previous.filter(post => post.id !== postId));
   }, []);
 
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      LOCAL_POST_HIDDEN_EVENT,
+      (event: { postId?: string; userId?: string }) => {
+        const postId = String(event?.postId ?? '').trim();
+        if (!postId) return;
+        const currentOwnerKey = currentUserId || 'guest';
+        if (event?.userId && event.userId !== currentOwnerKey) return;
+        removeProfilePostFromList(postId);
+      },
+    );
+    return () => subscription.remove();
+  }, [currentUserId, removeProfilePostFromList]);
+
   const handleSavePost = useCallback(
     async (postId: string) => {
       try {
@@ -2950,15 +2997,10 @@ function ProfileScreen() {
 
   const handleHidePost = useCallback(
     async (postId: string) => {
+      hiddenPostsStorage.hidePost(postId, currentUserId);
       removeProfilePostFromList(postId);
-      Alert.alert(
-        language === 'vi' ? 'Thông báo' : 'Notice',
-        language === 'vi'
-          ? 'Đã ẩn bài viết khỏi hồ sơ này.'
-          : 'This post has been hidden from this profile view.',
-      );
     },
-    [language, removeProfilePostFromList],
+    [currentUserId, removeProfilePostFromList],
   );
 
   const handleDeletePost = useCallback(
@@ -3912,17 +3954,20 @@ function ProfileScreen() {
     ],
   );
 
-  const profileListItemKeyExtractor = useCallback(
-    (item: ProfileListItem) =>
-      item.type === 'post' ? `${item.post.kind}-${item.post.id}` : item.type,
-    [],
-  );
+  const profileListItemKeyExtractor = useCallback((item: ProfileListItem) => {
+    if (item.type === 'post') {
+      return `${item.post.kind}-${item.post.id}`;
+    }
+    if (item.type === 'live') {
+      return `live-${item.item.postId}`;
+    }
+    return item.type;
+  }, []);
 
-  const profileListItemType = useCallback(
-    (item: ProfileListItem) =>
-      item.type === 'post' ? item.post.kind : item.type,
-    [],
-  );
+  const profileListItemType = useCallback((item: ProfileListItem) => {
+    if (item.type === 'post') return item.post.kind;
+    return item.type;
+  }, []);
 
   const profileContentHeader = (
     <>
@@ -4691,15 +4736,21 @@ function ProfileScreen() {
   );
 
   const shouldRenderProfilePostsState = profilePostsEmptyComponent !== null;
-  const profileListItems = useMemo<ProfileListItem[]>(
-    () =>
-      shouldRenderProfilePostsState
-        ? [{ type: 'state' } as ProfileListItem]
-        : filteredProfilePosts.map(
-            post => ({ type: 'post', post } as ProfileListItem),
-          ),
-    [filteredProfilePosts, shouldRenderProfilePostsState],
-  );
+  const profileListItems = useMemo<ProfileListItem[]>(() => {
+    const items: ProfileListItem[] = [];
+    if (activeProfileLive) {
+      items.push({ type: 'live', item: activeProfileLive });
+    }
+
+    if (shouldRenderProfilePostsState) {
+      items.push({ type: 'state' });
+    } else {
+      filteredProfilePosts.forEach(post => {
+        items.push({ type: 'post', post });
+      });
+    }
+    return items;
+  }, [activeProfileLive, filteredProfilePosts, shouldRenderProfilePostsState]);
 
   const renderProfileListItem = useCallback(
     ({ item }: FlashListRenderItemInfo<ProfileListItem>) => {
@@ -4707,9 +4758,24 @@ function ProfileScreen() {
         return <>{profilePostsEmptyComponent}</>;
       }
 
+      if (item.type === 'live') {
+        return (
+          <LiveStreamPostCard
+            item={item.item}
+            copy={postCardCopy}
+            onPress={handleOpenProfileLive}
+          />
+        );
+      }
+
       return renderProfilePostContent(item.post);
     },
-    [profilePostsEmptyComponent, renderProfilePostContent],
+    [
+      handleOpenProfileLive,
+      postCardCopy,
+      profilePostsEmptyComponent,
+      renderProfilePostContent,
+    ],
   );
 
   const canSwipeBackToPreviousProfileScreen = navigation.canGoBack();
@@ -5364,6 +5430,7 @@ function ProfileScreen() {
             onRetry={handleRetryComments}
             onSubmit={commentVm.submitComment}
             onSubmitReply={commentVm.submitReply}
+            onSearchMentions={commentVm.searchCommentMentions}
             onSetReaction={commentVm.setCommentReaction}
             onDelete={commentVm.deleteComment}
             onEdit={commentVm.editComment}

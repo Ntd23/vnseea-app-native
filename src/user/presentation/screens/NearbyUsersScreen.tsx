@@ -5203,7 +5203,7 @@ export default function NearbyUsersScreen() {
     initialLocationRequestStartedRef.current = true;
     let cancelled = false;
 
-    getCurrentDeviceLocation(4500)
+    getCurrentDeviceLocation(8000)
       .then(location => {
         if (cancelled) return;
         const coordinate = {
@@ -5280,12 +5280,17 @@ export default function NearbyUsersScreen() {
 
     searchTimerRef.current = setTimeout(
       () => {
-        const current = currentLocationRef.current;
+        // Fresh installs may not have a persisted location yet, and the first
+        // GPS fix can take several seconds. Search around the map viewport in
+        // that case so external places still work instead of silently sending
+        // the backend a request without an origin.
+        const searchOrigin =
+          currentLocationRef.current ?? currentRegionRef.current;
         searchNearbyPagesAndPlaces({
           query: trimmed,
           googleQuery: googleCategory,
-          lat: current?.latitude,
-          lng: current?.longitude,
+          lat: searchOrigin.latitude,
+          lng: searchOrigin.longitude,
           radius: TYPEAHEAD_SEARCH_RADIUS_METERS,
           limit: 20,
           fast: true,

@@ -7,13 +7,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   FlatList,
   Image,
   Modal,
   Platform,
   Pressable,
   Text,
+  useWindowDimensions,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -34,6 +34,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import {
+  ChevronLeft,
   Globe,
   MessageCircle,
   Share2,
@@ -75,6 +76,12 @@ const PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT = 360;
 const PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT_RATIO = 0.42;
 const PHOTO_VIEWER_PROFILE_CLOSE_DELAY_MS = 80;
 const PHOTO_VIEWER_INTERACTION_LOCK_MS = 350;
+const PHOTO_VIEWER_SWIPE_BACK_START_WIDTH = 56;
+const PHOTO_VIEWER_SWIPE_BACK_THRESHOLD_RATIO = 0.32;
+const PHOTO_VIEWER_SWIPE_BACK_ACTIVE_OFFSET = 15;
+const PHOTO_VIEWER_SWIPE_BACK_VELOCITY = 700;
+const PHOTO_VIEWER_SWIPE_BACK_RETURN_MIN_MS = 90;
+const PHOTO_VIEWER_SWIPE_BACK_RETURN_MAX_MS = 180;
 
 // Relative-time formatter used in the bottom publisher row. Mirrors
 // `formatPostTime` in FeedScreen so the viewer caption shows the
@@ -328,7 +335,10 @@ export function PhotoViewerModal({
 }) {
   const language = useAppLanguage();
   const insets = useSafeAreaInsets();
-  const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+  // Keep viewer geometry in the same coordinate space as the Android Modal.
+  // This updates with the actual app-window bounds instead of retaining a
+  // stale full-display size across status-bar/window changes.
+  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [topBarHeight, setTopBarHeight] = useState(0);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(0);
@@ -370,10 +380,12 @@ export function PhotoViewerModal({
   const localHasDragged = useSharedValue(false);
 
   const translateY = useSharedValue(0);
+  const translateX = useSharedValue(0);
   const openProgress = useSharedValue(0);
   const openScale = useSharedValue(0.92);
   const contentOpacity = useSharedValue(0);
   const chromeOpacity = useSharedValue(1);
+  const dismissInFlight = useSharedValue(false);
 
   // Sync page on mount + animate open with snappy fade + scale
   useEffect(() => {
@@ -387,13 +399,18 @@ export function PhotoViewerModal({
     transitionLockRef.current = false;
     contentOpacity.value = 0;
     chromeOpacity.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    dismissInFlight.value = false;
 
     if (!state) {
       return;
     }
 
     setCurrentIndex(state.initialIndex);
+    translateX.value = 0;
     translateY.value = 0;
+    dismissInFlight.value = false;
     openProgress.value = 0;
     openScale.value = 0.96;
     // Open animation: background + scale start immediately. Content fades
@@ -413,10 +430,12 @@ export function PhotoViewerModal({
   }, [
     state,
     translateY,
+    translateX,
     openProgress,
     openScale,
     contentOpacity,
     chromeOpacity,
+    dismissInFlight,
   ]);
 
   useEffect(() => {
@@ -726,10 +745,12 @@ export function PhotoViewerModal({
     .failOffsetX([-15, 15])
     .onUpdate(event => {
       'worklet';
+      if (dismissInFlight.value) return;
       translateY.value = event.translationY;
     })
     .onEnd(event => {
       'worklet';
+      if (dismissInFlight.value) return;
       // Dismiss on big vertical drag or high velocity; otherwise snap back.
       const absTranslationY = Math.abs(event.translationY);
       const absVelocityY = Math.abs(event.velocityY);
@@ -739,8 +760,10 @@ export function PhotoViewerModal({
         (absTranslationY > 60 && absVelocityY > 300);
 
       if (shouldDismiss) {
+        dismissInFlight.value = true;
         const targetY = event.translationY > 0 ? SCREEN_H : -SCREEN_H;
         translateY.value = withTiming(targetY, { duration: 150 });
+        translateX.value = withTiming(0, { duration: 150 });
         openScale.value = withTiming(0.92, { duration: 150 });
         contentOpacity.value = withTiming(0, { duration: 90 });
         openProgress.value = withTiming(
@@ -757,14 +780,95 @@ export function PhotoViewerModal({
       }
     });
 
+  // Match the Reels exit affordance: a deliberate rightward swipe from the
+  // left edge moves the viewer with the finger, rounds the left corners, and
+  // reveals an animated chevron bubble. It is only enabled on the first
+  // photo, so normal horizontal paging remains intact on later photos.
+  const swipeBackGesture = Gesture.Pan()
+    .hitSlop({ left: 0, width: PHOTO_VIEWER_SWIPE_BACK_START_WIDTH })
+    .activeOffsetX(PHOTO_VIEWER_SWIPE_BACK_ACTIVE_OFFSET)
+    .failOffsetY([-PHOTO_VIEWER_SWIPE_BACK_ACTIVE_OFFSET, PHOTO_VIEWER_SWIPE_BACK_ACTIVE_OFFSET])
+    .enabled(
+      !isPhotoZoomed &&
+        currentIndex === 0 &&
+        !isShareSheetVisible &&
+        pickerAnchor === null,
+    )
+    .onUpdate(event => {
+      'worklet';
+      if (dismissInFlight.value) return;
+      translateX.value = Math.max(0, event.translationX);
+    })
+    .onEnd(event => {
+      'worklet';
+      if (dismissInFlight.value) return;
+
+      const threshold = SCREEN_W * PHOTO_VIEWER_SWIPE_BACK_THRESHOLD_RATIO;
+      const shouldDismiss =
+        event.translationX > threshold ||
+        event.velocityX > PHOTO_VIEWER_SWIPE_BACK_VELOCITY;
+
+      if (shouldDismiss) {
+        dismissInFlight.value = true;
+        translateX.value = withTiming(
+          SCREEN_W,
+          { duration: 180, easing: Easing.in(Easing.cubic) },
+        );
+        translateY.value = withTiming(0, { duration: 180 });
+        openScale.value = withTiming(0.94, { duration: 180 });
+        contentOpacity.value = withTiming(0, { duration: 90 });
+        openProgress.value = withTiming(
+          0,
+          { duration: 180, easing: Easing.in(Easing.cubic) },
+          finished => {
+            if (finished) {
+              runOnJS(onClose)();
+            }
+          },
+        );
+        return;
+      }
+
+      const returnDuration = Math.max(
+        PHOTO_VIEWER_SWIPE_BACK_RETURN_MIN_MS,
+        Math.min(
+          PHOTO_VIEWER_SWIPE_BACK_RETURN_MAX_MS,
+          (Math.max(0, event.translationX) / Math.max(threshold, 1)) *
+            PHOTO_VIEWER_SWIPE_BACK_RETURN_MAX_MS,
+        ),
+      );
+      const returnConfig = {
+        duration: returnDuration,
+        easing: Easing.out(Easing.cubic),
+      };
+      translateX.value = withTiming(0, returnConfig);
+    })
+    .onFinalize((_event, success) => {
+      'worklet';
+      if (success || dismissInFlight.value) return;
+      translateX.value = withTiming(0, {
+        duration: PHOTO_VIEWER_SWIPE_BACK_RETURN_MIN_MS,
+        easing: Easing.out(Easing.cubic),
+      });
+    });
+
   const backdropAnimatedStyle = useAnimatedStyle(() => {
-    const dragProgress = interpolate(
+    const verticalDragProgress = interpolate(
       Math.abs(translateY.value),
       [0, SCREEN_H * 0.5],
       [1, 0],
       Extrapolation.CLAMP,
     );
-    const dragOpacity = Math.max(0, Math.min(1, dragProgress));
+    const horizontalDragProgress = interpolate(
+      Math.max(0, translateX.value),
+      [0, SCREEN_W],
+      [1, 0.08],
+      Extrapolation.CLAMP,
+    );
+    const dragOpacity = Math.max(
+      0,
+      Math.min(1, verticalDragProgress, horizontalDragProgress),
+    );
     const finalOpacity = Math.min(openProgress.value, dragOpacity);
     return {
       opacity: finalOpacity,
@@ -772,20 +876,80 @@ export function PhotoViewerModal({
   });
 
   const contentStyle = useAnimatedStyle(() => {
-    const dragScale = interpolate(
+    const verticalDragScale = interpolate(
       Math.abs(translateY.value),
       [0, SCREEN_H * 0.5],
       [1, 0.8],
       Extrapolation.CLAMP,
     );
-    const finalScale = openScale.value * dragScale;
+    const horizontalProgress = interpolate(
+      Math.max(0, translateX.value),
+      [0, SCREEN_W],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    const horizontalDragScale = interpolate(
+      horizontalProgress,
+      [0, 1],
+      [1, 0.97],
+      Extrapolation.CLAMP,
+    );
+    const finalScale =
+      openScale.value * verticalDragScale * horizontalDragScale;
     return {
       flex: 1,
+      borderTopLeftRadius: interpolate(
+        horizontalProgress,
+        [0, 1],
+        [0, 22],
+        Extrapolation.CLAMP,
+      ),
+      borderBottomLeftRadius: interpolate(
+        horizontalProgress,
+        [0, 1],
+        [0, 22],
+        Extrapolation.CLAMP,
+      ),
       transform: [
+        { translateX: translateX.value },
         { translateY: translateY.value },
         { scale: finalScale },
       ],
       opacity: contentOpacity.value,
+    };
+  });
+
+  const swipeBackIndicatorStyle = useAnimatedStyle(() => {
+    const threshold = SCREEN_W * PHOTO_VIEWER_SWIPE_BACK_THRESHOLD_RATIO;
+    const opacity = interpolate(
+      translateX.value,
+      [0, 40, threshold],
+      [0, 0.85, 1],
+      Extrapolation.CLAMP,
+    );
+    const scale = interpolate(
+      translateX.value,
+      [0, threshold],
+      [0.6, 1.2],
+      Extrapolation.CLAMP,
+    );
+    const indicatorTranslateX = interpolate(
+      translateX.value,
+      [0, threshold],
+      [-60, 20],
+      Extrapolation.CLAMP,
+    );
+    const isReady = translateX.value >= threshold;
+
+    return {
+      opacity,
+      backgroundColor: isReady
+        ? 'rgba(8, 102, 255, 0.85)'
+        : 'rgba(0, 0, 0, 0.65)',
+      transform: [
+        { translateX: indicatorTranslateX },
+        { scale },
+      ],
     };
   });
 
@@ -801,7 +965,6 @@ export function PhotoViewerModal({
         animationType="none"
         onRequestClose={handleClose}
         onDismiss={handleModalDismiss}
-        statusBarTranslucent
         presentationStyle="overFullScreen"
         hardwareAccelerated
       />
@@ -883,13 +1046,16 @@ export function PhotoViewerModal({
       animationType="none"
       onRequestClose={handleClose}
       onDismiss={handleModalDismiss}
-      statusBarTranslucent
       presentationStyle="overFullScreen"
       hardwareAccelerated
     >
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" translucent />
+      <FocusAwareStatusBar
+        barStyle="light-content"
+        backgroundColor="#000"
+        translucent={false}
+      />
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <GestureDetector gesture={panGesture}>
+        <GestureDetector gesture={Gesture.Simultaneous(panGesture, swipeBackGesture)}>
           <Animated.View style={{ flex: 1, backgroundColor: 'transparent' }}>
             <Animated.View
               pointerEvents="none"
@@ -906,7 +1072,7 @@ export function PhotoViewerModal({
               ]}
             />
             <Animated.View style={[contentStyle, { flex: 1 }]}>
-              {/* Top bar: progress segments + page counter + close */}
+              {/* Top bar: progress segments + back button + page counter + close */}
               <Animated.View
                 pointerEvents={isChromeVisible ? 'auto' : 'none'}
                 onLayout={handleTopBarLayout}
@@ -955,19 +1121,45 @@ export function PhotoViewerModal({
                     justifyContent: 'space-between',
                   }}
                 >
-                  <Text
-                    numberOfLines={1}
-                    allowFontScaling={false}
+                  <View
                     style={{
-                      color: '#ffffff',
-                      fontSize: 16,
-                      fontWeight: '700',
-                      lineHeight: 22,
-                      minWidth: 72,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      minWidth: 112,
                     }}
                   >
-                    {counterLabel}
-                  </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        language === 'vi' ? 'Quay lại' : 'Go back'
+                      }
+                      onPress={handleClose}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: 10,
+                      }}
+                    >
+                      <ChevronLeft size={22} color="#ffffff" />
+                    </Pressable>
+                    <Text
+                      numberOfLines={1}
+                      allowFontScaling={false}
+                      style={{
+                        color: '#ffffff',
+                        fontSize: 16,
+                        fontWeight: '700',
+                        lineHeight: 22,
+                      }}
+                    >
+                      {counterLabel}
+                    </Text>
+                  </View>
 
                   <Pressable
                     accessibilityRole="button"
@@ -1363,6 +1555,26 @@ export function PhotoViewerModal({
                 gestureActive={localGestureActive}
                 hasDragged={localHasDragged}
               />
+            </Animated.View>
+            {/* Reel-style visual cue: no static "swipe to exit" label. */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                {
+                  position: 'absolute',
+                  left: 0,
+                  top: SCREEN_H / 2 - 25,
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 9999,
+                },
+                swipeBackIndicatorStyle,
+              ]}
+            >
+              <ChevronLeft size={24} color="#ffffff" />
             </Animated.View>
           </Animated.View>
         </GestureDetector>

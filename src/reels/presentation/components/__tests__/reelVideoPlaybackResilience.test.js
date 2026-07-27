@@ -12,6 +12,12 @@ describe('Reel video playback resilience', () => {
   const reelsScreenSource = read(
     'src/reels/presentation/screens/ReelsScreen.tsx',
   );
+  const feedScreenSource = read(
+    'src/feed/presentation/screens/FeedScreen.tsx',
+  );
+  const homeVideoSource = read(
+    'src/feed/presentation/components/PostCards.tsx',
+  );
 
   it('uses an Android TextureView and avoids clipped player detach churn', () => {
     expect(reelItemSource).toContain(
@@ -148,6 +154,42 @@ describe('Reel video playback resilience', () => {
     );
     expect(reelsScreenSource).toContain(
       'isFocusedScreen && isSelectedRoute && isAppActive',
+    );
+  });
+
+  it('stages player mounting so Home-to-Reels navigation stays smooth', () => {
+    expect(reelsScreenSource).toContain(
+      'REELS_ACTIVE_PLAYER_MOUNT_DELAY_MS',
+    );
+    expect(reelsScreenSource).toContain(
+      'REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS',
+    );
+    expect(reelsScreenSource).toContain(
+      'const shouldKeepPlayersMounted =',
+    );
+    expect(reelsScreenSource).toContain(
+      'const activePreloadRadius = isNeighborPreloadReady ? preloadRadius : 0',
+    );
+    expect(reelsScreenSource).toContain('setIsPlaybackMountReady(true)');
+    expect(reelsScreenSource).toContain('setIsNeighborPreloadReady(true)');
+    expect(feedScreenSource).toContain('startReelsPreload');
+    expect(feedScreenSource).toContain(
+      'Image.prefetch(item.thumbnailUrl)',
+    );
+    expect(homeVideoSource).toContain('FEED_VIDEO_BLUR_SURFACE_GRACE_MS');
+    expect(homeVideoSource).toContain('isBlurSurfaceGraceActive');
+  });
+
+  it('pauses before returning Home without tearing down the player mid-transition', () => {
+    expect(reelsScreenSource).toContain('setIsDismissing(true)');
+    expect(reelsScreenSource).toContain(
+      'dismissNavigationFrameRef.current = requestAnimationFrame',
+    );
+    expect(reelsScreenSource).toContain(
+      "BackHandler.addEventListener(\n        'hardwareBackPress'",
+    );
+    expect(reelsScreenSource).toContain(
+      'runOnJS(beginDismissTransition)()',
     );
   });
 

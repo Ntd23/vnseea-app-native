@@ -707,6 +707,10 @@ function looksLikeVideo(raw: Record<string, unknown>): boolean {
   return VIDEO_URL_PATTERN.test(file);
 }
 
+function looksLikeLive(raw: Record<string, unknown>): boolean {
+  return readString(raw, 'postType', 'post_type').toLowerCase() === 'live';
+}
+
 // ── Photo URL extraction for text/photo posts ────────────────────────────
 //
 // WoWonder represents photo posts in MULTIPLE different ways depending
@@ -854,6 +858,7 @@ function extractLinkPreview(
  */
 function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   if (looksLikeAd(raw)) return false;
+  if (looksLikeLive(raw)) return false;
   if (looksLikeVideo(raw)) return false;
   const text = readString(raw, 'postText').trim();
   const hasPhoto = extractPhotoUrls(raw).length > 0;
@@ -1905,10 +1910,22 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
   // Per-classifier counters. Tells us which branch a row went down
   // (ad / poll / text+photo / video / dropped-as-stub) so we can
   // see exactly where raw posts get filtered out.
-  const buckets = { ad: 0, poll: 0, text: 0, video: 0, dropped: 0 };
+  const buckets = {
+    ad: 0,
+    live: 0,
+    poll: 0,
+    text: 0,
+    video: 0,
+    dropped: 0,
+  };
   for (const item of raw) {
     if (isGroupRawPost(item)) {
       buckets.dropped += 1;
+      continue;
+    }
+
+    if (looksLikeLive(item)) {
+      buckets.live += 1;
       continue;
     }
 
@@ -1968,7 +1985,7 @@ export function createFeedRepository(): FeedRepository {
       );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
-        if (isGroupRawPost(item)) {
+        if (isGroupRawPost(item) || looksLikeLive(item)) {
           continue;
         }
 
@@ -2000,7 +2017,7 @@ export function createFeedRepository(): FeedRepository {
       );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
-        if (isGroupRawPost(item)) {
+        if (isGroupRawPost(item) || looksLikeLive(item)) {
           continue;
         }
 
@@ -2412,7 +2429,7 @@ export function createFeedRepository(): FeedRepository {
 
         const rawMap = new Map<string, Record<string, unknown>>();
         for (const item of [...ownRaw, ...publicVideoRaw]) {
-          if (looksLikeAd(item)) continue;
+          if (looksLikeAd(item) || looksLikeLive(item)) continue;
           rawMap.set(rawPostKey(item), item);
         }
 

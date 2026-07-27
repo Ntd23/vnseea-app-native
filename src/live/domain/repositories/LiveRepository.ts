@@ -12,6 +12,7 @@ import type {
 export interface LiveRepository {
   getLiveStreams(): Promise<LiveStreamItem[]>;
   getLiveFriends(): Promise<LiveStreamItem[]>;
+  getUserLiveStreams(userId: string, limit?: number): Promise<LiveStreamItem[]>;
   getLivePost(postId: number): Promise<LiveStreamItem | null>;
   getLiveViewerCounts(postIds: number[]): Promise<Record<number, number>>;
   createLive(payload: CreateLivePayload): Promise<LiveSession>;

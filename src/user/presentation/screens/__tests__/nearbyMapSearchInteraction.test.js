@@ -27,4 +27,14 @@ describe('Nearby map search interaction', () => {
     expect(source).toContain('tiem|shop|salon|barber|cafe|quan');
     expect(source).toContain('place_autocomplete');
   });
+
+  it('searches around the visible map while a fresh device is still acquiring GPS', () => {
+    const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+
+    expect(source).toContain(
+      'currentLocationRef.current ?? currentRegionRef.current',
+    );
+    expect(source).toContain('lat: searchOrigin.latitude');
+    expect(source).toContain('lng: searchOrigin.longitude');
+  });
 });

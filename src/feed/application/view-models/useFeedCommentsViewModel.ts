@@ -3,17 +3,25 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createReelsRepository } from '../../../reels/infrastructure/repositories/ApiReelsRepository';
+import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
+  CommentMention,
   CommentAudioAttachment,
   CommentImageAttachment,
   ReactionType,
+  ReelCaptionSuggestion,
   ReelComment,
   ReelPublisher,
 } from '../../../reels/domain/types/reels.types';
+import {
+  hydrateCommentMentionText,
+  serializeCommentMentions,
+} from '../../../reels/application/utils/commentMentions';
 
 const repository = createReelsRepository();
+const feedRepository = createFeedRepository();
 const COMMENT_PAGE_SIZE = 20;
 
 type CommentPhase = 'idle' | 'loading' | 'loading-more' | 'submitting';
@@ -26,6 +34,7 @@ type CommentsCacheEntry = {
 type ReplyTarget = {
   commentId: string;
   targetCommentId: string;
+  userId?: string;
   username: string;
   displayName: string;
 };
@@ -58,7 +67,9 @@ interface UseFeedCommentsViewModelOptions {
 export function useFeedCommentsViewModel({
   onCommentCountChange,
 }: UseFeedCommentsViewModelOptions = {}) {
-  const [selectedCommentPostId, setSelectedCommentPostId] = useState<string | null>(null);
+  const [selectedCommentPostId, setSelectedCommentPostId] = useState<
+    string | null
+  >(null);
   const [comments, setComments] = useState<ReelComment[]>([]);
   const [commentPhase, setCommentPhase] = useState<CommentPhase>('idle');
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -134,7 +145,9 @@ export function useFeedCommentsViewModel({
   }, [comments, currentUser]);
 
   // Reply state
-  const [repliesById, setRepliesById] = useState<Record<string, ReelComment[]>>({});
+  const [repliesById, setRepliesById] = useState<Record<string, ReelComment[]>>(
+    {},
+  );
   const [loadingRepliesIds, setLoadingRepliesIds] = useState<string[]>([]);
   const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
 
@@ -157,62 +170,65 @@ export function useFeedCommentsViewModel({
     };
   }, [comments, hasMoreComments, selectedCommentPostId]);
 
-  const openComments = useCallback(async (postId: string) => {
-    const cleanPostId = normalizeCommentPostId(postId);
-    if (
-      commentInFlightRef.current &&
-      loadingCommentPostIdRef.current === cleanPostId &&
-      selectedCommentPostId === postId
-    ) {
-      return;
-    }
-
-    const requestSeq = ++commentRequestSeqRef.current;
-    const cached = commentsCacheRef.current[cleanPostId];
-    commentInFlightRef.current = true;
-    loadingCommentPostIdRef.current = cleanPostId;
-    setSelectedCommentPostId(postId);
-    setComments(cached?.comments ?? []);
-    setHasMoreComments(cached?.hasMore ?? false);
-    setCommentPhase('loading');
-    setCommentError(null);
-    setRepliesById({});
-    setLoadingRepliesIds([]);
-    setReplyingTo(null);
-    replyOffsetsRef.current = {};
-    commentOffsetRef.current = cached?.offset ?? 0;
-
-    try {
-      const nextComments = await repository.getComments(cleanPostId, {
-        limit: COMMENT_PAGE_SIZE,
-        offset: 0,
-      });
-      if (commentRequestSeqRef.current !== requestSeq) return;
-      setComments(nextComments);
-      setHasMoreComments(nextComments.length >= COMMENT_PAGE_SIZE);
-      const lastComment = nextComments[nextComments.length - 1];
-      commentOffsetRef.current = Number(lastComment?.id ?? 0) || 0;
-      commentsCacheRef.current[cleanPostId] = {
-        comments: nextComments,
-        hasMore: nextComments.length >= COMMENT_PAGE_SIZE,
-        offset: commentOffsetRef.current,
-        updatedAt: Date.now(),
-      };
-    } catch (caught) {
-      if (commentRequestSeqRef.current !== requestSeq) return;
-      setCommentError(
-        caught instanceof Error
-          ? caught.message
-          : 'Không tải được bình luận.',
-      );
-    } finally {
-      if (commentRequestSeqRef.current === requestSeq) {
-        setCommentPhase('idle');
-        commentInFlightRef.current = false;
-        loadingCommentPostIdRef.current = null;
+  const openComments = useCallback(
+    async (postId: string) => {
+      const cleanPostId = normalizeCommentPostId(postId);
+      if (
+        commentInFlightRef.current &&
+        loadingCommentPostIdRef.current === cleanPostId &&
+        selectedCommentPostId === postId
+      ) {
+        return;
       }
-    }
-  }, [selectedCommentPostId]);
+
+      const requestSeq = ++commentRequestSeqRef.current;
+      const cached = commentsCacheRef.current[cleanPostId];
+      commentInFlightRef.current = true;
+      loadingCommentPostIdRef.current = cleanPostId;
+      setSelectedCommentPostId(postId);
+      setComments(cached?.comments ?? []);
+      setHasMoreComments(cached?.hasMore ?? false);
+      setCommentPhase('loading');
+      setCommentError(null);
+      setRepliesById({});
+      setLoadingRepliesIds([]);
+      setReplyingTo(null);
+      replyOffsetsRef.current = {};
+      commentOffsetRef.current = cached?.offset ?? 0;
+
+      try {
+        const nextComments = await repository.getComments(cleanPostId, {
+          limit: COMMENT_PAGE_SIZE,
+          offset: 0,
+        });
+        if (commentRequestSeqRef.current !== requestSeq) return;
+        setComments(nextComments);
+        setHasMoreComments(nextComments.length >= COMMENT_PAGE_SIZE);
+        const lastComment = nextComments[nextComments.length - 1];
+        commentOffsetRef.current = Number(lastComment?.id ?? 0) || 0;
+        commentsCacheRef.current[cleanPostId] = {
+          comments: nextComments,
+          hasMore: nextComments.length >= COMMENT_PAGE_SIZE,
+          offset: commentOffsetRef.current,
+          updatedAt: Date.now(),
+        };
+      } catch (caught) {
+        if (commentRequestSeqRef.current !== requestSeq) return;
+        setCommentError(
+          caught instanceof Error
+            ? caught.message
+            : 'Không tải được bình luận.',
+        );
+      } finally {
+        if (commentRequestSeqRef.current === requestSeq) {
+          setCommentPhase('idle');
+          commentInFlightRef.current = false;
+          loadingCommentPostIdRef.current = null;
+        }
+      }
+    },
+    [selectedCommentPostId],
+  );
   const closeComments = useCallback(() => {
     commentRequestSeqRef.current += 1;
     commentInFlightRef.current = false;
@@ -261,7 +277,9 @@ export function useFeedCommentsViewModel({
     if (commentInFlightRef.current) return;
 
     commentInFlightRef.current = true;
-    loadingCommentPostIdRef.current = normalizeCommentPostId(selectedCommentPostId);
+    loadingCommentPostIdRef.current = normalizeCommentPostId(
+      selectedCommentPostId,
+    );
     const requestSeq = ++commentRequestSeqRef.current;
     setCommentPhase('loading-more');
     setCommentError(null);
@@ -281,7 +299,8 @@ export function useFeedCommentsViewModel({
       setHasMoreComments(nextComments.length >= COMMENT_PAGE_SIZE);
       const lastComment = nextComments[nextComments.length - 1];
       if (lastComment) {
-        commentOffsetRef.current = Number(lastComment.id) || commentOffsetRef.current;
+        commentOffsetRef.current =
+          Number(lastComment.id) || commentOffsetRef.current;
       }
     } catch (caught) {
       if (commentRequestSeqRef.current !== requestSeq) return;
@@ -304,8 +323,10 @@ export function useFeedCommentsViewModel({
       text: string,
       image?: CommentImageAttachment,
       audio?: CommentAudioAttachment,
+      mentions: CommentMention[] = [],
     ) => {
       const trimmed = text.trim();
+      const displayText = hydrateCommentMentionText(trimmed, mentions);
       // Allow image-only comments (backend does too) — must have AT LEAST
       // text OR image, not both empty.
       if (!selectedCommentPostId || (!trimmed && !image && !audio)) return null;
@@ -314,7 +335,7 @@ export function useFeedCommentsViewModel({
       const publisher = getFallbackPublisher();
       const newComment: ReelComment = {
         id: tempId,
-        text: trimmed,
+        text: displayText,
         postedAt: Math.floor(Date.now() / 1000),
         publisher,
         likeCount: 0,
@@ -331,6 +352,7 @@ export function useFeedCommentsViewModel({
         imageWidth: image?.width,
         imageHeight: image?.height,
         pendingAudioUri: audio?.uri,
+        mentions: mentions.length > 0 ? mentions : undefined,
       };
 
       // Add the optimistic comment instantly
@@ -347,13 +369,20 @@ export function useFeedCommentsViewModel({
           image,
           audio,
         );
-        const resolvedComment: ReelComment = image
-          ? {
-              ...createdComment,
-              imageWidth: createdComment.imageWidth ?? image.width,
-              imageHeight: createdComment.imageHeight ?? image.height,
-            }
-          : createdComment;
+        const resolvedComment: ReelComment = {
+          ...createdComment,
+          text: hydrateCommentMentionText(
+            createdComment.text || trimmed,
+            mentions,
+          ),
+          mentions: mentions.length > 0 ? mentions : createdComment.mentions,
+          ...(image
+            ? {
+                imageWidth: createdComment.imageWidth ?? image.width,
+                imageHeight: createdComment.imageHeight ?? image.height,
+              }
+            : {}),
+        };
         // Replace the temp comment with the actual one from server
         setComments(prev =>
           prev.map(c => (c.id === tempId ? resolvedComment : c)),
@@ -364,9 +393,7 @@ export function useFeedCommentsViewModel({
         // user can see what they tried to send and retry).
         setComments(prev =>
           prev.map(c =>
-            c.id === tempId
-              ? { ...c, isSending: false, isFailed: true }
-              : c,
+            c.id === tempId ? { ...c, isSending: false, isFailed: true } : c,
           ),
         );
         // Rollback the post's commentCount change
@@ -550,9 +577,7 @@ export function useFeedCommentsViewModel({
           }));
           setComments(prev =>
             prev.map(c =>
-              c.id === parentId
-                ? { ...c, replyCount: c.replyCount + 1 }
-                : c,
+              c.id === parentId ? { ...c, replyCount: c.replyCount + 1 } : c,
             ),
           );
         }
@@ -562,14 +587,23 @@ export function useFeedCommentsViewModel({
   );
 
   const editComment = useCallback(
-    async (commentId: string, nextText: string) => {
+    async (
+      commentId: string,
+      nextText: string,
+      mentions: CommentMention[] = [],
+    ) => {
       const trimmed = nextText.trim();
       if (!trimmed) return;
+      const displayText = hydrateCommentMentionText(trimmed, mentions);
 
       let snapshot: ReelComment | undefined;
       applyToComment(commentId, comment => {
         snapshot = comment;
-        return { ...comment, text: trimmed };
+        return {
+          ...comment,
+          text: displayText,
+          mentions: mentions.length > 0 ? mentions : undefined,
+        };
       });
 
       try {
@@ -584,35 +618,41 @@ export function useFeedCommentsViewModel({
     [applyToComment],
   );
 
-  const loadReplies = useCallback(async (commentId: string) => {
-    if (loadingRepliesIds.includes(commentId)) return;
+  const loadReplies = useCallback(
+    async (commentId: string) => {
+      if (loadingRepliesIds.includes(commentId)) return;
 
-    setLoadingRepliesIds(prev => [...prev, commentId]);
-    try {
-      const offset = replyOffsetsRef.current[commentId] ?? 0;
-      const fresh = await repository.fetchReplies(commentId, {
-        limit: COMMENT_PAGE_SIZE,
-        offset,
-      });
-      setRepliesById(prev => {
-        const existing = prev[commentId] ?? [];
-        const seen = new Set(existing.map(r => r.id));
-        const novel = fresh.filter(r => !seen.has(r.id));
-        return { ...prev, [commentId]: [...existing, ...novel] };
-      });
-      const lastReply = fresh[fresh.length - 1];
-      if (lastReply) {
-        replyOffsetsRef.current[commentId] =
-          Number(lastReply.id) || replyOffsetsRef.current[commentId] || 0;
-      } else if (offset === 0) {
-        setRepliesById(prev => ({ ...prev, [commentId]: prev[commentId] ?? [] }));
+      setLoadingRepliesIds(prev => [...prev, commentId]);
+      try {
+        const offset = replyOffsetsRef.current[commentId] ?? 0;
+        const fresh = await repository.fetchReplies(commentId, {
+          limit: COMMENT_PAGE_SIZE,
+          offset,
+        });
+        setRepliesById(prev => {
+          const existing = prev[commentId] ?? [];
+          const seen = new Set(existing.map(r => r.id));
+          const novel = fresh.filter(r => !seen.has(r.id));
+          return { ...prev, [commentId]: [...existing, ...novel] };
+        });
+        const lastReply = fresh[fresh.length - 1];
+        if (lastReply) {
+          replyOffsetsRef.current[commentId] =
+            Number(lastReply.id) || replyOffsetsRef.current[commentId] || 0;
+        } else if (offset === 0) {
+          setRepliesById(prev => ({
+            ...prev,
+            [commentId]: prev[commentId] ?? [],
+          }));
+        }
+      } catch {
+        // Soft fail — leave existing replies in place
+      } finally {
+        setLoadingRepliesIds(prev => prev.filter(id => id !== commentId));
       }
-    } catch {
-      // Soft fail — leave existing replies in place
-    } finally {
-      setLoadingRepliesIds(prev => prev.filter(id => id !== commentId));
-    }
-  }, [loadingRepliesIds]);
+    },
+    [loadingRepliesIds],
+  );
 
   const collapseReplies = useCallback((commentId: string) => {
     setRepliesById(prev => {
@@ -630,11 +670,13 @@ export function useFeedCommentsViewModel({
       username: string,
       displayName?: string,
       targetCommentId?: string,
+      userId?: string,
     ) => {
       const cleanDisplayName = (displayName || username || '').trim();
       setReplyingTo({
         commentId,
         targetCommentId: targetCommentId || commentId,
+        userId,
         username,
         displayName: cleanDisplayName || username || 'Người dùng',
       });
@@ -652,8 +694,10 @@ export function useFeedCommentsViewModel({
       text: string,
       image?: CommentImageAttachment,
       replyMentionName?: string,
+      mentions: CommentMention[] = [],
     ) => {
       const trimmed = text.trim();
+      const displayText = hydrateCommentMentionText(trimmed, mentions);
       // Same rule as `submitComment` — text OR image is required.
       if (!commentId || (!trimmed && !image)) return null;
 
@@ -666,7 +710,7 @@ export function useFeedCommentsViewModel({
       );
       const newReply: ReelComment = {
         id: tempId,
-        text: trimmed,
+        text: displayText,
         postedAt: Math.floor(Date.now() / 1000),
         publisher,
         likeCount: 0,
@@ -680,6 +724,7 @@ export function useFeedCommentsViewModel({
         imageWidth: image?.width,
         imageHeight: image?.height,
         replyMentionName: preservedMentionName,
+        mentions: mentions.length > 0 ? mentions : undefined,
       };
 
       // Add the optimistic reply instantly
@@ -699,14 +744,18 @@ export function useFeedCommentsViewModel({
 
       try {
         const created = await repository.addReply(commentId, trimmed, image);
-        const resolvedReply: ReelComment = image
-          ? {
-              ...created,
-              imageWidth: created.imageWidth ?? image.width,
-              imageHeight: created.imageHeight ?? image.height,
-              replyMentionName: preservedMentionName,
-            }
-          : { ...created, replyMentionName: preservedMentionName };
+        const resolvedReply: ReelComment = {
+          ...created,
+          text: hydrateCommentMentionText(created.text || trimmed, mentions),
+          mentions: mentions.length > 0 ? mentions : created.mentions,
+          replyMentionName: preservedMentionName,
+          ...(image
+            ? {
+                imageWidth: created.imageWidth ?? image.width,
+                imageHeight: created.imageHeight ?? image.height,
+              }
+            : {}),
+        };
         // Replace temp reply with actual one
         setRepliesById(prev => ({
           ...prev,
@@ -732,13 +781,13 @@ export function useFeedCommentsViewModel({
         // Decrement the parent comment's reply count
         setComments(prev =>
           prev.map(c =>
-            c.id === commentId ? { ...c, replyCount: Math.max(0, c.replyCount - 1) } : c,
+            c.id === commentId
+              ? { ...c, replyCount: Math.max(0, c.replyCount - 1) }
+              : c,
           ),
         );
         setCommentError(
-          caught instanceof Error
-            ? caught.message
-            : 'Không gửi được phản hồi.',
+          caught instanceof Error ? caught.message : 'Không gửi được phản hồi.',
         );
         return null;
       }
@@ -746,67 +795,96 @@ export function useFeedCommentsViewModel({
     [getFallbackPublisher, replyingTo],
   );
 
-  const retryFailedComment = useCallback((comment: ReelComment) => {
-    // Re-package the cached local URI as a CommentImageAttachment so the
-    // retry path is identical to a fresh submit. The local file:// URI
-    // from the original picker call is still valid until app restart.
-    const retryImage: CommentImageAttachment | undefined = comment.pendingImageUri
-      ? {
-          uri: comment.pendingImageUri,
-          name: `retry-${Date.now()}.jpg`,
-          type: 'image/jpeg',
-        }
-      : undefined;
-    const retryAudio: CommentAudioAttachment | undefined = comment.pendingAudioUri
-      ? {
-          uri: comment.pendingAudioUri,
-          name: `retry-${Date.now()}.mp3`,
-          type: 'audio/mpeg',
-        }
-      : undefined;
+  const retryFailedComment = useCallback(
+    (comment: ReelComment) => {
+      // Re-package the cached local URI as a CommentImageAttachment so the
+      // retry path is identical to a fresh submit. The local file:// URI
+      // from the original picker call is still valid until app restart.
+      const retryImage: CommentImageAttachment | undefined =
+        comment.pendingImageUri
+          ? {
+              uri: comment.pendingImageUri,
+              name: `retry-${Date.now()}.jpg`,
+              type: 'image/jpeg',
+            }
+          : undefined;
+      const retryAudio: CommentAudioAttachment | undefined =
+        comment.pendingAudioUri
+          ? {
+              uri: comment.pendingAudioUri,
+              name: `retry-${Date.now()}.mp3`,
+              type: 'audio/mpeg',
+            }
+          : undefined;
 
-    if (comments.some(c => c.id === comment.id)) {
-      setComments(prev => prev.filter(c => c.id !== comment.id));
-      submitComment(comment.text, retryImage, retryAudio);
-    } else {
-      let parentId: string | null = null;
-      for (const [pId, replies] of Object.entries(repliesById)) {
-        if (replies.some(r => r.id === comment.id)) {
-          parentId = pId;
-          break;
-        }
-      }
-      if (parentId) {
-        const pId = parentId;
-        setRepliesById(prev => ({
-          ...prev,
-          [pId]: (prev[pId] ?? []).filter(r => r.id !== comment.id),
-        }));
-        setComments(prev =>
-          prev.map(c =>
-            c.id === pId ? { ...c, replyCount: Math.max(0, c.replyCount - 1) } : c,
-          ),
+      if (comments.some(c => c.id === comment.id)) {
+        setComments(prev => prev.filter(c => c.id !== comment.id));
+        submitComment(
+          serializeCommentMentions(comment.text, comment.mentions ?? []),
+          retryImage,
+          retryAudio,
+          comment.mentions,
         );
-        submitReply(pId, comment.text, retryImage, comment.replyMentionName);
-      }
-    }
-  }, [comments, repliesById, submitComment, submitReply]);
-
-  const deleteFailedComment = useCallback((comment: ReelComment) => {
-    if (comments.some(c => c.id === comment.id)) {
-      setComments(prev => prev.filter(c => c.id !== comment.id));
-    } else {
-      for (const [parentId, replies] of Object.entries(repliesById)) {
-        if (replies.some(r => r.id === comment.id)) {
+      } else {
+        let parentId: string | null = null;
+        for (const [pId, replies] of Object.entries(repliesById)) {
+          if (replies.some(r => r.id === comment.id)) {
+            parentId = pId;
+            break;
+          }
+        }
+        if (parentId) {
+          const pId = parentId;
           setRepliesById(prev => ({
             ...prev,
-            [parentId]: (prev[parentId] ?? []).filter(r => r.id !== comment.id),
+            [pId]: (prev[pId] ?? []).filter(r => r.id !== comment.id),
           }));
-          break;
+          setComments(prev =>
+            prev.map(c =>
+              c.id === pId
+                ? { ...c, replyCount: Math.max(0, c.replyCount - 1) }
+                : c,
+            ),
+          );
+          submitReply(
+            pId,
+            serializeCommentMentions(comment.text, comment.mentions ?? []),
+            retryImage,
+            comment.replyMentionName,
+            comment.mentions,
+          );
         }
       }
-    }
-  }, [comments, repliesById]);
+    },
+    [comments, repliesById, submitComment, submitReply],
+  );
+
+  const deleteFailedComment = useCallback(
+    (comment: ReelComment) => {
+      if (comments.some(c => c.id === comment.id)) {
+        setComments(prev => prev.filter(c => c.id !== comment.id));
+      } else {
+        for (const [parentId, replies] of Object.entries(repliesById)) {
+          if (replies.some(r => r.id === comment.id)) {
+            setRepliesById(prev => ({
+              ...prev,
+              [parentId]: (prev[parentId] ?? []).filter(
+                r => r.id !== comment.id,
+              ),
+            }));
+            break;
+          }
+        }
+      }
+    },
+    [comments, repliesById],
+  );
+
+  const searchCommentMentions = useCallback(
+    (query: string): Promise<ReelCaptionSuggestion[]> =>
+      feedRepository.searchMentionSuggestions(query),
+    [],
+  );
 
   return {
     selectedCommentPostId,
@@ -826,6 +904,7 @@ export function useFeedCommentsViewModel({
     refreshComments,
     loadMoreComments,
     submitComment,
+    searchCommentMentions,
     // Comment actions
     toggleCommentLike,
     setCommentReaction,

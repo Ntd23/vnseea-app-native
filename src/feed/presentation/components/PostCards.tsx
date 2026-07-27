@@ -164,6 +164,7 @@ const VIDEO_QUALITY_RAMP_DELAY_MS = 1200;
 const VIDEO_POSTER_REVEAL_HOLD_MS = 90;
 const VIDEO_POSTER_FADE_MS = 160;
 const VIDEO_WARM_PREVIEW_SECONDS = Platform.OS === 'android' ? 0.35 : 0.6;
+const FEED_VIDEO_BLUR_SURFACE_GRACE_MS = 240;
 const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 5;
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
@@ -1825,6 +1826,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       ? controlledIsActive
       : isScreenFocused !== false && trackedIsActive;
   const isWarm = isScreenFocused !== false && trackedIsWarm;
+  const [keepPlayerSurfaceMounted, setKeepPlayerSurfaceMounted] =
+    useState(false);
+  const wasPlayerSurfaceMountedRef = useRef(false);
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const muted = useFeedVideoMuted();
   const isScrollBusy = useFeedScrollBusy();
@@ -2102,12 +2106,42 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const shouldKeepPreparedVideoMounted =
     keepPreparedVideoMounted && isPreparedKeptAlive && hasRenderedFrame;
   const canMountWarmVideo = !isScrollBusy || shouldKeepPreparedVideoMounted;
-  const shouldMountVideo =
+  const shouldMountFocusedVideo =
     isScreenFocused !== false &&
     canAttemptVideo &&
     (isActive ||
       (canMountWarmVideo && isWarm) ||
       shouldKeepPreparedVideoMounted);
+  const isBlurSurfaceGraceActive =
+    isScreenFocused === false &&
+    (keepPlayerSurfaceMounted || wasPlayerSurfaceMountedRef.current);
+  const shouldMountVideo =
+    shouldMountFocusedVideo || (canAttemptVideo && isBlurSurfaceGraceActive);
+
+  useEffect(() => {
+    if (isScreenFocused !== false) {
+      setKeepPlayerSurfaceMounted(false);
+      return undefined;
+    }
+
+    const shouldKeepSurface = wasPlayerSurfaceMountedRef.current;
+    wasPlayerSurfaceMountedRef.current = false;
+    if (!shouldKeepSurface) return undefined;
+
+    setKeepPlayerSurfaceMounted(true);
+
+    const timer = setTimeout(() => {
+      setKeepPlayerSurfaceMounted(false);
+    }, FEED_VIDEO_BLUR_SURFACE_GRACE_MS);
+
+    return () => clearTimeout(timer);
+  }, [isScreenFocused]);
+
+  useEffect(() => {
+    if (isScreenFocused !== false) {
+      wasPlayerSurfaceMountedRef.current = shouldMountVideo;
+    }
+  }, [isScreenFocused, shouldMountVideo]);
 
   useEffect(() => {
     if (shouldMountVideo) return;

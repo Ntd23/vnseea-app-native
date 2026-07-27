@@ -11,7 +11,7 @@ describe('map and place discovery performance contracts', () => {
   it('boots the map from the cached one-shot location and avoids duplicate GPS loads', () => {
     const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
 
-    expect(source).toContain('getCurrentDeviceLocation(4500)');
+    expect(source).toContain('getCurrentDeviceLocation(8000)');
     expect(source).toContain('hasLoadedNearbyPagesRef.current');
     expect(source).toContain(
       'const initialLocationRequestStartedRef = useRef(false);',
@@ -56,13 +56,19 @@ describe('map and place discovery performance contracts', () => {
     expect(source).toContain('const MAP_SEARCH_RESPONSE_BUDGET_MS = 1800;');
     expect(source).toContain('isGoogleNearbyCategoryType');
     expect(source).toContain('canUseDirectGoogleNearbyPredictions');
+    expect(source).toContain('isValidGeoCoordinate(latitude, longitude)');
+    expect(source).not.toContain(
+      "googleRequestHeaders()['X-Android-Cert'],",
+    );
     expect(source).toContain(
       'const directPredictions = await getDirectGoogleNearbyPredictions',
     );
     expect(source).toContain('if (directPredictions.length > 0)');
     expect(source).toContain('signal: input.signal');
     expect(source).toContain('category: input.category,');
-    expect(source).toContain('prefer_address: input.category ? undefined : 1,');
+    expect(source).toContain('prefer_address:');
+    expect(source).toContain('input.category ||');
+    expect(source).toContain('normalizeCacheText(trimmedQuery)');
     expect(source).toContain('warmNearbyPageMapPinStatuses(hydratedPages)');
     expect(source).not.toContain('hydrateNearbyPageMapPinStatus');
   });
@@ -287,7 +293,7 @@ describe('map and place discovery performance contracts', () => {
     expect(backendSource).toContain('$should_run_text_search =');
     expect(backendSource).toContain('$global_search ||');
     expect(backendSource).toContain(
-      'if (!$global_search && !$fast && $prefer_address',
+      'if (!$global_search && $prefer_address && count($predictions) === 0)',
     );
     expect(backendSource).not.toContain('search_debug.log');
   });

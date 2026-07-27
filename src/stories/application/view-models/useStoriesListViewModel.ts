@@ -97,6 +97,11 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
     }
   }, [reloadStories]);
 
+  const refreshSilently = useCallback(async () => {
+    setOverrideStories(null);
+    await reloadStories();
+  }, [reloadStories]);
+
   const sourceStories = useMemo(
     () => filterActiveStories(overrideStories ?? stories),
     [overrideStories, stories],
@@ -171,7 +176,9 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
   // always opens with fresh data — matches the rail's behaviour.
   useEffect(() => {
     if (!overrideStories) {
-      void reloadStories();
+      reloadStories().catch(error => {
+        console.warn('[Stories] initial list refresh failed:', error);
+      });
     }
   }, [overrideStories, reloadStories]);
 
@@ -182,6 +189,7 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
     isRefreshing,
     error: null as string | null,
     reload,
+    refreshSilently,
     loadMore: NOOP,
     hasMore: false,
   };

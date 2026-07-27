@@ -10315,6 +10315,24 @@ function Wo_GetPostComment($comment_id = 0)
             $fetched_data['url'] = Wo_SeoLink('index.php?link1=timeline&u=' . $fetched_data['publisher']['username']);
         }
         $fetched_data['fullurl'] = Wo_SeoLink("index.php?link1=post&id=" . $fetched_data['post_id'] . "&ref=" . $comment_id);
+        // Keep the stored mention tokens available to API clients before
+        // Wo_Markup turns them into HTML anchors. This lets native clients
+        // render Facebook-style highlighted names and open the tagged user's
+        // profile without scraping generated HTML.
+        $fetched_data['mention_text'] = $fetched_data['text'];
+        $fetched_data['mentions'] = array();
+        if (preg_match_all('/@\[([0-9]+)\]/i', $fetched_data['mention_text'], $mention_matches)) {
+            foreach (array_unique($mention_matches[1]) as $mention_user_id) {
+                $mention_user = Wo_UserData(Wo_Secure($mention_user_id));
+                if (!empty($mention_user['user_id']) && !empty($mention_user['username'])) {
+                    $fetched_data['mentions'][] = array(
+                        'user_id' => (string) $mention_user['user_id'],
+                        'username' => $mention_user['username'],
+                        'display_name' => !empty($mention_user['name']) ? $mention_user['name'] : $mention_user['username']
+                    );
+                }
+            }
+        }
         $fetched_data['Orginaltext'] = Wo_EditMarkup($fetched_data['text'], true, true, true, 0, $comment_id);
         $fetched_data['Orginaltext'] = str_replace('<br>', "\n", $fetched_data['Orginaltext']);
         $fetched_data['text'] = Wo_Markup($fetched_data['text'], true, true, true, 0, $comment_id);

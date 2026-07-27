@@ -412,6 +412,9 @@ function MarketplaceScreen() {
   );
   const filterPanelProgress = useRef(new Animated.Value(0)).current;
   const filterAnimationRef = useRef<ReturnType<typeof Animated.timing> | null>(null);
+  const filterTransitionLockRef = useRef(false);
+  const filterAnimationIdRef = useRef(0);
+  const latestScrollYRef = useRef(0);
   const hasActiveFilters = Boolean(vm.categoryId || vm.distance || vm.orderBy);
   const nearbyProductsActive = vm.distance === 15 && !vm.distanceFilterError;
 
@@ -526,7 +529,10 @@ function MarketplaceScreen() {
 
   useEffect(() => {
     return () => {
+      filterAnimationIdRef.current += 1;
       filterAnimationRef.current?.stop();
+      filterAnimationRef.current = null;
+      filterTransitionLockRef.current = false;
     };
   }, []);
 
@@ -600,8 +606,19 @@ function MarketplaceScreen() {
 
   const animateFiltersCollapsed = useCallback(
     (collapsed: boolean) => {
-      if (filtersCollapsedRef.current === collapsed) return;
+      // The panel changes the list's viewport height. Ignore a second toggle
+      // while that layout transition is still settling; otherwise the
+      // resulting contentOffset correction can look like a reverse swipe and
+      // make the search/filter bar oscillate when the user scrolls slowly.
+      if (
+        filtersCollapsedRef.current === collapsed ||
+        filterTransitionLockRef.current
+      ) {
+        return;
+      }
 
+      filterTransitionLockRef.current = true;
+      const animationId = ++filterAnimationIdRef.current;
       filtersCollapsedRef.current = collapsed;
       setFiltersCollapsed(collapsed);
       filterAnimationRef.current?.stop();
@@ -611,10 +628,16 @@ function MarketplaceScreen() {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       });
-      filterAnimationRef.current.start(({ finished }) => {
-        if (finished) {
-          filterAnimationRef.current = null;
-        }
+      filterAnimationRef.current.start(() => {
+        if (filterAnimationIdRef.current !== animationId) return;
+        filterAnimationRef.current = null;
+        // Let the final native layout/contentOffset correction settle before
+        // accepting another scroll-driven transition.
+        requestAnimationFrame(() => {
+          if (filterAnimationIdRef.current !== animationId) return;
+          lastScrollYRef.current = latestScrollYRef.current;
+          filterTransitionLockRef.current = false;
+        });
       });
     },
     [filterPanelProgress],
@@ -718,6 +741,12 @@ function MarketplaceScreen() {
       const lastY = lastScrollYRef.current;
       const delta = y - lastY;
       lastScrollYRef.current = y;
+      latestScrollYRef.current = y;
+
+      // Header height animation can produce synthetic offset corrections.
+      // Keep tracking the offset, but do not interpret those corrections as
+      // an opposite user swipe until the transition has settled.
+      if (filterTransitionLockRef.current) return;
 
       if (
         !filtersCollapsedRef.current &&
@@ -1034,18 +1063,20 @@ function MarketplaceScreen() {
       </View>
       {/* Tạm thời comment thanh tab icons ở trên đầu trang Cửa hàng theo yêu cầu */}
       {/* <View pointerEvents="auto">{marketplaceTopTabs}</View> */}
-      <View
-        pointerEvents={filtersCollapsed ? 'auto' : 'none'}
-        style={filtersCollapsed ? undefined : { display: 'none' }}
-      >
-        {collapsedBar}
-      </View>
-      <View
-        pointerEvents={filtersCollapsed ? 'none' : 'auto'}
-        style={filtersCollapsed ? { display: 'none' } : undefined}
-      >
-        {fullBar}
-      </View>
+      <Animated.View pointerEvents="box-none" style={filterPanelAnimatedStyle}>
+        <Animated.View
+          pointerEvents={filtersCollapsed ? 'none' : 'auto'}
+          style={[FILTER_PANEL_CHILD_STYLE, fullBarAnimatedStyle]}
+        >
+          {fullBar}
+        </Animated.View>
+        <Animated.View
+          pointerEvents={filtersCollapsed ? 'auto' : 'none'}
+          style={[FILTER_PANEL_CHILD_STYLE, collapsedBarAnimatedStyle]}
+        >
+          {collapsedBar}
+        </Animated.View>
+      </Animated.View>
     </View>
   );
 

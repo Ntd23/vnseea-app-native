@@ -12,9 +12,12 @@ import {
   Alert,
   Animated,
   Dimensions,
+  Easing,
   FlatList,
   Image,
+  Keyboard,
   Modal,
+  PanResponder,
   StyleSheet,
   Text,
   TextInput,
@@ -25,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronDown,
   Eye,
+  EyeOff,
   LogOut,
   RefreshCw,
   Send,
@@ -63,6 +67,9 @@ const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
 
 const commentsContentStyle = { paddingBottom: 10 };
 const LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
+const LIVE_OVERLAY_ANIMATION_MS = 150;
+const LIVE_OVERLAY_SWIPE_DISTANCE = 72;
+const LIVE_OVERLAY_SWIPE_VELOCITY = 0.55;
 
 type LiveMediaConnectionState = 'connected' | 'disconnected' | 'error';
 
@@ -115,6 +122,12 @@ export default function LiveRoomScreen() {
   const [commentText, setCommentText] = useState('');
   const [isSendingComment, setIsSendingComment] = useState(false);
   const inputRef = React.useRef<TextInput>(null);
+  const commentsListRef = useRef<FlatList<LiveStreamComment>>(null);
+  const lastAutoScrolledCommentIdRef = useRef('');
+  const commentAutoScrollUntilRef = useRef(0);
+  const [areLiveOverlaysVisible, setAreLiveOverlaysVisible] = useState(true);
+  const [isCommentInputFocused, setIsCommentInputFocused] = useState(false);
+  const liveOverlayProgress = useRef(new Animated.Value(1)).current;
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>(initialCameraFacing);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [leaveModalVisible, setLeaveModalVisible] = useState(false);
@@ -132,6 +145,148 @@ export default function LiveRoomScreen() {
   const viewerHasEnded =
     !isHost && (viewerLifecycle === 'ended' || state === 'offline');
   const liveMediaActive = !viewerHasEnded;
+
+  const scrollCommentsToLatest = useCallback((animated = true) => {
+    commentsListRef.current?.scrollToEnd({ animated });
+  }, []);
+
+  const hideLiveOverlays = useCallback(() => {
+    if (!areLiveOverlaysVisible) return;
+    inputRef.current?.blur();
+    Keyboard.dismiss();
+    setIsCommentInputFocused(false);
+    setAreLiveOverlaysVisible(false);
+    liveOverlayProgress.stopAnimation();
+    Animated.timing(liveOverlayProgress, {
+      toValue: 0,
+      duration: LIVE_OVERLAY_ANIMATION_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [areLiveOverlaysVisible, liveOverlayProgress]);
+
+  const showLiveOverlays = useCallback(() => {
+    if (areLiveOverlaysVisible) return;
+    setAreLiveOverlaysVisible(true);
+    commentAutoScrollUntilRef.current = Date.now() + 700;
+    liveOverlayProgress.stopAnimation();
+    Animated.timing(liveOverlayProgress, {
+      toValue: 1,
+      duration: LIVE_OVERLAY_ANIMATION_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    requestAnimationFrame(() => scrollCommentsToLatest(false));
+  }, [areLiveOverlaysVisible, liveOverlayProgress, scrollCommentsToLatest]);
+
+  const liveOverlayPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponderCapture: (_event, gestureState) => {
+          if (isCommentInputFocused) return false;
+          const horizontalIntent =
+            Math.abs(gestureState.dx) > 24 &&
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.35;
+          if (!horizontalIntent) return false;
+          return areLiveOverlaysVisible
+            ? gestureState.dx < 0
+            : gestureState.dx > 0;
+        },
+        onPanResponderRelease: (_event, gestureState) => {
+          if (
+            areLiveOverlaysVisible &&
+            (gestureState.dx <= -LIVE_OVERLAY_SWIPE_DISTANCE ||
+              gestureState.vx <= -LIVE_OVERLAY_SWIPE_VELOCITY)
+          ) {
+            hideLiveOverlays();
+            return;
+          }
+          if (
+            !areLiveOverlaysVisible &&
+            (gestureState.dx >= LIVE_OVERLAY_SWIPE_DISTANCE ||
+              gestureState.vx >= LIVE_OVERLAY_SWIPE_VELOCITY)
+          ) {
+            showLiveOverlays();
+          }
+        },
+      }),
+    [
+      areLiveOverlaysVisible,
+      hideLiveOverlays,
+      isCommentInputFocused,
+      showLiveOverlays,
+    ],
+  );
+
+  const liveHeaderOverlayStyle = {
+    opacity: liveOverlayProgress,
+    transform: [
+      {
+        translateY: liveOverlayProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-16, 0],
+        }),
+      },
+    ],
+  };
+  const liveBottomOverlayStyle = {
+    opacity: liveOverlayProgress,
+    transform: [
+      {
+        translateY: liveOverlayProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [28, 0],
+        }),
+      },
+    ],
+  };
+  const liveRestoreOverlayStyle = {
+    opacity: liveOverlayProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 0],
+    }),
+    transform: [
+      {
+        translateY: liveOverlayProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, -10],
+        }),
+      },
+    ],
+  };
+  const latestCommentId = comments[comments.length - 1]?.id ?? '';
+
+  useEffect(() => {
+    lastAutoScrolledCommentIdRef.current = '';
+    commentAutoScrollUntilRef.current = 0;
+    setAreLiveOverlaysVisible(true);
+    liveOverlayProgress.setValue(1);
+  }, [liveOverlayProgress, postId]);
+
+  useEffect(() => {
+    if (!latestCommentId) return;
+    if (lastAutoScrolledCommentIdRef.current === latestCommentId) return;
+
+    const hasPreviousComment = Boolean(lastAutoScrolledCommentIdRef.current);
+    lastAutoScrolledCommentIdRef.current = latestCommentId;
+    commentAutoScrollUntilRef.current = Date.now() + 900;
+
+    const frame = requestAnimationFrame(() =>
+      scrollCommentsToLatest(hasPreviousComment),
+    );
+    const settleTimer = setTimeout(() => scrollCommentsToLatest(false), 100);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(settleTimer);
+    };
+  }, [latestCommentId, scrollCommentsToLatest]);
+
+  const handleCommentsContentSizeChange = useCallback(() => {
+    if (Date.now() > commentAutoScrollUntilRef.current) return;
+    requestAnimationFrame(() => scrollCommentsToLatest(false));
+  }, [scrollCommentsToLatest]);
   
   const [fallingEmojis, setFallingEmojis] = useState<Array<{
     id: string;
@@ -457,7 +612,10 @@ export default function LiveRoomScreen() {
 
   return (
     <KeyboardSafeView style={{ flex: 1 }}>
-      <View className="flex-1 relative bg-slate-950">
+      <View
+        className="flex-1 relative bg-slate-950"
+        {...liveOverlayPanResponder.panHandlers}
+      >
         {/* Full Screen Live Stream / Camera Preview */}
         <View className="absolute inset-0 bg-slate-900">
           {isHost && !hasLiveKitSession && (
@@ -488,9 +646,10 @@ export default function LiveRoomScreen() {
         ) : null}
 
         {/* Top Header Overlay */}
-        <View 
+        <Animated.View
+          pointerEvents={areLiveOverlaysVisible ? 'auto' : 'none'}
           className="absolute left-4 right-4 flex-row items-center justify-between z-10"
-          style={{ top: insets.top || 16 }}
+          style={[{ top: insets.top || 16 }, liveHeaderOverlayStyle]}
         >
           {/* Host Info */}
           <View className="flex-row items-center gap-2">
@@ -510,6 +669,15 @@ export default function LiveRoomScreen() {
 
           {/* Action Buttons */}
           <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={hideLiveOverlays}
+              accessibilityRole="button"
+              accessibilityLabel="Ẩn bình luận và biểu tượng live"
+              className="rounded-full bg-black/45 p-2 border border-white/10"
+            >
+              <EyeOff size={16} color="#ffffff" />
+            </TouchableOpacity>
             {isHost && (
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -533,22 +701,57 @@ export default function LiveRoomScreen() {
               <X size={16} color="#ffffff" />
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
+
+        {!areLiveOverlaysVisible ? (
+          <Animated.View
+            className="absolute right-4 z-30 flex-row items-center gap-2"
+            style={[
+              { top: insets.top || 16 },
+              liveRestoreOverlayStyle,
+            ]}
+          >
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={showLiveOverlays}
+              accessibilityRole="button"
+              accessibilityLabel="Hiện lại bình luận và biểu tượng live"
+              className="rounded-full bg-black/50 p-2.5 border border-white/15"
+            >
+              <Eye size={18} color="#ffffff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handleLeave}
+              accessibilityRole="button"
+              accessibilityLabel="Rời khỏi live"
+              className="rounded-full bg-black/50 p-2.5 border border-white/15"
+            >
+              <X size={18} color="#ffffff" />
+            </TouchableOpacity>
+          </Animated.View>
+        ) : null}
 
         {/* Bottom Content Overlay */}
-        <View 
+        <Animated.View
+          pointerEvents={areLiveOverlaysVisible ? 'auto' : 'none'}
           className="absolute bottom-0 inset-x-0 p-4 z-10 bg-gradient-to-t from-black/80 via-black/30 to-transparent"
-          style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+          style={[
+            { paddingBottom: Math.max(insets.bottom, 16) },
+            liveBottomOverlayStyle,
+          ]}
         >
           {/* Comments & Reactions Row */}
           <View className="flex-row items-end justify-between mb-3">
             {/* Comments List (Left) */}
             <View className="flex-1 mr-4">
               <FlatList
+                ref={commentsListRef}
                 data={comments}
                 keyExtractor={item => item.id}
                 style={{ maxHeight: 180 }}
                 showsVerticalScrollIndicator={false}
+                onContentSizeChange={handleCommentsContentSizeChange}
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     activeOpacity={0.8}
@@ -633,6 +836,8 @@ export default function LiveRoomScreen() {
                 value={commentText}
                 onChangeText={setCommentText}
                 onSubmitEditing={handleSendComment}
+                onFocus={() => setIsCommentInputFocused(true)}
+                onBlur={() => setIsCommentInputFocused(false)}
               />
               <TouchableOpacity activeOpacity={0.8} className="ml-2">
                 <Smile size={18} color="rgba(255,255,255,0.8)" />
@@ -675,9 +880,9 @@ export default function LiveRoomScreen() {
               />
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
 
-        {isHost && (
+        {isHost && areLiveOverlaysVisible && (
           <>
             {/* Falling Emojis Layer */}
             <View 

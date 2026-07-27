@@ -96,9 +96,9 @@ function AppNavigator() {
             // Per-route animation override. The default for the
             // custom-animated set is fade (used by the story
             // viewers so their internal gesture is not raced by a
-            // native push/pop). REELS opens without a native transition
-            // so a tapped feed video can keep the experience feeling
-            // continuous and start playback immediately.
+            // native push/pop). REELS uses a short native-thread fade so
+            // Home remains visible underneath while the first poster/player
+            // is prepared, avoiding an abrupt black-frame swap.
             if (name === ROUTES.REELS) {
               return (
                 <Stack.Screen
@@ -107,7 +107,8 @@ function AppNavigator() {
                   component={component}
                   options={{
                     presentation: 'transparentModal',
-                    animation: 'none',
+                    animation: 'fade',
+                    animationDuration: 160,
                     contentStyle: { backgroundColor: 'transparent' },
                     gestureEnabled: false,
                   }}
@@ -160,6 +161,16 @@ function AppNavigator() {
                 name={name}
                 component={component}
                 options={POST_DETAIL_OPTIONS}
+              />
+            );
+          }
+          if (name === ROUTES.LIVE_ROOM) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={{ gestureEnabled: false }}
               />
             );
           }
