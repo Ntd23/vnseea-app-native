@@ -24,6 +24,7 @@ import {
   View,
   Alert,
   ActivityIndicator,
+  BackHandler,
   InteractionManager,
   StatusBar,
   type LayoutChangeEvent,
@@ -101,6 +102,7 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
+import { navigateBackOrFeed } from '../../../navigation/profileBackNavigation';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { useDeferredVisiblePostIds } from '../../../feed/application/realtime/useDeferredVisiblePostIds';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
@@ -215,6 +217,12 @@ const PROFILE_BACK_GESTURE_DISTANCE_RATIO = 0.32;
 const PROFILE_BACK_GESTURE_VELOCITY = 700;
 const PROFILE_BACK_CLOSE_DURATION_MS = 180;
 const PROFILE_BACK_CANCEL_DURATION_MS = 140;
+const PROFILE_HEADER_BUTTON_HIT_SLOP = {
+  top: 10,
+  right: 10,
+  bottom: 10,
+  left: 10,
+} as const;
 const PROFILE_COVER_HEIGHT = SCREEN_WIDTH / PROFILE_COVER_ASPECT_RATIO;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(
   320,
@@ -1185,7 +1193,11 @@ function SkeletonBlock({
 }
 
 // Full Header Skeleton
-function FullProfileSkeleton() {
+function FullProfileSkeleton({
+  onBack,
+}: {
+  onBack: () => void;
+}) {
   const skeletonSafeTopInset =
     Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 44;
 
@@ -1206,9 +1218,18 @@ function FullProfileSkeleton() {
                 height: skeletonSafeTopInset + 48,
               },
             ]}
-            pointerEvents="none"
+            pointerEvents="box-none"
           >
-            <SkeletonBlock height={36} width={36} borderRadius={18} />
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              activeOpacity={0.8}
+              hitSlop={PROFILE_HEADER_BUTTON_HIT_SLOP}
+              onPress={onBack}
+              style={profileMainStyles.circleButton}
+            >
+              <ArrowLeft size={18} color="#050505" />
+            </TouchableOpacity>
             <View className="flex-row items-center gap-2">
               <SkeletonBlock height={36} width={36} borderRadius={18} />
               <SkeletonBlock height={36} width={36} borderRadius={18} />
@@ -3600,13 +3621,24 @@ function ProfileScreen() {
   ]);
 
   const handleProfileBack = useCallback(() => {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-      return;
-    }
-
-    navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
+    navigateBackOrFeed(navigation);
   }, [navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') return undefined;
+
+      const subscription = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          handleProfileBack();
+          return true;
+        },
+      );
+
+      return () => subscription.remove();
+    }, [handleProfileBack]),
+  );
 
   const handleConnectUser = async () => {
     if (
@@ -4815,6 +4847,7 @@ function ProfileScreen() {
         .hitSlop({
           left: PROFILE_BACK_GESTURE_START_X,
           width: PROFILE_BACK_GESTURE_WIDTH,
+          top: -profileHeaderHeight,
         })
         .activeOffsetX([PROFILE_BACK_GESTURE_ACTIVE_OFFSET_X, 999])
         .failOffsetY([
@@ -4874,6 +4907,7 @@ function ProfileScreen() {
       isProfileSwipeBackBlocked,
       profileBackClosing,
       profileBackTranslateX,
+      profileHeaderHeight,
     ],
   );
 
@@ -4978,11 +5012,14 @@ function ProfileScreen() {
         ]}
       />
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={language === 'vi' ? 'Quay lại' : 'Back'}
         style={[
           profileMainStyles.circleButton,
           isProfileHeaderSolid && profileMainStyles.circleButtonOnSolidHeader,
         ]}
         activeOpacity={0.8}
+        hitSlop={PROFILE_HEADER_BUTTON_HIT_SLOP}
         onPress={handleProfileBack}
       >
         <ArrowLeft size={18} color="#050505" />
@@ -5014,7 +5051,7 @@ function ProfileScreen() {
   );
 
   if (isLoading && !profile) {
-    return <FullProfileSkeleton />;
+    return <FullProfileSkeleton onBack={handleProfileBack} />;
   }
 
   return (

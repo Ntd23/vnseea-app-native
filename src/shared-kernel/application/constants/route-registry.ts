@@ -11,6 +11,7 @@ export const apiRoutes = {
     resetPassword: 'reset_password',
     confirmAccount: 'active_account_sms',
     resendActivationCode: 'resend-activation-code',
+    deleteAccount: 'delete-user',
     me: 'get-current-user',
     siteSettings: 'get-site-settings',
   },

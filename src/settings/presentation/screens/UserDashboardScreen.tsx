@@ -9,7 +9,6 @@ import {
 } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo, useRef } from 'react';
 import {
-  Alert,
   Animated,
   ScrollView,
   Text,
@@ -57,8 +56,7 @@ type IconNode = React.ReactNode;
 type DashboardAction =
   | { type: 'panel'; panel: SettingsPanelRouteParam }
   | { type: 'editProfile' }
-  | { type: 'route'; route: 'earnings' | 'affiliates' | 'my-points' | 'my-balance' | 'settings-address' | 'settings-my-info' }
-  | { type: 'alert'; alert: 'deleteAccount' };
+  | { type: 'route'; route: 'earnings' | 'affiliates' | 'my-points' | 'my-balance' | 'settings-address' | 'settings-my-info' | 'delete-account' };
 
 type DashboardItem = {
   id: string;
@@ -382,7 +380,7 @@ function UserDashboardScreen() {
         icon: <Trash2 size={20} color="#ef4444" />,
         iconBg: '#fee2e2',
         iconColor: '#ef4444',
-        action: { type: 'alert', alert: 'deleteAccount' },
+        action: { type: 'route', route: 'delete-account' },
         destructive: true,
       },
     ],
@@ -436,12 +434,14 @@ function UserDashboardScreen() {
           navigation.navigate(ROUTES.SETTINGS_MY_INFO);
           return;
         }
+        if (item.action.route === 'delete-account') {
+          navigation.navigate(ROUTES.DELETE_ACCOUNT);
+          return;
+        }
         return;
       }
-
-      Alert.alert(copy.deleteTitle, copy.deleteMessage, [{ text: copy.ok }]);
     },
-    [copy, navigation, openSettingsPanel],
+    [navigation, openSettingsPanel],
   );
 
   const groupedSections = useMemo(() => {

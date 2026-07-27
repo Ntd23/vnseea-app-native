@@ -17,6 +17,11 @@ describe('logout flow cleanup and navigation', () => {
       logoutIndex,
       source.indexOf('    async getCurrentUser()', logoutIndex),
     );
+    const cleanupIndex = source.indexOf('function clearLocalAuthState()');
+    const cleanupBlock = source.slice(
+      cleanupIndex,
+      source.indexOf('function mapAuthResponse', cleanupIndex),
+    );
 
     expect(source).toContain(
       "const AUTH_DEBUG_PREFIX = '[VNSEEA_AUTH_DEBUG]';",
@@ -29,9 +34,10 @@ describe('logout flow cleanup and navigation', () => {
       "logAuthDebug('auth_logout_local_cleanup_done'",
     );
     expect(logoutBlock).toContain('catch (error)');
-    expect(logoutBlock).toContain('disconnectLiveKitCallRealtime();');
-    expect(logoutBlock).toContain('logoutPushUser();');
-    expect(logoutBlock).toContain('sessionStorage.clearSession();');
+    expect(logoutBlock).toContain('clearLocalAuthState();');
+    expect(cleanupBlock).toContain('disconnectLiveKitCallRealtime();');
+    expect(cleanupBlock).toContain('logoutPushUser();');
+    expect(cleanupBlock).toContain('sessionStorage.clearSession();');
     expect(logoutBlock).not.toContain('throw error');
   });
 

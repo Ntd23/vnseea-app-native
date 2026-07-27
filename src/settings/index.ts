@@ -9,5 +9,6 @@ export { default as MyInfoScreen } from './presentation/screens/MyInfoScreen';
 export { default as EditProfileScreen } from './presentation/screens/EditProfileScreen';
 export { default as UserDashboardScreen } from './presentation/screens/UserDashboardScreen';
 export { default as AddressScreen } from './presentation/screens/AddressScreen';
+export { default as DeleteAccountScreen } from './presentation/screens/DeleteAccountScreen';
 // Re-export CreateAdScreen from advertising module
 export { default as CreateAdScreen } from '../advertising/presentation/screens/CreateAdScreen';

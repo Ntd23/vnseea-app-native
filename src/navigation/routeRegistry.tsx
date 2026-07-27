@@ -33,6 +33,7 @@ import { OffersScreen, PageOffersScreen, CreateOfferScreen } from '../offers';
 import {
   AddressScreen,
   AdvertisingScreen,
+  DeleteAccountScreen,
   EditProfileScreen,
  MyInfoScreen,
   SettingsScreen,
@@ -204,6 +205,7 @@ export function createStackRoutes(
     { name: ROUTES.REGISTER, component: RegisterScreen },
     { name: ROUTES.EMAIL_VERIFICATION, component: EmailVerificationScreen },
     { name: ROUTES.FORGOT_PASSWORD, component: ForgotPasswordScreen },
+    { name: ROUTES.DELETE_ACCOUNT, component: DeleteAccountScreen },
     { name: ROUTES.MAIN_TABS, component: MainTabsComponent },
     { name: ROUTES.REELS, component: ReelsScreen },
     ...(Platform.OS === 'ios'

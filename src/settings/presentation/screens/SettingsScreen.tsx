@@ -4519,7 +4519,7 @@ function SettingsScreen() {
       icon: <Trash2 size={20} color="#ef4444" />,
       iconBg: '#fee2e2',
       iconColor: '#ef4444',
-      action: { type: 'alert', alert: 'deleteAccount' },
+      action: { type: 'route', route: 'delete-account' },
       destructive: true,
     },
   ], [dashboardCopy]);
@@ -5532,19 +5532,11 @@ function SettingsScreen() {
                           navigation.navigate(ROUTES.SETTINGS_MY_INFO);
                           return;
                         }
+                        if (item.action.route === 'delete-account') {
+                          navigation.navigate(ROUTES.DELETE_ACCOUNT);
+                          return;
+                        }
                         return;
-                      }
-                      if (item.action.type === 'alert') {
-                        Alert.alert(
-                          dashboardCopy.deleteTitle,
-                          dashboardCopy.deleteMessage,
-                          [
-                            { text: dashboardCopy.ok, style: 'destructive', onPress: () => {
-                              // Perform delete action if necessary, or just close
-                            } },
-                            { text: isVi ? 'Hủy' : 'Cancel', style: 'cancel' }
-                          ]
-                        );
                       }
                     }}
                     className="mb-2 flex-row items-center rounded-2xl border border-slate-100 bg-white px-3.5 py-3"

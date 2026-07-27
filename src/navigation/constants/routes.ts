@@ -84,6 +84,7 @@ export const ROUTES = {
   SETTINGS_ADDRESS: 'SettingsAddress',
   EDIT_PROFILE: 'EditProfile',
   SETTINGS_MESSAGES: 'SettingsMessages',
+  DELETE_ACCOUNT: 'DeleteAccount',
   EARNINGS: 'Earnings',
   AFFILIATES: 'Affiliates',
   INVITE_FRIENDS: 'InviteFriends',

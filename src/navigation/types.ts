@@ -106,6 +106,7 @@ export type RootStackParamList = {
     email: string;
   };
   [ROUTES.FORGOT_PASSWORD]: undefined;
+  [ROUTES.DELETE_ACCOUNT]: undefined;
   [ROUTES.MAIN_TABS]: NavigatorScreenParams<MainTabParamList> | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
   [ROUTES.REELS]:

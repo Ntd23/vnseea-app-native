@@ -68,6 +68,7 @@ import {
   audienceToWire,
   type ContentAudienceWireContract,
 } from '../../../shared-kernel/domain/types/contentAudience';
+import { normalizeHostedMediaUrl } from '../../../community/application/groupDetailState';
 
 // Privacy mapping
 // WoWonder's `postPrivacy` is numeric and enforced by Wo_GetPostData:
@@ -413,12 +414,7 @@ function readString(raw: Record<string, unknown>, ...keys: string[]) {
 const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeMediaUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  const trimmed = url.trim();
-  if (!trimmed) return undefined;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  // Relative path — prepend site root.
-  return `${_siteRoot}/${trimmed.replace(/^\/+/, '')}`;
+  return normalizeHostedMediaUrl(url, _siteRoot) || undefined;
 }
 
 function mapFollowingMention(

@@ -7,6 +7,11 @@ export interface CommunityItem {
 }
 
 export type GroupPrivacy = 'public' | 'private';
+export type GroupMembershipStatus =
+  | 'owner'
+  | 'joined'
+  | 'requested'
+  | 'not_joined';
 
 export interface GroupItem {
   id: string;
@@ -21,6 +26,7 @@ export interface GroupItem {
   cover?: string;
   url?: string;
   members?: number;
+  membershipStatus?: GroupMembershipStatus;
   isJoined?: boolean;
   isOwner?: boolean;
   raw?: unknown;

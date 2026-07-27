@@ -13,14 +13,22 @@ $response_data = array(
 );
 if (empty($_POST['password'])) {
     $error_code    = 4;
-    $error_message = 'password (POST) is missing';
+    $error_message = 'password_required';
 }
 if (empty($error_code)) {
-    $delete     = Wo_DeleteUser($wo['user']['user_id']);
-    if ($delete) {
-        $response_data = array(
-            'api_status' => 200,
-            'message' => "User successfully deleted."
-        );
+    if (!Wo_HashPassword($_POST['password'], $wo['user']['password'])) {
+        $error_code = 5;
+        $error_message = 'password_mismatch';
+    } else {
+        $delete = Wo_DeleteUser($wo['user']['user_id']);
+        if ($delete) {
+            $response_data = array(
+                'api_status' => 200,
+                'message' => 'account_deleted'
+            );
+        } else {
+            $error_code = 6;
+            $error_message = 'delete_failed';
+        }
     }
 }
