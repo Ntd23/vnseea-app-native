@@ -12,6 +12,7 @@ import type {
   UserSuggestionsInput,
 } from '../../domain/types/user.types';
 import { createUserRepository } from '../../infrastructure/repositories/ApiUserRepository';
+import { filterDistanceScopedResults } from '../utils/mapSearchRadius';
 
 const repository = createUserRepository();
 const MAP_SEARCH_FIRST_RESULT_DEADLINE_MS = 1850;
@@ -248,6 +249,13 @@ export function useUserViewModel() {
           typeof input.radius === 'number' && Number.isFinite(input.radius)
             ? Math.max(0.001, input.radius / 1000)
             : 3;
+        const scopedRadius =
+          typeof input.lat === 'number' &&
+          Number.isFinite(input.lat) &&
+          typeof input.lng === 'number' &&
+          Number.isFinite(input.lng)
+            ? input.radius
+            : undefined;
 
         const pagesPromise = repository
           .getNearbyPages({
@@ -261,9 +269,13 @@ export function useUserViewModel() {
             signal: abortController.signal,
           })
           .then(pages => {
-            pagesSnapshot = pages;
+            pagesSnapshot = filterDistanceScopedResults(
+              pages,
+              scopedRadius,
+              page => page.distanceMeters,
+            );
             if (isLatestRequest()) {
-              setNearbyPlaces(pages);
+              setNearbyPlaces(pagesSnapshot);
             }
             publishPartialResults();
             resolveWhenUseful();
@@ -291,9 +303,13 @@ export function useUserViewModel() {
             signal: abortController.signal,
           })
           .then(predictions => {
-            predictionsSnapshot = predictions;
+            predictionsSnapshot = filterDistanceScopedResults(
+              predictions,
+              scopedRadius,
+              prediction => prediction.distanceMeters,
+            );
             if (isLatestRequest()) {
-              setPlacePredictions(predictions);
+              setPlacePredictions(predictionsSnapshot);
               setPlacePredictionsQuery(trimmedQuery);
             }
             publishPartialResults();

@@ -144,6 +144,10 @@ import {
 import { getGoogleCategorySearchQuery } from '../../application/utils/mapSearchCategory';
 import { compareMapSearchRankCandidates } from '../../application/utils/mapSearchRanking';
 import {
+  MAP_COMMITTED_SEARCH_RADIUS_METERS,
+  MAP_TYPEAHEAD_SEARCH_RADIUS_METERS,
+} from '../../application/utils/mapSearchRadius';
+import {
   DISCOVERY_RELOAD_DISTANCE_METERS,
   isPersistedDiscoveryLocationFresh,
   mapDiscoveryDistanceMeters,
@@ -174,8 +178,6 @@ const REROUTE_COOLDOWN_MS = 1500;
 const NAVIGATION_ARRIVAL_DISTANCE_METERS = 24;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
 const DISCOVERY_RADIUS_METERS = 3000;
-const TYPEAHEAD_SEARCH_RADIUS_METERS = 20000;
-const GLOBAL_SEARCH_BIAS_RADIUS_METERS = 50000;
 const SEARCH_MAP_FIT_CLUSTER_METERS = 50000;
 const NEARBY_RESULT_DISTANCE_METERS = 3000;
 const LOCAL_RESULT_DISTANCE_METERS = 20000;
@@ -183,9 +185,8 @@ const LOCAL_SEARCH_MIN_LENGTH = 1;
 const REMOTE_SEARCH_MIN_LENGTH = 2;
 const CATEGORY_SEARCH_DEBOUNCE_MS = 80;
 const TEXT_SEARCH_DEBOUNCE_MS = 120;
-// Up to 20 typeahead + 20 VNSEEA Page + 20 Google results. Keep the whole
-// committed set so distant matches are not silently dropped from the sheet.
-const MAX_COMMITTED_SEARCH_RESULTS = 60;
+// Committed search returns at most 20 VNSEEA Pages and 20 Google places.
+const MAX_COMMITTED_SEARCH_RESULTS = 40;
 const MAX_VISIBLE_PAGE_MARKERS = 40;
 const MAX_VISIBLE_SEARCH_MARKERS = 24;
 const IDLE_LOCATION_STATE_MIN_METERS = 8;
@@ -4101,7 +4102,7 @@ export default function NearbyUsersScreen() {
             googleQuery: sharedTitle,
             lat: latitude,
             lng: longitude,
-            radius: GLOBAL_SEARCH_BIAS_RADIUS_METERS,
+            radius: MAP_COMMITTED_SEARCH_RADIUS_METERS,
             limit: 20,
             fast: true,
             globalSearch: true,
@@ -4406,7 +4407,7 @@ export default function NearbyUsersScreen() {
           googleQuery: getGoogleCategorySearchQuery(trimmed),
           lat: searchLat,
           lng: searchLng,
-          radius: GLOBAL_SEARCH_BIAS_RADIUS_METERS,
+          radius: MAP_COMMITTED_SEARCH_RADIUS_METERS,
           limit: 20,
           fast: true,
           globalSearch: true,
@@ -5291,7 +5292,7 @@ export default function NearbyUsersScreen() {
           googleQuery: googleCategory,
           lat: searchOrigin.latitude,
           lng: searchOrigin.longitude,
-          radius: TYPEAHEAD_SEARCH_RADIUS_METERS,
+          radius: MAP_TYPEAHEAD_SEARCH_RADIUS_METERS,
           limit: 20,
           fast: true,
         })

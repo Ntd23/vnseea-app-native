@@ -19,13 +19,18 @@ describe('Nearby map search interaction', () => {
     expect(source).toContain('onPress={() => handleSelectSearchResult(item)}');
   });
 
-  it('allows generic business queries such as “tiệm” to use Google place results', () => {
-    const source = read('src/user/infrastructure/repositories/ApiUserRepository.ts');
+  it('routes every two-character business query through the generic backend contract', () => {
+    const repositorySource = read(
+      'src/user/infrastructure/repositories/ApiUserRepository.ts',
+    );
+    const requestSource = read(
+      'src/user/infrastructure/repositories/mapBusinessSearchRequest.ts',
+    );
 
-    expect(source).toContain('input.query.trim().length >= 2');
-    expect(source).toContain('if (hasCategory)');
-    expect(source).toContain('tiem|shop|salon|barber|cafe|quan');
-    expect(source).toContain('place_autocomplete');
+    expect(repositorySource).toContain('if (trimmedQuery.length < 2) return [];');
+    expect(repositorySource).toContain('buildMapBusinessSearchRequest');
+    expect(requestSource).toContain("search_mode: 'business'");
+    expect(requestSource).not.toContain('prefer_address');
   });
 
   it('searches around the visible map while a fresh device is still acquiring GPS', () => {

@@ -324,7 +324,7 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
         : min(max($limit * 6, $limit), 160);
     $normalized_query = Wo_ApiMapDiscoveryNormalizeSearchInput($query);
     $max_distance_meters = 0;
-    if ($fast && $has_origin && !$global_search) {
+    if ($has_origin) {
         $distance_km = !empty($_POST['distance']) && is_numeric($_POST['distance'])
             ? (float) $_POST['distance']
             : 3;
@@ -565,60 +565,23 @@ function Wo_ApiMapDiscoveryMergeGooglePlaceResults(&$places_results, $next_resul
     }
 }
 
-function Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input) {
-    $normalized_input = Wo_ApiMapDiscoveryNormalizeSearchInput($input);
-    if (preg_match('/\b(quan an|nha hang|do an|an uong|food|restaurant|com|pho|bun|lau|nuong|buffet)\b/', $normalized_input)) {
-        return 'restaurant';
-    }
-    if (preg_match('/\b(caf|cafe|ca phe|coffee|tra sua|tra|nuoc|do uong|uong)\b/', $normalized_input)) {
-        return 'cafe';
+function Wo_ApiMapDiscoveryFilterGooglePlaceResultsByRadius($places_results, $origin_lat, $origin_lng, $radius) {
+    if ($origin_lat === null || $origin_lng === null) {
+        return $places_results;
     }
 
-    $clean = mb_strtolower(trim($input), 'UTF-8');
-    
-    // 100% bulletproof character-by-character replacement for Vietnamese accents
-    $dict = array(
-        'a' => array('á','à','ả','ã','ạ','ă','ắ','ằ','ẳ','ẵ','ặ','â','ấ','ầ','ẩ','ẫ','ậ','A','Á','À','Ả','Ã','Ạ','Ă','Ắ','Ằ','Ẳ','Ẵ','Ặ','Â','Ấ','Ầ','Ẩ','Ẫ','Ậ'),
-        'e' => array('é','è','ẻ','ẽ','ẹ','ê','ế','ề','ể','ễ','ệ','E','É','È','Ẻ','Ẽ','Ẹ','Ê','Ế','Ề','Ể','Ễ','Ệ'),
-        'i' => array('í','ì','ỉ','ĩ','ị','I','Í','À','Ỉ','Ĩ','Ị'),
-        'o' => array('ó','ò','ỏ','õ','ọ','ô','ố','ồ','ổ','ỗ','ộ','ơ','ớ','ờ','ở','ỡ','ợ','O','Ó','Ò','Ỏ','Õ','Ọ','Ô','Ố','Ồ','Ổ','Ỗ','Ộ','Ơ','Ớ','Ờ','Ở','Ỡ','Ợ'),
-        'u' => array('ú','ù','ủ','ũ','ụ','ư','ứ','ừ','ử','ữ','ự','U','Ú','Ù','Ủ','Ũ','Ụ','Ư','Ứ','Ừ','Ử','Ữ','Ự'),
-        'y' => array('ý','ỳ','ỷ','ỹ','ỵ','Y','Ý','Ỳ','Ỷ','Ỹ','Ỵ'),
-        'd' => array('đ','Đ')
-    );
-    foreach ($dict as $nonAccent => $accents) {
-        $clean = str_replace($accents, $nonAccent, $clean);
-    }
-
-    if (strpos($clean, 'an') !== false || strpos($clean, 'hang') !== false || strpos($clean, 'food') !== false || strpos($clean, 'restaurant') !== false || strpos($clean, 'com') !== false || strpos($clean, 'pho') !== false || strpos($clean, 'bun') !== false || strpos($clean, 'lau') !== false || strpos($clean, 'nuong') !== false || strpos($clean, 'buffet') !== false) {
-        return 'restaurant';
-    }
-    if (strpos($clean, 'caf') !== false || strpos($clean, 'phe') !== false || strpos($clean, 'coffee') !== false || strpos($clean, 'tra') !== false || strpos($clean, 'sua') !== false || strpos($clean, 'nuoc') !== false || strpos($clean, 'uong') !== false) {
-        return 'cafe';
-    }
-    if (strpos($clean, 'toc') !== false || strpos($clean, 'salon') !== false || strpos($clean, 'barber') !== false || strpos($clean, 'spa') !== false || strpos($clean, 'lam dep') !== false) {
-        return 'beauty_salon';
-    }
-    if (strpos($clean, 'xang') !== false || strpos($clean, 'fuel') !== false || strpos($clean, 'gas') !== false) {
-        return 'gas_station';
-    }
-    if (strpos($clean, 'khach san') !== false || strpos($clean, 'hotel') !== false || strpos($clean, 'nha nghi') !== false || strpos($clean, 'lodging') !== false) {
-        return 'lodging';
-    }
-    if (strpos($clean, 'truong') !== false || strpos($clean, 'school') !== false || strpos($clean, 'dai hoc') !== false || strpos($clean, 'hoc') !== false) {
-        return 'school';
-    }
-    if (strpos($clean, 'ngan hang') !== false || strpos($clean, 'bank') !== false || strpos($clean, 'atm') !== false) {
-        return 'bank';
-    }
-    if (strpos($clean, 'benh vien') !== false || strpos($clean, 'hospital') !== false || strpos($clean, 'thuoc') !== false || strpos($clean, 'y te') !== false) {
-        return 'hospital';
-    }
-    if (strpos($clean, 'sieu thi') !== false || strpos($clean, 'supermarket') !== false || strpos($clean, 'store') !== false || strpos($clean, 'cua hang') !== false) {
-        return 'store';
-    }
-
-    return null;
+    return array_values(array_filter($places_results, function($result) use ($origin_lat, $origin_lng, $radius) {
+        $location = !empty($result['geometry']['location']) && is_array($result['geometry']['location'])
+            ? $result['geometry']['location']
+            : array();
+        $place_distance = Wo_ApiMapDiscoveryDistanceMeters(
+            $origin_lat,
+            $origin_lng,
+            $location['lat'] ?? null,
+            $location['lng'] ?? null
+        );
+        return $place_distance !== null && $place_distance <= $radius;
+    }));
 }
 
 function Wo_ApiMapDiscoveryRequestedGoogleType() {
@@ -805,7 +768,9 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     // client may omit a category for generic words such as "tiệm"; treating
     // those as addresses suppresses Nearby/Text Search and leaves no place
     // suggestions even though Google can autocomplete them.
+    $search_mode = !empty($_POST['search_mode']) ? strtolower(trim(Wo_Secure($_POST['search_mode']))) : '';
     $prefer_address =
+        $search_mode !== 'business' &&
         !empty($_POST['prefer_address']) &&
         (string) $_POST['prefer_address'] !== '0' &&
         Wo_ApiMapDiscoveryIsAddressQuery($input);
@@ -823,9 +788,6 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     $detected_type = null;
     if (!$prefer_address) {
         $detected_type = Wo_ApiMapDiscoveryRequestedGoogleType();
-        if ($detected_type === null) {
-            $detected_type = Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input);
-        }
     }
 
     // Address forms should show Google's textual address matches first. This
@@ -896,23 +858,57 @@ function Wo_ApiMapDiscoveryAutocomplete() {
         }
     }
 
-    // 1. Fetch from Nearby Search (strict radius + category type bias)
+    // Business discovery always starts from the exact text. A category is
+    // only a type hint and must never replace or gate the user's query.
+    if (!$prefer_address) {
+        $text_search_query = array(
+            'query' => $input,
+            'language' => $language,
+            'region' => $country
+        );
+        if ($detected_type !== null) {
+            $text_search_query['type'] = $detected_type;
+        }
+        if ($origin_lat !== null && $origin_lng !== null) {
+            $text_search_query['location'] = number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', '');
+            $text_search_query['radius'] = $radius;
+        }
+        $text_search = Wo_ApiMapDiscoveryGoogleGet(
+            'place/textsearch/json',
+            $text_search_query,
+            $google_timeout_ms,
+            $google_connect_timeout_ms
+        );
+        if (empty($text_search['errors']) && (($text_search['status'] ?? '') === 'OK' || ($text_search['status'] ?? '') === 'ZERO_RESULTS')) {
+            Wo_ApiMapDiscoveryMergeGooglePlaceResults(
+                $places_results,
+                !empty($text_search['results']) ? $text_search['results'] : array()
+            );
+            $places_results = Wo_ApiMapDiscoveryFilterGooglePlaceResultsByRadius(
+                $places_results,
+                $origin_lat,
+                $origin_lng,
+                $radius
+            );
+        }
+    }
+
+    // Nearby Search is a recovery path when exact Text Search returned no
+    // places and a map origin is available.
     if (
-        !$global_search &&
         !$prefer_address &&
+        count($places_results) === 0 &&
         $origin_lat !== null &&
-        $origin_lng !== null &&
-        (!$fast || $detected_type !== null)
+        $origin_lng !== null
     ) {
         $nearby_query = array(
             'location' => number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', ''),
             'radius' => $radius,
-            'language' => $language
+            'language' => $language,
+            'keyword' => $input
         );
         if ($detected_type !== null) {
             $nearby_query['type'] = $detected_type;
-        } else {
-            $nearby_query['keyword'] = $input;
         }
         $nearby_search = Wo_ApiMapDiscoveryGoogleGet('place/nearbysearch/json', $nearby_query, $google_timeout_ms, $google_connect_timeout_ms);
         if (empty($nearby_search['errors']) && (($nearby_search['status'] ?? '') === 'OK' || ($nearby_search['status'] ?? '') === 'ZERO_RESULTS')) {
@@ -932,27 +928,12 @@ function Wo_ApiMapDiscoveryAutocomplete() {
                 Wo_ApiMapDiscoveryMergeGooglePlaceResults($places_results, !empty($nearby_page['results']) ? $nearby_page['results'] : array());
                 $next_page_token = !empty($nearby_page['next_page_token']) ? $nearby_page['next_page_token'] : '';
             }
-        }
-    }
-
-    // 2. Fallback / Merge with Text Search for wider coverage (gets places like "quán ăn" matching textually)
-    $should_run_text_search =
-        $global_search ||
-        ($fast && !$prefer_address && $detected_type !== null && count($places_results) === 0) ||
-        (!$fast && !$prefer_address && ($detected_type === null || count($places_results) < 8));
-    if ($should_run_text_search) {
-        $text_search_query = array(
-            'query' => $global_search ? $input : ((!$prefer_address && $detected_type !== null) ? $detected_type : $input),
-            'language' => $language,
-            'region' => $country
-        );
-        if ($origin_lat !== null && $origin_lng !== null) {
-            $text_search_query['location'] = number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', '');
-            $text_search_query['radius'] = $radius;
-        }
-        $text_search = Wo_ApiMapDiscoveryGoogleGet('place/textsearch/json', $text_search_query, $google_timeout_ms, $google_connect_timeout_ms);
-        if (empty($text_search['errors']) && (($text_search['status'] ?? '') === 'OK' || ($text_search['status'] ?? '') === 'ZERO_RESULTS')) {
-            Wo_ApiMapDiscoveryMergeGooglePlaceResults($places_results, !empty($text_search['results']) ? $text_search['results'] : array());
+            $places_results = Wo_ApiMapDiscoveryFilterGooglePlaceResultsByRadius(
+                $places_results,
+                $origin_lat,
+                $origin_lng,
+                $radius
+            );
         }
     }
 
@@ -988,21 +969,20 @@ function Wo_ApiMapDiscoveryAutocomplete() {
         );
     }
 
-    // 3. Autocomplete is useful for named places, but generic categories should stay type-based.
+    // Autocomplete remains only as a non-fast named-place fallback. Address
+    // search has its own dedicated actions below.
     if (
-        (!$prefer_address || $global_search) &&
-        (
-            ($global_search && count($places_results) === 0 && count($predictions) === 0) ||
-            (!$global_search && !$fast && $detected_type === null) ||
-            (!$global_search && $fast && ($detected_type === null || $origin_lat === null || $origin_lng === null))
-        )
+        !$prefer_address &&
+        !$fast &&
+        count($places_results) === 0 &&
+        count($predictions) === 0
     ) {
         $query = array(
             'input' => $input,
             'language' => $language,
             'components' => 'country:' . $country
         );
-        if ($global_search && Wo_ApiMapDiscoveryIsAddressQuery($input)) {
+        if ($search_mode !== 'business' && $global_search && Wo_ApiMapDiscoveryIsAddressQuery($input)) {
             $query['types'] = 'address';
         }
         if ($origin_lat !== null && $origin_lng !== null) {
@@ -1044,10 +1024,11 @@ function Wo_ApiMapDiscoveryAutocomplete() {
             });
         }
     }
+    $result_limit = ($fast && !$global_search) ? 12 : 20;
 
     return array(
         'api_status' => 200,
-        'predictions' => array_slice($predictions, 0, 35),
+        'predictions' => array_slice($predictions, 0, $result_limit),
         'debug_nearby_status' => $nearby_search['status'] ?? 'NOT_CALLED',
         'debug_nearby_error' => $nearby_search['error_message'] ?? '',
         'debug_detected_type' => $detected_type,

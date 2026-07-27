@@ -45,7 +45,7 @@ import {
   toUserProfileFetchValue,
   toUserSuggestionsPayload,
 } from '../../application/mappers/userPayloadMapper';
-import { isGoogleNearbyCategoryType } from '../../application/utils/mapSearchCategory';
+import { buildMapBusinessSearchRequest } from './mapBusinessSearchRequest';
 
 type CurrentUserResponse = ApiEnvelope & {
   user_data?: RawApiRecord;
@@ -150,9 +150,8 @@ const PLACE_PREDICTION_CACHE_TTL_MS = 60 * 1000;
 const PLACE_DETAILS_CACHE_TTL_MS = 10 * 60 * 1000;
 const PAGE_PIN_STATUS_CACHE_TTL_MS = 10 * 60 * 1000;
 const ROUTE_CACHE_TTL_MS = 12 * 1000;
-const DIRECT_GOOGLE_TIMEOUT_MS = 1700;
 const DIRECT_GOOGLE_DETAILS_TIMEOUT_MS = 1800;
-const MAP_SEARCH_RESPONSE_BUDGET_MS = 1800;
+const MAP_SEARCH_RESPONSE_BUDGET_MS = 3600;
 const GOOGLE_MAPS_ANDROID_PACKAGE = 'com.vnseea.android';
 const PAGE_PIN_WARM_LIMIT = 4;
 const PAGE_PIN_WARM_CONCURRENCY = 2;
@@ -511,199 +510,6 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
     openNow: typeof record.open_now === 'boolean' ? record.open_now : undefined,
     photoUrls,
   };
-}
-
-function distanceMetersBetween(
-  origin: { latitude: number; longitude: number },
-  destination: { latitude: number; longitude: number },
-) {
-  const earthRadius = 6371000;
-  const latFrom = (origin.latitude * Math.PI) / 180;
-  const lngFrom = (origin.longitude * Math.PI) / 180;
-  const latTo = (destination.latitude * Math.PI) / 180;
-  const lngTo = (destination.longitude * Math.PI) / 180;
-  const latDelta = latTo - latFrom;
-  const lngDelta = lngTo - lngFrom;
-  const angle =
-    2 *
-    Math.asin(
-      Math.sqrt(
-        Math.sin(latDelta / 2) ** 2 +
-          Math.cos(latFrom) * Math.cos(latTo) * Math.sin(lngDelta / 2) ** 2,
-      ),
-    );
-
-  return earthRadius * angle;
-}
-
-function mapGoogleNearbyPrediction(
-  record: RawApiRecord,
-  origin?: { latitude: number; longitude: number },
-): MapPlacePrediction | null {
-  const placeId = String(record.place_id ?? '');
-  const name = String(record.name ?? '');
-  const location = asRecord(asRecord(record.geometry)?.location);
-  const lat = Number(location?.lat);
-  const lng = Number(location?.lng);
-
-  if (!placeId || !name || !isValidGeoCoordinate(lat, lng)) {
-    return null;
-  }
-
-  let types: string[] | undefined;
-  if (Array.isArray(record.types)) {
-    types = record.types.map(String);
-  }
-
-  const coordinate = { latitude: lat, longitude: lng };
-  const openingHours = asRecord(record.opening_hours);
-  const photoUrls = Array.isArray(record.photos)
-    ? record.photos
-        .map(photo => asRecord(photo)?.photo_reference)
-        .filter(Boolean)
-        .slice(0, 3)
-        .map(
-          reference =>
-            `https://maps.googleapis.com/maps/api/place/photo?maxwidth=720&photo_reference=${encodeURIComponent(
-              String(reference),
-            )}&key=${encodeURIComponent(apiConfig.googleMapsApiKey)}`,
-        )
-    : [];
-
-  return {
-    source: 'google',
-    placeId,
-    description: String(record.vicinity || record.formatted_address || name),
-    mainText: name,
-    secondaryText: String(record.vicinity || record.formatted_address || ''),
-    types,
-    lat,
-    lng,
-    distanceMeters: origin
-      ? distanceMetersBetween(origin, coordinate)
-      : undefined,
-    icon:
-      record.icon !== undefined && record.icon !== null
-        ? String(record.icon)
-        : undefined,
-    iconBackgroundColor:
-      record.icon_background_color !== undefined &&
-      record.icon_background_color !== null
-        ? String(record.icon_background_color)
-        : undefined,
-    rating:
-      record.rating !== undefined && record.rating !== null
-        ? Number(record.rating)
-        : undefined,
-    ratingsTotal:
-      record.user_ratings_total !== undefined &&
-      record.user_ratings_total !== null
-        ? Number(record.user_ratings_total)
-        : undefined,
-    openNow:
-      typeof openingHours?.open_now === 'boolean'
-        ? openingHours.open_now
-        : undefined,
-    photoUrls,
-  };
-}
-
-function canUseDirectGoogleNearbyPredictions(input: MapPlacePredictionsInput) {
-  const latitude = Number(input.lat);
-  const longitude = Number(input.lng);
-
-  return Boolean(
-    apiConfig.googleMapsApiKey &&
-      !input.globalSearch &&
-      input.query.trim().length >= 2 &&
-      isValidGeoCoordinate(latitude, longitude),
-  );
-}
-
-async function getDirectGoogleNearbyPredictions(
-  input: MapPlacePredictionsInput,
-) {
-  const categoryType = normalizeCacheText(input.category);
-  if (!canUseDirectGoogleNearbyPredictions(input)) {
-    return [];
-  }
-
-  const latitude = input.lat as number;
-  const longitude = input.lng as number;
-  const headers = googleRequestHeaders();
-
-  const origin = { latitude, longitude };
-  const normalizedKeyword = normalizeCacheText(input.query);
-  const hasCategory = isGoogleNearbyCategoryType(categoryType);
-  const params = new URLSearchParams({
-    location: `${latitude.toFixed(6)},${longitude.toFixed(6)}`,
-    radius: String(Math.min(Math.max(input.radius ?? 3000, 1), 50000)),
-    keyword:
-      hasCategory && normalizedKeyword.length <= 3
-        ? categoryType
-        : input.query.trim(),
-    language: 'vi',
-    key: apiConfig.googleMapsApiKey,
-  });
-  if (hasCategory) {
-    params.set('type', categoryType);
-  }
-  const controller = new AbortController();
-  const abortFromCaller = () => controller.abort();
-  if (input.signal?.aborted) {
-    controller.abort();
-  } else {
-    input.signal?.addEventListener('abort', abortFromCaller, { once: true });
-  }
-  const timeout = setTimeout(
-    () => controller.abort(),
-    DIRECT_GOOGLE_TIMEOUT_MS,
-  );
-
-  try {
-    const startedAt = Date.now();
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`,
-      { signal: controller.signal, headers },
-    );
-    if (!response.ok) return [];
-
-    const data = (await response.json()) as {
-      status?: string;
-      error_message?: string;
-      results?: RawApiRecord[];
-    };
-
-    if (typeof __DEV__ !== 'undefined' && __DEV__) {
-      console.debug('[mapDiscovery] direct nearby', {
-        query: input.query,
-        category: categoryType,
-        status: data.status,
-        count: data.results?.length ?? 0,
-        elapsedMs: Date.now() - startedAt,
-        errorMessage: data.error_message || undefined,
-      });
-    }
-
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      return [];
-    }
-
-    return (data.results ?? [])
-      .map(record => mapGoogleNearbyPrediction(record, origin))
-      .filter(Boolean) as MapPlacePrediction[];
-  } catch (error) {
-    if (input.signal?.aborted) {
-      throw error;
-    }
-    if (typeof __DEV__ !== 'undefined' && __DEV__) {
-      console.debug('[mapDiscovery] direct nearby unavailable', String(error));
-    }
-    return [];
-  } finally {
-    clearTimeout(timeout);
-    input.signal?.removeEventListener('abort', abortFromCaller);
-  }
 }
 
 async function getDirectGooglePlaceDetails(placeId: string) {
@@ -1198,38 +1004,13 @@ export function createUserRepository(): UserRepository {
         return cachedPredictions;
       }
 
-      const searchInput = { ...input, query: trimmedQuery };
       const loadPredictions = async () => {
-        if (canUseDirectGoogleNearbyPredictions(searchInput)) {
-          const directPredictions = await getDirectGoogleNearbyPredictions(
-            searchInput,
-          );
-          if (directPredictions.length > 0) {
-            return directPredictions;
-          }
-        }
-
         const response = await apiBridge.post<PlaceAutocompleteResponse>(
           apiRoutes.user.mapDiscovery,
-          {
-            type: 'place_autocomplete',
+          buildMapBusinessSearchRequest({
+            ...input,
             query: trimmedQuery,
-            category: input.category,
-            origin_lat: input.lat,
-            origin_lng: input.lng,
-            radius: input.radius,
-            // Generic terms such as “tiệm” should return businesses like
-            // Google Maps, not only street/address completions.
-            prefer_address:
-              input.category ||
-              /\b(tiem|shop|salon|barber|cafe|quan|cua hang|store)\b/.test(
-                normalizeCacheText(trimmedQuery),
-              )
-                ? undefined
-                : 1,
-            fast: input.fast ? 1 : undefined,
-            global_search: input.globalSearch ? 1 : undefined,
-          },
+          }),
           {
             timeout: MAP_SEARCH_RESPONSE_BUDGET_MS,
             signal: input.signal,
