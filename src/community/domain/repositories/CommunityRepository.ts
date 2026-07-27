@@ -4,6 +4,7 @@
 import type {
   CreateGroupDraft,
   GroupItem,
+  GroupMembershipStatus,
   GroupMember,
   GroupsListOptions,
   GroupsListPage,
@@ -21,6 +22,8 @@ export interface UpdateGroupResult {
 }
 
 export interface CommunityRepository {
+  getGroupById(groupId: string | number): Promise<GroupItem>;
+  joinGroup(groupId: string | number): Promise<GroupMembershipStatus>;
   getMyGroups(options?: GroupsListOptions): Promise<GroupsListPage>;
   getSuggestedGroups(options?: GroupsListOptions): Promise<GroupsListPage>;
   getJoinedGroups(

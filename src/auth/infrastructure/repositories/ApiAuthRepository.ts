@@ -69,6 +69,12 @@ function logAuthDebug(event: string, data: Record<string, unknown> = {}) {
   }
 }
 
+function clearLocalAuthState() {
+  disconnectLiveKitCallRealtime();
+  logoutPushUser();
+  sessionStorage.clearSession();
+}
+
 function mapAuthResponse(response: AuthResponse): AuthResult {
   console.log(
     '[ApiAuthRepository] Login response:',
@@ -218,14 +224,19 @@ export function createAuthRepository(): AuthRepository {
         });
         console.warn('[Auth] Backend logout failed; continuing local cleanup', error);
       } finally {
-        disconnectLiveKitCallRealtime();
-        logoutPushUser();
-        sessionStorage.clearSession();
+        clearLocalAuthState();
         logAuthDebug('auth_logout_local_cleanup_done', {
           hadAccessToken,
           userId: activeSession?.userId ?? '',
         });
       }
+    },
+
+    async deleteAccount(password: string) {
+      await apiBridge.post<AuthResponse>(apiRoutes.auth.deleteAccount, {
+        password,
+      });
+      clearLocalAuthState();
     },
 
     async getCurrentUser() {

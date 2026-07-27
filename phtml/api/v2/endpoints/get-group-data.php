@@ -29,8 +29,20 @@ if (empty($error_code)) {
             unset($group_data[$value]);
         }
         $group_data['post_count'] = Wo_CountGroupPosts($group_data['group_id']);
-        //$group_data['is_joined'] = Wo_IsGroupJoined($group_data['group_id']);
         $group_data['is_owner'] = Wo_IsGroupOnwer($group_data['group_id']);
+        $is_joined = Wo_IsGroupJoined($group_data['group_id']) === true;
+        $is_requested = Wo_IsJoinRequested($group_data['group_id'], $wo['user']['user_id']) === true;
+        if ($group_data['is_owner']) {
+            $group_data['membership_status'] = 'owner';
+        } elseif ($is_joined) {
+            $group_data['membership_status'] = 'joined';
+        } elseif ($is_requested) {
+            $group_data['membership_status'] = 'requested';
+        } else {
+            $group_data['membership_status'] = 'not_joined';
+        }
+        $group_data['is_joined'] = $is_joined ? 1 : 0;
+        $group_data['is_group_joined'] = $is_requested ? 2 : ($is_joined ? 1 : 0);
 
         $response_data['group_data'] = $group_data;
     }

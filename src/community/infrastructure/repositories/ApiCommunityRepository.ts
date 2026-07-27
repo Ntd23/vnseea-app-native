@@ -2,7 +2,16 @@
 // Port từ: client/src/community/infrastructure/repositories/
 
 import type { CommunityRepository } from '../../domain/repositories/CommunityRepository';
-import type { GroupItem, GroupMember, UpdateGroupDraft } from '../../domain/types/community.types';
+import type {
+  GroupItem,
+  GroupMember,
+  GroupMembershipStatus,
+  UpdateGroupDraft,
+} from '../../domain/types/community.types';
+import {
+  normalizeHostedMediaUrl,
+  resolveGroupMembershipStatus,
+} from '../../application/groupDetailState';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
@@ -49,6 +58,17 @@ type GroupMembersResponse = {
   };
 };
 
+type JoinGroupResponse = {
+  api_status: number | string;
+  join_status?: string;
+  membership_status?: GroupMembershipStatus;
+  message?: string;
+  errors?: {
+    error_id?: number | string;
+    error_text?: string;
+  };
+};
+
 type UpdateGroupResponse = {
   api_status?: number | string;
   status?: number | string;
@@ -68,9 +88,7 @@ function readString(raw: RawGroup | undefined, key: string): string {
 }
 
 function normalizeUrl(url: string) {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeHostedMediaUrl(url, siteRoot);
 }
 
 function readNumber(raw: RawGroup | undefined, key: string): number | undefined {
@@ -93,6 +111,8 @@ function mapGroup(raw: RawGroup | undefined): GroupItem {
   const groupName = readString(raw, 'group_name');
   const groupTitle = readString(raw, 'group_title') || readString(raw, 'name');
 
+  const membershipStatus = resolveGroupMembershipStatus(raw);
+
   return {
     id: groupId || groupName || groupTitle,
     groupId,
@@ -109,11 +129,10 @@ function mapGroup(raw: RawGroup | undefined): GroupItem {
       (groupName ? `${siteRoot}/${groupName}` : ''),
     members:
       readNumber(raw, 'members') ?? readNumber(raw, 'members_count') ?? 0,
+    membershipStatus,
     isJoined:
-      readBoolean(raw, 'is_joined') ??
-      readBoolean(raw, 'is_group_joined') ??
-      false,
-    isOwner: readBoolean(raw, 'is_owner') ?? false,
+      membershipStatus === 'owner' || membershipStatus === 'joined',
+    isOwner: membershipStatus === 'owner',
     raw,
   };
 }
@@ -228,6 +247,49 @@ function toGroupsPage(
 
 export function createCommunityRepository(): CommunityRepository {
   return {
+    async getGroupById(groupId) {
+      const response = await apiBridge.post<GroupDetailResponse>(
+        apiRoutes.groups.getById,
+        { group_id: String(groupId) },
+      );
+
+      if (!isSuccess(response.api_status) || !response.group_data) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không thể tải thông tin nhóm.',
+        );
+      }
+
+      return mapGroup(response.group_data);
+    },
+
+    async joinGroup(groupId) {
+      const response = await apiBridge.post<JoinGroupResponse>(
+        apiRoutes.groups.join,
+        {
+          group_id: String(groupId),
+          action: 'join',
+        },
+      );
+
+      if (!isSuccess(response.api_status)) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không thể tham gia nhóm.',
+        );
+      }
+
+      const status =
+        response.membership_status ?? response.join_status;
+      if (status === 'joined' || status === 'requested' || status === 'owner') {
+        return status;
+      }
+
+      throw new Error('Không thể xác định trạng thái tham gia nhóm.');
+    },
+
     async getMyGroups(options = {}) {
       const limit = options.limit ?? 20;
       const offset = options.offset ? String(options.offset) : undefined;
@@ -245,7 +307,12 @@ export function createCommunityRepository(): CommunityRepository {
         const page = toGroupsPage(response, limit);
         return {
           ...page,
-          items: page.items.map(group => ({ ...group, isOwner: true })),
+          items: page.items.map(group => ({
+            ...group,
+            membershipStatus: 'owner',
+            isJoined: true,
+            isOwner: true,
+          })),
         };
       } catch (error) {
         console.warn('[ApiCommunityRepository] get my groups failed', error);

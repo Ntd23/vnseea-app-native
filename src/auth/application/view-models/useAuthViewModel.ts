@@ -100,6 +100,14 @@ export function useAuthViewModel() {
     resetNavigationToLogin();
   }, [runAuthAction]);
 
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      await runAuthAction(() => repository.deleteAccount(password));
+      resetNavigationToLogin();
+    },
+    [runAuthAction],
+  );
+
   return {
     isLoading,
     error,
@@ -108,5 +116,6 @@ export function useAuthViewModel() {
     register,
     forgotPassword,
     logout,
+    deleteAccount,
   };
 }

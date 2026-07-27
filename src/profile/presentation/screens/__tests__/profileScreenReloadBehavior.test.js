@@ -37,7 +37,9 @@ describe('ProfileScreen reload behavior', () => {
   it('opens a working relationship action sheet from the followed profile button', () => {
     const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
-    expect(source).toContain('const [isRelationshipSheetVisible, setRelationshipSheetVisible] = useState(false);');
+    expect(source).toMatch(
+      /const \[isRelationshipSheetVisible, setRelationshipSheetVisible\]\s*=\s*useState\(false\);/,
+    );
     expect(source).toContain('const openRelationshipActionsSheet = useCallback(() => {');
     expect(source).toContain('onPress={openRelationshipActionsSheet}');
     expect(source).toContain('visible={isRelationshipSheetVisible}');

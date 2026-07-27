@@ -24,17 +24,19 @@ import {
   Users,
 } from 'lucide-react-native';
 import { useSharedValue } from 'react-native-reanimated';
-import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
-import {
-  FeedFilterTabs,
-  type FeedFilterTabKey,
-} from '../../../feed/presentation/components/FeedFilterTabs';
 import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
 import {
   FEED_COPY,
@@ -63,6 +65,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { GroupPostMenuActionSheet } from './GroupPostMenuActionSheet';
 import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
+import { createCommunityRepository } from '../../infrastructure/repositories/ApiCommunityRepository';
 
 type GroupDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type GroupDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.GROUP_DETAIL>;
@@ -72,12 +75,17 @@ const FALLBACK_COVER =
   'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1400&auto=format&fit=crop';
 const GROUP_POST_LIMIT = 12;
 const feedRepository = createFeedRepository();
+const communityRepository = createCommunityRepository();
 
 const GROUP_DETAIL_COPY = {
   vi: {
     membersCountSuffix: 'Các thành viên',
     btnEdit: 'Chỉnh sửa',
     btnView: 'Xem nhóm',
+    joinGroup: 'Tham gia nhóm',
+    joiningGroup: 'Đang tham gia...',
+    joinRequested: 'Đang chờ duyệt',
+    joinError: 'Không thể tham gia nhóm. Vui lòng thử lại.',
     composerPlaceholder: 'Hôm nay bạn thế nào ?',
     actionPhoto: 'Hình ảnh',
     actionVideo: 'Video',
@@ -118,6 +126,10 @@ const GROUP_DETAIL_COPY = {
     membersCountSuffix: 'Members',
     btnEdit: 'Edit',
     btnView: 'View Group',
+    joinGroup: 'Join group',
+    joiningGroup: 'Joining...',
+    joinRequested: 'Request pending',
+    joinError: 'Unable to join this group. Please try again.',
     composerPlaceholder: 'What\'s on your mind?',
     actionPhoto: 'Photos',
     actionVideo: 'Videos',
@@ -170,13 +182,20 @@ function GroupAvatar({
   avatar?: string;
   size?: number;
 }) {
-  if (avatar) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatar]);
+
+  if (avatar && !imageFailed) {
     return (
       <Image
         source={{ uri: avatar }}
         style={{ height: size, width: size, borderRadius: size / 2 }}
         className="border-2 border-white bg-slate-100"
         resizeMode="cover"
+        onError={() => setImageFailed(true)}
       />
     );
   }
@@ -188,6 +207,23 @@ function GroupAvatar({
     >
       <Users size={Math.round(size * 0.48)} color="#ff4d4f" />
     </View>
+  );
+}
+
+function GroupCoverImage({ cover }: { cover?: string }) {
+  const [coverFailed, setCoverFailed] = useState(false);
+
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [cover]);
+
+  return (
+    <Image
+      source={{ uri: !coverFailed && cover ? cover : FALLBACK_COVER }}
+      style={{ width: '100%', height: 128, backgroundColor: '#E2E8F0' }}
+      resizeMode="cover"
+      onError={() => setCoverFailed(true)}
+    />
   );
 }
 
@@ -234,11 +270,13 @@ function GroupDetailScreen() {
   const navigation = useNavigation<GroupDetailNav>();
   const isFocused = useIsFocused();
   const route = useRoute<GroupDetailRoute>();
-  const group = route.params?.group;
+  const routeGroup = route.params?.group;
+  const routeGroupId = routeGroup?.groupId || routeGroup?.id;
+  const [group, setGroup] = useState(routeGroup);
+  const [isJoiningGroup, setIsJoiningGroup] = useState(false);
   const profile = sessionStorage.getUserProfile();
   const activeUserAvatar = profile?.avatarUrl;
   const activeUserDisplayName = profile?.name || copy.fallbackUsername;
-  const [activeFilterSource, setActiveFilterSource] = useState<FeedFilterTabKey>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [composerModalVisible, setComposerModalVisible] = useState(false);
   const [composerInitialAction, setComposerInitialAction] = useState<'photo' | 'video' | 'product' | 'poll' | undefined>(undefined);
@@ -260,8 +298,6 @@ function GroupDetailScreen() {
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
   const gestureActive = useSharedValue(false);
-  const gestureStartX = useSharedValue(0);
-  const gestureStartY = useSharedValue(0);
   const hasDragged = useSharedValue(false);
   const groupTitle = group?.groupTitle || group?.groupName || 'Nhóm';
   const groupCover = group?.cover || FALLBACK_COVER;
@@ -269,8 +305,16 @@ function GroupDetailScreen() {
   const privacyLabel = group?.privacy === 'private' ? copy.privacyPrivate : copy.privacyPublic;
   const membersCount = group?.members ?? 0;
   const categoryLabel = group?.category || copy.categoryOther;
-  const canEdit = Boolean(group?.isOwner);
-  const targetGroupId = group?.groupId || group?.id ? String(group?.groupId || group?.id) : undefined;
+  const membershipStatus =
+    group?.membershipStatus ??
+    (group?.isOwner ? 'owner' : group?.isJoined ? 'joined' : 'not_joined');
+  const canEdit = membershipStatus === 'owner';
+  const canCreatePost =
+    membershipStatus === 'owner' || membershipStatus === 'joined';
+  const isJoinRequested = membershipStatus === 'requested';
+  const targetGroupId = group?.groupId || group?.id || routeGroupId
+    ? String(group?.groupId || group?.id || routeGroupId)
+    : undefined;
   const updatePostById = useCallback(
     (
       postId: string,
@@ -296,6 +340,29 @@ function GroupDetailScreen() {
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: updateCommentCount,
   });
+  useEffect(() => {
+    setGroup(routeGroup);
+  }, [routeGroup]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!targetGroupId) return undefined;
+
+      let active = true;
+      communityRepository
+        .getGroupById(targetGroupId)
+        .then(nextGroup => {
+          if (active) setGroup(nextGroup);
+        })
+        .catch(error => {
+          console.warn('[GroupDetailScreen] canonical group load failed', error);
+        });
+
+      return () => {
+        active = false;
+      };
+    }, [targetGroupId]),
+  );
   usePostRealtimeScope({
     postIds: posts.slice(0, 20).map(post => post.id),
     posts: posts.slice(0, 20),
@@ -350,7 +417,7 @@ function GroupDetailScreen() {
   );
   const handleCreatePost = useCallback(
     (initialAction?: 'photo' | 'video' | 'product' | 'poll') => {
-      if (!targetGroupId) {
+      if (!targetGroupId || !canCreatePost) {
         Alert.alert(copy.groupContextMissingTitle, copy.groupContextMissingMessage);
         return;
       }
@@ -358,7 +425,12 @@ function GroupDetailScreen() {
       setComposerInitialAction(initialAction);
       setComposerModalVisible(true);
     },
-    [copy.groupContextMissingMessage, copy.groupContextMissingTitle, targetGroupId],
+    [
+      canCreatePost,
+      copy.groupContextMissingMessage,
+      copy.groupContextMissingTitle,
+      targetGroupId,
+    ],
   );
   const handleCloseComposer = useCallback(() => {
     setComposerModalVisible(false);
@@ -366,7 +438,6 @@ function GroupDetailScreen() {
   }, []);
   const handleComposerCreated = useCallback(() => {
     setComposerInitialAction(undefined);
-    setActiveFilterSource('all');
     void loadGroupPosts(true);
   }, [loadGroupPosts]);
   const handleEditGroup = useCallback(
@@ -383,6 +454,57 @@ function GroupDetailScreen() {
     },
     [handleCreatePost],
   );
+  const handleJoinGroup = useCallback(async () => {
+    if (!targetGroupId || isJoiningGroup || isJoinRequested) return;
+
+    setIsJoiningGroup(true);
+    try {
+      const nextStatus = await communityRepository.joinGroup(targetGroupId);
+      setGroup(current =>
+        current
+          ? {
+              ...current,
+              membershipStatus: nextStatus,
+              isJoined: nextStatus === 'joined' || nextStatus === 'owner',
+              isOwner: nextStatus === 'owner',
+            }
+          : current,
+      );
+
+      if (
+        nextStatus === 'joined' ||
+        nextStatus === 'owner'
+      ) {
+        void loadGroupPosts(true);
+      }
+
+      try {
+        const canonicalGroup = await communityRepository.getGroupById(
+          targetGroupId,
+        );
+        setGroup(canonicalGroup);
+      } catch (refreshError) {
+        console.warn(
+          '[GroupDetailScreen] group_detail_refresh_after_join_failed',
+          refreshError,
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        copy.joinGroup,
+        error instanceof Error ? error.message : copy.joinError,
+      );
+    } finally {
+      setIsJoiningGroup(false);
+    }
+  }, [
+    copy.joinError,
+    copy.joinGroup,
+    isJoinRequested,
+    isJoiningGroup,
+    loadGroupPosts,
+    targetGroupId,
+  ]);
   const handleToggleReaction = useCallback(
     async (postId: string, nextReaction: ReactionType) => {
       let snapshot: FeedTextPost | FeedVideoPost | FeedPollPost | undefined;
@@ -618,18 +740,11 @@ function GroupDetailScreen() {
   }, [loadGroupPosts]);
   const displayedPosts = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    const tabFiltered = posts.filter(post => {
-      if (activeFilterSource === 'photos') {
-        return post.kind === 'text' && post.photos.length > 0;
-      }
-      return true;
-    });
-
     if (!normalizedQuery) {
-      return tabFiltered;
+      return posts;
     }
 
-    return tabFiltered.filter(post => {
+    return posts.filter(post => {
       const text = [
         post.caption,
         post.publisher.name,
@@ -638,7 +753,7 @@ function GroupDetailScreen() {
 
       return text.includes(normalizedQuery);
     });
-  }, [activeFilterSource, posts, searchQuery]);
+  }, [posts, searchQuery]);
   const renderGroupPost = useCallback(
     (post: FeedTextPost | FeedVideoPost | FeedPollPost) => {
       if (post.kind === 'video') {
@@ -728,7 +843,7 @@ function GroupDetailScreen() {
         }
       >
         <View className="bg-white">
-          <Image source={{ uri: groupCover }} className="h-32 w-full bg-slate-200" resizeMode="cover" />
+          <GroupCoverImage cover={groupCover} />
           <View className="items-center px-4 pb-5">
             <View className="-mt-12">
               <GroupAvatar avatar={group?.avatar} />
@@ -761,27 +876,54 @@ function GroupDetailScreen() {
           </View>
         </View>
 
-        <View className="mt-3 border-y border-slate-100 bg-white py-4">
-          <ComposerCard
-            onPress={() => handleCreatePost()}
-            onPressAction={handleComposerAction}
-            avatarUrl={activeUserAvatar}
-            displayName={activeUserDisplayName}
-            copy={{
-              createPostBtn: copy.composerPlaceholder,
-              composerPlaceholder: copy.composerPlaceholder,
-              photo: copy.actionPhoto,
-              video: copy.actionVideo,
-              product: copy.actionProduct,
-              poll: copy.actionPoll,
-            }}
-          />
-        </View>
-
-        <FeedFilterTabs
-          activeSource={activeFilterSource}
-          onChangeSource={setActiveFilterSource}
-        />
+        {canCreatePost ? (
+          <View className="mt-3 border-y border-slate-100 bg-white py-4">
+            <ComposerCard
+              onPress={() => handleCreatePost()}
+              onPressAction={handleComposerAction}
+              avatarUrl={activeUserAvatar}
+              displayName={activeUserDisplayName}
+              copy={{
+                createPostBtn: copy.composerPlaceholder,
+                composerPlaceholder: copy.composerPlaceholder,
+                photo: copy.actionPhoto,
+                video: copy.actionVideo,
+                product: copy.actionProduct,
+                poll: copy.actionPoll,
+              }}
+            />
+          </View>
+        ) : (
+          <View className="mt-3 border-y border-slate-100 bg-white px-4 py-4">
+            <TouchableOpacity
+              activeOpacity={0.82}
+              disabled={
+                !targetGroupId || isJoiningGroup || isJoinRequested
+              }
+              onPress={() => void handleJoinGroup()}
+              className="min-h-[46px] items-center justify-center rounded-xl bg-brand"
+              style={{
+                opacity:
+                  !targetGroupId || isJoiningGroup || isJoinRequested
+                    ? 0.62
+                    : 1,
+              }}
+            >
+              {isJoiningGroup ? (
+                <View className="flex-row items-center">
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text className="ml-2 text-base font-bold text-white">
+                    {copy.joiningGroup}
+                  </Text>
+                </View>
+              ) : (
+                <Text className="text-base font-bold text-white">
+                  {isJoinRequested ? copy.joinRequested : copy.joinGroup}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
 
         {isLoadingPosts ? (
           <View className="border-y border-slate-200 bg-white py-12">
@@ -841,7 +983,7 @@ function GroupDetailScreen() {
       </ScrollView>
 
       <CreatePostModal
-        visible={composerModalVisible}
+        visible={canCreatePost && composerModalVisible}
         onClose={handleCloseComposer}
         onCreated={handleComposerCreated}
         groupId={targetGroupId}

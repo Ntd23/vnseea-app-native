@@ -15,6 +15,7 @@ export interface AuthRepository {
   resendAccountCode(userId: string): Promise<void>;
   forgotPassword(input: ForgotPasswordInput): Promise<void>;
   logout(): Promise<void>;
+  deleteAccount(password: string): Promise<void>;
 
   /**
    * Fetch the authenticated viewer's profile.
