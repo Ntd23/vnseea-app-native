@@ -52,6 +52,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -62,7 +63,10 @@ import {
   type NativeSyntheticEvent,
   type ViewStyle,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  initialWindowMetrics,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {
   Camera,
   ChevronDown,
@@ -84,9 +88,11 @@ import {
   type MediaType,
 } from 'react-native-image-picker';
 import type {
+  CommentMention,
   CommentAudioAttachment,
   CommentImageAttachment,
   ReactionType,
+  ReelCaptionSuggestion,
   ReelComment,
 } from '../../domain/types/reels.types';
 import {
@@ -115,10 +121,18 @@ import {
 } from '../../../feed/presentation/components/FeedReactionAssets';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { ReelCommentComposerModal } from './ReelCommentComposerModal';
+import { CommentMentionSuggestions } from './CommentMentionSuggestions';
+import {
+  applyCommentMentionSuggestion,
+  getActiveCommentMentionToken,
+  mergeCommentMention,
+  pruneCommentMentions,
+  serializeCommentMentions,
+  splitCommentMentionSegments,
+} from '../../application/utils/commentMentions';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 const FONT_PRIMARY = 'Inter';
-const INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE = 88;
 
 const COMMENTS_COPY = {
   vi: {
@@ -310,7 +324,10 @@ const CommentsLoadingSkeleton = memo(function CommentsLoadingSkeleton() {
       accessibilityLabel="Đang tải bình luận"
     >
       {Array.from({ length: COMMENT_SKELETON_ROW_COUNT }, (_, index) => (
-        <View key={`comment-skeleton-${index}`} style={styles.commentSkeletonRow}>
+        <View
+          key={`comment-skeleton-${index}`}
+          style={styles.commentSkeletonRow}
+        >
           <View style={styles.commentSkeletonAvatar} />
           <View style={styles.commentSkeletonBody}>
             <View
@@ -359,6 +376,7 @@ function resolveSheetTravelDistance(
 type ReplyTarget = {
   commentId: string;
   targetCommentId?: string;
+  userId?: string;
   username: string;
   displayName?: string;
 };
@@ -389,16 +407,23 @@ interface Props {
     text: string,
     image?: CommentImageAttachment,
     audio?: CommentAudioAttachment,
+    mentions?: CommentMention[],
   ) => Promise<ReelComment | null>;
   onSubmitReply: (
     commentId: string,
     text: string,
     image?: CommentImageAttachment,
     replyMentionName?: string,
+    mentions?: CommentMention[],
   ) => Promise<ReelComment | null>;
+  onSearchMentions: (query: string) => Promise<ReelCaptionSuggestion[]>;
   onSetReaction: (commentId: string, reaction: ReactionType) => void;
   onDelete: (commentId: string) => void;
-  onEdit: (commentId: string, text: string) => void;
+  onEdit: (
+    commentId: string,
+    text: string,
+    mentions?: CommentMention[],
+  ) => void;
   onLoadReplies: (commentId: string) => void;
   onCollapseReplies: (commentId: string) => void;
   onStartReply: (
@@ -406,6 +431,7 @@ interface Props {
     username: string,
     displayName?: string,
     targetCommentId?: string,
+    userId?: string,
   ) => void;
   onCancelReply: () => void;
   onRetryFailedComment: (comment: ReelComment) => void;
@@ -448,7 +474,7 @@ function getReplyTargetDisplayName(
 
 function getReplyDraftPrefix(displayName: string) {
   const trimmed = displayName.trim();
-  return trimmed ? `${trimmed} ` : '';
+  return trimmed ? `@${trimmed} ` : '';
 }
 
 function splitLeadingReplyMention(text: string, mentionName?: string) {
@@ -456,15 +482,44 @@ function splitLeadingReplyMention(text: string, mentionName?: string) {
   if (!name) return null;
 
   const trimmedStart = text.trimStart();
-  if (!trimmedStart.startsWith(name)) return null;
+  const candidates = name.startsWith('@') ? [name] : [`@${name}`, name];
+  const matchedName = candidates.find(candidate =>
+    trimmedStart.startsWith(candidate),
+  );
+  if (!matchedName) return null;
 
-  const nextChar = trimmedStart.charAt(name.length);
+  const nextChar = trimmedStart.charAt(matchedName.length);
   if (nextChar && !/\s|[.,:;!?]/.test(nextChar)) return null;
 
   return {
-    mention: name,
-    rest: trimmedStart.slice(name.length),
+    mention: matchedName,
+    rest: trimmedStart.slice(matchedName.length),
   };
+}
+
+function renderCommentMentionText(
+  text: string,
+  mentions: CommentMention[] | undefined,
+  onPressProfile: (userId: string) => void,
+) {
+  return splitCommentMentionSegments(text, mentions).map((segment, index) =>
+    segment.isMention ? (
+      <Text
+        key={`${segment.text}-${index}`}
+        style={styles.commentMentionText}
+        accessibilityRole={segment.mention?.userId ? 'link' : undefined}
+        onPress={
+          segment.mention?.userId
+            ? () => onPressProfile(segment.mention!.userId)
+            : undefined
+        }
+      >
+        {segment.text}
+      </Text>
+    ) : (
+      segment.text
+    ),
+  );
 }
 
 function formatRelativeTime(timestamp?: number, language: 'vi' | 'en' = 'vi') {
@@ -534,6 +589,7 @@ function ReelCommentsSheetBase({
   onRetry,
   onSubmit,
   onSubmitReply,
+  onSearchMentions,
   onSetReaction,
   onDelete,
   onEdit,
@@ -583,6 +639,20 @@ function ReelCommentsSheetBase({
     [navigation],
   );
   const insets = useSafeAreaInsets();
+  // Keyboard events expose screen coordinates, while measureInWindow returns
+  // coordinates relative to the Android content window when edge-to-edge is
+  // disabled. Normalize the IME top into the same coordinate space instead of
+  // guessing an accessory-bar height (which caused both a gap and an overlap
+  // on different devices).
+  const androidWindowScreenOffsetY =
+    Platform.OS === 'android'
+      ? Math.max(
+          0,
+          initialWindowMetrics?.frame.y ??
+            StatusBar.currentHeight ??
+            insets.top,
+        )
+      : 0;
   const bottomSafeInset = Math.max(
     insets.bottom,
     Platform.OS === 'android' ? 18 : 10,
@@ -614,6 +684,15 @@ function ReelCommentsSheetBase({
     cancelRecording: cancelWavRecording,
   } = wavRecorder;
   const [draft, setDraft] = useState('');
+  const [draftMentions, setDraftMentions] = useState<CommentMention[]>([]);
+  const [mentionSuggestions, setMentionSuggestions] = useState<
+    ReelCaptionSuggestion[]
+  >([]);
+  const [isMentionSuggestionsActive, setIsMentionSuggestionsActive] =
+    useState(false);
+  const [isLoadingMentionSuggestions, setIsLoadingMentionSuggestions] =
+    useState(false);
+  const mentionSearchRequestIdRef = useRef(0);
   const [composerModalFocusSignal, setComposerModalFocusSignal] = useState(0);
   const submitInFlightRef = useRef(false);
   const reopenComposerAfterPhotoPickerRef = useRef(false);
@@ -682,22 +761,24 @@ function ReelCommentsSheetBase({
     if (keyboardTop === null || !composer) return;
 
     composer.measureInWindow((_x, y, _width, height) => {
-      const keyboardAccessoryClearance =
-        isInline && Platform.OS === 'android'
-          ? INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE
-          : 2;
-      const effectiveKeyboardTop = keyboardTop - keyboardAccessoryClearance;
+      const keyboardTopInWindow = keyboardTop - androidWindowScreenOffsetY;
       const unshiftedBottom = y + height + keyboardLiftRef.current;
       const overlap = Math.max(
         0,
-        Math.ceil(unshiftedBottom - effectiveKeyboardTop),
+        Math.ceil(unshiftedBottom - keyboardTopInWindow),
       );
-      const maxLift = keyboardHeightRef.current
-        ? keyboardHeightRef.current + keyboardAccessoryClearance
-        : overlap;
-      commitKeyboardLift(Math.min(overlap, maxLift));
+      // The measured overlap is already in the composer window's coordinate
+      // space, so it is the safest source of truth across OEM keyboard/nav
+      // bar combinations. Capping it by the reported IME height can leave a
+      // few pixels of the composer underneath keyboards that omit the nav
+      // gesture area from `endCoordinates.height`.
+      commitKeyboardLift(overlap);
     });
-  }, [commitKeyboardLift, isInline, shouldOwnKeyboardAvoidance]);
+  }, [
+    androidWindowScreenOffsetY,
+    commitKeyboardLift,
+    shouldOwnKeyboardAvoidance,
+  ]);
 
   const scheduleKeyboardMeasurements = useCallback(() => {
     if (!shouldOwnKeyboardAvoidance) return;
@@ -776,9 +857,82 @@ function ReelCommentsSheetBase({
     hideComposerModal();
   }, [hideComposerModal]);
 
-  const handleInsertMention = useCallback(() => {
-    setDraft(current => `${current}@`);
+  const handleDraftChange = useCallback((nextText: string) => {
+    setDraft(nextText);
+    setDraftMentions(current => pruneCommentMentions(nextText, current));
   }, []);
+
+  const handleInsertMention = useCallback(() => {
+    const separator = draft.length > 0 && !/\s$/.test(draft) ? ' ' : '';
+    handleDraftChange(`${draft}${separator}@`);
+    if (isInline) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      setComposerModalFocusSignal(current => current + 1);
+    }
+  }, [draft, handleDraftChange, isInline]);
+
+  useEffect(() => {
+    const composerIsActive = visible && (isInline || isComposerModalVisible);
+    const activeToken = composerIsActive
+      ? getActiveCommentMentionToken(draft)
+      : null;
+
+    if (!activeToken) {
+      mentionSearchRequestIdRef.current += 1;
+      setIsMentionSuggestionsActive(false);
+      setIsLoadingMentionSuggestions(false);
+      setMentionSuggestions([]);
+      return;
+    }
+
+    const requestId = mentionSearchRequestIdRef.current + 1;
+    mentionSearchRequestIdRef.current = requestId;
+    setIsMentionSuggestionsActive(true);
+    setIsLoadingMentionSuggestions(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const suggestions = await onSearchMentions(activeToken.query);
+        if (mentionSearchRequestIdRef.current === requestId) {
+          setMentionSuggestions(
+            suggestions.filter(suggestion => suggestion.kind === 'mention'),
+          );
+        }
+      } catch {
+        if (mentionSearchRequestIdRef.current === requestId) {
+          setMentionSuggestions([]);
+        }
+      } finally {
+        if (mentionSearchRequestIdRef.current === requestId) {
+          setIsLoadingMentionSuggestions(false);
+        }
+      }
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [draft, isComposerModalVisible, isInline, onSearchMentions, visible]);
+
+  const handleSelectMention = useCallback(
+    (suggestion: ReelCaptionSuggestion) => {
+      const result = applyCommentMentionSuggestion(draft, suggestion);
+      if (!result) return;
+
+      setDraft(result.text);
+      setDraftMentions(current => mergeCommentMention(current, result.mention));
+      mentionSearchRequestIdRef.current += 1;
+      setMentionSuggestions([]);
+      setIsMentionSuggestionsActive(false);
+      setIsLoadingMentionSuggestions(false);
+
+      if (isInline) {
+        requestAnimationFrame(() => inputRef.current?.focus());
+      } else {
+        setComposerModalFocusSignal(current => current + 1);
+      }
+    },
+    [draft, isInline],
+  );
 
   useEffect(() => {
     if (!visible || (!autoFocusComposer && composerFocusSignal <= 0)) return;
@@ -812,10 +966,16 @@ function ReelCommentsSheetBase({
         event.endCoordinates?.height ?? 0,
         keyboardMetrics?.height ?? 0,
       );
+      // Prefer the coordinates from the event being handled. On Android,
+      // Keyboard.metrics() can still expose the previous IME frame for one
+      // render while the keyboard is transitioning, which would make the
+      // composer appear underneath the new keyboard.
       const reportedScreenY =
-        typeof keyboardMetrics?.screenY === 'number'
-          ? keyboardMetrics.screenY
-          : event.endCoordinates?.screenY;
+        typeof event.endCoordinates?.screenY === 'number' &&
+        Number.isFinite(event.endCoordinates.screenY) &&
+        event.endCoordinates.screenY > 0
+          ? event.endCoordinates.screenY
+          : keyboardMetrics?.screenY;
       const fallbackKeyboardTop = Dimensions.get('screen').height - nextHeight;
       keyboardHeightRef.current = nextHeight;
       keyboardTopRef.current =
@@ -992,6 +1152,11 @@ function ReelCommentsSheetBase({
       setIsComposerModalVisible(false);
       reopenComposerAfterPhotoPickerRef.current = false;
       setDraft('');
+      setDraftMentions([]);
+      setMentionSuggestions([]);
+      setIsMentionSuggestionsActive(false);
+      setIsLoadingMentionSuggestions(false);
+      mentionSearchRequestIdRef.current += 1;
       setPickerAnchor(null);
       setPendingImage(null);
       setPendingAudio(null);
@@ -1260,9 +1425,38 @@ function ReelCommentsSheetBase({
   const handleCancelEdit = useCallback(() => {
     setEditingComment(null);
     setDraft('');
+    setDraftMentions([]);
+    setMentionSuggestions([]);
+    setIsMentionSuggestionsActive(false);
+    setIsLoadingMentionSuggestions(false);
+    mentionSearchRequestIdRef.current += 1;
     setPendingImage(null);
     setPendingAudio(null);
   }, []);
+
+  const handleCancelReplyMode = useCallback(() => {
+    const target = replyingTo;
+    onCancelReply();
+    if (!target) return;
+
+    const prefix = getReplyDraftPrefix(
+      getReplyTargetDisplayName(target, language),
+    );
+    const nextDraft = draft.startsWith(prefix)
+      ? draft.slice(prefix.length)
+      : draft;
+    setDraft(nextDraft);
+    setDraftMentions(current =>
+      pruneCommentMentions(nextDraft, current).filter(mention => {
+        if (target.userId && mention.userId === target.userId) return false;
+        return mention.username.toLowerCase() !== target.username.toLowerCase();
+      }),
+    );
+    setMentionSuggestions([]);
+    setIsMentionSuggestionsActive(false);
+    setIsLoadingMentionSuggestions(false);
+    mentionSearchRequestIdRef.current += 1;
+  }, [draft, language, onCancelReply, replyingTo]);
 
   const handleStartReplyFromRow = useCallback(
     (
@@ -1270,6 +1464,7 @@ function ReelCommentsSheetBase({
       username: string,
       displayName?: string,
       targetCommentId?: string,
+      userId?: string,
     ) => {
       handleCancelEdit();
       const replyDisplayName =
@@ -1278,17 +1473,30 @@ function ReelCommentsSheetBase({
       const replyTarget: ReplyTarget = {
         commentId,
         targetCommentId: targetCommentId || commentId,
+        userId,
         username,
         displayName: replyDisplayName,
       };
       setPendingImage(null);
       setPendingAudio(null);
       setDraft(getReplyDraftPrefix(replyDisplayName));
+      setDraftMentions(
+        username
+          ? [
+              {
+                userId: userId || '',
+                username: username.replace(/^@+/, ''),
+                displayName: replyDisplayName,
+              },
+            ]
+          : [],
+      );
       onStartReply(
         commentId,
         username,
         replyDisplayName,
         targetCommentId || commentId,
+        userId,
       );
       scheduleReplyTargetReveal(replyTarget);
       if (isInline) {
@@ -1310,18 +1518,21 @@ function ReelCommentsSheetBase({
 
   const handleSubmit = useCallback(async () => {
     if (isSubmitting || submitInFlightRef.current) return;
-    const trimmed = draft.trim();
+    const displayText = draft.trim();
+    const mentions = pruneCommentMentions(displayText, draftMentions);
+    const trimmed = serializeCommentMentions(displayText, mentions).trim();
     if (editingComment) {
-      if (!trimmed) return;
+      if (!displayText) return;
 
       const previousText = editingComment.text.trim();
       setEditingComment(null);
       setDraft('');
+      setDraftMentions([]);
       setPendingImage(null);
       setPendingAudio(null);
 
-      if (trimmed !== previousText) {
-        onEdit(editingComment.id, trimmed);
+      if (displayText !== previousText) {
+        onEdit(editingComment.id, trimmed, mentions);
       }
       handleCloseComposer();
       return;
@@ -1338,6 +1549,11 @@ function ReelCommentsSheetBase({
     const image = pendingImage ?? undefined;
     const audio = pendingAudio ?? undefined;
     setDraft('');
+    setDraftMentions([]);
+    setMentionSuggestions([]);
+    setIsMentionSuggestionsActive(false);
+    setIsLoadingMentionSuggestions(false);
+    mentionSearchRequestIdRef.current += 1;
     setPendingImage(null);
     setPendingAudio(null);
     submitInFlightRef.current = true;
@@ -1346,7 +1562,7 @@ function ReelCommentsSheetBase({
     try {
       if (replyingTo) {
         const replyMentionName = splitLeadingReplyMention(
-          trimmed,
+          displayText,
           getReplyTargetDisplayName(replyingTo, language),
         )?.mention;
         onCancelReply();
@@ -1355,12 +1571,13 @@ function ReelCommentsSheetBase({
           trimmed,
           image,
           replyMentionName,
+          mentions,
         );
         scheduleReplyTargetReveal(replyingTo);
         await replySubmission;
         scheduleReplyTargetReveal(replyingTo);
       } else {
-        const commentSubmission = onSubmit(trimmed, image, audio);
+        const commentSubmission = onSubmit(trimmed, image, audio, mentions);
         // The view-model inserts an optimistic comment synchronously before
         // awaiting the network. Scroll immediately, then repeat after the
         // server response so the user's own comment stays visible even when
@@ -1374,6 +1591,7 @@ function ReelCommentsSheetBase({
     }
   }, [
     draft,
+    draftMentions,
     editingComment,
     handleCloseComposer,
     isSubmitting,
@@ -1389,9 +1607,12 @@ function ReelCommentsSheetBase({
     language,
   ]);
 
-  const handleInsertQuickEmoji = useCallback((emoji: string) => {
-    setDraft(current => `${current}${emoji}`);
-  }, []);
+  const handleInsertQuickEmoji = useCallback(
+    (emoji: string) => {
+      handleDraftChange(`${draft}${emoji}`);
+    },
+    [draft, handleDraftChange],
+  );
 
   const handlePickAudio = useCallback(async () => {
     try {
@@ -1580,6 +1801,7 @@ function ReelCommentsSheetBase({
     setInlineDeleteCommentId(null);
     setEditingComment(comment);
     setDraft(comment.text);
+    setDraftMentions(comment.mentions ?? []);
   }, [actionMenuComment, cancelWavRecording, onCancelReply]);
 
   const handleReportActionMenuComment = useCallback(() => {
@@ -2085,7 +2307,7 @@ function ReelCommentsSheetBase({
             <ReplyBanner
               replyingTo={replyingTo}
               snippet={replyingSnippet}
-              onCancelReply={onCancelReply}
+              onCancelReply={handleCancelReplyMode}
             />
 
             {/* ── Pending image preview (above the input row) ─────────────
@@ -2193,6 +2415,12 @@ function ReelCommentsSheetBase({
                 collapsable={false}
                 onLayout={handleComposerLayout}
               >
+                <CommentMentionSuggestions
+                  visible={isMentionSuggestionsActive}
+                  loading={isLoadingMentionSuggestions}
+                  suggestions={mentionSuggestions}
+                  onSelect={handleSelectMention}
+                />
                 <CommentSheetComposerDock
                   style={[
                     styles.inputBar,
@@ -2263,7 +2491,7 @@ function ReelCommentsSheetBase({
                         <TextInput
                           ref={inputRef}
                           value={draft}
-                          onChangeText={setDraft}
+                          onChangeText={handleDraftChange}
                           placeholder={composerPlaceholder}
                           placeholderTextColor="#94a3b8"
                           style={styles.input}
@@ -2411,12 +2639,16 @@ function ReelCommentsSheetBase({
               : undefined
           }
           contextSnippet={editingComment?.text || replyingSnippet}
+          mentionSuggestionsVisible={isMentionSuggestionsActive}
+          mentionSuggestionsLoading={isLoadingMentionSuggestions}
+          mentionSuggestions={mentionSuggestions}
           focusSignal={composerModalFocusSignal}
-          onChangeText={setDraft}
+          onChangeText={handleDraftChange}
           onClose={handleCloseComposer}
           onSubmit={handleSubmit}
           onInsertEmoji={handleInsertQuickEmoji}
           onInsertMention={handleInsertMention}
+          onSelectMention={handleSelectMention}
           onPickImage={handlePickImage}
           onToggleRecording={handleToggleAudioRecording}
           onRemoveImage={() => setPendingImage(null)}
@@ -2429,7 +2661,7 @@ function ReelCommentsSheetBase({
             editingComment
               ? handleCancelEdit
               : replyingTo
-              ? onCancelReply
+              ? handleCancelReplyMode
               : undefined
           }
         />
@@ -3148,6 +3380,7 @@ interface ThreadProps {
     username: string,
     displayName?: string,
     targetCommentId?: string,
+    userId?: string,
   ) => void;
   /** Threaded through to each row so taps on comment images open the viewer. */
   onOpenImage: (uri: string) => void;
@@ -3183,8 +3416,20 @@ function CommentThreadBase({
   const displayName = getCommentPublisherDisplayName(comment, language);
 
   const handleReply = useCallback(() => {
-    onStartReply(comment.id, username, displayName, comment.id);
-  }, [comment.id, displayName, onStartReply, username]);
+    onStartReply(
+      comment.id,
+      username,
+      displayName,
+      comment.id,
+      comment.publisher.userId,
+    );
+  }, [
+    comment.id,
+    comment.publisher.userId,
+    displayName,
+    onStartReply,
+    username,
+  ]);
 
   const handleToggleReplies = useCallback(() => {
     if (isExpanded) {
@@ -3256,6 +3501,7 @@ function CommentThreadBase({
                   reply.publisher.username || reply.publisher.name || 'unknown',
                   getCommentPublisherDisplayName(reply, language),
                   reply.id,
+                  reply.publisher.userId,
                 )
               }
               onOpenImage={onOpenImage}
@@ -3548,7 +3794,13 @@ function CommentRow({
             </View>
             {comment.text ? (
               <Text style={styles.commentText}>
-                {replyMentionParts ? (
+                {comment.mentions && comment.mentions.length > 0 ? (
+                  renderCommentMentionText(
+                    comment.text,
+                    comment.mentions,
+                    onPressProfile,
+                  )
+                ) : replyMentionParts ? (
                   <>
                     <Text style={styles.commentMentionText}>
                       {replyMentionParts.mention}
@@ -3556,7 +3808,11 @@ function CommentRow({
                     {replyMentionParts.rest}
                   </>
                 ) : (
-                  comment.text
+                  renderCommentMentionText(
+                    comment.text,
+                    undefined,
+                    onPressProfile,
+                  )
                 )}
               </Text>
             ) : null}
@@ -4097,7 +4353,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   commentMentionText: {
-    color: APP_BRAND_COLOR,
+    color: '#1877f2',
     fontWeight: '700',
   },
   commentImageWrap: {

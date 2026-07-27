@@ -905,7 +905,7 @@ function LiveKitVideoSurface({
       <VideoTrack
         key={`camera-${trackRenderKey}`}
         trackRef={cameraTrack}
-        objectFit="cover"
+        objectFit={isHost ? 'cover' : 'contain'}
         mirror={isHost && cameraTrack.participant.isLocal && cameraFacing === 'front'}
         style={absoluteFillStyle}
       />

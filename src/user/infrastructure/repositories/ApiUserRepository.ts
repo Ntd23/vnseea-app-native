@@ -609,12 +609,14 @@ function mapGoogleNearbyPrediction(
 }
 
 function canUseDirectGoogleNearbyPredictions(input: MapPlacePredictionsInput) {
+  const latitude = Number(input.lat);
+  const longitude = Number(input.lng);
+
   return Boolean(
     apiConfig.googleMapsApiKey &&
+      !input.globalSearch &&
       input.query.trim().length >= 2 &&
-      typeof input.lat === 'number' &&
-      typeof input.lng === 'number' &&
-      googleRequestHeaders()['X-Android-Cert'],
+      isValidGeoCoordinate(latitude, longitude),
   );
 }
 
@@ -629,7 +631,6 @@ async function getDirectGoogleNearbyPredictions(
   const latitude = input.lat as number;
   const longitude = input.lng as number;
   const headers = googleRequestHeaders();
-  if (!headers['X-Android-Cert']) return [];
 
   const origin = { latitude, longitude };
   const normalizedKeyword = normalizeCacheText(input.query);
@@ -709,7 +710,6 @@ async function getDirectGooglePlaceDetails(placeId: string) {
   if (!apiConfig.googleMapsApiKey || !placeId) return null;
 
   const headers = googleRequestHeaders();
-  if (!headers['X-Android-Cert']) return null;
 
   const params = new URLSearchParams({
     place_id: placeId,

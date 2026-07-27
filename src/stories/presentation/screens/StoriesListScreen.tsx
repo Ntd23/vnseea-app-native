@@ -32,6 +32,7 @@ import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appCo
 import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   RefreshControl,
   Text,
@@ -47,7 +48,11 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { ArrowLeft, Sparkles } from 'lucide-react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useIsFocused,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -62,16 +67,25 @@ import StoryGridCell from '../components/StoryGridCell';
 const HEADER_ANIMATION_MS = 240;
 const CELL_FADE_STAGGER_MS = 40;
 const ANIMATED_CELL_COUNT = 8;
+const STORIES_REALTIME_REFRESH_MS = 10_000;
 
 export default function StoriesListScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<RootStackParamList, typeof ROUTES.STORIES_LIST>>();
+  const isFocused = useIsFocused();
   const language = useAppLanguage();
   const copy = getStoriesCopy(language);
   const initialStories = route.params?.stories;
   const title = route.params?.title ?? copy.headerTitle;
-  const { rows, pagedStories, isLoading, isRefreshing, reload, hasMore } =
-    useStoriesListViewModel({ initialStories });
+  const {
+    rows,
+    pagedStories,
+    isLoading,
+    isRefreshing,
+    reload,
+    refreshSilently,
+    hasMore,
+  } = useStoriesListViewModel({ initialStories });
 
   const headerTranslateY = useSharedValue(-40);
   const headerOpacity = useSharedValue(0);
@@ -88,6 +102,31 @@ export default function StoriesListScreen() {
       easing: Easing.out(Easing.cubic),
     });
   }, [headerOpacity, headerTranslateY]);
+
+  useEffect(() => {
+    if (!isFocused) return undefined;
+
+    const refreshInForeground = () => {
+      if (AppState.currentState !== 'active') return;
+      refreshSilently().catch(error => {
+        console.warn('[Stories] list background refresh failed:', error);
+      });
+    };
+    const focusRefresh = setTimeout(refreshInForeground, 250);
+    const timer = setInterval(
+      refreshInForeground,
+      STORIES_REALTIME_REFRESH_MS,
+    );
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') refreshInForeground();
+    });
+
+    return () => {
+      clearTimeout(focusRefresh);
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [isFocused, refreshSilently]);
 
   const headerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: headerTranslateY.value }],

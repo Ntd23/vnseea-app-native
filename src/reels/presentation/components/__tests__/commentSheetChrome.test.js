@@ -55,6 +55,37 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toContain('onDelete');
   });
 
+  it('supports Facebook-style @mentions in every shared comment composer', () => {
+    const sheetSource = read(
+      'src/reels/presentation/components/ReelCommentsSheet.tsx',
+    );
+    const modalSource = read(
+      'src/reels/presentation/components/ReelCommentComposerModal.tsx',
+    );
+    const hosts = [
+      'src/feed/presentation/screens/FeedScreen.tsx',
+      'src/feed/presentation/screens/PostDetailScreen.tsx',
+      'src/reels/presentation/screens/ReelsScreen.tsx',
+      'src/community/presentation/screens/GroupDetailScreen.tsx',
+      'src/events/presentation/screens/EventDetailScreen.tsx',
+      'src/pages/presentation/screens/PageDetailScreen.tsx',
+      'src/profile/presentation/screens/ProfileScreen.tsx',
+    ];
+
+    expect(sheetSource).toContain('getActiveCommentMentionToken');
+    expect(sheetSource).toContain('applyCommentMentionSuggestion');
+    expect(sheetSource).toContain('serializeCommentMentions');
+    expect(sheetSource).toContain('splitCommentMentionSegments');
+    expect(sheetSource).toContain('<CommentMentionSuggestions');
+    expect(sheetSource).toContain('onSearchMentions(activeToken.query)');
+    expect(sheetSource).toContain('onPressProfile(segment.mention!.userId)');
+    expect(modalSource).toContain('<CommentMentionSuggestions');
+    expect(modalSource).toContain('onSelectMention');
+    hosts.forEach(relativePath => {
+      expect(read(relativePath)).toContain('onSearchMentions=');
+    });
+  });
+
   it('keeps Reel comments compact so the playing video remains visible', () => {
     const screenSource = read('src/reels/presentation/screens/ReelsScreen.tsx');
     const sheetSource = read(
@@ -204,7 +235,9 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toMatch(
       /submitInFlightRef\.current = true;\s*handleCloseComposer\(\);\s*try/,
     );
-    expect(source).toContain('const commentSubmission = onSubmit(trimmed, image, audio);');
+    expect(source).toContain(
+      'const commentSubmission = onSubmit(trimmed, image, audio, mentions);',
+    );
     expect(source).toContain('scheduleCommentsAutoScrollToEnd();');
     expect(source).toContain('const replySubmission = onSubmitReply(');
     expect(source).toContain('scheduleReplyTargetReveal(replyingTo);');

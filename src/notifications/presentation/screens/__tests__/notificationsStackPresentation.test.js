@@ -36,4 +36,25 @@ describe('Notifications stack presentation on iOS', () => {
     expect(source).toContain('navigation.navigate(ROUTES.MAIN_TABS, {');
     expect(source).toContain('screen: ROUTES.FEED');
   });
+
+  it('uses a virtualized list and the custom delete confirmation modal', () => {
+    const source = read('src/notifications/presentation/screens/NotificationsScreen.tsx');
+    const viewModel = read(
+      'src/notifications/application/view-models/useNotificationsViewModel.ts',
+    );
+    const modal = read(
+      'src/notifications/presentation/components/NotificationDeleteConfirmModal.tsx',
+    );
+
+    expect(source).toContain('initialNumToRender={8}');
+    expect(source).toContain('maxToRenderPerBatch={8}');
+    expect(source).toContain('windowSize={7}');
+    expect(source).toContain('<NotificationDeleteConfirmModal');
+    expect(source).toContain('setNotificationPendingDelete(item)');
+    expect(source).not.toContain('Alert.alert(copy.deleteTitle');
+    expect(viewModel).toContain('notificationsCacheStorage.getSnapshot');
+    expect(viewModel).toContain('notificationsCacheStorage.setSnapshot');
+    expect(modal).toContain('<Trash2');
+    expect(modal).toContain('onPress={onConfirm}');
+  });
 });

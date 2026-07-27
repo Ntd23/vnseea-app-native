@@ -872,6 +872,7 @@ function GroupDetailScreen() {
         onRetry={handleRetryComments}
         onSubmit={commentVm.submitComment}
         onSubmitReply={commentVm.submitReply}
+        onSearchMentions={commentVm.searchCommentMentions}
         onSetReaction={commentVm.setCommentReaction}
         onDelete={commentVm.deleteComment}
         onEdit={commentVm.editComment}

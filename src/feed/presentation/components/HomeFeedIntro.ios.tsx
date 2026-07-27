@@ -10,8 +10,9 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { Plus } from 'lucide-react-native';
+import { Plus, Radio } from 'lucide-react-native';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
+import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import {
@@ -90,11 +91,57 @@ function StoryCardCover({ story }: { story: StoryItem }) {
   );
 }
 
+function LiveStoryCard({
+  item,
+  onPress,
+}: {
+  item: LiveStreamItem;
+  onPress: (item: LiveStreamItem) => void;
+}) {
+  const coverUri =
+    item.thumbnailUrl || item.publisher.avatarUrl || HOME_INTRO_FALLBACK_AVATAR;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      onPress={() => onPress(item)}
+      style={[styles.storyCard, styles.liveStoryCard]}
+    >
+      <Image
+        source={{ uri: coverUri }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+        fadeDuration={0}
+      />
+      <View style={styles.storyImageOverlay} />
+      <View pointerEvents="none" style={styles.liveStoryRing} />
+      <View style={styles.storyAvatarPosition}>
+        <View style={styles.liveAvatarRing}>
+          <HomeAvatar uri={item.publisher.avatarUrl} size={34} />
+        </View>
+      </View>
+      <View style={styles.liveBadge}>
+        <Radio size={10} color="#ffffff" />
+        <Text style={styles.liveBadgeText}>LIVE</Text>
+      </View>
+      <Text style={styles.storyName} numberOfLines={1}>
+        {item.publisher.name}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function HomeStoriesRail({
   avatarUrl,
   copy,
 }: Pick<HomeFeedIntroProps, 'avatarUrl' | 'copy'>) {
-  const { stories, goToCreateStory, goToViewerForGroup } = useHomeStoriesRail();
+  const {
+    stories,
+    liveStreams,
+    goToCreateStory,
+    goToViewerForGroup,
+    goToLive,
+  } = useHomeStoriesRail();
 
   return (
     <View style={[styles.surface, styles.storiesSurface]}>
@@ -138,6 +185,14 @@ function HomeStoriesRail({
             </Text>
           </View>
         </TouchableOpacity>
+
+        {liveStreams.map(item => (
+          <LiveStoryCard
+            key={`live-${item.postId}`}
+            item={item}
+            onPress={goToLive}
+          />
+        ))}
 
         {stories.map((story, index) => {
           const hasUnseen = story.hasUnseen && !story.isViewed;
@@ -318,6 +373,43 @@ const styles = StyleSheet.create({
   },
   storyCardViewed: {
     opacity: 0.72,
+  },
+  liveStoryCard: {
+    borderWidth: 2,
+    borderColor: '#ef4444',
+  },
+  liveStoryRing: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    borderRadius: 24,
+  },
+  liveAvatarRing: {
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+  },
+  liveBadge: {
+    position: 'absolute',
+    right: 8,
+    top: 10,
+    minHeight: 22,
+    borderRadius: 11,
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveBadgeText: {
+    marginLeft: 4,
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '900',
   },
   storyCardUnseenRing: {
     position: 'absolute',

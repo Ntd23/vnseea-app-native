@@ -459,7 +459,7 @@ function EventDetailScreen() {
         isLoading={commentVm.isCommentsLoading} isLoadingMore={commentVm.isCommentsLoadingMore} isSubmitting={commentVm.isSubmittingComment} error={commentVm.commentError}
         repliesById={commentVm.repliesById} loadingRepliesIds={commentVm.loadingRepliesIds} replyingTo={commentVm.replyingTo}
         onClose={commentVm.closeComments} onEndReached={commentVm.loadMoreComments} onRetry={() => commentVm.selectedCommentPostId && commentVm.openComments(commentVm.selectedCommentPostId)}
-        onSubmit={commentVm.submitComment} onSubmitReply={commentVm.submitReply} onSetReaction={commentVm.setCommentReaction} onDelete={commentVm.deleteComment} onEdit={commentVm.editComment}
+        onSubmit={commentVm.submitComment} onSubmitReply={commentVm.submitReply} onSearchMentions={commentVm.searchCommentMentions} onSetReaction={commentVm.setCommentReaction} onDelete={commentVm.deleteComment} onEdit={commentVm.editComment}
         onLoadReplies={commentVm.loadReplies} onCollapseReplies={commentVm.collapseReplies} onStartReply={commentVm.startReplyTo} onCancelReply={commentVm.cancelReply}
         onRetryFailedComment={commentVm.retryFailedComment} onDeleteFailedComment={commentVm.deleteFailedComment} sheetHeight="90%"
       />

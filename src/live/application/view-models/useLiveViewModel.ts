@@ -1,5 +1,6 @@
 // Description: ViewModels for live streams, live room comments, and Go Live.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { createLiveRepository } from '../../infrastructure/repositories/ApiLiveRepository';
 import type {
   LiveReactionEvent,
@@ -60,11 +61,19 @@ function applyLiveViewerCounts(
 
 type UseLiveViewModelOptions = {
   autoLoad?: boolean;
+  enabled?: boolean;
+  userId?: string;
+  refreshIntervalMs?: number;
 };
 
 // Live List ViewModel
 export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
-  const { autoLoad = true } = options;
+  const {
+    autoLoad = true,
+    enabled = true,
+    userId,
+    refreshIntervalMs = 0,
+  } = options;
   const repository = useMemo(() => createLiveRepository(), []);
   const [liveStreams, setLiveStreams] = useState<LiveStreamItem[]>([]);
   const [friendsLive, setFriendsLive] = useState<LiveStreamItem[]>([]);
@@ -73,38 +82,72 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (mode: 'initial' | 'refresh' = 'initial') => {
+    async (mode: 'initial' | 'refresh' | 'background' = 'initial') => {
+      if (!enabled) return;
       if (mode === 'refresh') {
         setIsRefreshing(true);
-      } else {
+      } else if (mode === 'initial') {
         setIsLoading(true);
       }
-      setError(null);
+      if (mode !== 'background') {
+        setError(null);
+      }
 
       try {
-        const [streams, friends] = await Promise.all([
-          repository.getLiveStreams(),
-          repository.getLiveFriends(),
-        ]);
+        const [streams, friends] = userId
+          ? [await repository.getUserLiveStreams(userId), []]
+          : await Promise.all([
+              repository.getLiveStreams(),
+              repository.getLiveFriends(),
+            ]);
         setLiveStreams(streams);
         setFriendsLive(friends);
       } catch (err) {
         console.error('[Live] load error:', err);
-        setError('Không tải được danh sách live.');
+        if (mode !== 'background') {
+          setError('Không tải được danh sách live.');
+        }
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        if (mode !== 'background') {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
-    [repository],
+    [enabled, repository, userId],
   );
 
   useEffect(() => {
-    if (!autoLoad) return;
+    setLiveStreams([]);
+    setFriendsLive([]);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!autoLoad || !enabled) return;
     load('initial').catch(err => {
       console.error('[Live] initial load error:', err);
     });
-  }, [autoLoad, load]);
+  }, [autoLoad, enabled, load]);
+
+  useEffect(() => {
+    if (!enabled || refreshIntervalMs <= 0) return undefined;
+
+    const refreshInBackground = () => {
+      if (AppState.currentState !== 'active') return;
+      load('background').catch(err => {
+        console.error('[Live] background refresh error:', err);
+      });
+    };
+    const timer = setInterval(refreshInBackground, refreshIntervalMs);
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') refreshInBackground();
+    });
+
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [enabled, load, refreshIntervalMs]);
 
   const refreshViewerCounts = useCallback(async () => {
     const postIds = Array.from(
@@ -146,7 +189,7 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
     isRefreshing,
     error,
     refresh: useCallback(() => {
-      load('refresh').catch(err => {
+      return load('refresh').catch(err => {
         console.error('[Live] refresh error:', err);
       });
     }, [load]),

@@ -9,12 +9,14 @@ import React, {
 } from 'react';
 import {
   AppState,
+  DeviceEventEmitter,
   Dimensions,
   FlatList,
   Image,
   Linking,
   Platform,
   RefreshControl,
+  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -61,7 +63,10 @@ import {
 } from '../../../navigation/nativeTabScrollPublisher';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
-import { preloadReelsStartupPage } from '../../../reels/application/services/reelsStartupFeed';
+import {
+  getReelsStartupSnapshot,
+  preloadReelsStartupPage,
+} from '../../../reels/application/services/reelsStartupFeed';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import PostReactionsSheet from '../components/PostReactionsSheet';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
@@ -87,6 +92,10 @@ import type {
 } from '../../../navigation/types';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
+import {
+  hiddenPostsStorage,
+  LOCAL_POST_HIDDEN_EVENT,
+} from '../../infrastructure/storage/hiddenPostsStorage';
 import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
 import { useDeferredVisiblePostIds } from '../../application/realtime/useDeferredVisiblePostIds';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
@@ -229,7 +238,11 @@ const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type FeedScrollDirection = 'up' | 'down' | 'none';
 
 function getFeedChromeTopInset(rawTopInset: number) {
-  return rawTopInset;
+  // Home uses an opaque Android status bar, so the native window already
+  // starts below it. Safe-area metrics can briefly keep the previous
+  // translucent screen's top inset during navigation; applying that value
+  // here would reserve the status bar twice and flash a white strip.
+  return FEED_IS_ANDROID ? 0 : rawTopInset;
 }
 
 function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
@@ -553,9 +566,7 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           onPress={handlePress}
           className="rounded-lg bg-[#e7f0ff] px-4 py-2"
         >
-          <Text className="text-sm font-bold text-brand">
-            {copy.learnMore}
-          </Text>
+          <Text className="text-sm font-bold text-brand">{copy.learnMore}</Text>
         </FeedGlassActionButton>
       </FeedGlassActionBar>
     </FeedCardSurface>
@@ -895,9 +906,7 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
         </View>
 
         <View className="rounded-lg bg-[#e7f0ff] px-4 py-2">
-          <Text className="text-sm font-bold text-brand">
-            {copy.viewJob}
-          </Text>
+          <Text className="text-sm font-bold text-brand">{copy.viewJob}</Text>
         </View>
       </FeedGlassActionBar>
     </FeedTouchableCardSurface>
@@ -945,9 +954,7 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
           </Text>
         </View>
         <TouchableOpacity activeOpacity={0.75} onPress={onOpenGroups}>
-          <Text className="text-sm font-bold text-brand">
-            {copy.seeAll}
-          </Text>
+          <Text className="text-sm font-bold text-brand">{copy.seeAll}</Text>
         </TouchableOpacity>
       </View>
 
@@ -1079,9 +1086,7 @@ const SuggestedPagesCarousel = React.memo(
             </Text>
           </View>
           <TouchableOpacity activeOpacity={0.75} onPress={onOpenPages}>
-            <Text className="text-sm font-bold text-brand">
-              {copy.seeAll}
-            </Text>
+            <Text className="text-sm font-bold text-brand">{copy.seeAll}</Text>
           </TouchableOpacity>
         </View>
 
@@ -1405,6 +1410,7 @@ function FeedScreen() {
   // matches the rest of FeedScreen (no conditional hooks below).
   const isFeedTabFocused = useIsFocused();
   const userVm = useCurrentUserViewModel();
+  const currentUserId = userVm.user?.userId;
   const feedPosts = vm.posts;
   const hasFeedContent = feedPosts.length > 0;
   const prependFeedPost = vm.prependPost;
@@ -1430,13 +1436,31 @@ function FeedScreen() {
     if (!isFeedTabFocused || !hasFeedContent) return;
 
     let cancelled = false;
-    const preloadTask = InteractionManager.runAfterInteractions(() => {
-      if (cancelled) return;
-      preloadReelsStartupPage().catch(() => undefined);
-    });
+    let started = false;
+    const prefetchReelsPosters = (
+      items: ReturnType<typeof getReelsStartupSnapshot>['items'],
+    ) => {
+      items.slice(0, 2).forEach(item => {
+        if (item.thumbnailUrl) {
+          Image.prefetch(item.thumbnailUrl).catch(() => undefined);
+        }
+      });
+    };
+    const startReelsPreload = () => {
+      if (cancelled || started) return;
+      started = true;
+      prefetchReelsPosters(getReelsStartupSnapshot().items);
+      preloadReelsStartupPage()
+        .then(page => prefetchReelsPosters(page.items))
+        .catch(() => undefined);
+    };
+    const preloadTask =
+      InteractionManager.runAfterInteractions(startReelsPreload);
+    const preloadFallbackTimer = setTimeout(startReelsPreload, 800);
 
     return () => {
       cancelled = true;
+      clearTimeout(preloadFallbackTimer);
       preloadTask.cancel();
     };
   }, [hasFeedContent, isFeedTabFocused]);
@@ -1465,6 +1489,9 @@ function FeedScreen() {
       const nextPosts = posts
         .filter(post => {
           if (!post?.id) return false;
+          if (hiddenPostsStorage.isHidden(String(post.id), currentUserId)) {
+            return false;
+          }
           if (!canPostAppearInFeedSource(post, activeFeedSourceRef.current)) {
             return false;
           }
@@ -1486,7 +1513,7 @@ function FeedScreen() {
       pendingNewPostsRef.current.push(...nextPosts);
       setHasNewPosts(true);
     },
-    [],
+    [currentUserId],
   );
 
   useEffect(() => {
@@ -1499,19 +1526,43 @@ function FeedScreen() {
       post =>
         post?.id &&
         !visibleIds.has(post.id) &&
+        !hiddenPostsStorage.isHidden(String(post.id), currentUserId) &&
         isPostNewerThanFeedTop(post, feedPosts),
     );
 
     if (pendingNewPostsRef.current.length === 0) {
       setHasNewPosts(false);
     }
-  }, [feedPosts, hasNewPosts]);
+  }, [currentUserId, feedPosts, hasNewPosts]);
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      LOCAL_POST_HIDDEN_EVENT,
+      (event: { postId?: string; userId?: string }) => {
+        const postId = String(event?.postId ?? '').trim();
+        if (!postId) return;
+        const currentOwnerKey = currentUserId || 'guest';
+        if (event?.userId && event.userId !== currentOwnerKey) return;
+
+        pendingNewPostsRef.current = pendingNewPostsRef.current.filter(
+          post => String(post.id) !== postId,
+        );
+        if (pendingNewPostsRef.current.length === 0) {
+          setHasNewPosts(false);
+        }
+      },
+    );
+    return () => subscription.remove();
+  }, [currentUserId]);
 
   const handleLoadNewPosts = useCallback(() => {
     mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
     const visibleIds = new Set(feedPostsRef.current.map(post => post.id));
     const pendingPosts = pendingNewPostsRef.current.filter(
-      post => post?.id && !visibleIds.has(post.id),
+      post =>
+        post?.id &&
+        !visibleIds.has(post.id) &&
+        !hiddenPostsStorage.isHidden(String(post.id), currentUserId),
     );
 
     pendingPosts
@@ -1522,7 +1573,7 @@ function FeedScreen() {
       });
     pendingNewPostsRef.current = [];
     setHasNewPosts(false);
-  }, [prependFeedPost]);
+  }, [currentUserId, prependFeedPost]);
 
   // Top-bar logo button: when tapped while already on the Feed tab,
   // scroll the feed back to the top and trigger a fresh reload — same
@@ -1985,6 +2036,14 @@ function FeedScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (FEED_IS_ANDROID) {
+        // Restore Home chrome immediately on focus instead of waiting for the
+        // declarative StatusBar commit from the next render frame.
+        StatusBar.setBarStyle('light-content', false);
+        StatusBar.setBackgroundColor(APP_BRAND_COLOR, false);
+        StatusBar.setTranslucent(false);
+      }
+
       return () => {
         publishNativeTabScrollBehavior('onScrollDown');
       };
@@ -2924,12 +2983,7 @@ function FeedScreen() {
 
   const handleHidePost = useCallback(
     async (postId: string) => {
-      try {
-        await hideFeedPost?.(postId);
-        Alert.alert('Thông báo', 'Đã ẩn bài viết thành công.');
-      } catch {
-        Alert.alert('Lỗi', 'Không thể ẩn bài viết lúc này.');
-      }
+      await hideFeedPost?.(postId);
     },
     [hideFeedPost],
   );
@@ -3216,11 +3270,14 @@ function FeedScreen() {
   }, [liveVm.friendsLive, liveVm.liveStreams]);
 
   const feedListItems = useMemo<FeedListItem[]>(() => {
-    const items: FeedListItem[] = mergedPosts.map(post => ({
-      type: 'post',
-      id: `post-${post.id}`,
-      post,
-    }));
+    const livePostIds = new Set(feedLiveItems.map(item => String(item.postId)));
+    const items: FeedListItem[] = mergedPosts
+      .filter(post => !livePostIds.has(String(post.id)))
+      .map(post => ({
+        type: 'post',
+        id: `post-${post.id}`,
+        post,
+      }));
 
     feedLiveItems.slice(0, 2).forEach((item, index) => {
       const insertIndex = Math.min(index === 0 ? 2 : 8, items.length);
@@ -3589,13 +3646,7 @@ function FeedScreen() {
         />
       </View>
     ),
-    [
-      copy,
-      goToCreatePost,
-      navigation,
-      userVm.user?.avatar,
-      userVm.user?.name,
-    ],
+    [copy, goToCreatePost, navigation, userVm.user?.avatar, userVm.user?.name],
   );
 
   const renderItem = useCallback(
@@ -3777,8 +3828,12 @@ function FeedScreen() {
         edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
         <FocusAwareStatusBar
-          barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
-          backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF'}
+          barStyle={
+            Platform.OS === 'android' ? 'light-content' : 'dark-content'
+          }
+          backgroundColor={
+            Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF'
+          }
           translucent={false}
         />
         {Platform.OS === 'ios' ? (
@@ -3879,6 +3934,7 @@ function FeedScreen() {
           onRetry={handleRetryComments}
           onSubmit={commentVm.submitComment}
           onSubmitReply={commentVm.submitReply}
+          onSearchMentions={commentVm.searchCommentMentions}
           onSetReaction={commentVm.setCommentReaction}
           onDelete={commentVm.deleteComment}
           onEdit={commentVm.editComment}

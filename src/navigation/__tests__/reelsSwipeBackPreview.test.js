@@ -13,7 +13,8 @@ describe('Reels swipe-back preview', () => {
 
     expect(source).toContain('if (name === ROUTES.REELS) {');
     expect(source).toContain("presentation: 'transparentModal'");
-    expect(source).toContain("animation: 'none'");
+    expect(source).toContain("animation: 'fade'");
+    expect(source).toContain('animationDuration: 160');
     expect(source).toContain("contentStyle: { backgroundColor: 'transparent' }");
     expect(source).toContain('gestureEnabled: false');
   });

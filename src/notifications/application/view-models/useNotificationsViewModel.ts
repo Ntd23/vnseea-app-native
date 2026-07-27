@@ -7,7 +7,9 @@ import {
   languageStorage,
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
+import { notificationsCacheStorage } from '../../infrastructure/storage/notificationsCacheStorage';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
 import {
   filterNotificationsByType,
@@ -30,16 +32,28 @@ export type NotificationTab = 'all' | 'unread';
 
 export function useNotificationsViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
+  const [cacheOwnerId] = useState(
+    () => sessionStorage.getSession()?.userId,
+  );
+  const [initialCache] = useState(() =>
+    notificationsCacheStorage.getSnapshot(cacheOwnerId),
+  );
 
   // State
-  const [notifications, setNotifications] = useState<NotificationsItem[]>([]);
-  const [nextOffset, setNextOffset] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [notifications, setNotifications] = useState<NotificationsItem[]>(
+    () => initialCache?.items ?? [],
+  );
+  const [nextOffset, setNextOffset] = useState<string | null>(
+    () => initialCache?.nextOffset ?? null,
+  );
+  const [hasMore, setHasMore] = useState(() => initialCache?.hasMore ?? true);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(
+    () => initialCache?.unreadCount ?? 0,
+  );
 
   // Pending actions state (for accept/reject group chat)
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
@@ -83,6 +97,18 @@ export function useNotificationsViewModel() {
       notificationCount: unreadCount,
     });
   }, [unreadCount]);
+
+  useEffect(() => {
+    notificationsCacheStorage.setSnapshot(
+      {
+        items: notifications,
+        nextOffset,
+        hasMore,
+        unreadCount,
+      },
+      cacheOwnerId,
+    );
+  }, [cacheOwnerId, hasMore, nextOffset, notifications, unreadCount]);
 
   // Load first page
   const loadFirstPage = useCallback(
