@@ -69,7 +69,8 @@ describe('post comments use the full post detail screen', () => {
     );
     expect(comments).toContain('inlineEmptyBox: {');
     expect(comments).toContain("justifyContent: 'center'");
-    expect(comments).toContain('keyboardVerticalOffset={0}');
+    expect(comments).toContain('androidWindowScreenOffsetY');
+    expect(comments).toContain('keyboardTopInWindow');
     expect(comments).toContain(
       'Hãy là người đầu tiên bình luận bài viết này.',
     );
@@ -83,6 +84,11 @@ describe('post comments use the full post detail screen', () => {
     expect(detail).toContain('postDetailBackTranslateX.value = Math.min(');
     expect(detail).toContain('runOnJS(handlePostDetailBack)();');
     expect(detail).toContain('postDetailStyles.swipeBackCue');
+    expect(detail).toContain('postDetailStyles.stickyBackButton');
+    expect(detail).toContain('<ChevronLeft size={24} color="#FFFFFF"');
+    expect(detail).toContain("[1, 0.97], 'clamp'");
+    expect(detail).not.toContain('swipeBackCueText');
+    expect(detail).not.toContain('Swipe to go back');
     expect(navigator).toContain('const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {');
     expect(navigator).toContain("presentation: 'transparentModal'");
     expect(navigator).toContain("contentStyle: { backgroundColor: 'transparent' }");

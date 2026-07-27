@@ -19,10 +19,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type {
   CommentAudioAttachment,
   CommentImageAttachment,
+  ReelCaptionSuggestion,
 } from '../../domain/types/reels.types';
 import { APP_COLORS } from '../../../shared-kernel/presentation/theme/appColors';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
+import { CommentMentionSuggestions } from './CommentMentionSuggestions';
 
 const QUICK_COMMENT_EMOJIS = [
   '😁',
@@ -54,12 +56,16 @@ interface Props {
   recordingLabel: string;
   contextLabel?: string;
   contextSnippet?: string;
+  mentionSuggestionsVisible: boolean;
+  mentionSuggestionsLoading: boolean;
+  mentionSuggestions: ReelCaptionSuggestion[];
   focusSignal?: number;
   onChangeText: (text: string) => void;
   onClose: () => void;
   onSubmit: () => void;
   onInsertEmoji: (emoji: string) => void;
   onInsertMention: () => void;
+  onSelectMention: (suggestion: ReelCaptionSuggestion) => void;
   onPickImage: () => void;
   onToggleRecording: () => void;
   onRemoveImage: () => void;
@@ -83,12 +89,16 @@ export function ReelCommentComposerModal({
   recordingLabel,
   contextLabel,
   contextSnippet,
+  mentionSuggestionsVisible,
+  mentionSuggestionsLoading,
+  mentionSuggestions,
   focusSignal = 0,
   onChangeText,
   onClose,
   onSubmit,
   onInsertEmoji,
   onInsertMention,
+  onSelectMention,
   onPickImage,
   onToggleRecording,
   onRemoveImage,
@@ -503,6 +513,13 @@ export function ReelCommentComposerModal({
                 </TouchableOpacity>
               ))}
             </View>
+
+            <CommentMentionSuggestions
+              visible={mentionSuggestionsVisible}
+              loading={mentionSuggestionsLoading}
+              suggestions={mentionSuggestions}
+              onSelect={onSelectMention}
+            />
 
             {contextLabel ? (
               <View className="mb-2 flex-row items-center rounded-[14px] border border-red-100 bg-red-50 px-3 py-2">

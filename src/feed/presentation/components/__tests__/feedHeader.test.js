@@ -164,11 +164,13 @@ describe('FeedHeader platform chrome', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toContain('function getFeedChromeTopInset(rawTopInset: number)');
-    expect(feedScreenSource).not.toContain("if (Platform.OS === 'android') return 0");
-    expect(feedScreenSource).toContain('return rawTopInset');
+    expect(feedScreenSource).toContain('return FEED_IS_ANDROID ? 0 : rawTopInset');
     expect(feedScreenSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
     expect(feedScreenSource).toContain('top={topInset}');
     expect(feedScreenSource).toContain('translucent={false}');
+    expect(feedScreenSource).toContain("StatusBar.setBarStyle('light-content', false)");
+    expect(feedScreenSource).toContain('StatusBar.setBackgroundColor(APP_BRAND_COLOR, false)');
+    expect(feedScreenSource).toContain('StatusBar.setTranslucent(false)');
     expect(feedScreenSource).toContain(
       "barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}",
     );
@@ -178,7 +180,6 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain('const feedHeaderOverlayHeight = feedRefreshProgressViewOffset');
     expect(feedScreenSource).toContain('const newPostsButtonTop = feedHeaderOverlayHeight + 12');
     expect(feedScreenSource).toContain('style={{ top: newPostsButtonTop }}');
-    expect(feedScreenSource).not.toContain("const topInset = Platform.OS === 'android' ? 0 : rawTopInset");
   });
 
   it('keeps native iOS bottom tab presentation wired through the shared store', () => {

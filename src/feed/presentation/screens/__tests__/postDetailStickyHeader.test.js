@@ -38,7 +38,12 @@ describe('PostDetail sticky identity header', () => {
     expect(detail).toContain('useSafeAreaInsets');
     expect(detail).toContain('initialWindowMetrics');
     expect(detail).toContain('resolveFeedChromeTopInset');
+    expect(detail).toContain('androidContentWindowOffsetY');
+    expect(detail).toContain(
+      'resolvedPostDetailTopInset - androidContentWindowOffsetY',
+    );
     expect(detail).toContain('paddingTop: postDetailTopInset');
+    expect(detail.match(/translucent=\{false\}/g)).toHaveLength(3);
     expect(detail).not.toContain('<SafeAreaView');
   });
 

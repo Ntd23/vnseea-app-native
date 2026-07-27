@@ -32,7 +32,10 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
     super.init(frame: frame)
     backgroundColor = .black
     videoView.translatesAutoresizingMaskIntoConstraints = false
-    videoView.layoutMode = .fill
+    // Viewers must see the complete source frame. `.fill` crops landscape
+    // webcam streams into the portrait phone viewport and makes them look
+    // zoomed/broken. Hosts keep `.fill` below for their local camera preview.
+    videoView.layoutMode = .fit
     videoView.mirrorMode = .auto
     addSubview(videoView)
     NSLayoutConstraint.activate([
@@ -145,6 +148,7 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
 
     currentConnectionKey = connectionKey
     room = nextRoom
+    videoView.layoutMode = role == .host ? .fill : .fit
     videoView.mirrorMode = role == .host && cameraPosition == .front ? .mirror : .off
     emit("live_native_room_connect_start", [
       "role": role.rawValue,

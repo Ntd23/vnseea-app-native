@@ -8,9 +8,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Plus } from 'lucide-react-native';
+import { Plus, Radio } from 'lucide-react-native';
 import { ComposerCard } from './ComposerCard';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
+import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import {
   HOME_INTRO_FALLBACK_AVATAR,
@@ -38,14 +39,65 @@ function StoryCardCover({ story }: { story: StoryItem }) {
   );
 }
 
+function LiveStoryCard({
+  item,
+  onPress,
+}: {
+  item: LiveStreamItem;
+  onPress: (item: LiveStreamItem) => void;
+}) {
+  const coverUri =
+    item.thumbnailUrl || item.publisher.avatarUrl || HOME_INTRO_FALLBACK_AVATAR;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => onPress(item)}
+      style={defaultStyles.storyCard}
+      className="overflow-hidden rounded-[20px] border-2 border-red-500 shadow-sm"
+    >
+      <Image
+        source={{ uri: coverUri }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+        fadeDuration={0}
+      />
+      <View className="absolute inset-0 bg-black/25" />
+      <View className="absolute bottom-0 left-0 right-0 h-20 bg-black/40" />
+      <View className="absolute left-2 top-2 h-9 w-9 overflow-hidden rounded-full border-2 border-red-500 bg-white p-0.5">
+        <Image
+          source={{
+            uri: item.publisher.avatarUrl || HOME_INTRO_FALLBACK_AVATAR,
+          }}
+          className="h-full w-full rounded-full"
+          resizeMode="cover"
+          fadeDuration={0}
+        />
+      </View>
+      <View className="absolute right-2 top-2 flex-row items-center rounded-full bg-red-500 px-2 py-1">
+        <Radio size={10} color="#ffffff" />
+        <Text className="ml-1 text-[9px] font-black text-white">LIVE</Text>
+      </View>
+      <Text
+        className="absolute bottom-3 left-2 right-2 text-[12px] font-extrabold text-white"
+        numberOfLines={1}
+      >
+        {item.publisher.name}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function DefaultStoriesRow({
   avatarUrl,
   copy,
 }: Pick<HomeFeedIntroProps, 'avatarUrl' | 'copy'>) {
   const {
     stories,
+    liveStreams,
     goToCreateStory,
     goToViewerForGroup,
+    goToLive,
   } = useHomeStoriesRail();
 
   return (
@@ -82,6 +134,14 @@ function DefaultStoriesRow({
             </Text>
           </View>
         </TouchableOpacity>
+
+        {liveStreams.map(item => (
+          <LiveStoryCard
+            key={`live-${item.postId}`}
+            item={item}
+            onPress={goToLive}
+          />
+        ))}
 
         {stories.map((story, index) => {
           const hasUnseen = story.hasUnseen && !story.isViewed;

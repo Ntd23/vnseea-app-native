@@ -163,8 +163,8 @@ describe('LiveKit live stream native iOS media path', () => {
     expect(liveRoomSource).toContain('publishLiveMediaActive(false)');
     expect(isolationSource).toContain('live_video_audio_session_isolation_changed');
     expect(postCardsSource).toContain('useLiveMediaActive');
-    expect(postCardsSource).toContain(
-      "disableAudioSessionManagement={Platform.OS === 'ios' && liveMediaActive}",
+    expect(postCardsSource).toMatch(
+      /disableAudioSessionManagement=\{\s*Platform\.OS === 'ios' && liveMediaActive\s*\}/,
     );
   });
 

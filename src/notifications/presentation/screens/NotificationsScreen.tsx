@@ -52,8 +52,8 @@ import { resolveNotificationDestination } from '../../application/navigation/res
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import NotificationsHeader from '../components/NotificationsHeader';
 import NotificationsFilterSheet from '../components/NotificationsFilterSheet';
-import NotificationSectionList from '../components/NotificationSectionList';
 import NotificationCard from '../components/NotificationCard';
+import NotificationDeleteConfirmModal from '../components/NotificationDeleteConfirmModal';
 import NotificationsEmptyState from '../components/NotificationsEmptyState';
 import NotificationsSkeleton from '../components/NotificationsSkeleton';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -389,6 +389,8 @@ function NotificationsScreen() {
   } = useNotificationsViewModel();
 
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [notificationPendingDelete, setNotificationPendingDelete] =
+    useState<NotificationsItem | null>(null);
   const hasNotifications = notifications.length > 0;
   const visibleNotifications = filteredNotifications;
   const hasFiltered = visibleNotifications.length > 0;
@@ -470,27 +472,21 @@ function NotificationsScreen() {
     });
   }, [navigation]);
 
-  const handleLongPress = useCallback(
-    (item: NotificationsItem) => {
-      Alert.alert(copy.deleteTitle, copy.deleteMessage, [
-        { text: copy.deleteCancel, style: 'cancel' },
-        {
-          text: copy.deleteConfirm,
-          style: 'destructive',
-          onPress: () => {
-            deleteNotification(item.id).catch(() => undefined);
-          },
-        },
-      ]);
-    },
-    [
-      copy.deleteCancel,
-      copy.deleteConfirm,
-      copy.deleteMessage,
-      copy.deleteTitle,
-      deleteNotification,
-    ],
-  );
+  const handleLongPress = useCallback((item: NotificationsItem) => {
+    setNotificationPendingDelete(item);
+  }, []);
+
+  const handleCancelDelete = useCallback(() => {
+    setNotificationPendingDelete(null);
+  }, []);
+
+  const handleConfirmDelete = useCallback(() => {
+    const target = notificationPendingDelete;
+    if (!target) return;
+
+    setNotificationPendingDelete(null);
+    deleteNotification(target.id).catch(() => undefined);
+  }, [deleteNotification, notificationPendingDelete]);
 
   const handleAcceptGroupChat = useCallback(
     async (groupChatId: string) => {
@@ -653,6 +649,11 @@ function NotificationsScreen() {
       onEndReachedThreshold={0.35}
       onScroll={handleNotificationsScroll}
       scrollEventThrottle={16}
+      initialNumToRender={8}
+      maxToRenderPerBatch={8}
+      updateCellsBatchingPeriod={48}
+      windowSize={7}
+      removeClippedSubviews={Platform.OS === 'android'}
     />
   );
 
@@ -721,7 +722,10 @@ function NotificationsScreen() {
             />
           </ScrollView>
         ) : (
-          <ScrollView
+          <FlatList
+            data={visibleNotifications}
+            keyExtractor={item => item.id}
+            renderItem={renderNotificationItem}
             className="flex-1"
             contentContainerClassName="px-4 pb-10 pt-3"
             showsVerticalScrollIndicator={false}
@@ -732,44 +736,15 @@ function NotificationsScreen() {
                 colors={[APP_BRAND_COLOR]}
               />
             }
-            onScroll={e => {
-              const y = e.nativeEvent.contentOffset.y;
-              const height = e.nativeEvent.contentSize.height;
-              const viewHeight = e.nativeEvent.layoutMeasurement.height;
-              if (y + viewHeight >= height - 100 && hasMore && !isLoadingMore) {
-                loadMore();
-              }
-            }}
-            scrollEventThrottle={400}
-          >
-            <NotificationSectionList
-              items={visibleNotifications}
-              language={language}
-              pendingActions={pendingActions}
-              onItemPress={handlePress}
-              onItemLongPress={handleLongPress}
-              onAcceptGroupChat={handleAcceptGroupChat}
-              onRejectGroupChat={handleRejectGroupChat}
-              labels={{
-                acceptInvite: copy.acceptInvite,
-                rejectInvite: copy.rejectInvite,
-              }}
-            />
-
-            {isLoadingMore ? (
-              <View className="items-center py-4">
-                <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
-              </View>
-            ) : null}
-
-            {!hasMore && visibleNotifications.length > 0 ? (
-              <View className="items-center justify-center pt-6 pb-8">
-                <Text className="text-[12px] font-semibold text-slate-400 text-center">
-                  ✨ {copy.allLoaded}
-                </Text>
-              </View>
-            ) : null}
-          </ScrollView>
+            ListFooterComponent={notificationsListFooterComponent}
+            onEndReached={handleNotificationsEndReached}
+            onEndReachedThreshold={0.35}
+            initialNumToRender={8}
+            maxToRenderPerBatch={8}
+            updateCellsBatchingPeriod={48}
+            windowSize={7}
+            removeClippedSubviews
+          />
         )}
       </View>
     </>
@@ -809,6 +784,16 @@ function NotificationsScreen() {
           filterEvents: copy.filterEvents,
           close: language === 'vi' ? 'Đóng' : 'Close',
         }}
+      />
+
+      <NotificationDeleteConfirmModal
+        visible={notificationPendingDelete !== null}
+        title={copy.deleteTitle}
+        message={copy.deleteMessage}
+        cancelLabel={copy.deleteCancel}
+        confirmLabel={copy.deleteConfirm}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
       />
     </SafeAreaView>
   );

@@ -17,6 +17,7 @@ import type {
   ReelsRepository,
 } from '../../domain/repositories/ReelsRepository';
 import type {
+  CommentMention,
   ReactionType,
   ReelCaptionSuggestion,
   ReelCaptionSuggestionKind,
@@ -27,6 +28,7 @@ import type {
   ReelsItem,
   ReelsPage,
 } from '../../domain/types/reels.types';
+import { hydrateCommentMentionText } from '../../application/utils/commentMentions';
 import { reelsReactionsStorage } from '../storage/reelsReactionsStorage';
 
 type NewPostResponse = {
@@ -84,8 +86,8 @@ function normalizeMediaUrl(value: string | undefined): string | undefined {
   const absoluteUrl = /^https?:\/\//i.test(trimmed)
     ? trimmed
     : trimmed.startsWith('//')
-      ? `${siteRoot.startsWith('http://') ? 'http:' : 'https:'}${trimmed}`
-      : `${siteRoot}/${trimmed.replace(/^\/+/, '')}`;
+    ? `${siteRoot.startsWith('http://') ? 'http:' : 'https:'}${trimmed}`
+    : `${siteRoot}/${trimmed.replace(/^\/+/, '')}`;
 
   try {
     return encodeURI(absoluteUrl);
@@ -141,8 +143,13 @@ function getRawReelsCursor(rawList: Array<Record<string, unknown>>) {
   return minRawId > 0 ? String(minRawId) : null;
 }
 
-function mapPublisher(raw: Record<string, unknown> | undefined | null): ReelPublisher {
-  const safe = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+function mapPublisher(
+  raw: Record<string, unknown> | undefined | null,
+): ReelPublisher {
+  const safe = (raw && typeof raw === 'object' ? raw : {}) as Record<
+    string,
+    unknown
+  >;
   const userId = readString(safe, 'user_id', 'id');
   const username = readString(safe, 'username', 'user_name');
   const firstName = readString(safe, 'first_name');
@@ -186,25 +193,69 @@ function mapPublisher(raw: Record<string, unknown> | undefined | null): ReelPubl
  */
 function cleanCaption(raw: string): string {
   if (!raw) return '';
+  return (
+    raw
+      // 1. Strip all HTML tags (<b>, </b>, <br/>, <span class="...">, …)
+      .replace(/<[^>]*>/g, '')
+      // 2. Decode common HTML entities
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+      // 3. Strip WoWonder mention/hashtag tokens (@[123], #[123])
+      .replace(/@\[\d+\]/g, '')
+      .replace(/#\[\d+\]/g, '')
+      // 4. Collapse whitespace left by stripped tags
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
+function cleanCommentMentionSource(raw: string): string {
+  if (!raw) return '';
   return raw
-    // 1. Strip all HTML tags (<b>, </b>, <br/>, <span class="...">, …)
+    .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>/g, '')
-    // 2. Decode common HTML entities
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) =>
-      String.fromCharCode(Number(code)),
-    )
-    // 3. Strip WoWonder mention/hashtag tokens (@[123], #[123])
-    .replace(/@\[\d+\]/g, '')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
     .replace(/#\[\d+\]/g, '')
-    // 4. Collapse whitespace left by stripped tags
-    .replace(/\s+/g, ' ')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n */g, '\n')
     .trim();
+}
+
+function mapCommentMentions(raw: Record<string, unknown>): CommentMention[] {
+  const records = Array.isArray(raw.mentions)
+    ? raw.mentions
+    : Array.isArray(raw.mentions_users)
+    ? raw.mentions_users
+    : [];
+  const seen = new Set<string>();
+
+  return records
+    .map(value => {
+      if (!value || typeof value !== 'object') return null;
+      const record = value as Record<string, unknown>;
+      const userId = readString(record, 'user_id', 'id');
+      const username = readString(record, 'username').replace(/^@+/, '');
+      const displayName =
+        readString(record, 'display_name', 'name', 'full_name') || username;
+      if (!userId || !username || !displayName) return null;
+
+      const key = `${userId}:${username.toLowerCase()}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return { userId, username, displayName };
+    })
+    .filter((mention): mention is CommentMention => Boolean(mention));
 }
 
 /**
@@ -233,7 +284,9 @@ function extractMyReaction(raw: Record<string, unknown>): ReactionType | null {
     reactionObj.is_reacted === '1';
   if (!reacted) return null;
   const rawType = String(reactionObj.type ?? '').trim();
-  return WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()] ?? null;
+  return (
+    WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()] ?? null
+  );
 }
 
 function mapReel(raw: Record<string, unknown>): ReelsItem {
@@ -334,8 +387,7 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     viewCount: readNumber(raw, 'videoViews'),
     // Treat "user has any reaction" as liked, falling back to the
     // legacy boolean for installs that only have simple likes.
-    isLiked:
-      myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
+    isLiked: myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
     isSaved: readBool(raw, 'isSaved', 'is_saved', 'is_post_saved', 'postSaved'),
     myReaction,
     raw,
@@ -351,6 +403,13 @@ function mapComment(raw: Record<string, unknown>): ReelComment {
   const imageUrl = normalizeMediaUrl(readString(raw, 'c_file'));
   const audioUrl = normalizeMediaUrl(readString(raw, 'record'));
   const commentId = readString(raw, 'id', 'comment_id');
+  const mentions = mapCommentMentions(raw);
+  const storedMentionText = cleanCommentMentionSource(
+    readString(raw, 'mention_text'),
+  );
+  const displayText = storedMentionText
+    ? hydrateCommentMentionText(storedMentionText, mentions)
+    : cleanCaption(readString(raw, 'text', 'comment_text'));
 
   // Reaction state. Same logic as for posts: prefer the backend's
   // `reaction.type` when it's there, fall back to the local MMKV cache so
@@ -385,17 +444,19 @@ function mapComment(raw: Record<string, unknown>): ReelComment {
 
   return {
     id: commentId,
-    text: cleanCaption(readString(raw, 'text', 'comment_text')),
+    text: displayText,
     postedAt: readNumber(raw, 'time') || undefined,
     publisher: mapPublisher(publisherRaw),
     likeCount,
     replyCount: readNumber(raw, 'replies', 'replies_count', 'replyCount'),
-    isLiked: myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
+    isLiked:
+      myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
     myReaction,
     owner: readBool(raw, 'onwer', 'owner'),
     postOwner: readBool(raw, 'post_onwer', 'postOwner'),
     imageUrl: imageUrl || undefined,
     audioUrl: audioUrl || undefined,
+    mentions: mentions.length > 0 ? mentions : undefined,
   };
 }
 
@@ -405,16 +466,16 @@ function toStringValue(value: unknown) {
     : '';
 }
 
-function mapMention(raw: Record<string, unknown>): ReelCaptionSuggestion | null {
+function mapMention(
+  raw: Record<string, unknown>,
+): ReelCaptionSuggestion | null {
   const username = toStringValue(raw.username);
   if (!username) {
     return null;
   }
 
   const label =
-    toStringValue(raw.name) ||
-    toStringValue(raw.full_name) ||
-    username;
+    toStringValue(raw.name) || toStringValue(raw.full_name) || username;
 
   return {
     id: toStringValue(raw.user_id) || toStringValue(raw.id) || username,
@@ -426,7 +487,9 @@ function mapMention(raw: Record<string, unknown>): ReelCaptionSuggestion | null 
   };
 }
 
-function mapHashtag(raw: Record<string, unknown>): ReelCaptionSuggestion | null {
+function mapHashtag(
+  raw: Record<string, unknown>,
+): ReelCaptionSuggestion | null {
   const tag = toStringValue(raw.tag) || toStringValue(raw.label);
   if (!tag) {
     return null;
@@ -440,9 +503,10 @@ function mapHashtag(raw: Record<string, unknown>): ReelCaptionSuggestion | null 
     kind: 'hashtag',
     label: `#${normalizedTag}`,
     value: `#${normalizedTag}`,
-    subtitle: Number.isFinite(useCount) && useCount > 0
-      ? `${useCount} bài viết`
-      : undefined,
+    subtitle:
+      Number.isFinite(useCount) && useCount > 0
+        ? `${useCount} bài viết`
+        : undefined,
     useCount: Number.isFinite(useCount) ? useCount : undefined,
   };
 }
@@ -474,10 +538,14 @@ async function findExactHashtagFallback(
     },
   );
 
-  return response.data?.length ? [buildExactHashtagSuggestion(normalizedQuery)] : [];
+  return response.data?.length
+    ? [buildExactHashtagSuggestion(normalizedQuery)]
+    : [];
 }
 
-async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPage> {
+async function fetchReelsPage(
+  options: FetchReelsOptions = {},
+): Promise<ReelsPage> {
   const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
   const initialCursor = options.cursor ?? null;
 
@@ -674,10 +742,7 @@ export function createReelsRepository(): ReelsRepository {
       }
 
       // Normal success
-      if (
-        response.api_status === 200 &&
-        response.post_data
-      ) {
+      if (response.api_status === 200 && response.post_data) {
         return {
           status: 'created',
           postId: String(response.post_data.id ?? ''),
@@ -705,9 +770,7 @@ export function createReelsRepository(): ReelsRepository {
       const isLiked = response.action === 'liked';
       const rawCount = response.like_data?.count;
       const likeCount =
-        typeof rawCount === 'number'
-          ? rawCount
-          : Number(rawCount ?? 0) || 0;
+        typeof rawCount === 'number' ? rawCount : Number(rawCount ?? 0) || 0;
 
       return { isLiked, likeCount };
     },
@@ -778,7 +841,10 @@ export function createReelsRepository(): ReelsRepository {
         code?: number;
       }>(apiRoutes.feed.postActions, { post_id: postId, action: 'save' });
 
-      const ok = String(response.api_status) === '200' || response.code === 0 || response.code === 1;
+      const ok =
+        String(response.api_status) === '200' ||
+        response.code === 0 ||
+        response.code === 1;
       if (!ok) {
         throw new Error(response.message ?? 'Khong luu duoc video.');
       }
@@ -787,7 +853,9 @@ export function createReelsRepository(): ReelsRepository {
       const action = (response.action ?? '').toLowerCase();
       const isSaved =
         response.code === 1 ||
-        (response.code !== 0 && action.includes('saved') && !action.includes('unsaved'));
+        (response.code !== 0 &&
+          action.includes('saved') &&
+          !action.includes('unsaved'));
       return { isSaved };
     },
 

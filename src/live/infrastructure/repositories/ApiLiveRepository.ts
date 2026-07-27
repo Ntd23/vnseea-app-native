@@ -637,6 +637,28 @@ export function createLiveRepository(): LiveRepository {
       );
     },
 
+    async getUserLiveStreams(
+      userId: string,
+      limit = 20,
+    ): Promise<LiveStreamItem[]> {
+      if (!userId) return [];
+
+      const response = await apiBridge.post<LiveListResponse>(
+        apiRoutes.feed.posts,
+        {
+          type: 'get_user_posts',
+          id: userId,
+          limit,
+        },
+      );
+
+      return uniqueLiveItems(
+        (response.data ?? [])
+          .filter(isUsableLivePost)
+          .map(mapLivePost),
+      );
+    },
+
     async getLivePost(postId: number): Promise<LiveStreamItem | null> {
       const response = await apiBridge.post<LivePostResponse>(apiRoutes.feed.getPost, {
 

@@ -117,6 +117,13 @@ export interface ReelComment {
   /** Local-only preview URI while an audio comment is uploading. */
   pendingAudioUri?: string;
   /**
+   * People explicitly mentioned in the comment text. The composer keeps the
+   * friendly display name while the API receives `@username`; this metadata
+   * lets the rendered comment restore Facebook-style highlighted, tappable
+   * names after the server round-trip.
+   */
+  mentions?: CommentMention[];
+  /**
    * Local reply mention display name. When the reply text starts with this
    * name, the UI renders that leading name in Facebook-style blue.
    */
@@ -165,6 +172,12 @@ export interface ReelDraft {
   caption?: string;
   /** Audience, defaults to public. */
   privacy: ReelPrivacy;
+}
+
+export interface CommentMention {
+  userId: string;
+  username: string;
+  displayName: string;
 }
 
 /** Result returned after a successful upload */

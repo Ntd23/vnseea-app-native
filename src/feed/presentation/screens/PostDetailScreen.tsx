@@ -11,7 +11,13 @@
 // so the user sees the full data set the backend exposes, not the
 // trimmed shape the feed list carries.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +29,7 @@ import {
   Platform,
   Share,
   StyleSheet,
+  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -30,6 +37,7 @@ import {
 import {
   ArrowLeft,
   Bookmark,
+  ChevronLeft,
   Eye,
   Heart,
   Link2,
@@ -96,7 +104,13 @@ import { PollPostCard } from '../components/PollPostCard';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import {
+  PhotoViewerModal,
+  type PhotoViewerState,
+} from '../../../shared-kernel/presentation/components/PhotoViewerModal';
 import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
+import { hiddenPostsStorage } from '../../infrastructure/storage/hiddenPostsStorage';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -174,7 +188,10 @@ function PostBody({ post }: { post: FeedTextPost | FeedVideoPost }) {
               />
             ) : null}
             <View className="flex-row items-center justify-between bg-black/85 px-3 py-2.5">
-              <Text className="flex-1 text-caption-primary text-white" numberOfLines={1}>
+              <Text
+                className="flex-1 text-caption-primary text-white"
+                numberOfLines={1}
+              >
                 ▶ {post.videoUrl ?? 'Video'}
               </Text>
               <Text className="text-caption-secondary text-white/70">
@@ -216,7 +233,11 @@ function PostBody({ post }: { post: FeedTextPost | FeedVideoPost }) {
  * Tapping it would normally deep-link into the source post, but for
  * v1 we just show the preview block.
  */
-function SharedFromCard({ source }: { source: NonNullable<FeedTextPost['sharedFrom']> }) {
+function SharedFromCard({
+  source,
+}: {
+  source: NonNullable<FeedTextPost['sharedFrom']>;
+}) {
   return (
     <View className="surface-card mt-3 overflow-hidden">
       <View className="flex-row items-center px-4 py-2.5">
@@ -234,7 +255,10 @@ function SharedFromCard({ source }: { source: NonNullable<FeedTextPost['sharedFr
           </View>
         )}
         <View className="ml-2.5 flex-1">
-          <Text className="text-caption-primary text-slate-900" numberOfLines={1}>
+          <Text
+            className="text-caption-primary text-slate-900"
+            numberOfLines={1}
+          >
             {source.publisherName}
           </Text>
           <Text className="mt-0.5 text-caption-secondary" numberOfLines={1}>
@@ -243,10 +267,7 @@ function SharedFromCard({ source }: { source: NonNullable<FeedTextPost['sharedFr
         </View>
       </View>
       {source.caption ? (
-        <Text
-          className="px-4 pb-3 text-body-secondary"
-          numberOfLines={4}
-        >
+        <Text className="px-4 pb-3 text-body-secondary" numberOfLines={4}>
           {renderPostTextTokens(source.caption, source.mentionNames)}
         </Text>
       ) : null}
@@ -300,10 +321,7 @@ function LinkPreviewCard({
           </Text>
         ) : null}
         {preview.description ? (
-          <Text
-            className="mt-1 text-caption-secondary"
-            numberOfLines={2}
-          >
+          <Text className="mt-1 text-caption-secondary" numberOfLines={2}>
             {preview.description}
           </Text>
         ) : null}
@@ -317,11 +335,7 @@ function LinkPreviewCard({
  * overlaid at the bottom. Tapping any thumb would open the
  * lightbox; for v1 we just show the preview.
  */
-function AlbumGrid({
-  album,
-}: {
-  album: NonNullable<FeedTextPost['album']>;
-}) {
+function AlbumGrid({ album }: { album: NonNullable<FeedTextPost['album']> }) {
   const displayed = album.images.slice(0, 4);
   const overflow = album.images.length - displayed.length;
   return (
@@ -394,7 +408,8 @@ function LikedUsersPreview({
     const composed = `${fn} ${ln}`.trim();
     if (composed) return composed;
     if (typeof raw.name === 'string' && raw.name.length > 0) return raw.name;
-    if (typeof raw.username === 'string' && raw.username.length > 0) return raw.username;
+    if (typeof raw.username === 'string' && raw.username.length > 0)
+      return raw.username;
     return 'Người dùng';
   }
 
@@ -442,9 +457,7 @@ function LikedUsersPreview({
       </View>
       <Text className="ml-3 flex-1 text-caption-secondary" numberOfLines={2}>
         {totalCount > 0 ? (
-          <>
-            {totalCount.toLocaleString('vi-VN')} người đã thả cảm xúc
-          </>
+          <>{totalCount.toLocaleString('vi-VN')} người đã thả cảm xúc</>
         ) : (
           <>Hãy là người đầu tiên thả cảm xúc</>
         )}
@@ -516,7 +529,10 @@ function ReactionSummary({
             </Text>
           </View>
         ) : null}
-        {post.viewCount !== undefined && post.viewCount > 0 && post.shareCount !== undefined && post.shareCount > 0 ? (
+        {post.viewCount !== undefined &&
+        post.viewCount > 0 &&
+        post.shareCount !== undefined &&
+        post.shareCount > 0 ? (
           <Text className="mx-2 text-caption-secondary">·</Text>
         ) : null}
         {post.shareCount !== undefined && post.shareCount > 0 ? (
@@ -581,7 +597,9 @@ function PostActions({
           )}
           <Text
             className={`ml-2 text-caption-primary ${
-              post.isLiked || post.myReaction ? 'text-[#ef4444] font-bold' : 'text-slate-700'
+              post.isLiked || post.myReaction
+                ? 'text-[#ef4444] font-bold'
+                : 'text-slate-700'
             }`}
           >
             {currentLabel}
@@ -689,20 +707,32 @@ function PostDetailScreen() {
   const navigation = useNavigation<PostDetailNav>();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const postDetailTopInset = resolveFeedChromeTopInset(
+  const resolvedPostDetailTopInset = resolveFeedChromeTopInset(
     insets.top,
     initialWindowMetrics?.insets?.top,
   );
+  // Android is configured non-edge-to-edge, so the Activity content window
+  // already begins below the status bar. Subtract that stable window origin
+  // from the runtime inset so a transient/stale Modal inset cannot be applied
+  // a second time. On a true edge-to-edge window frame.y is 0, preserving the
+  // real safe-area inset.
+  const androidContentWindowOffsetY =
+    Platform.OS === 'android'
+      ? Math.max(
+          0,
+          initialWindowMetrics?.frame.y ?? StatusBar.currentHeight ?? 0,
+        )
+      : 0;
+  const postDetailTopInset =
+    Platform.OS === 'android'
+      ? Math.max(0, resolvedPostDetailTopInset - androidContentWindowOffsetY)
+      : resolvedPostDetailTopInset;
   const postDetailRootStyle = useMemo(
     () => [postDetailStyles.safeArea, { paddingTop: postDetailTopInset }],
     [postDetailTopInset],
   );
   const route = useRoute<PostDetailRoute>();
-  const {
-    postId,
-    post: postFromParams,
-    focusComments = false,
-  } = route.params;
+  const { postId, post: postFromParams, focusComments = false } = route.params;
   const [commentFocusSignal, setCommentFocusSignal] = useState(0);
 
   const {
@@ -759,6 +789,8 @@ function PostDetailScreen() {
     y: number;
   } | null>(null);
   const [postMenuVisible, setPostMenuVisible] = useState(false);
+  const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
+  const photoViewerRef = useRef<PhotoViewerState>(null);
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -804,6 +836,27 @@ function PostDetailScreen() {
     navigateToProfile(activePost?.publisher?.id ?? '');
   }, [navigateToProfile, activePost]);
 
+  const handlePhotoPress = useCallback(
+    (photoPost: FeedTextPost, photoIndex: number) => {
+      const totalPhotos = photoPost.photos?.length ?? 0;
+      if (totalPhotos === 0) return;
+
+      const safeIndex = Math.min(Math.max(photoIndex, 0), totalPhotos - 1);
+      const nextState: PhotoViewerState = {
+        post: photoPost,
+        initialIndex: safeIndex,
+      };
+      photoViewerRef.current = nextState;
+      setPhotoViewer(nextState);
+    },
+    [],
+  );
+
+  const handleClosePhotoViewer = useCallback(() => {
+    photoViewerRef.current = null;
+    setPhotoViewer(null);
+  }, []);
+
   const handleShare = useCallback(async () => {
     if (!isFeedPostShareable(activePost)) return;
     try {
@@ -820,10 +873,13 @@ function PostDetailScreen() {
     }
   }, [activePost]);
 
-  const handleOpenPostMenu = useCallback((selectedPost: FeedPost) => {
-    if (selectedPost.id !== activePost?.id) return;
-    setPostMenuVisible(true);
-  }, [activePost?.id]);
+  const handleOpenPostMenu = useCallback(
+    (selectedPost: FeedPost) => {
+      if (selectedPost.id !== activePost?.id) return;
+      setPostMenuVisible(true);
+    },
+    [activePost?.id],
+  );
 
   const handleClosePostMenu = useCallback(() => {
     setPostMenuVisible(false);
@@ -845,16 +901,18 @@ function PostDetailScreen() {
       const result = await reportPost(targetPostId);
       Alert.alert(
         result.reported ? copy.reportSentTitle : copy.reportCancelledTitle,
-        result.reported
-          ? copy.reportSentMessage
-          : copy.reportCancelledMessage,
+        result.reported ? copy.reportSentMessage : copy.reportCancelledMessage,
       );
     },
     [copy, reportPost],
   );
 
   const handleHidePost = useCallback(
-    async (_targetPostId: string) => {
+    async (targetPostId: string) => {
+      hiddenPostsStorage.hidePost(
+        targetPostId,
+        sessionStorage.getSession()?.userId,
+      );
       setPostMenuVisible(false);
       navigation.goBack();
     },
@@ -898,6 +956,13 @@ function PostDetailScreen() {
     setCommentFocusSignal(current => current + 1);
   }, []);
 
+  const handlePhotoViewerCommentTap = useCallback(
+    (_targetPostId: string) => {
+      handleScrollToComments();
+    },
+    [handleScrollToComments],
+  );
+
   const handleDismissKeyboardFromContent = useCallback(() => {
     Keyboard.dismiss();
   }, []);
@@ -908,7 +973,10 @@ function PostDetailScreen() {
 
   const canSwipeBackToPreviousPostScreen = navigation.canGoBack();
   const isPostDetailSwipeBackBlocked =
-    reactionsSheetVisible || postMenuVisible || pickerAnchor !== null;
+    reactionsSheetVisible ||
+    postMenuVisible ||
+    pickerAnchor !== null ||
+    photoViewer !== null;
 
   const postDetailSwipeBackGesture = useMemo(
     () =>
@@ -988,7 +1056,11 @@ function PostDetailScreen() {
     return {
       borderTopLeftRadius: interpolate(progress, [0, 1], [0, 18], 'clamp'),
       borderBottomLeftRadius: interpolate(progress, [0, 1], [0, 18], 'clamp'),
-      transform: [{ translateX: postDetailBackTranslateX.value }],
+      opacity: interpolate(progress, [0, 1], [1, 0.92], 'clamp'),
+      transform: [
+        { translateX: postDetailBackTranslateX.value },
+        { scale: interpolate(progress, [0, 1], [1, 0.97], 'clamp') },
+      ],
     };
   });
 
@@ -1008,11 +1080,12 @@ function PostDetailScreen() {
   const postDetailSwipeBackCueStyle = useAnimatedStyle(() => {
     const threshold =
       POST_DETAIL_SCREEN_WIDTH * POST_DETAIL_BACK_GESTURE_DISTANCE_RATIO;
+    const isReady = postDetailBackTranslateX.value >= threshold;
 
     return {
       opacity: interpolate(
         postDetailBackTranslateX.value,
-        [0, 34, threshold],
+        [0, 40, threshold],
         [0, 0.85, 1],
         'clamp',
       ),
@@ -1021,7 +1094,7 @@ function PostDetailScreen() {
           translateX: interpolate(
             postDetailBackTranslateX.value,
             [0, threshold],
-            [-54, 18],
+            [-60, 20],
             'clamp',
           ),
         },
@@ -1029,11 +1102,14 @@ function PostDetailScreen() {
           scale: interpolate(
             postDetailBackTranslateX.value,
             [0, threshold],
-            [0.76, 1.08],
+            [0.6, 1.2],
             'clamp',
           ),
         },
       ],
+      backgroundColor: isReady
+        ? 'rgba(8, 102, 255, 0.85)'
+        : 'rgba(0, 0, 0, 0.65)',
     };
   });
 
@@ -1050,22 +1126,14 @@ function PostDetailScreen() {
         />
         <Reanimated.View
           pointerEvents="none"
-          style={[
-            postDetailStyles.swipeBackCue,
-            postDetailSwipeBackCueStyle,
-          ]}
+          style={[postDetailStyles.swipeBackCue, postDetailSwipeBackCueStyle]}
         >
-          <ArrowLeft size={18} color={APP_BRAND_COLOR} strokeWidth={2.6} />
-          <Text style={postDetailStyles.swipeBackCueText}>
-            {language === 'vi' ? 'Vuốt để quay lại' : 'Swipe to go back'}
-          </Text>
+          {/* Reel-style cue: the bubble follows the drag instead of showing a label. */}
+          <ChevronLeft size={24} color="#FFFFFF" strokeWidth={2.6} />
         </Reanimated.View>
         <GestureDetector gesture={postDetailSwipeBackGesture}>
           <Reanimated.View
-            style={[
-              postDetailStyles.screen,
-              postDetailSwipeBackScreenStyle,
-            ]}
+            style={[postDetailStyles.screen, postDetailSwipeBackScreenStyle]}
           >
             {children}
           </Reanimated.View>
@@ -1073,7 +1141,6 @@ function PostDetailScreen() {
       </GestureHandlerRootView>
     ),
     [
-      language,
       postDetailSwipeBackCueStyle,
       postDetailSwipeBackDimStyle,
       postDetailSwipeBackGesture,
@@ -1088,6 +1155,7 @@ function PostDetailScreen() {
         <FocusAwareStatusBar
           barStyle="dark-content"
           backgroundColor="#FFFFFF"
+          translucent={false}
         />
         <View style={postDetailStyles.loadingIdentityHeader}>
           <View style={postDetailStyles.loadingAvatar} />
@@ -1102,7 +1170,7 @@ function PostDetailScreen() {
             Đang tải bài viết...
           </Text>
         </View>
-      </View>
+      </View>,
     );
   }
 
@@ -1113,6 +1181,7 @@ function PostDetailScreen() {
         <FocusAwareStatusBar
           barStyle="dark-content"
           backgroundColor="#FFFFFF"
+          translucent={false}
         />
         <View className="surface-topbar flex-row items-center px-4 py-3">
           <TouchableOpacity
@@ -1147,7 +1216,7 @@ function PostDetailScreen() {
             <Text className="text-caption-primary text-inverse">Quay lại</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </View>,
     );
   }
 
@@ -1212,7 +1281,7 @@ function PostDetailScreen() {
           onOpenPicker={handleOpenPicker}
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
-          onPhotoPress={() => {}}
+          onPhotoPress={handlePhotoPress}
           onShare={handleShare}
           onOpenReactions={handleOpenReactions}
           navigateToProfile={navigateToProfile}
@@ -1223,7 +1292,6 @@ function PostDetailScreen() {
           hasDragged={hasDragged}
         />
       )}
-
     </View>
   );
 
@@ -1232,6 +1300,7 @@ function PostDetailScreen() {
       <FocusAwareStatusBar
         barStyle="dark-content"
         backgroundColor="#FFFFFF"
+        translucent={false}
       />
 
       <KeyboardAvoidingView
@@ -1244,24 +1313,36 @@ function PostDetailScreen() {
           style={postDetailStyles.stickyIdentityHeader}
           onTouchStart={handleDismissKeyboardFromContent}
         >
-          <PostIdentityHeader
-            avatar={activePost.publisher?.avatarUrl}
-            name={
-              activePost.isAnonymous
-                ? copy.anonymousPrivacyLabel
-                : activePost.publisher?.name || copy.userFallback
-            }
-            time={formatPostTime(activePost.postedAt, copy)}
-            copy={copy}
-            onPress={
-              !activePost.isAnonymous && activePost.publisher?.id
-                ? handleProfilePress
-                : undefined
-            }
-            onMorePress={handleOpenPostMenu}
-            post={activePost}
-            containerClassName="flex-row items-center justify-between"
-          />
+          <TouchableOpacity
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={handlePostDetailBack}
+            style={postDetailStyles.stickyBackButton}
+            accessibilityRole="button"
+            accessibilityLabel={language === 'vi' ? 'Quay lại' : 'Go back'}
+          >
+            <ArrowLeft size={22} color="#1E293B" />
+          </TouchableOpacity>
+          <View style={postDetailStyles.stickyIdentityContent}>
+            <PostIdentityHeader
+              avatar={activePost.publisher?.avatarUrl}
+              name={
+                activePost.isAnonymous
+                  ? copy.anonymousPrivacyLabel
+                  : activePost.publisher?.name || copy.userFallback
+              }
+              time={formatPostTime(activePost.postedAt, copy)}
+              copy={copy}
+              onPress={
+                !activePost.isAnonymous && activePost.publisher?.id
+                  ? handleProfilePress
+                  : undefined
+              }
+              onMorePress={handleOpenPostMenu}
+              post={activePost}
+              containerClassName="flex-row items-center justify-between"
+            />
+          </View>
         </View>
 
         <ReelCommentsSheet
@@ -1286,6 +1367,7 @@ function PostDetailScreen() {
           }}
           onSubmit={commentVm.submitComment}
           onSubmitReply={commentVm.submitReply}
+          onSearchMentions={commentVm.searchCommentMentions}
           onSetReaction={commentVm.setCommentReaction}
           onDelete={commentVm.deleteComment}
           onEdit={commentVm.editComment}
@@ -1297,6 +1379,18 @@ function PostDetailScreen() {
           onDeleteFailedComment={commentVm.deleteFailedComment}
         />
       </KeyboardAvoidingView>
+
+      <PhotoViewerModal
+        state={photoViewer}
+        copy={copy}
+        onClose={handleClosePhotoViewer}
+        onReact={(_targetPostId, reaction) => {
+          toggleReaction(reaction).catch(() => undefined);
+        }}
+        onCommentTap={handlePhotoViewerCommentTap}
+        onProfilePress={navigateToProfile}
+        posts={activePost ? [activePost as FeedPost] : []}
+      />
 
       <PostReactionsSheet
         visible={reactionsSheetVisible}
@@ -1324,7 +1418,7 @@ function PostDetailScreen() {
         onDelete={handleDeletePost}
         onReport={handleReportPost}
       />
-    </View>
+    </View>,
   );
 }
 
@@ -1339,12 +1433,27 @@ const postDetailStyles = StyleSheet.create({
   stickyIdentityHeader: {
     zIndex: 20,
     minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 15,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
+  },
+  stickyBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  stickyIdentityContent: {
+    flex: 1,
+    minWidth: 0,
   },
   loadingIdentityHeader: {
     minHeight: 64,
@@ -1393,27 +1502,15 @@ const postDetailStyles = StyleSheet.create({
   },
   swipeBackCue: {
     position: 'absolute',
-    left: Platform.OS === 'android' ? 30 : 14,
+    left: 0,
+    width: 50,
+    height: 50,
     top: '50%',
-    marginTop: -22,
+    marginTop: -25,
     zIndex: 50,
-    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  swipeBackCueText: {
-    marginLeft: 7,
-    color: APP_BRAND_COLOR,
-    fontSize: 13,
-    fontWeight: '900',
+    justifyContent: 'center',
+    borderRadius: 25,
   },
 });
 
