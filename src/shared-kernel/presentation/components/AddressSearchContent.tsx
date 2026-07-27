@@ -51,6 +51,7 @@ const COPY = {
     empty: 'Không tìm thấy địa chỉ phù hợp.',
     error: 'Không thể tìm địa chỉ lúc này. Nội dung bạn nhập vẫn được giữ lại.',
     searching: 'Đang tìm địa chỉ...',
+    useTypedAddress: 'Dùng địa chỉ đã nhập',
     attribution: 'Google Maps',
   },
   en: {
@@ -60,6 +61,7 @@ const COPY = {
     empty: 'No matching address was found.',
     error: 'Address search is unavailable. Your typed address is preserved.',
     searching: 'Searching addresses...',
+    useTypedAddress: 'Use typed address',
     attribution: 'Google Maps',
   },
 } as const;
@@ -77,6 +79,7 @@ export type AddressSearchContentProps = {
     address: ResolvedAddress,
     suggestion: AddressSuggestion,
   ) => void;
+  onUseTypedAddress?: (address: string) => void;
 };
 
 function normalizeCacheQuery(query: string) {
@@ -93,6 +96,7 @@ export function AddressSearchContent({
   onClose,
   onQueryChange,
   onResolvedAddress,
+  onUseTypedAddress,
 }: AddressSearchContentProps) {
   const appLanguage = useAppLanguage();
   const language: AddressSearchLanguage =
@@ -295,6 +299,28 @@ export function AddressSearchContent({
     inputRef.current?.focus();
   }, [onQueryChange]);
 
+  const handleUseTypedAddress = useCallback(() => {
+    const trimmedAddress = query.trim();
+    if (
+      !onUseTypedAddress ||
+      trimmedAddress.length < MIN_SEARCH_CHARS
+    ) {
+      return;
+    }
+
+    searchRequestIdRef.current += 1;
+    detailsRequestIdRef.current += 1;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    latestQueryRef.current = trimmedAddress;
+    setQuery(trimmedAddress);
+    setSuggestions([]);
+    setErrorMessage('');
+    setIsLoading(false);
+    onQueryChange(trimmedAddress);
+    Keyboard.dismiss();
+    onUseTypedAddress(trimmedAddress);
+  }, [onQueryChange, onUseTypedAddress, query]);
+
   return (
     <View style={styles.root}>
       {showHeader ? (
@@ -346,6 +372,31 @@ export function AddressSearchContent({
       {query.trim().length > 0 &&
       query.trim().length < MIN_SEARCH_CHARS ? (
         <Text style={styles.helperText}>{copy.minChars}</Text>
+      ) : null}
+
+      {onUseTypedAddress &&
+      query.trim().length >= MIN_SEARCH_CHARS ? (
+        <TouchableOpacity
+          testID="use-typed-address-button"
+          style={styles.manualAddressButton}
+          activeOpacity={0.8}
+          onPress={handleUseTypedAddress}
+          accessibilityRole="button"
+          accessibilityLabel={copy.useTypedAddress}
+        >
+          <View style={styles.manualAddressIcon}>
+            <MapPin size={18} color={APP_BRAND_COLOR} />
+          </View>
+          <View style={styles.manualAddressText}>
+            <Text style={styles.manualAddressLabel}>
+              {copy.useTypedAddress}
+            </Text>
+            <Text style={styles.manualAddressValue} numberOfLines={2}>
+              {query.trim()}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={APP_BRAND_COLOR} />
+        </TouchableOpacity>
       ) : null}
 
       <FlatList
@@ -452,6 +503,44 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     color: '#64748B',
     fontSize: 13,
+    fontWeight: '600',
+  },
+  manualAddressButton: {
+    minHeight: 64,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: APP_COLORS.brand.border,
+    borderRadius: 16,
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  manualAddressIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  manualAddressText: {
+    flex: 1,
+    minWidth: 0,
+    marginHorizontal: 12,
+  },
+  manualAddressLabel: {
+    color: APP_BRAND_COLOR,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  manualAddressValue: {
+    marginTop: 2,
+    color: '#334155',
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '600',
   },
   listContent: {

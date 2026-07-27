@@ -26,6 +26,13 @@ describe('checkout delivery address management', () => {
     expect(checkout).not.toContain('<AddressAutocomplete');
     expect(checkout).toContain('setAddressSearchVisible(true)');
     expect(checkout).toContain('onResolvedAddress');
+    expect(checkout).toContain(
+      'onUseTypedAddress={handleUseTypedAddress}',
+    );
+    expect(checkout).toContain(
+      "vm.updateAddressField('address', address)",
+    );
+    expect(checkout).toContain('Keyboard.dismiss()');
     expect(checkout).toContain('if (addressSearchVisible)');
     expect(shipping).toContain('AddressAutocomplete');
     expect(shipping).toContain('onSelectPlace');
