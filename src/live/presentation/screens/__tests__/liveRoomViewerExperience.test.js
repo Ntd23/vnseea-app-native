@@ -14,13 +14,12 @@ describe('Live room viewer experience', () => {
     );
     const iosNativeSource = read('ios/VNSEEA/VNSEEALiveKitNativeView.swift');
 
+    expect(androidSource).toContain("objectFit = 'contain'");
     expect(androidSource).toContain(
-      "objectFit={isHost ? 'cover' : 'contain'}",
+      "objectFit={isHost ? 'cover' : objectFit}",
     );
     expect(iosNativeSource).toContain('videoView.layoutMode = .fit');
-    expect(iosNativeSource).toContain(
-      'videoView.layoutMode = role == .host ? .fill : .fit',
-    );
+    expect(iosNativeSource).toContain('videoView.layoutMode = shouldFill ? .fill : .fit');
   });
 
   it('automatically follows the newest live comment after layout settles', () => {

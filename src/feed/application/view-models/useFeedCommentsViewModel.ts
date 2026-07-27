@@ -2,10 +2,19 @@
 // Reuses the WoWonder comment API calls via ApiReelsRepository.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { createReelsRepository } from '../../../reels/infrastructure/repositories/ApiReelsRepository';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  FEED_COMMENT_PAGE_SIZE,
+  loadFeedCommentsPage,
+  normalizeFeedCommentPostId,
+  readFeedCommentsCache,
+  refreshFeedComments,
+  writeFeedCommentsCache,
+} from '../feedCommentsCache';
 import type {
   CommentMention,
   CommentAudioAttachment,
@@ -22,15 +31,9 @@ import {
 
 const repository = createReelsRepository();
 const feedRepository = createFeedRepository();
-const COMMENT_PAGE_SIZE = 20;
+const COMMENT_PAGE_SIZE = FEED_COMMENT_PAGE_SIZE;
 
 type CommentPhase = 'idle' | 'loading' | 'loading-more' | 'submitting';
-type CommentsCacheEntry = {
-  comments: ReelComment[];
-  hasMore: boolean;
-  offset: number;
-  updatedAt: number;
-};
 type ReplyTarget = {
   commentId: string;
   targetCommentId: string;
@@ -38,10 +41,6 @@ type ReplyTarget = {
   username: string;
   displayName: string;
 };
-
-function normalizeCommentPostId(postId: string) {
-  return postId.replace(/_rc\d+_\d+$/, '');
-}
 
 function getReplyMentionName(
   text: string,
@@ -93,8 +92,18 @@ export function useFeedCommentsViewModel({
     const sessionUserId = sessionStorage.getSession()?.userId;
     if (!sessionUserId) return;
 
+    // The session profile is already enough to render an optimistic comment.
+    // Avoid an auth round-trip on every Feed/PostDetail mount; if it is not
+    // cached yet, defer the non-critical lookup until the transition settles.
+    const cachedProfile = sessionStorage.getUserProfile();
+    const hasUsableCachedProfile = Boolean(
+      cachedProfile?.name ||
+        cachedProfile?.username ||
+        cachedProfile?.avatarUrl,
+    );
+
     let cancelled = false;
-    (async () => {
+    const loadProfile = async () => {
       try {
         const authRepo = createAuthRepository();
         const result = await authRepo.fetchUserById(sessionUserId);
@@ -118,10 +127,15 @@ export function useFeedCommentsViewModel({
       } catch {
         // Network/auth failure is non-fatal
       }
-    })();
+    };
+
+    if (hasUsableCachedProfile) return;
+
+    const task = InteractionManager.runAfterInteractions(loadProfile);
 
     return () => {
       cancelled = true;
+      task.cancel();
     };
   }, []);
 
@@ -156,83 +170,74 @@ export function useFeedCommentsViewModel({
   const replyOffsetsRef = useRef<Record<string, number>>({});
   const commentRequestSeqRef = useRef(0);
   const loadingCommentPostIdRef = useRef<string | null>(null);
-  const commentsCacheRef = useRef<Record<string, CommentsCacheEntry>>({});
+  const commentsReadyPostIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!selectedCommentPostId) return;
 
-    const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
-    commentsCacheRef.current[cleanPostId] = {
+    const cleanPostId = normalizeFeedCommentPostId(selectedCommentPostId);
+    if (commentsReadyPostIdRef.current !== cleanPostId) return;
+    writeFeedCommentsCache(
+      cleanPostId,
       comments,
-      hasMore: hasMoreComments,
-      offset: commentOffsetRef.current,
-      updatedAt: Date.now(),
-    };
+      hasMoreComments,
+      commentOffsetRef.current,
+    );
   }, [comments, hasMoreComments, selectedCommentPostId]);
 
-  const openComments = useCallback(
-    async (postId: string) => {
-      const cleanPostId = normalizeCommentPostId(postId);
-      if (
-        commentInFlightRef.current &&
-        loadingCommentPostIdRef.current === cleanPostId &&
-        selectedCommentPostId === postId
-      ) {
-        return;
-      }
+  const openComments = useCallback(async (postId: string) => {
+    const cleanPostId = normalizeFeedCommentPostId(postId);
+    if (
+      commentInFlightRef.current &&
+      loadingCommentPostIdRef.current === cleanPostId
+    ) {
+      return;
+    }
 
-      const requestSeq = ++commentRequestSeqRef.current;
-      const cached = commentsCacheRef.current[cleanPostId];
-      commentInFlightRef.current = true;
-      loadingCommentPostIdRef.current = cleanPostId;
-      setSelectedCommentPostId(postId);
-      setComments(cached?.comments ?? []);
-      setHasMoreComments(cached?.hasMore ?? false);
-      setCommentPhase('loading');
-      setCommentError(null);
-      setRepliesById({});
-      setLoadingRepliesIds([]);
-      setReplyingTo(null);
-      replyOffsetsRef.current = {};
-      commentOffsetRef.current = cached?.offset ?? 0;
+    const requestSeq = ++commentRequestSeqRef.current;
+    const cached = readFeedCommentsCache(cleanPostId);
+    commentsReadyPostIdRef.current = cached ? cleanPostId : null;
+    commentInFlightRef.current = !cached;
+    loadingCommentPostIdRef.current = cached ? null : cleanPostId;
+    setSelectedCommentPostId(postId);
+    setComments(cached?.comments ?? []);
+    setHasMoreComments(cached?.hasMore ?? false);
+    // A warm cache should paint immediately and must not flash the loading
+    // state while the sheet/detail transition is running.
+    setCommentPhase(cached ? 'idle' : 'loading');
+    setCommentError(null);
+    setRepliesById({});
+    setLoadingRepliesIds([]);
+    setReplyingTo(null);
+    replyOffsetsRef.current = {};
+    commentOffsetRef.current = cached?.offset ?? 0;
 
-      try {
-        const nextComments = await repository.getComments(cleanPostId, {
-          limit: COMMENT_PAGE_SIZE,
-          offset: 0,
-        });
-        if (commentRequestSeqRef.current !== requestSeq) return;
-        setComments(nextComments);
-        setHasMoreComments(nextComments.length >= COMMENT_PAGE_SIZE);
-        const lastComment = nextComments[nextComments.length - 1];
-        commentOffsetRef.current = Number(lastComment?.id ?? 0) || 0;
-        commentsCacheRef.current[cleanPostId] = {
-          comments: nextComments,
-          hasMore: nextComments.length >= COMMENT_PAGE_SIZE,
-          offset: commentOffsetRef.current,
-          updatedAt: Date.now(),
-        };
-      } catch (caught) {
-        if (commentRequestSeqRef.current !== requestSeq) return;
-        setCommentError(
-          caught instanceof Error
-            ? caught.message
-            : 'Không tải được bình luận.',
-        );
-      } finally {
-        if (commentRequestSeqRef.current === requestSeq) {
-          setCommentPhase('idle');
-          commentInFlightRef.current = false;
-          loadingCommentPostIdRef.current = null;
-        }
+    try {
+      const nextEntry = cached ?? (await loadFeedCommentsPage(cleanPostId));
+      const nextComments = nextEntry.comments;
+      if (commentRequestSeqRef.current !== requestSeq) return;
+      commentsReadyPostIdRef.current = cleanPostId;
+      setComments(nextComments);
+      setHasMoreComments(nextEntry.hasMore);
+      commentOffsetRef.current = nextEntry.offset;
+    } catch (caught) {
+      if (commentRequestSeqRef.current !== requestSeq) return;
+      setCommentError(
+        caught instanceof Error ? caught.message : 'Không tải được bình luận.',
+      );
+    } finally {
+      if (commentRequestSeqRef.current === requestSeq) {
+        setCommentPhase('idle');
+        commentInFlightRef.current = false;
+        loadingCommentPostIdRef.current = null;
       }
-    },
-    [selectedCommentPostId],
-  );
+    }
+  }, []);
   const closeComments = useCallback(() => {
     commentRequestSeqRef.current += 1;
     commentInFlightRef.current = false;
     loadingCommentPostIdRef.current = null;
+    commentsReadyPostIdRef.current = null;
     setSelectedCommentPostId(null);
     setComments([]);
     setCommentError(null);
@@ -247,20 +252,17 @@ export function useFeedCommentsViewModel({
 
   const refreshComments = useCallback(async () => {
     if (!selectedCommentPostId || commentInFlightRef.current) return;
-    const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
+    const cleanPostId = normalizeFeedCommentPostId(selectedCommentPostId);
     commentInFlightRef.current = true;
     loadingCommentPostIdRef.current = cleanPostId;
     const requestSeq = ++commentRequestSeqRef.current;
     try {
-      const fresh = await repository.getComments(cleanPostId, {
-        limit: COMMENT_PAGE_SIZE,
-        offset: 0,
-      });
+      const freshEntry = await refreshFeedComments(cleanPostId);
+      const fresh = freshEntry.comments;
       if (commentRequestSeqRef.current !== requestSeq) return;
       setComments(fresh);
-      setHasMoreComments(fresh.length >= COMMENT_PAGE_SIZE);
-      const lastComment = fresh[fresh.length - 1];
-      commentOffsetRef.current = lastComment ? Number(lastComment.id) || 0 : 0;
+      setHasMoreComments(freshEntry.hasMore);
+      commentOffsetRef.current = freshEntry.offset;
     } catch {
       // Realtime refresh is best-effort; keep the currently visible comments.
     } finally {
@@ -277,7 +279,7 @@ export function useFeedCommentsViewModel({
     if (commentInFlightRef.current) return;
 
     commentInFlightRef.current = true;
-    loadingCommentPostIdRef.current = normalizeCommentPostId(
+    loadingCommentPostIdRef.current = normalizeFeedCommentPostId(
       selectedCommentPostId,
     );
     const requestSeq = ++commentRequestSeqRef.current;
@@ -285,7 +287,7 @@ export function useFeedCommentsViewModel({
     setCommentError(null);
 
     try {
-      const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
+      const cleanPostId = normalizeFeedCommentPostId(selectedCommentPostId);
       const nextComments = await repository.getComments(cleanPostId, {
         limit: COMMENT_PAGE_SIZE,
         offset: commentOffsetRef.current,
@@ -362,7 +364,7 @@ export function useFeedCommentsViewModel({
       onCommentCountChange?.(selectedCommentPostId, 1);
 
       try {
-        const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
+        const cleanPostId = normalizeFeedCommentPostId(selectedCommentPostId);
         const createdComment = await repository.addComment(
           cleanPostId,
           trimmed,

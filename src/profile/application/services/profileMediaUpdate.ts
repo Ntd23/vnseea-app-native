@@ -26,11 +26,18 @@ export type RawProfileMediaResponse = {
 type ProfileMediaUploadDependencies = {
   upload: (file: ApiFile) => Promise<ProfileMediaUpdateResult>;
   loadSnapshot: () => Promise<ProfileMediaSnapshot | null>;
+  /**
+   * Snapshot already rendered by the profile screen. Supplying it avoids a
+   * blocking profile refetch before the normal upload path. `loadSnapshot`
+   * remains the authoritative fallback when an ambiguous upload must be
+   * reconciled.
+   */
+  beforeSnapshot?: ProfileMediaSnapshot | null;
   wait?: (milliseconds: number) => Promise<void>;
   reconciliationAttempts?: number;
 };
 
-const DEFAULT_RECONCILIATION_ATTEMPTS = 3;
+const DEFAULT_RECONCILIATION_ATTEMPTS = 5;
 const RECONCILIATION_DELAY_MS = 250;
 
 class ProfileMediaReconciliationRequiredError extends Error {
@@ -161,10 +168,14 @@ export async function uploadProfileMediaWithReconciliation(
   dependencies: ProfileMediaUploadDependencies,
 ): Promise<ProfileMediaUpdateResult> {
   let before: ProfileMediaSnapshot | null = null;
-  try {
-    before = await dependencies.loadSnapshot();
-  } catch {
-    before = null;
+  if (Object.prototype.hasOwnProperty.call(dependencies, 'beforeSnapshot')) {
+    before = dependencies.beforeSnapshot ?? null;
+  } else {
+    try {
+      before = await dependencies.loadSnapshot();
+    } catch {
+      before = null;
+    }
   }
 
   try {

@@ -39,7 +39,7 @@ describe('LiveKit stream connection lifecycle callbacks', () => {
       { eventName: 'live_room_error', state: 'error', update: "setConnectionMessage('Không kết nối được live');" },
     ]);
     expect(source).toMatch(
-      /\[\s*liveRole,\s*onConnectionStateChange,\s*session\.roomName,\s*session\.streamName,\s*traceId,?\s*\]/,
+      /\[\s*liveRole,\s*onConnectionStateChange,\s*(?:onVideoReady,\s*)?session\.roomName,\s*session\.streamName,\s*traceId,?\s*\]/,
     );
   });
 
@@ -51,7 +51,7 @@ describe('LiveKit stream connection lifecycle callbacks', () => {
       { eventName: 'live_native_error', state: 'error', update: "setConnectionMessage('Không kết nối được live');" },
     ]);
     expect(source).toMatch(
-      /\[\s*liveRole,\s*onConnectionStateChange,\s*session\.roomName,\s*session\.streamName,\s*traceId,?\s*\]/,
+      /\[\s*liveRole,\s*onConnectionStateChange,\s*(?:onVideoReady,\s*)?session\.roomName,\s*session\.streamName,\s*traceId,?\s*\]/,
     );
   });
 

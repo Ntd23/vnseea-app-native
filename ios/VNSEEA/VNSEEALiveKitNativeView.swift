@@ -19,6 +19,8 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
   @objc var streamName: NSString? { didSet { syncConnectionStateOnMain() } }
   @objc var liveRole: NSString? { didSet { syncConnectionStateOnMain() } }
   @objc var cameraFacing: NSString? { didSet { applyCameraFacingOnMain() } }
+  @objc var audioEnabled: Bool = true { didSet { syncConnectionStateOnMain() } }
+  @objc var objectFit: NSString? { didSet { applyVideoLayoutModeOnMain() } }
   @objc var connect: Bool = false { didSet { syncConnectionStateOnMain() } }
   @objc var onLiveNativeEvent: RCTBubblingEventBlock?
 
@@ -79,6 +81,16 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
     }
   }
 
+  private func applyVideoLayoutModeOnMain() {
+    if Thread.isMainThread {
+      applyVideoLayoutMode()
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      self?.applyVideoLayoutMode()
+    }
+  }
+
   private func syncConnectionState() {
     guard connect else {
       disconnectLiveKit(reason: "connect_false")
@@ -96,12 +108,14 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
     let nativeRole = NativeLiveRole(rawValue: (stringValue(liveRole) ?? "viewer").lowercased()) ?? .viewer
     let cameraPosition = cameraPosition(from: stringValue(cameraFacing))
     latestCameraPosition = cameraPosition
+    applyVideoLayoutMode()
     let connectionKey = [
       url,
       token,
       roomName,
       streamName,
       nativeRole.rawValue,
+      audioEnabled ? "audio" : "video-only",
     ].joined(separator: "|")
 
     guard currentConnectionKey != connectionKey else {
@@ -116,6 +130,7 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
       roomName: roomName,
       streamName: streamName,
       role: nativeRole,
+      audioEnabled: audioEnabled,
       cameraPosition: cameraPosition,
       connectionKey: connectionKey
     )
@@ -127,6 +142,7 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
     roomName: String,
     streamName: String,
     role: NativeLiveRole,
+    audioEnabled: Bool,
     cameraPosition: AVCaptureDevice.Position,
     connectionKey: String
   ) {
@@ -140,7 +156,8 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
       dynacast: true,
       reportRemoteTrackStatistics: true
     )
-    let connectOptions = ConnectOptions(autoSubscribe: true)
+    let shouldAutoSubscribe = role == .host || audioEnabled
+    let connectOptions = ConnectOptions(autoSubscribe: shouldAutoSubscribe)
     let nextRoom = Room(delegate: self,
       connectOptions: connectOptions,
       roomOptions: roomOptions
@@ -148,14 +165,14 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
 
     currentConnectionKey = connectionKey
     room = nextRoom
-    videoView.layoutMode = role == .host ? .fill : .fit
+    applyVideoLayoutMode(role: role)
     videoView.mirrorMode = role == .host && cameraPosition == .front ? .mirror : .off
     emit("live_native_room_connect_start", [
       "role": role.rawValue,
       "roomName": roomName,
       "streamName": streamName,
       "tokenLength": token.count,
-      "autoSubscribe": true,
+      "autoSubscribe": shouldAutoSubscribe,
     ])
 
     connectTask = Task { [weak self, weak nextRoom] in
@@ -192,7 +209,11 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
           )
           self.attachVideoPublication(cameraPublication, isLocal: true)
         } else {
-          self.attachPreferredRemoteVideoTrack(in: nextRoom)
+          if !audioEnabled {
+            await self.subscribePreferredRemoteVideoTrack(in: nextRoom)
+          } else {
+            self.attachPreferredRemoteVideoTrack(in: nextRoom)
+          }
         }
       } catch {
         self.emit("live_native_error", [
@@ -250,6 +271,65 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
     }
   }
 
+  private func applyVideoLayoutMode(role: NativeLiveRole? = nil) {
+    let resolvedRole = role ?? NativeLiveRole(
+      rawValue: (stringValue(liveRole) ?? "viewer").lowercased()
+    ) ?? .viewer
+    let shouldFill = resolvedRole == .host ||
+      (stringValue(objectFit) ?? "contain").lowercased() == "cover"
+    videoView.layoutMode = shouldFill ? .fill : .fit
+  }
+
+  private func unsubscribeRemoteAudioPublication(_ publication: RemoteTrackPublication) {
+    Task { [weak self] in
+      do {
+        try await publication.set(subscribed: false)
+      } catch {
+        self?.emit("live_native_audio_unsubscribe_error", [
+          "message": error.localizedDescription,
+          "trackSid": publication.sid.stringValue,
+        ])
+      }
+    }
+  }
+
+  private func isPreferredRemoteVideoPublication(_ publication: RemoteTrackPublication) -> Bool {
+    publication.source == .camera ||
+      (publication.source == .unknown && publication.kind == .video)
+  }
+
+  private func subscribePreferredRemoteVideoTrack(in room: Room) async {
+    for participant in room.remoteParticipants.values {
+      for publication in participant.videoTracks {
+        guard let remotePublication = publication as? RemoteTrackPublication else { continue }
+        guard isPreferredRemoteVideoPublication(remotePublication) else { continue }
+        do {
+          try await remotePublication.set(subscribed: true)
+          attachVideoPublication(remotePublication, isLocal: false)
+          return
+        } catch {
+          emit("live_native_video_subscribe_error", [
+            "message": error.localizedDescription,
+            "trackSid": remotePublication.sid.stringValue,
+          ])
+        }
+      }
+    }
+  }
+
+  private func subscribeRemoteVideoPublication(_ publication: RemoteTrackPublication) {
+    Task { [weak self] in
+      do {
+        try await publication.set(subscribed: true)
+      } catch {
+        self?.emit("live_native_video_subscribe_error", [
+          "message": error.localizedDescription,
+          "trackSid": publication.sid.stringValue,
+        ])
+      }
+    }
+  }
+
   private func attachPreferredRemoteVideoTrack(in room: Room) {
     for participant in room.remoteParticipants.values {
       if let videoTrack = participant.firstCameraVideoTrack {
@@ -269,6 +349,9 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
       guard let self else { return }
       self.videoView.mirrorMode = isLocal && self.latestCameraPosition == .front ? .mirror : .off
       self.videoView.track = track
+      self.emit("live_native_video_attached", [
+        "isLocal": isLocal,
+      ])
     }
   }
 
@@ -392,11 +475,20 @@ class VNSEEALiveKitNativeView: UIView, RoomDelegate, @unchecked Sendable {
 
   func room(_ room: Room, participant: RemoteParticipant, didPublishTrack publication: RemoteTrackPublication) {
     emitPublication("live_native_track_published", publication: publication, participant: participant, role: .viewer)
+    if !audioEnabled && publication.kind == .audio {
+      unsubscribeRemoteAudioPublication(publication)
+    } else if !audioEnabled && isPreferredRemoteVideoPublication(publication) {
+      subscribeRemoteVideoPublication(publication)
+    }
   }
 
   func room(_ room: Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
     emitPublication("live_native_track_subscribed", publication: publication, participant: participant, role: .viewer)
-    if publication.source == .camera {
+    if !audioEnabled && publication.kind == .audio {
+      unsubscribeRemoteAudioPublication(publication)
+      return
+    }
+    if isPreferredRemoteVideoPublication(publication) {
       attachVideoPublication(publication, isLocal: false)
     }
   }

@@ -10,21 +10,21 @@ function read(relativePath) {
 describe('ComposerCard platform layout', () => {
   const source = read('src/feed/presentation/components/ComposerCard.tsx');
 
-  it('uses an edge-to-edge square card on iOS without changing Android chrome', () => {
+  it('keeps the iOS card unchanged and reuses feed-card chrome on Android', () => {
     const iosSpacingStyle = source.slice(
       source.indexOf('iosCardSpacing: {'),
       source.indexOf('composerTopRow: {'),
     );
 
     expect(source).toContain("const isIos = Platform.OS === 'ios'");
-    expect(source).toContain('isIos ? styles.iosCardSpacing : null');
+    expect(source).toContain(
+      'style={isIos ? [styles.cardShadow, styles.iosCardSpacing] : undefined}',
+    );
     expect(iosSpacingStyle).toContain('marginHorizontal: 0');
     expect(iosSpacingStyle).not.toContain('marginBottom');
     expect(source).toContain('className={composerCardClassName}');
     expect(source).toContain("'bg-white border border-slate-100 p-4'");
-    expect(source).toContain(
-      "'bg-white rounded-[20px] border border-slate-100 p-4'",
-    );
+    expect(source).toContain('`${FEED_CARD_CLASS} ${FEED_CARD_PADDING_CLASS}`');
   });
 
   it('renders four accessible icon-only actions in one row on iOS', () => {
@@ -40,9 +40,14 @@ describe('ComposerCard platform layout', () => {
     expect(source).toContain("id: 'poll'");
   });
 
-  it('keeps the labeled Android action grid', () => {
-    expect(source).toContain('styles.androidActionsGrid');
+  it('renders four labeled Android actions in one compact row', () => {
+    expect(source).toContain('styles.androidActionsRow');
+    expect(source).not.toContain('actions.slice');
     expect(source).toContain('<Text');
     expect(source).toContain('{action.label}');
+    expect(source).toContain('ellipsizeMode="tail"');
+    expect(source).toMatch(
+      /androidActionButton:\s*\{[\s\S]*flex:\s*1,[\s\S]*minWidth:\s*0,/,
+    );
   });
 });

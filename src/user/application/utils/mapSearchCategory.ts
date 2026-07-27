@@ -56,7 +56,7 @@ export function getGoogleCategorySearchQuery(
   const normalized = normalizeMapSearchText(value);
 
   if (
-    /\b(cat toc|tiem toc|quan toc|salon toc|lam toc|toc nam|toc nu|uon toc|nhuom toc|barber|barbershop|barber shop|haircut|hair salon)\b/.test(
+    /\b(toc|cat toc|tiem toc|quan toc|salon toc|lam toc|toc nam|toc nu|uon toc|nhuom toc|barber|barbershop|barber shop|haircut|hair salon|hairdresser)\b/.test(
       normalized,
     )
   ) {
@@ -91,7 +91,11 @@ export function getGoogleCategorySearchQuery(
     return 'dentist';
   }
 
-  if (/\b(cay xang|tram xang|tram do xang|gas station|petrol)\b/.test(normalized)) {
+  if (
+    /\b(xang|xang dau|cay xang|tram xang|tram xang dau|tram do xang|cua hang xang dau|do xang|gas|gas station|gasoline|petrol|petrol station|fuel|fuel station)\b/.test(
+      normalized,
+    )
+  ) {
     return 'gas_station';
   }
 

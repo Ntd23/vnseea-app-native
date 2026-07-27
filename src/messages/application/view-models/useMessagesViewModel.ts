@@ -47,7 +47,8 @@ function applyFollowingStatus(
   followingIds: Set<string>,
   followerIds: Set<string> = new Set(),
 ): ChatItem[] {
-  return chats.map(chat => {
+  let changed = false;
+  const nextChats = chats.map(chat => {
     const isFollowing =
       chat.chatType === 'user' ? followingIds.has(chat.userId) : false;
     const isFollower =
@@ -57,12 +58,15 @@ function applyFollowingStatus(
       return chat;
     }
 
+    changed = true;
     return {
       ...chat,
       isFollowing,
       isFollower,
     };
   });
+
+  return changed ? nextChats : chats;
 }
 
 function syncUnreadBadgeCount(chats: ChatItem[]) {
@@ -106,19 +110,25 @@ function applyLabelsToChats(
     labelRecipients.map(recipient => [recipient.userId, recipient.labels]),
   );
 
-  return chats.map(chat => {
+  let changed = false;
+  const nextChats = chats.map(chat => {
     if (chat.chatType !== 'user') {
-      return areLabelsEqual(chat.labels, []) ? chat : { ...chat, labels: [] };
+      if (areLabelsEqual(chat.labels, [])) return chat;
+      changed = true;
+      return { ...chat, labels: [] };
     }
 
     const labels = labelsByUserId.get(chat.userId) ?? [];
     if (areLabelsEqual(chat.labels, labels)) return chat;
 
+    changed = true;
     return {
       ...chat,
       labels,
     };
   });
+
+  return changed ? nextChats : chats;
 }
 
 export interface MessagesState {
@@ -650,12 +660,22 @@ export function useMessagesViewModel() {
       preloadMessagesStartupChats()
         .then(warmedChats => {
           if (cancelled) return;
-          setState(prev => ({
-            ...prev,
-            chats: mergeChatItems(prev.chats, warmedChats),
-            isLoadingChats: false,
-            error: null,
-          }));
+          setState(prev => {
+            if (
+              prev.chats === warmedChats &&
+              !prev.isLoadingChats &&
+              prev.error === null
+            ) {
+              return prev;
+            }
+
+            return {
+              ...prev,
+              chats: mergeChatItems(prev.chats, warmedChats),
+              isLoadingChats: false,
+              error: null,
+            };
+          });
           scheduleEnrichment();
         })
         .catch(() => {
@@ -687,19 +707,26 @@ export function useMessagesViewModel() {
 
   useEffect(() => {
     return onUserOnlineStatus(event => {
-      setState(prev => ({
-        ...prev,
-        chats: prev.chats.map(chat => {
+      setState(prev => {
+        let changed = false;
+        const chats = prev.chats.map(chat => {
           if (chat.chatType !== 'user' || chat.userId !== event.userId) {
             return chat;
           }
 
+          if (chat.isOnline === event.isOnline) {
+            return chat;
+          }
+
+          changed = true;
           return {
             ...chat,
             isOnline: event.isOnline,
           };
-        }),
-      }));
+        });
+
+        return changed ? { ...prev, chats } : prev;
+      });
     });
   }, []);
 

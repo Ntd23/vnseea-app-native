@@ -1,8 +1,9 @@
 // Description: Reusable Facebook-style live-stream card for Home and Profile feeds.
 import React, { useCallback, useMemo } from 'react';
-import { Image, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import { Radio, Users } from 'lucide-react-native';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
+import { InlineLiveStreamPlayer } from '../../../live/presentation/components/InlineLiveStreamPlayer';
 import {
   FeedCardContent,
   FeedMediaFrame,
@@ -16,6 +17,7 @@ const FALLBACK_LIVE_AVATAR =
 export type LiveStreamPostCardProps = {
   item: LiveStreamItem;
   copy: FeedCopy;
+  isActive: boolean;
   onPress: (item: LiveStreamItem) => void;
 };
 
@@ -23,6 +25,7 @@ export const LiveStreamPostCard = React.memo(
   function LiveStreamPostCard({
     item,
     copy,
+    isActive,
     onPress,
   }: LiveStreamPostCardProps) {
     const handlePress = useCallback(() => {
@@ -32,11 +35,6 @@ export const LiveStreamPostCard = React.memo(
       () => ({ uri: item.publisher.avatarUrl || FALLBACK_LIVE_AVATAR }),
       [item.publisher.avatarUrl],
     );
-    const thumbnailSource = useMemo(
-      () => (item.thumbnailUrl ? { uri: item.thumbnailUrl } : undefined),
-      [item.thumbnailUrl],
-    );
-
     const startedAtSeconds = Math.floor(
       new Date(item.startedAt).getTime() / 1000,
     );
@@ -84,21 +82,7 @@ export const LiveStreamPostCard = React.memo(
         </FeedCardContent>
 
         <FeedMediaFrame className="relative h-52 bg-[#0f172a]">
-          {thumbnailSource ? (
-            <Image
-              source={thumbnailSource}
-              className="h-full w-full opacity-90"
-              resizeMode="cover"
-              fadeDuration={0}
-            />
-          ) : (
-            <View className="absolute inset-0 items-center justify-center">
-              <Radio size={44} color="#ffffff" />
-              <Text className="mt-2 text-sm font-bold text-white/80">
-                {copy.livePlaying}
-              </Text>
-            </View>
-          )}
+          <InlineLiveStreamPlayer active={isActive} item={item} />
           <View className="absolute right-3 top-3 flex-row items-center rounded-full bg-red-500 px-3 py-1">
             <View className="h-2 w-2 rounded-full bg-white" />
             <Text className="ml-1 text-xs font-extrabold text-white">LIVE</Text>
@@ -123,15 +107,6 @@ export const LiveStreamPostCard = React.memo(
               {item.description}
             </Text>
           )}
-          <TouchableOpacity
-            activeOpacity={0.86}
-            onPress={handlePress}
-            className="mt-4 rounded-xl bg-brand-soft px-4 py-3"
-          >
-            <Text className="text-center text-sm font-extrabold text-brand">
-              {copy.watchLive}
-            </Text>
-          </TouchableOpacity>
         </FeedCardContent>
       </FeedTouchableCardSurface>
     );
@@ -142,6 +117,8 @@ export const LiveStreamPostCard = React.memo(
     previous.item.state === next.item.state &&
     previous.item.thumbnailUrl === next.item.thumbnailUrl &&
     previous.item.title === next.item.title &&
+    previous.item.description === next.item.description &&
+    previous.isActive === next.isActive &&
     previous.copy === next.copy,
 );
 

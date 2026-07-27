@@ -73,9 +73,11 @@ describe('LiveKit live stream native iOS media path', () => {
     expect(viewBlock).toContain('<LiveKitRoom');
     expect(viewBlock).toContain('audio={isHost}');
     expect(viewBlock).toContain('video={hostVideoCaptureOptions}');
-    expect(viewBlock).toContain('connectOptions={LIVE_CONNECT_OPTIONS}');
+    expect(viewBlock).toContain('connectOptions={connectOptions}');
     expect(source).toContain('const LIVE_CONNECT_OPTIONS = {');
+    expect(source).toContain('const LIVE_VIDEO_ONLY_CONNECT_OPTIONS = {');
     expect(source).toContain('autoSubscribe: true');
+    expect(source).toContain('autoSubscribe: false');
     expect(source).not.toContain('new Room(');
     expect(source).not.toContain('RoomContext.Provider');
     expect(source).not.toContain('ManualIosLiveHostRoom');
@@ -119,7 +121,10 @@ describe('LiveKit live stream native iOS media path', () => {
     expect(source).toContain('class VNSEEALiveKitNativeView');
     expect(source).toContain('VideoView()');
     expect(source).toContain('Room(delegate: self');
-    expect(source).toContain('ConnectOptions(autoSubscribe: true)');
+    expect(source).toContain('let shouldAutoSubscribe = role == .host || audioEnabled');
+    expect(source).toContain(
+      'ConnectOptions(autoSubscribe: shouldAutoSubscribe)',
+    );
     expect(source).toContain('RoomOptions(');
     expect(source).toContain('setMicrophone(enabled: true)');
     expect(source).toContain('setCamera(enabled: true');
@@ -133,6 +138,8 @@ describe('LiveKit live stream native iOS media path', () => {
     expect(source).toContain('live_native_track_subscribed');
     expect(source).toContain('live_native_error');
     expect(bridge).toContain('RCT_EXTERN_MODULE(VNSEEALiveKitNativeViewManager, RCTViewManager)');
+    expect(bridge).toContain('RCT_EXPORT_VIEW_PROPERTY(audioEnabled, BOOL)');
+    expect(bridge).toContain('RCT_EXPORT_VIEW_PROPERTY(objectFit, NSString)');
     expect(bridge).toContain('RCT_EXPORT_VIEW_PROPERTY(onLiveNativeEvent, RCTBubblingEventBlock)');
     expect(project).toContain('https://github.com/livekit/client-sdk-swift');
     expect(project).toContain('kind = exactVersion;');

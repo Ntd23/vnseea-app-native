@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -68,6 +69,7 @@ type ImageCropperModalProps = {
 };
 
 const MAX_SCALE = 4;
+const CROP_IMAGE_READY_FALLBACK_MS = 1_200;
 
 const clampOnWorklet = (value: number, minimum: number, maximum: number) => {
   'worklet';
@@ -89,6 +91,8 @@ export function ImageCropperModal({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const cropViewportRef = useRef<View | null>(null);
+  const captureLockRef = useRef(false);
+  const imageErrorHandledRef = useRef(false);
   const [sourceSize, setSourceSize] = useState<ImageSize | null>(null);
   const [isImageReady, setImageReady] = useState(false);
   const [isCapturing, setCapturing] = useState(false);
@@ -164,6 +168,7 @@ export function ImageCropperModal({
 
     setImageReady(false);
     setSourceSize(null);
+    imageErrorHandledRef.current = false;
     resetCrop(false);
 
     if (!visible || !image?.uri) {
@@ -202,6 +207,24 @@ export function ImageCropperModal({
       isActive = false;
     };
   }, [image, onCancel, resetCrop, visible]);
+
+  useEffect(() => {
+    if (!visible || !image?.uri || !sourceSize || isImageReady) {
+      return;
+    }
+
+    // Local profile previews have already been fully decoded and re-encoded
+    // by the native preparation module. React Native can occasionally miss an
+    // Image onLoad callback while a full-screen Modal is mounting, so never
+    // leave crop controls permanently disabled when that event is lost.
+    const fallbackTimer = setTimeout(() => {
+      if (!imageErrorHandledRef.current) {
+        setImageReady(true);
+      }
+    }, CROP_IMAGE_READY_FALLBACK_MS);
+
+    return () => clearTimeout(fallbackTimer);
+  }, [image?.uri, isImageReady, sourceSize, visible]);
 
   const cropGesture = useMemo(() => {
     const panGesture = Gesture.Pan()
@@ -311,16 +334,32 @@ export function ImageCropperModal({
     ],
   }));
 
+  const handleImageLoadError = useCallback(
+    (error: unknown) => {
+      if (imageErrorHandledRef.current) return;
+
+      imageErrorHandledRef.current = true;
+      console.error('[ImageCropper] Cannot render selected image:', error);
+      Alert.alert(
+        'Không thể mở ảnh',
+        'Ảnh đã chọn không thể tải để cắt. Vui lòng chọn một ảnh khác.',
+        [{ text: 'Chọn lại', onPress: onCancel }],
+      );
+    },
+    [onCancel],
+  );
+
   const handleComplete = useCallback(async () => {
     if (
       !cropViewportRef.current ||
       !image?.uri ||
       !isImageReady ||
-      isCapturing
+      captureLockRef.current
     ) {
       return;
     }
 
+    captureLockRef.current = true;
     setCapturing(true);
 
     try {
@@ -330,7 +369,7 @@ export function ImageCropperModal({
           : PROFILE_COVER_OUTPUT_SIZE;
       const croppedUri = await captureRef(cropViewportRef, {
         format: 'jpg',
-        quality: 0.92,
+        quality: 0.88,
         result: 'tmpfile',
         width: outputSize.width,
         height: outputSize.height,
@@ -345,16 +384,17 @@ export function ImageCropperModal({
       console.error('[ImageCropper] Cannot export cropped image:', error);
       Alert.alert('Không thể cắt ảnh', 'Đã có lỗi xảy ra. Vui lòng thử lại.');
     } finally {
+      captureLockRef.current = false;
       setCapturing(false);
     }
-  }, [image?.uri, isCapturing, isImageReady, onComplete, target]);
+  }, [image?.uri, isImageReady, onComplete, target]);
 
   const isAvatar = target === 'avatar';
 
   return (
     <Modal
       visible={visible}
-      animationType="fade"
+      animationType={Platform.OS === 'android' ? 'none' : 'fade'}
       presentationStyle="fullScreen"
       statusBarTranslucent
       navigationBarTranslucent
@@ -416,9 +456,6 @@ export function ImageCropperModal({
           >
             <GestureDetector gesture={cropGesture}>
               <View
-                ref={cropViewportRef}
-                collapsable={false}
-                renderToHardwareTextureAndroid
                 style={[
                   styles.cropViewport,
                   {
@@ -427,33 +464,51 @@ export function ImageCropperModal({
                   },
                 ]}
               >
-                {image?.uri && sourceSize ? (
-                  <Animated.Image
-                    source={{ uri: image.uri }}
-                    resizeMode="cover"
-                    onLoad={() => setImageReady(true)}
-                    style={[
-                      styles.cropImage,
-                      {
-                        width: baseImageSize.width,
-                        height: baseImageSize.height,
-                        left: (frameSize.width - baseImageSize.width) / 2,
-                        top: (frameSize.height - baseImageSize.height) / 2,
-                      },
-                      animatedImageStyle,
-                    ]}
-                  />
-                ) : null}
+                <View
+                  ref={cropViewportRef}
+                  collapsable={false}
+                  style={styles.cropCaptureSurface}
+                >
+                  {image?.uri && sourceSize ? (
+                    <Animated.View
+                      style={[
+                        styles.cropImageTransform,
+                        {
+                          width: baseImageSize.width,
+                          height: baseImageSize.height,
+                        },
+                        animatedImageStyle,
+                      ]}
+                    >
+                      <Image
+                        key={image.uri}
+                        source={{ uri: image.uri }}
+                        resizeMode="cover"
+                        resizeMethod={
+                          Platform.OS === 'android' ? 'scale' : 'resize'
+                        }
+                        fadeDuration={0}
+                        onLoad={() => setImageReady(true)}
+                        onLoadEnd={() => {
+                          if (!imageErrorHandledRef.current) {
+                            setImageReady(true);
+                          }
+                        }}
+                        onError={handleImageLoadError}
+                        style={styles.cropImage}
+                      />
+                    </Animated.View>
+                  ) : null}
 
-                {!isImageReady ? (
-                  <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#FFFFFF" />
-                  </View>
-                ) : null}
+                  {!isImageReady ? (
+                    <View style={styles.loadingOverlay}>
+                      <ActivityIndicator size="large" color="#FFFFFF" />
+                    </View>
+                  ) : null}
+                </View>
               </View>
             </GestureDetector>
-
-            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <View pointerEvents="none" style={styles.cropGuideOverlay}>
               <View
                 style={[styles.gridLineVertical, styles.gridLineFirstColumn]}
               />
@@ -582,8 +637,23 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#111827',
   },
-  cropImage: {
+  cropCaptureSurface: {
     position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
+  },
+  cropImageTransform: {
+    flexShrink: 0,
+  },
+  cropImage: {
+    width: '100%',
+    height: '100%',
   },
   loadingOverlay: {
     position: 'absolute',
@@ -594,6 +664,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#111827',
+    zIndex: 5,
+  },
+  cropGuideOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 10,
+    elevation: 20,
   },
   cropOutline: {
     position: 'absolute',

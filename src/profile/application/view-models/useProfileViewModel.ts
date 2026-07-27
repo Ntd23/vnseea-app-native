@@ -27,6 +27,7 @@ import type {
 
 const repository = createProfileRepository();
 const storiesRepository = createStoriesRepository();
+const PROFILE_MEDIA_UPLOAD_TIMEOUT_MS = 60_000;
 
 function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -34,6 +35,25 @@ function toErrorMessage(error: unknown) {
   }
 
   return String(error);
+}
+
+function logProfileMediaUpdateError(
+  kind: ProfileMediaKind,
+  error: unknown,
+) {
+  const candidate = error as {
+    message?: string;
+    response?: {
+      status?: number;
+      data?: unknown;
+    };
+  };
+
+  console.warn(`[useProfileViewModel] update ${kind} rejected:`, {
+    message: candidate?.message ?? String(error),
+    status: candidate?.response?.status,
+    response: candidate?.response?.data,
+  });
 }
 
 function profileDataToMediaSnapshot(
@@ -59,6 +79,7 @@ async function uploadCanonicalProfileMedia(
   const response = await apiBridge.multipart<RawProfileMediaResponse>(
     route,
     buildProfileMediaUploadPayload(kind, file),
+    { timeout: PROFILE_MEDIA_UPLOAD_TIMEOUT_MS },
   );
   return parseProfileMediaUpdateResponse(response, kind);
 }
@@ -184,24 +205,26 @@ export function useProfileViewModel() {
       try {
         const session = sessionStorage.getSession();
         const cachedProfile = sessionStorage.getUserProfile();
+        const beforeSnapshot = profileDataToMediaSnapshot(profileData);
         const result = await updateAvatarAndShareStory(avatarUri, {
           uploadAvatar: avatar =>
             uploadProfileMediaWithReconciliation('avatar', avatar, {
               upload: file => uploadCanonicalProfileMedia('avatar', file),
               loadSnapshot: loadOwnProfileMediaSnapshot,
+              beforeSnapshot,
             }),
           createStory: draft => storiesRepository.createStory(draft),
           currentUserId: session?.userId,
           currentUserProfile: cachedProfile,
           emitStory: story => storyCreatedEvents.emit(story),
+          waitForStory: false,
+          onStoryError: storyError => {
+            console.warn(
+              '[useProfileViewModel] avatar updated but Story creation failed:',
+              storyError,
+            );
+          },
         });
-
-        if (result.storyError) {
-          console.warn(
-            '[useProfileViewModel] avatar updated but Story creation failed:',
-            result.storyError,
-          );
-        }
 
         if (result.profileMedia) {
           publishProfileMediaUpdate(result.profileMedia);
@@ -209,14 +232,15 @@ export function useProfileViewModel() {
 
         return result.profileMedia ?? null;
       } catch (caughtError) {
-        console.error(
-          '[useProfileViewModel] updateAvatar error:',
-          caughtError,
-        );
+        logProfileMediaUpdateError('avatar', caughtError);
         return null;
       }
     },
-    [loadOwnProfileMediaSnapshot, publishProfileMediaUpdate],
+    [
+      loadOwnProfileMediaSnapshot,
+      profileData,
+      publishProfileMediaUpdate,
+    ],
   );
 
   const updateCover = useCallback(
@@ -228,16 +252,17 @@ export function useProfileViewModel() {
           {
             upload: file => uploadCanonicalProfileMedia('cover', file),
             loadSnapshot: loadOwnProfileMediaSnapshot,
+            beforeSnapshot: profileDataToMediaSnapshot(profileData),
           },
         );
         publishProfileMediaUpdate(result);
         return result;
       } catch (caughtError) {
-        console.error('[useProfileViewModel] updateCover error:', caughtError);
+        logProfileMediaUpdateError('cover', caughtError);
         return null;
       }
     },
-    [loadOwnProfileMediaSnapshot, publishProfileMediaUpdate],
+    [loadOwnProfileMediaSnapshot, profileData, publishProfileMediaUpdate],
   );
 
   return {

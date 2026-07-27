@@ -10251,10 +10251,11 @@ function Wo_GetPostCommentsAPI($post_id = 0, $limit = 5, $offset = 0)
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $post_id = Wo_Secure($post_id);
     $data = array();
-    $query = "SELECT `id` FROM " . T_COMMENTS . " WHERE `post_id` = {$post_id} AND `user_id` NOT IN (SELECT `blocked` FROM " . T_BLOCKS . " WHERE `blocker` = '{$logged_user_id}') AND `user_id` NOT IN (SELECT `blocker` FROM " . T_BLOCKS . " WHERE `blocked` = '{$logged_user_id}') {$offset_query} ORDER BY `id` ASC";
-    if (($comments_num = Wo_CountPostComment($post_id)) > $limit) {
-        $query .= " LIMIT {$limit} ";
-    }
+    // The endpoint is paginated already. Counting the entire post before
+    // selecting the requested page adds a database round-trip on every open
+    // and provides no useful information to the caller.
+    $limit = max(1, min(50, (int) $limit));
+    $query = "SELECT `id` FROM " . T_COMMENTS . " WHERE `post_id` = {$post_id} AND `user_id` NOT IN (SELECT `blocked` FROM " . T_BLOCKS . " WHERE `blocker` = '{$logged_user_id}') AND `user_id` NOT IN (SELECT `blocker` FROM " . T_BLOCKS . " WHERE `blocked` = '{$logged_user_id}') {$offset_query} ORDER BY `id` ASC LIMIT {$limit}";
     $query_one = mysqli_query($sqlConnect, $query);
     if (mysqli_num_rows($query_one)) {
         while ($fetched_data = mysqli_fetch_assoc($query_one)) {
