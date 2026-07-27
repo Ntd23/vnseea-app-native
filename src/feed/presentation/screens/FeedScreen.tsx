@@ -239,14 +239,6 @@ const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type FeedScrollDirection = 'up' | 'down' | 'none';
 
-function getFeedChromeTopInset(rawTopInset: number) {
-  // Home uses an opaque Android status bar, so the native window already
-  // starts below it. Safe-area metrics can briefly keep the previous
-  // translucent screen's top inset during navigation; applying that value
-  // here would reserve the status bar twice and flash a white strip.
-  return FEED_IS_ANDROID ? 0 : rawTopInset;
-}
-
 function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
   const payload = {
     event,
@@ -1696,7 +1688,19 @@ function FeedScreen() {
     feedSafeAreaInsets.top,
     initialWindowMetrics?.insets?.top,
   );
-  const topInset = getFeedChromeTopInset(rawTopInset);
+  const topInset = rawTopInset;
+  const androidStatusBarBackgroundStyle = useMemo(
+    () => ({
+      backgroundColor: APP_BRAND_COLOR,
+      height: topInset,
+      left: 0,
+      position: 'absolute' as const,
+      right: 0,
+      top: 0,
+      zIndex: 20,
+    }),
+    [topInset],
+  );
   const feedRefreshProgressViewOffset =
     Platform.OS === 'ios'
       ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
@@ -3877,6 +3881,13 @@ function FeedScreen() {
           }
           translucent={false}
         />
+        {Platform.OS === 'android' ? (
+          <View
+            testID="android-feed-status-bar-background"
+            pointerEvents="none"
+            style={androidStatusBarBackgroundStyle}
+          />
+        ) : null}
         {Platform.OS === 'ios' ? (
           <>
             {hasNewPosts && (
