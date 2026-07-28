@@ -1,6 +1,7 @@
 import {
   getPhotoGridItemGutterStyle,
   getPhotoGridItemLayout,
+  getPhotoGridRows,
 } from '../photoGridLayout';
 
 describe('photo grid layout', () => {
@@ -66,5 +67,19 @@ describe('photo grid layout', () => {
       paddingTop: 1,
       paddingLeft: 1,
     });
+  });
+
+  it('groups composer previews into the same explicit rows as Feed', () => {
+    expect(getPhotoGridRows(1)).toEqual([[0]]);
+    expect(getPhotoGridRows(2)).toEqual([[0, 1]]);
+    expect(getPhotoGridRows(3)).toEqual([[0], [1, 2]]);
+    expect(getPhotoGridRows(4)).toEqual([
+      [0, 1],
+      [2, 3],
+    ]);
+    expect(getPhotoGridRows(9)).toEqual([
+      [0, 1],
+      [2, 3],
+    ]);
   });
 });

@@ -57,23 +57,20 @@ describe('app privacy source contracts', () => {
     expect(exportedScreen).toContain('privacy_contract: CONTENT_AUDIENCE_CONTRACT');
   });
 
-  it('makes composer context explicit and renders anonymous as a separate personal toggle', () => {
+  it('makes composer context explicit and never exposes anonymous creation controls', () => {
     const screen = read('src/feed/presentation/screens/CreatePostScreen.tsx');
     const repository = read(
       'src/feed/infrastructure/repositories/ApiFeedRepository.ts',
     );
 
-    expect(screen).toContain('!targetPage && !targetGroupId && !eventId');
+    expect(screen).toContain(": 'personal'");
     expect(screen).toContain("composerContext === 'page'");
     expect(screen).toMatch(/targetGroupId[\s\S]*\? 'group'/);
     expect(screen).toMatch(/eventId[\s\S]*\? 'event'/);
-    expect(screen).toMatch(/vm\.draft\.isAnonymous\s*\?\s*\([\s\S]*<EyeOff[\s\S]*:\s*vm\.draft\.privacy === 'public'[\s\S]*<Globe2/);
-    expect(screen).toMatch(/vm\.draft\.isAnonymous\s*\?\s*copy\.privacyAnonymous\s*:\s*vm\.draft\.privacy === 'public'[\s\S]*\? copy\.privacyPublic/);
-    expect(screen).toContain('<Switch');
-    expect(screen).toContain('value={vm.draft.isAnonymous}');
-    expect(screen).toContain('onValueChange={stableSetAnonymous}');
-    expect(screen).toContain('disabled={vm.draft.isAnonymous}');
-    expect(screen).toContain('opacity: vm.draft.isAnonymous ? 0.45 : 1');
+    expect(screen).not.toContain('value={vm.draft.isAnonymous}');
+    expect(screen).not.toContain('onValueChange={stableSetAnonymous}');
+    expect(screen).not.toContain('stableSetAnonymous');
+    expect(repository).toContain("payload.is_anonymous = '0'");
     expect(repository).toContain('resolveCreatePostContext');
   });
 

@@ -38,6 +38,7 @@ import type {
   FeedPostsPage,
   FeedRepository,
   FeedRecommendationEventInput,
+  GetTaggableUsersInput,
   GetPostByIdResult,
   PostComment,
   PostReactionsPage,
@@ -58,6 +59,8 @@ import type {
   PostFeeling,
   PostPrivacy,
   PostLinkPreview,
+  PostLocation,
+  PostTaggedUser,
   SharedPostPreviewModel,
 } from '../../domain/types/feed.types';
 import { buildSharedPostPreviewModel } from '../../application/sharing/sharedPostPreview';
@@ -352,6 +355,9 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
     permissions: presentation.permissions,
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
+    feeling: extractFeeling(raw),
+    taggedUsers: extractTaggedUsers(raw),
+    location: extractPostLocation(raw),
     pollQuestion: readPostCaption(raw) || undefined,
     options,
     votedId,
@@ -530,6 +536,53 @@ function readPostMentionNames(raw: Record<string, unknown>) {
   return names.length > 0 ? names : undefined;
 }
 
+function mapPostTaggedUser(
+  raw: Record<string, unknown>,
+): PostTaggedUser | null {
+  const id = readString(raw, 'user_id', 'id');
+  const username = readString(raw, 'username', 'user_name');
+  if (!id || !username) return null;
+
+  const firstName = readString(raw, 'first_name');
+  const lastName = readString(raw, 'last_name');
+  const name =
+    readString(raw, 'name', 'full_name') ||
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    username;
+
+  return {
+    id,
+    name,
+    username,
+    avatarUrl:
+      normalizeMediaUrl(readString(raw, 'avatar', 'profile_picture')) ||
+      undefined,
+  };
+}
+
+function extractTaggedUsers(
+  raw: Record<string, unknown>,
+): PostTaggedUser[] | undefined {
+  const source = raw.tagged_users;
+  if (!Array.isArray(source)) return undefined;
+  const users = source
+    .map(item =>
+      item && typeof item === 'object'
+        ? mapPostTaggedUser(item as Record<string, unknown>)
+        : null,
+    )
+    .filter((item): item is PostTaggedUser => Boolean(item));
+  return users.length > 0 ? users : undefined;
+}
+
+function extractPostLocation(
+  raw: Record<string, unknown>,
+): PostLocation | undefined {
+  const label = cleanCaption(readString(raw, 'postMap', 'post_map')).trim();
+  if (!label || label === 'Shared location') return undefined;
+  return { label };
+}
+
 function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   const presentation = readPostPresentation(raw);
   const publisher = presentation.publisher;
@@ -605,6 +658,9 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     permissions: presentation.permissions,
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
+    feeling: extractFeeling(raw),
+    taggedUsers: extractTaggedUsers(raw),
+    location: extractPostLocation(raw),
     // Some endpoints return full Wo_GetMedia URLs, others still return
     // relative media paths. normalizePlayableMediaUrl handles both.
     videoUrl,
@@ -997,6 +1053,9 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     activity: mapProfileMediaActivity(readString(raw, 'postType', 'post_type')),
     caption,
     mentionNames: readPostMentionNames(raw),
+    feeling: extractFeeling(raw),
+    taggedUsers: extractTaggedUsers(raw),
+    location: extractPostLocation(raw),
     photos,
     audioUrl: AUDIO_URL_PATTERN.test(readString(raw, 'postFile'))
       ? readString(raw, 'postFile')
@@ -1007,7 +1066,6 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     isLiked: myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
     myReaction,
     topReactions: extractTopReactions(raw, myReaction),
-    feeling: extractFeeling(raw),
     privacy,
     privacyContract: privacyResult.contract,
     isAnonymous: privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
@@ -1875,9 +1933,6 @@ function resolveCreatePostContext(draft: CreatePostDraft): CreatePostContext {
   }
 
   if (draft.pageId) {
-    if (draft.isAnonymous) {
-      throw new Error('Anonymous posts are not allowed in a page context.');
-    }
     if (draft.privacy !== 'public' && draft.privacy !== 'followers') {
       throw new Error('Invalid page audience.');
     }
@@ -1885,16 +1940,43 @@ function resolveCreatePostContext(draft: CreatePostDraft): CreatePostContext {
   }
 
   if (draft.groupId || draft.eventId) {
-    if (draft.isAnonymous) {
-      throw new Error('Anonymous posts are not allowed in this context.');
-    }
     return draft.groupId ? 'group' : 'event';
   }
 
-  if (draft.isAnonymous && draft.privacy !== 'public') {
-    throw new Error('Anonymous personal posts must use the public audience.');
-  }
   return 'personal';
+}
+
+function normalizeDraftTaggedUserIds(draft: CreatePostDraft): string[] {
+  const ids = Array.from(
+    new Set(
+      (draft.taggedUsers ?? [])
+        .map(user => String(user.id).trim())
+        .filter(id => /^[1-9][0-9]*$/.test(id)),
+    ),
+  );
+  if (ids.length > 20) {
+    throw new Error('Maximum of 20 tagged people per post.');
+  }
+  return ids;
+}
+
+function buildTaggableUsersPayload(input: GetTaggableUsersInput) {
+  const payload: Record<string, unknown> = {
+    query: input.query?.trim() ?? '',
+    postPrivacy: PRIVACY_TO_WIRE(input.privacy),
+    privacy_contract: CONTENT_AUDIENCE_CONTRACT,
+    limit: 20,
+  };
+  if (input.pageId) payload.page_id = input.pageId;
+  if (input.groupId) payload.group_id = input.groupId;
+  if (input.eventId) payload.event_id = input.eventId;
+  if (input.cursor) payload.cursor = input.cursor;
+  if (input.userIds?.length) {
+    payload.user_ids = JSON.stringify(
+      Array.from(new Set(input.userIds.map(id => String(id).trim()))),
+    );
+  }
+  return payload;
 }
 
 function isGroupRawPost(raw: Record<string, unknown>): boolean {
@@ -2203,7 +2285,7 @@ export function createFeedRepository(): FeedRepository {
         payload.privacy_contract = CONTENT_AUDIENCE_CONTRACT;
       }
       if (context === 'personal') {
-        payload.is_anonymous = draft.isAnonymous ? '1' : '0';
+        payload.is_anonymous = '0';
       }
 
       if (draft.pageId) {
@@ -2216,6 +2298,16 @@ export function createFeedRepository(): FeedRepository {
 
       if (draft.eventId) {
         payload.event_id = draft.eventId;
+      }
+
+      const taggedUserIds = normalizeDraftTaggedUserIds(draft);
+      if (taggedUserIds.length > 0) {
+        payload.tagged_user_ids = JSON.stringify(taggedUserIds);
+      }
+
+      const locationLabel = draft.location?.label?.trim();
+      if (locationLabel) {
+        payload.postMap = locationLabel;
       }
 
       // Text — only send if non-empty after trim. WoWonder treats
@@ -2289,7 +2381,7 @@ export function createFeedRepository(): FeedRepository {
         // `postMap` is accepted as content by the backend but is not rendered
         // as a visible caption in our feed cards, which keeps shared map
         // locations as a clean preview card instead of a long URL blob.
-        if (!trimmedText) {
+        if (!trimmedText && !locationLabel) {
           payload.postMap =
             draft.linkPreview.title?.trim() ||
             draft.linkPreview.description?.trim() ||
@@ -2338,6 +2430,42 @@ export function createFeedRepository(): FeedRepository {
           : mappedPost;
 
       return { postId: post.id, post };
+    },
+
+    async getTaggableUsers(input) {
+      if (input.privacy === 'only_me') {
+        return { users: [], hasMore: false };
+      }
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Array<Record<string, unknown>>;
+        next_cursor?: string | number;
+        has_more?: boolean;
+        message?: string;
+      }>(
+        apiRoutes.feed.taggableUsers,
+        buildTaggableUsersPayload(input),
+      );
+
+      if (String(response.api_status) !== '200') {
+        throw new Error(
+          response.message ?? 'Không tải được danh sách người có thể gắn thẻ.',
+        );
+      }
+
+      return {
+        users: (response.data ?? [])
+          .map(mapPostTaggedUser)
+          .filter((user): user is PostTaggedUser => Boolean(user)),
+        nextCursor:
+          response.next_cursor === undefined ||
+          response.next_cursor === null ||
+          response.next_cursor === ''
+            ? undefined
+            : String(response.next_cursor),
+        hasMore: response.has_more === true,
+      };
     },
 
     async searchMentionSuggestions(

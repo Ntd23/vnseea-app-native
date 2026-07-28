@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  Alert,
   Dimensions,
   Image,
   InteractionManager,
@@ -99,11 +100,14 @@ import {
 } from './FeedReactionAssets';
 import { SharedPostPreviewCard } from './SharedPostPreviewCard';
 import {
+  getProfileMediaActivityLabel,
+} from '../../application/mappers/profileMediaActivity';
+import { buildPostActivityContext } from '../../application/composer/postActivityContext';
+import {
   cleanVnseeaPageShareCaption,
   isVnseeaPageLink,
   VnseeaPageLinkPreviewCard,
 } from './VnseeaPageLinkPreviewCard';
-import { getProfileMediaActivityLabel } from '../../application/mappers/profileMediaActivity';
 import {
   FEED_VIDEO_SURFACE_MAX_RECOVERY_ATTEMPTS,
   shouldRecoverFeedVideoSurface,
@@ -439,6 +443,7 @@ function cacheMediaAspectRatio(uri: string, width: number, height: number) {
 
 // â”€â”€ FeedCopy type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export type FeedCopy = {
+  language: AppLanguage;
   filters: Array<{ source: FeedSource; label: string }>;
   reactionLabel: Record<ReactionType, string>;
   like: string;
@@ -549,6 +554,7 @@ export type FeedCopy = {
 
 export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
   vi: {
+    language: 'vi',
     filters: [
       { source: 'all', label: 'Tất cả bài viết' },
       { source: 'following', label: 'Người theo dõi' },
@@ -667,6 +673,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     closeCommentsAccessibility: 'Đóng bình luận',
   },
   en: {
+    language: 'en',
     filters: [
       { source: 'all', label: 'All posts' },
       { source: 'following', label: 'Following' },
@@ -2627,6 +2634,20 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   const privacyMeta = getPostPrivacyMeta(getFeedPostPrivacy(post), copy);
   const PrivacyIcon = privacyMeta.Icon;
   const activityLabel = getProfileMediaActivityLabel(post?.activity, copy);
+  const postActivity = buildPostActivityContext({
+    language: copy.language,
+    feeling: post?.feeling,
+    taggedUsers: post?.taggedUsers,
+    location: post?.location,
+  });
+  const hasActivity = Boolean(activityLabel || postActivity.fullText);
+  const showTaggedUsers = useCallback(() => {
+    if (!post?.taggedUsers?.length) return;
+    Alert.alert(
+      copy.language === 'vi' ? 'Những người được gắn thẻ' : 'Tagged people',
+      post.taggedUsers.map(user => user.name).join('\n'),
+    );
+  }, [copy.language, post?.taggedUsers]);
 
   return (
     <View className={containerClassName}>
@@ -2647,11 +2668,44 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
           <View className="flex-row items-start">
             <Text
               className="min-w-0 flex-shrink text-title-primary"
-              numberOfLines={activityLabel ? 2 : 1}
+              numberOfLines={hasActivity ? 2 : 1}
             >
               <Text className="font-bold">{name}</Text>
               {activityLabel ? (
                 <Text className="font-normal"> {activityLabel}</Text>
+              ) : postActivity.fullText ? (
+                <>
+                  {' '}
+                  {postActivity.segments.map((segment, index) => {
+                    if (segment.kind === 'tagged_users') {
+                      return (
+                        <Text
+                          key={`${segment.kind}:${index}`}
+                          className="font-semibold text-brand"
+                          onPress={showTaggedUsers}
+                        >
+                          {segment.text}
+                        </Text>
+                      );
+                    }
+
+                    const isEmphasized =
+                      segment.kind === 'feeling' ||
+                      segment.kind === 'location';
+                    return (
+                      <Text
+                        key={`${segment.kind}:${index}`}
+                        className={
+                          isEmphasized
+                            ? 'font-semibold text-slate-900'
+                            : 'font-normal text-slate-500'
+                        }
+                      >
+                        {segment.text}
+                      </Text>
+                    );
+                  })}
+                </>
               ) : null}
             </Text>
             {badge ? (
@@ -2973,6 +3027,34 @@ function areFeelingsEqual(
   );
 }
 
+function areTaggedUsersEqual(
+  previous?: FeedPost['taggedUsers'],
+  next?: FeedPost['taggedUsers'],
+) {
+  if (previous === next) return true;
+  if (!previous || !next) return !previous && !next;
+  if (previous.length !== next.length) return false;
+
+  return previous.every((user, index) => {
+    const nextUser = next[index];
+    return (
+      user.id === nextUser.id &&
+      user.name === nextUser.name &&
+      user.username === nextUser.username &&
+      user.avatarUrl === nextUser.avatarUrl
+    );
+  });
+}
+
+function arePostLocationsEqual(
+  previous?: FeedPost['location'],
+  next?: FeedPost['location'],
+) {
+  if (previous === next) return true;
+  if (!previous || !next) return !previous && !next;
+  return previous.label === next.label;
+}
+
 function areSharedPostsEqual(
   previous?: FeedTextPost['sharedFrom'] | FeedVideoPost['sharedFrom'],
   next?: FeedTextPost['sharedFrom'] | FeedVideoPost['sharedFrom'],
@@ -3027,6 +3109,9 @@ function areFeedPostBaseRenderFieldsEqual(
     previous.isSaved === next.isSaved &&
     previous.sharedPostId === next.sharedPostId &&
     previous.sharedPost === next.sharedPost &&
+    areFeelingsEqual(previous.feeling, next.feeling) &&
+    areTaggedUsersEqual(previous.taggedUsers, next.taggedUsers) &&
+    arePostLocationsEqual(previous.location, next.location) &&
     arePublishersEqual(previous.publisher, next.publisher) &&
     areScalarArraysEqual(previous.mentionNames, next.mentionNames) &&
     areScalarArraysEqual(previous.topReactions, next.topReactions) &&
@@ -3081,8 +3166,7 @@ function areTextPostCardPropsEqual(previous: any, next: any) {
     previous.onPostPress === next.onPostPress &&
     areFeedPostBaseRenderFieldsEqual(previousPost, nextPost) &&
     previousPost.audioUrl === nextPost.audioUrl &&
-    areScalarArraysEqual(previousPost.photos, nextPost.photos) &&
-    areFeelingsEqual(previousPost.feeling, nextPost.feeling)
+    areScalarArraysEqual(previousPost.photos, nextPost.photos)
   );
 }
 
@@ -3295,12 +3379,6 @@ export const TextPostCard = React.memo(function TextPostCard({
             copy={copy}
             collapsible={totalPhotos > 0}
           />
-        ) : null}
-        {post.feeling ? (
-          <Text className="mt-1 text-caption-secondary">
-            {copy.feelingPrefix} {post.feeling.label ?? post.feeling.value}{' '}
-            {post.feeling.emoji ?? ''}
-          </Text>
         ) : null}
         {post.linkPreview ? (
           <FeedLinkPreviewCard

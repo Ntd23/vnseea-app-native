@@ -10,6 +10,16 @@ export type PhotoGridItemGutterStyle = {
   paddingLeft?: number;
 };
 
+export function getPhotoGridRows(totalPhotos: number): number[][] {
+  const displayedCount = Math.min(Math.max(Math.floor(totalPhotos), 0), 4);
+
+  if (displayedCount === 0) return [];
+  if (displayedCount === 1) return [[0]];
+  if (displayedCount === 2) return [[0, 1]];
+  if (displayedCount === 3) return [[0], [1, 2]];
+  return [[0, 1], [2, 3]];
+}
+
 function getTwoColumnWidth(gridWidth: number, isLeftColumn: boolean) {
   const leftWidth = Math.floor(gridWidth / 2);
   return isLeftColumn ? leftWidth : gridWidth - leftWidth;

@@ -17,6 +17,8 @@ import {
   Play,
 } from 'lucide-react-native';
 import type { SharedPostPreviewModel } from '../../domain/types/feed.types';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { buildPostActivityContext } from '../../application/composer/postActivityContext';
 
 type Props = {
   model: SharedPostPreviewModel;
@@ -105,6 +107,13 @@ export function SharedPostPreviewCard({
 }: Props) {
   const content = model.content;
   const storyMode = mode === 'story';
+  const language = useAppLanguage();
+  const activity = buildPostActivityContext({
+    language,
+    feeling: model.feeling,
+    taggedUsers: model.taggedUsers,
+    location: model.location,
+  });
 
   return (
     <View
@@ -131,8 +140,36 @@ export function SharedPostPreviewCard({
           </View>
         )}
         <View style={styles.headerCopy}>
-          <Text style={styles.publisherName} numberOfLines={1}>
-            {model.publisher.name || 'VNSEEA'}
+          <Text
+            style={styles.publisherName}
+            numberOfLines={activity.fullText ? 2 : 1}
+          >
+            <Text style={styles.publisherNameStrong}>
+              {model.publisher.name || 'VNSEEA'}
+            </Text>
+            {activity.fullText ? (
+              <>
+                {' '}
+                {activity.segments.map((segment, index) => {
+                  const isEmphasized =
+                    segment.kind === 'feeling' ||
+                    segment.kind === 'location' ||
+                    segment.kind === 'tagged_users';
+                  return (
+                    <Text
+                      key={`${segment.kind}:${index}`}
+                      style={
+                        isEmphasized
+                          ? styles.publisherActivityStrong
+                          : styles.publisherActivity
+                      }
+                    >
+                      {segment.text}
+                    </Text>
+                  );
+                })}
+              </>
+            ) : null}
           </Text>
           <View style={styles.metaRow}>
             <Text style={styles.metaText}>{formatSourceTime(model.postedAt)}</Text>
@@ -309,7 +346,18 @@ const styles = StyleSheet.create({
   publisherName: {
     color: '#0F172A',
     fontSize: 15,
+    lineHeight: 20,
+  },
+  publisherNameStrong: {
     fontWeight: '800',
+  },
+  publisherActivity: {
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  publisherActivityStrong: {
+    color: '#0F172A',
+    fontWeight: '700',
   },
   metaRow: {
     flexDirection: 'row',

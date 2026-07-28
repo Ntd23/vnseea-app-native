@@ -57,6 +57,7 @@ import {
   FEED_REACTION_IMAGES as REACTION_IMAGES,
 } from './FeedReactionAssets';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
+import { buildPostActivityContext } from '../../application/composer/postActivityContext';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -83,6 +84,7 @@ interface PollPostCardProps {
 const BRAND_BLUE = APP_BRAND_COLOR;
 
 type PollCopy = {
+  language: AppLanguage;
   reactionLabel: Record<ReactionType, string>;
   like: string;
   comment: string;
@@ -107,6 +109,7 @@ type PollCopy = {
 
 const POLL_COPY: Record<AppLanguage, PollCopy> = {
   vi: {
+    language: 'vi',
     reactionLabel: {
       like: 'Đã thích',
       love: 'Yêu thích',
@@ -136,6 +139,7 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     locale: 'vi-VN',
   },
   en: {
+    language: 'en',
     reactionLabel: {
       like: 'Liked',
       love: 'Love',
@@ -460,6 +464,12 @@ export const PollPostCard = React.memo(function PollPostCard({
     ? { label: copy.anonymousPrivacyLabel, Icon: EyeOff }
     : getPollPrivacyMeta(post.privacy, copy);
   const PrivacyIcon = privacyMeta.Icon;
+  const postActivity = buildPostActivityContext({
+    language: copy.language,
+    feeling: post.feeling,
+    taggedUsers: post.taggedUsers,
+    location: post.location,
+  });
   const activeReactionPickerPostId = useFeedReactionPickerActivePostId();
   const showInlineReactionPicker =
     Platform.OS === 'android' &&
@@ -492,12 +502,37 @@ export const PollPostCard = React.memo(function PollPostCard({
           )}
           <View className="ml-3 flex-1">
             <Text
-              className="text-title-primary font-bold text-[#050505]"
-              numberOfLines={1}
+              className="text-title-primary text-[#050505]"
+              numberOfLines={postActivity.fullText ? 2 : 1}
             >
-              {post.isAnonymous
-                ? copy.anonymousPrivacyLabel
-                : post.publisher?.name || copy.userFallback}
+              <Text className="font-bold">
+                {post.isAnonymous
+                  ? copy.anonymousPrivacyLabel
+                  : post.publisher?.name || copy.userFallback}
+              </Text>
+              {postActivity.fullText ? (
+                <>
+                  {' '}
+                  {postActivity.segments.map((segment, index) => {
+                    const isEmphasized =
+                      segment.kind === 'feeling' ||
+                      segment.kind === 'location' ||
+                      segment.kind === 'tagged_users';
+                    return (
+                      <Text
+                        key={`${segment.kind}:${index}`}
+                        className={
+                          isEmphasized
+                            ? 'font-semibold text-[#050505]'
+                            : 'font-normal text-[#65676B]'
+                        }
+                      >
+                        {segment.text}
+                      </Text>
+                    );
+                  })}
+                </>
+              ) : null}
             </Text>
             <View className="flex-row items-center mt-0.5">
               <Text className="text-caption-secondary text-[12px] text-[#65676B]">

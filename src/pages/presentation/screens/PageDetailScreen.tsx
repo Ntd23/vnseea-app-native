@@ -86,7 +86,6 @@ import {
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
 import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
-import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import {
@@ -2015,16 +2014,18 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     setShareSheetVisible(true);
   }, []);
 
-  const [composerModalVisible, setComposerModalVisible] = useState(false);
-  const [composerInitialAction, setComposerInitialAction] = useState<
-    'photo' | 'video' | 'product' | 'poll' | undefined
-  >(undefined);
-
   const handleCreatePost = useCallback((action?: any) => {
     const cleanAction = typeof action === 'string' ? action : undefined;
-    setComposerInitialAction(cleanAction as any);
-    setComposerModalVisible(true);
-  }, []);
+    navigation.navigate(ROUTES.CREATE_POST, {
+      page: vm.page,
+      initialAction: cleanAction as
+        | 'photo'
+        | 'video'
+        | 'product'
+        | 'poll'
+        | undefined,
+    });
+  }, [navigation, vm.page]);
 
   const handleCreateJob = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_JOB, {
@@ -2709,13 +2710,6 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         post={sharingPost}
         onInternalShare={handleInternalSharePost}
         onShared={handlePostShared}
-      />
-      <CreatePostModal
-        visible={composerModalVisible}
-        onClose={() => setComposerModalVisible(false)}
-        page={vm.page}
-        initialAction={composerInitialAction}
-        onCreated={vm.refresh}
       />
       <PageMediaViewerModal
         visible={pageMediaViewer !== null}

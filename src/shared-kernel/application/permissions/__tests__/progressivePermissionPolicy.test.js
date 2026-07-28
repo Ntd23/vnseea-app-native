@@ -16,29 +16,36 @@ describe('progressive runtime permission policy', () => {
     expect(app).not.toContain('PermissionsAndroid.request');
   });
 
-  it('initializes OneSignal without showing the notification prompt', () => {
+  it('requests notification permission once on the first app launch', () => {
+    const app = read('App.tsx');
     const source = read(
       'src/shared-kernel/infrastructure/push/oneSignalPush.ts',
     );
-    const initializeIndex = source.indexOf(
-      'export function initializePushNotifications',
+    expect(app).toContain('requestPushNotificationPermissionOnFirstLaunch');
+    expect(app).toContain(
+      'requestPushNotificationPermissionOnFirstLaunch().catch',
     );
-    const initializeBlock = source.slice(
-      initializeIndex,
-      source.indexOf(
-        'export async function getPushNotificationPermissionStatus',
-        initializeIndex,
-      ),
-    );
-
-    expect(initializeBlock).not.toContain('requestPermission(');
     expect(source).toContain(
-      'export async function requestPushNotificationPermission',
+      'export async function requestPushNotificationPermissionOnFirstLaunch',
     );
-    expect(source).toContain('canRequestPermission()');
+    expect(source).toContain('pushPermissionPromptStorage.wasRequested()');
+    expect(source).toContain('pushPermissionPromptStorage.markRequested()');
+    expect(
+      fs.existsSync(
+        path.join(
+          root,
+          'src/shared-kernel/infrastructure/push/pushPermissionPromptStorage.ts',
+        ),
+      ),
+    ).toBe(true);
+    const promptStorage = read(
+      'src/shared-kernel/infrastructure/push/pushPermissionPromptStorage.ts',
+    );
+    expect(promptStorage).toContain('react-native-mmkv');
+    expect(promptStorage).toContain('notification.permission.prompted');
   });
 
-  it('requests push permission only from the explicit settings action', () => {
+  it('keeps the settings action available for notification permission recovery', () => {
     const settings = read(
       'src/settings/presentation/screens/SettingsScreen.tsx',
     );

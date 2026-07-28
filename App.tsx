@@ -9,7 +9,10 @@ import {
   LiveKitCallSessionProvider,
   LiveKitMiniCallBar,
 } from './src/messages';
-import { initializePushNotifications } from './src/shared-kernel/infrastructure/push/oneSignalPush';
+import {
+  initializePushNotifications,
+  requestPushNotificationPermissionOnFirstLaunch,
+} from './src/shared-kernel/infrastructure/push/oneSignalPush';
 import { initializePushNotificationNavigation } from './src/notifications/application/navigation/pushNotificationNavigation';
 import { initI18n } from './src/shared-kernel/infrastructure/i18n';
 import { SnackbarProvider } from './src/shared-kernel/presentation/components/Snackbar';
@@ -24,6 +27,12 @@ function App() {
   useEffect(() => {
     initializePushNotificationNavigation();
     initializePushNotifications();
+    requestPushNotificationPermissionOnFirstLaunch().catch(error => {
+      console.warn(
+        '[OneSignal] Could not request first-launch notification permission',
+        error,
+      );
+    });
   }, []);
 
   return (

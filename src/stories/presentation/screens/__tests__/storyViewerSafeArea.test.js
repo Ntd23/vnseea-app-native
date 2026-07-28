@@ -23,7 +23,10 @@ describe('StoryViewer iOS header safe area', () => {
     const source = read('src/navigation/AppNavigator.tsx');
 
     expect(source).toMatch(
-      /const TRANSPARENT_MODAL_ROUTES:[\s\S]*new Set\(\[[\s\S]*ROUTES\.CREATE_POST,[\s\S]*ROUTES\.STORY_VIEWER,[\s\S]*\]\)/,
+      /const TRANSPARENT_MODAL_ROUTES:[\s\S]*new Set\(\[[\s\S]*ROUTES\.STORY_VIEWER,[\s\S]*\]\)/,
+    );
+    expect(source).not.toMatch(
+      /const TRANSPARENT_MODAL_ROUTES:[\s\S]*new Set\(\[[\s\S]*ROUTES\.CREATE_POST/,
     );
     expect(source).toContain("presentation: 'transparentModal'");
     expect(source).toContain("contentStyle: { backgroundColor: 'transparent' }");

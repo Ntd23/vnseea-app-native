@@ -15,6 +15,7 @@ define('T_NOTIFICATION', 'Wo_Notifications');
 define('T_MESSAGES', 'Wo_Messages');
 define('T_BLOCKS', 'Wo_Blocks');
 define('T_POSTS', 'Wo_Posts');
+define('T_POST_TAGGED_USERS', 'Wo_PostTaggedUsers');
 define('T_PINNED_POSTS', 'Wo_PinnedPosts');
 define('T_LIKES', 'Wo_Likes');
 define('T_SAVED_POSTS', 'Wo_SavedPosts');

@@ -416,6 +416,15 @@ if (isset($_FILES['postPhotos']['name']) && empty($mediaFilename) && empty($_POS
 $privacy = VNSEEA_NormalizePostPrivacyRequest($_POST);
 $post_privacy = $privacy['postPrivacy'];
 $is_anonymous = $privacy['is_anonymous'];
+$tagged_users = VNSEEA_NormalizeTaggedUserIds(isset($_POST['tagged_user_ids']) ? $_POST['tagged_user_ids'] : array());
+if (!$tagged_users['valid']) {
+    $error_code = 16;
+    $error_message = $tagged_users['error_code'];
+} elseif (!empty($tagged_users['ids']) && !empty($is_anonymous)) {
+    $error_code = 17;
+    $error_message = 'Anonymous posts cannot tag people.';
+}
+$tagged_user_ids = $tagged_users['valid'] ? $tagged_users['ids'] : array();
 $import_url_image = '';
 $url_link         = '';
 $url_content      = '';
@@ -572,6 +581,9 @@ if (empty($error_message)) {
     if (!empty($is_option)) {
         $post_data['poll_id'] = 1;
     }
+    if (!empty($ffmpeg_convert_video) && !empty($tagged_user_ids)) {
+        $post_data['_vnseea_tagged_user_ids'] = $tagged_user_ids;
+    }
     if (!empty($_POST['post_color']) && !empty($post_text) && empty($_POST['postRecord']) && empty($mediaFilename) && empty($mediaName) && empty($post_map) && empty($url_title) && empty($url_content) && empty($url_link) && empty($import_url_image) && empty($album_name) && empty($multi) && empty($video_thumb) && empty($post_data['postPhoto'])) {
         $post_data['color_id'] = Wo_Secure($_POST['post_color']);
     }
@@ -624,13 +636,29 @@ if (empty($error_message)) {
             'post_data' => $post_data
         ));
     } else {
-        $id = Wo_RegisterPost($post_data);
+        $tag_transaction_started = false;
+        if (!empty($tagged_user_ids)) {
+            $tag_transaction_started = mysqli_begin_transaction($sqlConnect);
+            if (!$tag_transaction_started) {
+                $error_code = 18;
+                $error_message = 'Unable to start post transaction.';
+            }
+        }
+        if (!empty($error_message)) {
+            $id = false;
+        } else {
+            $id = Wo_RegisterPost($post_data);
+        }
     }
-    
+
     if ($id) {
+        $post_dependencies_valid = true;
         if ($is_option == true) {
             foreach ($_POST['answer'] as $key => $value) {
                 $add_opition = Wo_AddOption($id, $value);
+                if (!$add_opition) {
+                    $post_dependencies_valid = false;
+                }
             }
         }
         if (isset($_FILES['postPhotos']['name'])) {
@@ -646,10 +674,32 @@ if (empty($error_message)) {
                     $file     = Wo_ShareFile($fileInfo, 1);
                     if (!empty($file)) {
                         $media_album = Wo_RegisterAlbumMedia($id, $file['filename']);
+                        if (!$media_album) {
+                            $post_dependencies_valid = false;
+                        }
+                    } else {
+                        $post_dependencies_valid = false;
                     }
                 }
             }
         }
+        if (!empty($tagged_user_ids) && empty($ffmpeg_convert_video)) {
+            $tags_saved = $post_dependencies_valid
+                && VNSEEA_SavePostTaggedUsers($id, (int) $wo['user']['user_id'], $tagged_user_ids);
+            if (!$tags_saved || !mysqli_commit($sqlConnect)) {
+                mysqli_rollback($sqlConnect);
+                $tag_transaction_started = false;
+                $id = false;
+                $error_code = 19;
+                $error_message = 'Unable to save tagged people.';
+            } else {
+                $tag_transaction_started = false;
+                VNSEEA_NotifyPostTaggedUsers($id, (int) $wo['user']['user_id'], $tagged_user_ids);
+            }
+        }
+    }
+
+    if ($id) {
         $wo['story'] = Wo_PostData($id);
         $html .= Wo_LoadPage('story/content');
         $wo['story']['shared_info'] = null;
@@ -739,7 +789,14 @@ if (empty($error_message)) {
             
     }
     else{
-    	$error_code    = 14;
-		$error_message = 'something went wrong';
+        if (!empty($tag_transaction_started)) {
+            mysqli_rollback($sqlConnect);
+        }
+        if (empty($error_code)) {
+            $error_code = 14;
+        }
+        if (empty($error_message)) {
+            $error_message = 'something went wrong';
+        }
     }
 }

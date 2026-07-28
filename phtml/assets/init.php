@@ -15,6 +15,7 @@ require_once('includes/cache.php');
 require_once('includes/functions_general.php');
 require_once('includes/tabels.php');
 require_once('includes/vnseea_privacy.php');
+require_once('includes/vnseea_post_tags.php');
 require_once('includes/functions_one.php');
 require_once('includes/functions_two.php');
 require_once('includes/functions_three.php');

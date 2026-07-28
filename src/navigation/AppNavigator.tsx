@@ -27,7 +27,6 @@ const SCREENS_WITHOUT_DEFAULT_ANIMATION: ReadonlySet<string> = new Set([
 ]);
 
 const TRANSPARENT_MODAL_ROUTES: ReadonlySet<string> = new Set([
-  ROUTES.CREATE_POST,
   ROUTES.STORY_VIEWER,
 ]);
 

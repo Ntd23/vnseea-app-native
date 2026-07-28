@@ -60,6 +60,12 @@ function loadForegroundHandler(platform) {
       getUserProfile: jest.fn(() => null),
     },
   }));
+  jest.doMock('../pushPermissionPromptStorage', () => ({
+    pushPermissionPromptStorage: {
+      wasRequested: jest.fn(() => false),
+      markRequested: jest.fn(),
+    },
+  }));
 
   const { foregroundPushEvents } = require('../foregroundPushEvents');
   const { initializePushNotifications } = require('../oneSignalPush');
@@ -97,6 +103,7 @@ describe('OneSignal foreground notification display', () => {
     jest.dontMock('../../config/env');
     jest.dontMock('../../notifications/messageNotificationIdentity');
     jest.dontMock('../../storage/sessionStorage');
+    jest.dontMock('../pushPermissionPromptStorage');
   });
 
   it('explicitly displays a regular foreground push and publishes a UI refresh event', () => {

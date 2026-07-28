@@ -14,6 +14,7 @@ import { apiConfig } from '../config/env';
 import { syncMessageNotificationIdentity } from '../notifications/messageNotificationIdentity';
 import { sessionStorage } from '../storage/sessionStorage';
 import { foregroundPushEvents } from './foregroundPushEvents';
+import { pushPermissionPromptStorage } from './pushPermissionPromptStorage';
 import { pushNotificationOpenEvents } from './pushNotificationOpenEvents';
 
 const PUSH_DEBUG_PREFIX = '[VNSEEA_PUSH_DEBUG]';
@@ -30,6 +31,7 @@ const SUPPRESSED_FOREGROUND_NOTIFICATION_TYPES = new Set([
 let initialized = false;
 let lastSyncedKey = '';
 let syncInFlight: Promise<void> | null = null;
+let firstLaunchPermissionRequest: Promise<boolean> | null = null;
 
 function maskPushIdentifier(value?: string | null) {
   if (!value) {
@@ -500,7 +502,9 @@ export async function getPushNotificationPermissionStatus() {
   return OneSignal.Notifications.getPermissionAsync();
 }
 
-export async function requestPushNotificationPermission() {
+export async function requestPushNotificationPermission(
+  source = 'notification_settings',
+) {
   if (!initialized) initializePushNotifications();
   if (!initialized || !isPushConfigured()) return false;
 
@@ -520,14 +524,39 @@ export async function requestPushNotificationPermission() {
       await OneSignal.Notifications.requestPermission(false);
     logPushDebug('push_permission_request_result', {
       permissionGranted,
-      source: 'notification_settings',
+      source,
     });
   }
 
   if (!permissionGranted) return false;
-  await optInPushIfAlreadyAuthorized('notification_settings');
+  await optInPushIfAlreadyAuthorized(source);
   await syncCurrentSubscription();
   return true;
+}
+
+export async function requestPushNotificationPermissionOnFirstLaunch() {
+  if (pushPermissionPromptStorage.wasRequested()) {
+    logPushDebug('push_permission_request_skipped', {
+      reason: 'first_launch_prompt_already_requested',
+    });
+    return getPushNotificationPermissionStatus();
+  }
+  if (firstLaunchPermissionRequest) {
+    return firstLaunchPermissionRequest;
+  }
+
+  firstLaunchPermissionRequest = requestPushNotificationPermission(
+    'first_app_launch',
+  ).then(permissionGranted => {
+    pushPermissionPromptStorage.markRequested();
+    return permissionGranted;
+  });
+
+  try {
+    return await firstLaunchPermissionRequest;
+  } finally {
+    firstLaunchPermissionRequest = null;
+  }
 }
 
 export function identifyPushUser(userId: string) {

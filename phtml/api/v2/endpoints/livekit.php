@@ -1,6 +1,7 @@
 <?php
 // English description: Bridges authenticated v2 mobile requests to the existing LiveKit call backend.
 require_once 'vendor/autoload.php';
+require_once 'assets/includes/vnseea_livekit_call.php';
 
 $response_data = array(
     'api_status' => 400
@@ -384,121 +385,36 @@ function Wo_ApiLiveKitTimingFields($timing) {
 }
 
 function Wo_ApiLiveKitSendCallPush($recipient, $caller, $call_id, $call_type, $room_name) {
-    global $wo;
-    if (empty($recipient) || !is_array($recipient)) {
-        return;
-    }
-
-    $caller_data = Wo_ApiLiveKitUser($caller);
-    $expires_at = time() + 45;
-    $action_token = Wo_ApiLiveKitSignActionToken(array(
-        'call_id' => (string) $call_id,
-        'call_type' => $call_type,
-        'from_id' => $caller_data['id'],
-        'to_id' => (string) (!empty($recipient['user_id']) ? $recipient['user_id'] : ''),
-        'room_name' => $room_name,
-        'expires_at' => $expires_at
-    ));
-    $notification_data = array(
-        'event_type' => 'livekit_call',
-        'call_context' => 'direct',
-        'provider' => 'livekit',
-        'uuid' => Wo_ApiLiveKitCallUuid($call_id, $call_type),
-        'from_id' => $caller_data['id'],
-        'to_id' => (string) (!empty($recipient['user_id']) ? $recipient['user_id'] : ''),
-        'name' => $caller_data['name'],
-        'avatar' => $caller_data['avatar'],
-        'call_type' => $call_type,
-        'room_name' => $room_name,
-        'call_id' => (string) $call_id,
-        'expires_at' => (string) $expires_at,
-        'action_token' => $action_token,
-        'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/livekit'
+    return Wo_SendCanonicalLiveKitCallPush(
+        $recipient,
+        $caller,
+        $call_id,
+        $call_type,
+        $room_name,
+        'api_v2'
     );
-    $notification = array(
-        'notification_content' => ($call_type == 'video') ? 'is video calling you' : 'is audio calling you',
-        'notification_title' => !empty($caller['name']) ? $caller['name'] : 'VNSEEA',
-        'notification_image' => !empty($caller['avatar']) ? $caller['avatar'] : '',
-        'notification_data' => $notification_data,
-        'send_immediately' => true,
-        'request_data' => array(
-            'priority' => 10,
-            'ttl' => 45,
-            'collapse_id' => 'livekit_call_' . $call_type . '_' . $call_id
-        )
-    );
-
-    $ios_device_ids = array_values(array_unique(array_filter(array(
-        !empty($recipient['ios_m_device_id']) ? $recipient['ios_m_device_id'] : '',
-        !empty($recipient['ios_n_device_id']) ? $recipient['ios_n_device_id'] : ''
-    ))));
-    $android_device_ids = array_values(array_unique(array_filter(array(
-        !empty($recipient['android_m_device_id']) ? $recipient['android_m_device_id'] : '',
-        !empty($recipient['android_n_device_id']) ? $recipient['android_n_device_id'] : ''
-    ))));
-
-    if (!empty($ios_device_ids) && $wo['config']['ios_push_messages'] == 1) {
-        Wo_SendPushNotification(array(
-            'send_to' => $ios_device_ids,
-            'notification' => $notification
-        ), 'ios_messenger');
-    }
-    Wo_ApiLiveKitSendVoipPush($recipient, $notification_data, !empty($caller['name']) ? $caller['name'] : 'VNSEEA', $call_type);
-    if (!empty($android_device_ids) && $wo['config']['android_push_messages'] == 1) {
-        Wo_SendPushNotification(array(
-            'send_to' => $android_device_ids,
-            'notification' => $notification
-        ), 'android_messenger');
-    }
 }
 
 function Wo_ApiLiveKitCreateCall($recipient, $recipient_id, $call_type) {
     global $wo;
 
-    $room_script = sha1(rand(1111111, 9999999999));
-    $call_data = array(
-        'access_token' => '',
-        'from_id' => Wo_Secure($wo['user']['user_id']),
-        'to_id' => Wo_Secure($recipient_id),
-        'access_token_2' => '',
-        'room_name' => $room_script,
-        'status' => 'calling'
+    $result = Wo_CreateCanonicalLiveKitDirectCall(
+        $wo['user'],
+        $recipient,
+        $call_type,
+        'api_v2'
     );
-    $insert_id = ($call_type == 'audio') ? Wo_CreateNewAudioCall($call_data) : Wo_CreateNewVideoCall($call_data);
-    if ($insert_id <= 0) {
-        return Wo_ApiLiveKitError('create_failed', 'Could not create call.');
+    if (intval(!empty($result['status']) ? $result['status'] : 500) !== 200) {
+        return Wo_ApiLiveKitError(
+            !empty($result['error_code']) ? $result['error_code'] : 'create_failed',
+            !empty($result['message']) ? $result['message'] : 'Could not create call.',
+            intval(!empty($result['status']) ? $result['status'] : 500)
+        );
     }
 
-    Wo_RegisterCallLog(array(
-        'from_id' => $wo['user']['user_id'],
-        'to_id' => $recipient_id,
-        'call_id' => $insert_id,
-        'call_type' => $call_type,
-        'provider' => 'livekit',
-        'status' => 'calling'
-    ));
-    Wo_ApiLiveKitSendCallPush($recipient, $wo['user'], $insert_id, $call_type, $room_script);
-    Wo_ApiLiveKitPublishRealtime('incoming', array(
-        'id' => $insert_id,
-        'from_id' => $wo['user']['user_id'],
-        'to_id' => $recipient_id,
-        'room_name' => $room_script
-    ), $call_type, array(
-        'provider' => 'livekit',
-        'room_name' => $room_script,
-        'peer' => Wo_ApiLiveKitUser($wo['user'])
-    ));
-
-    return array(
-        'api_status' => 200,
-        'busy' => false,
-        'provider' => 'livekit',
-        'call_type' => $call_type,
-        'call_status' => 'calling',
-        'id' => (string) $insert_id,
-        'room_name' => $room_script,
-        'peer' => Wo_ApiLiveKitUser($recipient)
-    );
+    unset($result['status']);
+    $result['api_status'] = 200;
+    return $result;
 }
 
 function Wo_ApiLiveKitBuildPayload($call_id, $call_type) {
