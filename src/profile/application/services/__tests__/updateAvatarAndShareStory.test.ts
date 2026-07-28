@@ -78,6 +78,41 @@ describe('updateAvatarAndShareStory', () => {
     expect(emitStory).not.toHaveBeenCalled();
   });
 
+  it('returns the avatar immediately while Story sharing continues in the background', async () => {
+    let resolveStory!: (value: { storyId: string; message: string }) => void;
+    const createStory = jest.fn(
+      () =>
+        new Promise<{ storyId: string; message: string }>(resolve => {
+          resolveStory = resolve;
+        }),
+    );
+    const emitStory = jest.fn();
+
+    await expect(
+      updateAvatarAndShareStory(avatarUri, {
+        uploadAvatar: jest.fn().mockResolvedValue(profileMedia),
+        createStory,
+        emitStory,
+        currentUserId: 'user-7',
+        waitForStory: false,
+        now: () => timestamp,
+      }),
+    ).resolves.toEqual({
+      avatarUpdated: true,
+      storyCreated: false,
+      profileMedia,
+    });
+
+    expect(createStory).toHaveBeenCalledTimes(1);
+    expect(emitStory).not.toHaveBeenCalled();
+
+    resolveStory({ storyId: 'story-42', message: 'created' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(emitStory).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a successful avatar update when the Story upload fails', async () => {
     const storyError = new Error('story upload failed');
 

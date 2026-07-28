@@ -12,6 +12,7 @@ import com.livekit.reactnative.audio.AudioType
 import com.vnseea.android.audio.CallAudioRoutePackage
 import com.vnseea.android.audio.WavAudioRecorderPackage
 import com.vnseea.android.call.VnseeaCallIntentPackage
+import com.vnseea.android.image.ProfileImageToolsPackage
 import com.vnseea.android.live.LiveCameraPreviewPackage
 import com.vnseea.android.location.CurrentLocationPackage
 import com.vnseea.android.messages.MessageNotificationIdentityPackage
@@ -27,6 +28,7 @@ class MainApplication : Application(), ReactApplication {
         add(CallAudioRoutePackage())
         add(WavAudioRecorderPackage())
         add(VnseeaCallIntentPackage())
+        add(ProfileImageToolsPackage())
         add(LiveCameraPreviewPackage())
         add(CurrentLocationPackage())
         add(MessageNotificationIdentityPackage())

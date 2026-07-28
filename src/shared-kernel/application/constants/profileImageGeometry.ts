@@ -7,6 +7,9 @@ export const PROFILE_AVATAR_OUTPUT_SIZE = {
 } as const;
 
 export const PROFILE_COVER_OUTPUT_SIZE = {
+  // Keep the exact canonical dimensions expected by deployed profile-media
+  // endpoints. The source preview is already downsampled before this export,
+  // so producing 1600x900 here no longer requires decoding the original photo.
   width: 1600,
   height: 900,
 } as const;

@@ -6,6 +6,7 @@ import {
 describe('map search category matching', () => {
   it.each([
     ['quán cắt tóc', 'hair_care'],
+    ['tóc', 'hair_care'],
     ['tiệm tóc nam', 'hair_care'],
     ['barber shop', 'hair_care'],
     ['salon tóc nữ', 'hair_care'],
@@ -13,7 +14,12 @@ describe('map search category matching', () => {
     ['caf', 'cafe'],
     ['nhà hàng gần đây', 'restaurant'],
     ['nhà thuốc', 'pharmacy'],
+    ['xăng', 'gas_station'],
     ['cây xăng', 'gas_station'],
+    ['xăng dầu', 'gas_station'],
+    ['trạm xăng', 'gas_station'],
+    ['trạm xăng dầu gần đây', 'gas_station'],
+    ['fuel station', 'gas_station'],
   ])('maps %s to %s', (query, expected) => {
     expect(getGoogleCategorySearchQuery(query)).toBe(expected);
   });

@@ -20,6 +20,30 @@ describe('profile media update contract', () => {
     });
   });
 
+  it('does not block a successful upload on another profile request', async () => {
+    const uploadResult = {
+      kind: 'cover' as const,
+      url: 'https://cdn.vnseea.vn/cover.jpg?cache=2',
+      fullUrl: 'https://cdn.vnseea.vn/cover_full.jpg?cache=2',
+      postId: '12',
+      postType: 'profile_cover_picture' as const,
+    };
+    const loadSnapshot = jest.fn();
+
+    await expect(
+      uploadProfileMediaWithReconciliation('cover', coverFile, {
+        upload: jest.fn().mockResolvedValue(uploadResult),
+        loadSnapshot,
+        beforeSnapshot: {
+          coverUrl: 'https://cdn.vnseea.vn/old.jpg?cache=1',
+          coverPostId: '11',
+        },
+      }),
+    ).resolves.toEqual(uploadResult);
+
+    expect(loadSnapshot).not.toHaveBeenCalled();
+  });
+
   it('parses the canonical server result and rejects the wrong media kind', () => {
     const response = {
       api_status: 200,
@@ -108,6 +132,9 @@ describe('profile media update contract', () => {
       .fn()
       .mockResolvedValueOnce(oldSnapshot)
       .mockResolvedValueOnce(oldSnapshot)
+      .mockResolvedValueOnce(oldSnapshot)
+      .mockResolvedValueOnce(oldSnapshot)
+      .mockResolvedValueOnce(oldSnapshot)
       .mockResolvedValueOnce({
         coverUrl: 'https://cdn.vnseea.vn/new.jpg',
         coverPostId: '11',
@@ -126,7 +153,7 @@ describe('profile media update contract', () => {
       postId: '11',
       reconciled: true,
     });
-    expect(wait).toHaveBeenCalledTimes(1);
+    expect(wait).toHaveBeenCalledTimes(4);
   });
 
   it('does not reconcile an explicit server rejection', async () => {

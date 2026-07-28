@@ -143,6 +143,7 @@ import { PollPostCard } from '../../../feed/presentation/components/PollPostCard
 import { LiveStreamPostCard } from '../../../feed/presentation/components/LiveStreamPostCard';
 import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
 import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
+import { pickInlineLivePostId } from '../../../live/application/inlineLiveAutoplay';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -157,7 +158,6 @@ import {
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
-import { EditProfileActionSheet } from '../../../shared-kernel/presentation/components/EditProfileActionSheet';
 import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
@@ -199,6 +199,11 @@ import {
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { PROFILE_COVER_ASPECT_RATIO } from '../../../shared-kernel/application/constants/profileImageGeometry';
+import {
+  PROFILE_IMAGE_PICKER_OPTIONS,
+  prepareProfileImageForCrop,
+  waitForImagePickerDismissal,
+} from '../../../shared-kernel/presentation/utils/profileImagePicker';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
@@ -256,6 +261,7 @@ const PROFILE_POST_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = PROFILE_IS_ANDROID
   : 180;
 const PROFILE_POST_VIEWABLE_PERCENT = 55;
 const PROFILE_POST_ACTIVE_DWELL_MS = 160;
+const PROFILE_INLINE_LIVE_ACTIVE_DWELL_MS = 160;
 const PROFILE_POST_MEDIA_PREFETCH_BATCH_SIZE = PROFILE_IS_ANDROID ? 2 : 3;
 const PROFILE_POST_MEDIA_PREFETCH_BATCH_DELAY_MS = PROFILE_IS_ANDROID
   ? 140
@@ -495,12 +501,8 @@ const PROFILE_COPY: Record<
     followingText: (count: number) => string;
     pointsText: (count: number) => string;
     editPublicDetails: string;
-    editProfileSheetTitle: string;
-    editProfileSheetSubtitle: string;
     changeCoverLabel: string;
     changeCoverHint: string;
-    editDetailsLabel: string;
-    editDetailsHint: string;
     sheetCancel: string;
     viewStoryAction: string;
     viewStoryHint: string;
@@ -573,12 +575,8 @@ const PROFILE_COPY: Record<
     followingText: count => `Đang theo dõi ${count} người`,
     pointsText: count => `Tích lũy ${count} điểm`,
     editPublicDetails: 'Chỉnh sửa chi tiết công khai',
-    editProfileSheetTitle: 'Chỉnh sửa hồ sơ',
-    editProfileSheetSubtitle: 'Bạn muốn thay đổi điều gì?',
     changeCoverLabel: 'Thay đổi ảnh bìa',
     changeCoverHint: 'Cập nhật ảnh nền của bạn',
-    editDetailsLabel: 'Chỉnh sửa thông tin',
-    editDetailsHint: 'Tên, tiểu sử, công việc...',
     sheetCancel: 'Hủy',
     viewStoryAction: 'Xem tin',
     viewStoryHint: 'Xem tin của họ',
@@ -650,12 +648,8 @@ const PROFILE_COPY: Record<
     followingText: count => `Following ${count}`,
     pointsText: count => `${count} points`,
     editPublicDetails: 'Edit public details',
-    editProfileSheetTitle: 'Edit Profile',
-    editProfileSheetSubtitle: 'What would you like to change?',
     changeCoverLabel: 'Change Cover Photo',
     changeCoverHint: 'Update your background image',
-    editDetailsLabel: 'Edit Details',
-    editDetailsHint: 'Name, bio, work...',
     sheetCancel: 'Cancel',
     viewStoryAction: 'View story',
     viewStoryHint: 'Watch their story',
@@ -1445,6 +1439,14 @@ function ProfileScreen() {
   const [hasMorePosts, setHasMorePosts] = useState(false);
   const [postsCursor, setPostsCursor] = useState<string | undefined>(undefined);
   const isLoadingMorePostsRef = React.useRef(false);
+  const [activeProfileInlineLivePostId, setActiveProfileInlineLivePostIdState] =
+    useState<number | null>(null);
+  const activeProfileInlineLivePostIdRef = useRef<number | null>(null);
+  const pendingProfileInlineLivePostIdRef = useRef<number | null>(null);
+  const pendingProfileDwellInlineLivePostIdRef = useRef<number | null>(null);
+  const profileInlineLiveDwellTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const activeProfileVideoIdRef = useRef<string | null>(null);
   const pendingProfileActiveVideoIdRef = useRef<string | null>(null);
   const pendingProfileDwellVideoIdRef = useRef<string | null>(null);
@@ -1498,7 +1500,6 @@ function ProfileScreen() {
     y: number;
   } | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
-  const [editSheetVisible, setEditSheetVisible] = useState(false);
   const [profileMediaSheet, setProfileMediaSheet] =
     useState<ProfileMediaSheetState>(null);
   const profileMediaSheetProgress = useRef(new Animated.Value(0)).current;
@@ -1697,6 +1698,18 @@ function ProfileScreen() {
   );
 
   const setActiveProfileVideoId = useCallback((nextVideoId: string | null) => {
+    if (nextVideoId !== null) {
+      if (profileInlineLiveDwellTimerRef.current) {
+        clearTimeout(profileInlineLiveDwellTimerRef.current);
+        profileInlineLiveDwellTimerRef.current = null;
+      }
+      pendingProfileDwellInlineLivePostIdRef.current = null;
+      pendingProfileInlineLivePostIdRef.current = null;
+      if (activeProfileInlineLivePostIdRef.current !== null) {
+        activeProfileInlineLivePostIdRef.current = null;
+        setActiveProfileInlineLivePostIdState(null);
+      }
+    }
     publishFeedActiveVideo(nextVideoId);
     if (activeProfileVideoIdRef.current === nextVideoId) return;
     activeProfileVideoIdRef.current = nextVideoId;
@@ -1739,6 +1752,57 @@ function ProfileScreen() {
       }, PROFILE_POST_ACTIVE_DWELL_MS);
     },
     [clearProfileVideoDwellTimer, setActiveProfileVideoId],
+  );
+
+  const clearProfileInlineLiveDwellTimer = useCallback(() => {
+    if (!profileInlineLiveDwellTimerRef.current) return;
+    clearTimeout(profileInlineLiveDwellTimerRef.current);
+    profileInlineLiveDwellTimerRef.current = null;
+    pendingProfileDwellInlineLivePostIdRef.current = null;
+  }, []);
+
+  const setActiveProfileInlineLivePostId = useCallback(
+    (postId: number | null) => {
+      if (postId !== null) {
+        setActiveProfileVideoId(null);
+      }
+      if (activeProfileInlineLivePostIdRef.current === postId) return;
+      activeProfileInlineLivePostIdRef.current = postId;
+      setActiveProfileInlineLivePostIdState(postId);
+    },
+    [setActiveProfileVideoId],
+  );
+
+  const scheduleActiveProfileInlineLivePostId = useCallback(
+    (postId: number | null, commitImmediately = false) => {
+      if (postId === activeProfileInlineLivePostIdRef.current) {
+        clearProfileInlineLiveDwellTimer();
+        return;
+      }
+
+      if (commitImmediately || postId === null) {
+        clearProfileInlineLiveDwellTimer();
+        setActiveProfileInlineLivePostId(postId);
+        return;
+      }
+
+      if (
+        pendingProfileDwellInlineLivePostIdRef.current === postId &&
+        profileInlineLiveDwellTimerRef.current
+      ) {
+        return;
+      }
+
+      clearProfileInlineLiveDwellTimer();
+      pendingProfileDwellInlineLivePostIdRef.current = postId;
+      profileInlineLiveDwellTimerRef.current = setTimeout(() => {
+        profileInlineLiveDwellTimerRef.current = null;
+        if (pendingProfileDwellInlineLivePostIdRef.current !== postId) return;
+        pendingProfileDwellInlineLivePostIdRef.current = null;
+        setActiveProfileInlineLivePostId(postId);
+      }, PROFILE_INLINE_LIVE_ACTIVE_DWELL_MS);
+    },
+    [clearProfileInlineLiveDwellTimer, setActiveProfileInlineLivePostId],
   );
 
   const profilePostsViewabilityConfigRef = useRef({
@@ -1926,18 +1990,29 @@ function ProfileScreen() {
         .filter(postId => /^[1-9][0-9]*$/.test(postId));
       scheduleRealtimeVisiblePostIds(visiblePostIds);
       const currentPosts = profilePostsRef.current;
+      const nextVisibleLivePostId = pickInlineLivePostId(viewableItems);
       const visibleVideo = viewableItems.find(
         item =>
           item.isViewable &&
           getProfileListItemPost(item.item)?.kind === 'video',
       );
       const visibleVideoPost = getProfileListItemPost(visibleVideo?.item);
-      const nextVisibleVideoId = visibleVideoPost
+      const nextVisibleVideoId = nextVisibleLivePostId
+        ? null
+        : visibleVideoPost
         ? String(visibleVideoPost.id)
         : null;
 
       if (isProfileScrollingRef.current) {
+        pendingProfileInlineLivePostIdRef.current = nextVisibleLivePostId;
         pendingProfileActiveVideoIdRef.current = nextVisibleVideoId;
+
+        if (
+          activeProfileInlineLivePostIdRef.current !== null &&
+          activeProfileInlineLivePostIdRef.current !== nextVisibleLivePostId
+        ) {
+          scheduleActiveProfileInlineLivePostId(null);
+        }
 
         const activeVideoStillViewable = activeProfileVideoIdRef.current
           ? viewableItems.some(
@@ -1953,7 +2028,14 @@ function ProfileScreen() {
           scheduleActiveProfileVideoId(null);
         }
       } else {
-        scheduleActiveProfileVideoId(nextVisibleVideoId);
+        pendingProfileInlineLivePostIdRef.current = null;
+        if (nextVisibleLivePostId !== null) {
+          scheduleActiveProfileVideoId(null, true);
+          scheduleActiveProfileInlineLivePostId(nextVisibleLivePostId);
+        } else {
+          scheduleActiveProfileInlineLivePostId(null, true);
+          scheduleActiveProfileVideoId(nextVisibleVideoId);
+        }
       }
 
       if (currentPosts.length === 0) {
@@ -2116,6 +2198,22 @@ function ProfileScreen() {
   });
 
   useEffect(() => {
+    const activeLivePostId = activeProfileInlineLivePostIdRef.current;
+    if (activeLivePostId === null) return;
+    if (
+      !isProfileFocused ||
+      activeProfileLive?.state !== 'live' ||
+      activeProfileLive.postId !== activeLivePostId
+    ) {
+      scheduleActiveProfileInlineLivePostId(null, true);
+    }
+  }, [
+    activeProfileLive,
+    isProfileFocused,
+    scheduleActiveProfileInlineLivePostId,
+  ]);
+
+  useEffect(() => {
     profilePostsRef.current = filteredProfilePosts;
     profilePostIndexByIdRef.current = new Map(
       filteredProfilePosts.map((post, index) => [String(post.id), index]),
@@ -2204,10 +2302,13 @@ function ProfileScreen() {
     setStoryOptionsSheet(null);
     setSharingPost(undefined);
     clearProfileVideoDwellTimer();
+    clearProfileInlineLiveDwellTimer();
+    scheduleActiveProfileInlineLivePostId(null, true);
     setActiveProfileVideoId(null);
     isProfileScrollingRef.current = false;
     isProfileMomentumScrollingRef.current = false;
     pendingProfileActiveVideoIdRef.current = null;
+    pendingProfileInlineLivePostIdRef.current = null;
     publishFeedWarmVideoIds([]);
     if (profileMediaPrefetchTimerRef.current) {
       clearTimeout(profileMediaPrefetchTimerRef.current);
@@ -2233,8 +2334,10 @@ function ProfileScreen() {
   }, [
     route.params?.userId,
     routeProfileKey,
+    clearProfileInlineLiveDwellTimer,
     clearProfileVideoDwellTimer,
     loadProfile,
+    scheduleActiveProfileInlineLivePostId,
     setActiveProfileVideoId,
   ]);
 
@@ -2245,10 +2348,13 @@ function ProfileScreen() {
       return () => {
         publishFeedScrollBusy(false);
         clearProfileVideoDwellTimer();
+        clearProfileInlineLiveDwellTimer();
+        scheduleActiveProfileInlineLivePostId(null, true);
         setActiveProfileVideoId(null);
         isProfileScrollingRef.current = false;
         isProfileMomentumScrollingRef.current = false;
         pendingProfileActiveVideoIdRef.current = null;
+        pendingProfileInlineLivePostIdRef.current = null;
         publishFeedWarmVideoIds([]);
         if (profileMediaPrefetchTimerRef.current) {
           clearTimeout(profileMediaPrefetchTimerRef.current);
@@ -2265,7 +2371,12 @@ function ProfileScreen() {
         profilePendingVideoPosterPostsRef.current = [];
         profileQueuedVideoPosterKeysRef.current.clear();
       };
-    }, [clearProfileVideoDwellTimer, setActiveProfileVideoId]),
+    }, [
+      clearProfileInlineLiveDwellTimer,
+      clearProfileVideoDwellTimer,
+      scheduleActiveProfileInlineLivePostId,
+      setActiveProfileVideoId,
+    ]),
   );
 
   // Load User Posts
@@ -3281,11 +3392,19 @@ function ProfileScreen() {
       isProfileScrollingRef.current = false;
       isProfileMomentumScrollingRef.current = false;
       publishFeedScrollBusy(false);
+      const nextLivePostId = pendingProfileInlineLivePostIdRef.current;
+      pendingProfileInlineLivePostIdRef.current = null;
       const nextVideoId = pendingProfileActiveVideoIdRef.current;
       pendingProfileActiveVideoIdRef.current = null;
-      scheduleActiveProfileVideoId(nextVideoId, true);
+      if (nextLivePostId !== null) {
+        scheduleActiveProfileVideoId(null, true);
+        scheduleActiveProfileInlineLivePostId(nextLivePostId, true);
+      } else {
+        scheduleActiveProfileInlineLivePostId(null, true);
+        scheduleActiveProfileVideoId(nextVideoId, true);
+      }
     },
-    [scheduleActiveProfileVideoId],
+    [scheduleActiveProfileInlineLivePostId, scheduleActiveProfileVideoId],
   );
 
   const handleProfileViewportLayout = useCallback(
@@ -3298,10 +3417,13 @@ function ProfileScreen() {
   const handleProfileScrollBegin = useCallback(() => {
     isProfileScrollingRef.current = true;
     pendingProfileActiveVideoIdRef.current = activeProfileVideoIdRef.current;
+    pendingProfileInlineLivePostIdRef.current =
+      activeProfileInlineLivePostIdRef.current;
     clearProfileVideoDwellTimer();
+    clearProfileInlineLiveDwellTimer();
     publishFeedWarmVideoIds([]);
     publishFeedScrollBusy(true);
-  }, [clearProfileVideoDwellTimer]);
+  }, [clearProfileInlineLiveDwellTimer, clearProfileVideoDwellTimer]);
 
   const handleProfileMomentumScrollBegin = useCallback(() => {
     isProfileMomentumScrollingRef.current = true;
@@ -3448,11 +3570,9 @@ function ProfileScreen() {
   const selectProfileImageForCrop = useCallback(
     async (target: ImageCropTarget) => {
       try {
-        const result = await launchImageLibrary({
-          mediaType: 'photo',
-          quality: 1,
-          selectionLimit: 1,
-        });
+        const result = await launchImageLibrary(
+          PROFILE_IMAGE_PICKER_OPTIONS,
+        );
         if (result.didCancel || !result.assets || result.assets.length === 0) {
           return;
         }
@@ -3460,14 +3580,17 @@ function ProfileScreen() {
         const asset = result.assets[0];
         if (!asset.uri) return;
 
+        await waitForImagePickerDismissal();
+        const preparedAsset = await prepareProfileImageForCrop(asset, target);
+
         setProfileCropRequest({
           target,
           image: {
-            uri: asset.uri,
-            width: asset.width,
-            height: asset.height,
-            fileName: asset.fileName,
-            type: asset.type,
+            uri: preparedAsset.uri!,
+            width: preparedAsset.width,
+            height: preparedAsset.height,
+            fileName: preparedAsset.fileName,
+            type: preparedAsset.type,
           },
         });
       } catch (err) {
@@ -3495,6 +3618,7 @@ function ProfileScreen() {
       if (!cropTarget) return;
 
       setProfileCropRequest(null);
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
       const attemptUpload = async () => {
         const isAvatar = cropTarget === 'avatar';
@@ -3544,9 +3668,7 @@ function ProfileScreen() {
     },
     [
       copy.errorTitle,
-      loadProfile,
       profileCropRequest?.target,
-      targetUserId,
       updateAvatar,
       updateCover,
     ],
@@ -3879,28 +4001,10 @@ function ProfileScreen() {
     }
   };
 
-  const handleEditProfilePress = useCallback(() => {
-    if (!isOwnProfile) return;
-    setEditSheetVisible(true);
-    tabBarVisibility.setVisible(false);
-  }, [isOwnProfile]);
-
   const handleEditPersonalDetails = useCallback(() => {
     if (!isOwnProfile) return;
     navigation.navigate(ROUTES.EDIT_PROFILE);
   }, [isOwnProfile, navigation]);
-
-  const handleEditCover = useCallback(() => {
-    setEditSheetVisible(false);
-    // Delay to let the close animation play before launching the picker.
-    setTimeout(() => handleChangeCover(), 250);
-  }, [handleChangeCover]);
-
-  const handleEditDetails = useCallback(() => {
-    setEditSheetVisible(false);
-    tabBarVisibility.setVisible(true);
-    setTimeout(() => navigation.navigate(ROUTES.EDIT_PROFILE), 250);
-  }, [navigation]);
 
   const handleOpenFriendStory = useCallback((story: StoryItem) => {
     setStoryOptionsSheet(story);
@@ -4140,11 +4244,16 @@ function ProfileScreen() {
               { zIndex: 100, elevation: 12 },
             ]}
             activeOpacity={0.85}
-            onPress={handleEditProfilePress}
+            disabled={isLoadingCover}
+            onPress={handleChangeCover}
           >
-            <Edit size={14} color="#050505" />
+            {isLoadingCover ? (
+              <ActivityIndicator size="small" color="#050505" />
+            ) : (
+              <Camera size={14} color="#050505" />
+            )}
             <Text style={profileMainStyles.editCoverText}>
-              {language === 'vi' ? 'Chỉnh sửa hồ sơ' : 'Edit profile'}
+              {language === 'vi' ? 'Thay ảnh bìa' : 'Change cover'}
             </Text>
           </TouchableOpacity>
         )}
@@ -4899,6 +5008,10 @@ function ProfileScreen() {
           <LiveStreamPostCard
             item={item.item}
             copy={postCardCopy}
+            isActive={
+              isProfileFocused &&
+              activeProfileInlineLivePostId === item.item.postId
+            }
             onPress={handleOpenProfileLive}
           />
         );
@@ -4907,7 +5020,9 @@ function ProfileScreen() {
       return renderProfilePostContent(item.post);
     },
     [
+      activeProfileInlineLivePostId,
       handleOpenProfileLive,
+      isProfileFocused,
       postCardCopy,
       profilePostsEmptyComponent,
       renderProfilePostContent,
@@ -4921,7 +5036,6 @@ function ProfileScreen() {
     profileMediaSheet !== null ||
     isActivitiesSheetVisible ||
     isRelationshipSheetVisible ||
-    editSheetVisible ||
     storyOptionsSheet !== null ||
     shareModalVisible ||
     postMenuVisible ||
@@ -5075,6 +5189,7 @@ function ProfileScreen() {
       keyExtractor={profileListItemKeyExtractor}
       getItemType={profileListItemType}
       renderItem={renderProfileListItem}
+      extraData={activeProfileInlineLivePostId}
       ListHeaderComponent={profileContentHeader}
       ListFooterComponent={profilePostsFooterComponent}
       showsVerticalScrollIndicator={false}
@@ -5302,26 +5417,6 @@ function ProfileScreen() {
               </View>
             </View>
           </Modal>
-          <EditProfileActionSheet
-            visible={isOwnProfile && editSheetVisible}
-            onClose={() => {
-              setEditSheetVisible(false);
-              tabBarVisibility.setVisible(true);
-            }}
-            language={language}
-            avatarUrl={avatarUrl}
-            onChangeCover={handleEditCover}
-            onEditDetails={handleEditDetails}
-            copy={{
-              title: copy.editProfileSheetTitle,
-              subtitle: copy.editProfileSheetSubtitle,
-              changeCoverLabel: copy.changeCoverLabel,
-              changeCoverHint: copy.changeCoverHint,
-              editDetailsLabel: copy.editDetailsLabel,
-              editDetailsHint: copy.editDetailsHint,
-              cancel: copy.sheetCancel,
-            }}
-          />
           <Modal
             visible={!!profileMediaSheet}
             transparent

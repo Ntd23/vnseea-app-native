@@ -15,6 +15,10 @@ import {
   BarChart3,
   Smile,
 } from 'lucide-react-native';
+import {
+  FEED_CARD_CLASS,
+  FEED_CARD_PADDING_CLASS,
+} from './FeedCardChrome';
 
 const FALLBACK_AVATAR =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw';
@@ -79,7 +83,7 @@ export function ComposerCard({
   const placeholder = copy.createPostBtn || copy.composerPlaceholder || 'Hôm nay bạn thế nào ?';
   const composerCardClassName = isIos
     ? 'bg-white border border-slate-100 p-4'
-    : 'bg-white rounded-[20px] border border-slate-100 p-4';
+    : `${FEED_CARD_CLASS} ${FEED_CARD_PADDING_CLASS}`;
   const actions: ComposerAction[] = [
     {
       id: 'photo',
@@ -117,10 +121,7 @@ export function ComposerCard({
 
   return (
     <View
-      style={[
-        styles.cardShadow,
-        isIos ? styles.iosCardSpacing : null,
-      ]}
+      style={isIos ? [styles.cardShadow, styles.iosCardSpacing] : undefined}
       className={composerCardClassName}
     >
       <View style={styles.composerTopRow}>
@@ -165,35 +166,29 @@ export function ComposerCard({
           ))}
         </View>
       ) : (
-        <View style={styles.androidActionsGrid}>
-          {[actions.slice(0, 2), actions.slice(2)].map((row, rowIndex) => (
-            <View
-              key={row[0].id}
-              style={[
-                styles.androidActionRow,
-                rowIndex === 0 ? styles.androidActionRowSpacing : null,
-              ]}
+        <View style={styles.androidActionsRow}>
+          {actions.map(action => (
+            <TouchableOpacity
+              key={action.id}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              onPress={() => handleActionPress(action.id)}
+              style={styles.androidActionButton}
             >
-              {row.map(action => (
-                <TouchableOpacity
-                  key={action.id}
-                  activeOpacity={0.8}
-                  accessibilityRole="button"
-                  accessibilityLabel={action.label}
-                  onPress={() => handleActionPress(action.id)}
-                  style={styles.androidActionButton}
-                >
-                  <action.Icon
-                    size={18}
-                    color={action.color}
-                    strokeWidth={2.5}
-                  />
-                  <Text style={styles.androidActionLabel} numberOfLines={1}>
-                    {action.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+              <action.Icon
+                size={17}
+                color={action.color}
+                strokeWidth={2.5}
+              />
+              <Text
+                style={styles.androidActionLabel}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {action.label}
+              </Text>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -236,29 +231,27 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: '#f1f5f9',
   },
-  androidActionsGrid: {
-    marginTop: 16,
-  },
-  androidActionRow: {
+  androidActionsRow: {
+    marginTop: 14,
     flexDirection: 'row',
-    gap: 10,
-  },
-  androidActionRowSpacing: {
-    marginBottom: 10,
+    gap: 6,
   },
   androidActionButton: {
     flex: 1,
+    minWidth: 0,
     minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 5,
     backgroundColor: '#f1f5f9',
   },
   androidActionLabel: {
-    marginLeft: 8,
-    fontSize: 13,
+    flexShrink: 1,
+    marginLeft: 4,
+    fontSize: 11,
     fontWeight: '600',
     color: '#475569',
   },

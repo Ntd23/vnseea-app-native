@@ -25,6 +25,11 @@ import {
   type CropSourceImage,
   type CroppedImageAsset,
 } from '../../../shared-kernel/presentation/components/ImageCropperModal';
+import {
+  PROFILE_IMAGE_PICKER_OPTIONS,
+  prepareProfileImageForCrop,
+  waitForImagePickerDismissal,
+} from '../../../shared-kernel/presentation/utils/profileImagePicker';
 
 type AvatarViewerNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -60,11 +65,7 @@ export default function AvatarViewerScreen() {
 
   const handleChangeAvatar = async () => {
     try {
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 1,
-        selectionLimit: 1,
-      });
+      const result = await launchImageLibrary(PROFILE_IMAGE_PICKER_OPTIONS);
 
       if (result.didCancel) {
         return;
@@ -82,12 +83,15 @@ export default function AvatarViewerScreen() {
         return;
       }
 
+      await waitForImagePickerDismissal();
+      const preparedAsset = await prepareProfileImageForCrop(asset, 'avatar');
+
       setCropImage({
-        uri: asset.uri,
-        width: asset.width,
-        height: asset.height,
-        fileName: asset.fileName,
-        type: asset.type,
+        uri: preparedAsset.uri!,
+        width: preparedAsset.width,
+        height: preparedAsset.height,
+        fileName: preparedAsset.fileName,
+        type: preparedAsset.type,
       });
     } catch (error) {
       console.error('[AvatarViewer] Error picking image:', error);
@@ -97,6 +101,7 @@ export default function AvatarViewerScreen() {
 
   const uploadAvatar = async (asset: CroppedImageAsset): Promise<void> => {
     setCropImage(null);
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     setIsLoading(true);
 
     try {
