@@ -27,6 +27,8 @@ type NativeLiveKitViewProps = {
   streamName: string;
   liveRole: NativeLiveRole;
   cameraFacing: 'front' | 'back';
+  audioEnabled: boolean;
+  objectFit: 'contain' | 'cover';
   connect: boolean;
   onLiveNativeEvent?: (
     event: NativeSyntheticEvent<NativeLiveKitEventPayload>,
@@ -55,6 +57,10 @@ export type LiveKitStreamViewProps = {
   session: LiveSession;
   isHost: boolean;
   cameraFacing?: 'front' | 'back';
+  audioEnabled?: boolean;
+  diagnosticsEnabled?: boolean;
+  objectFit?: 'contain' | 'cover';
+  onVideoReady?: () => void;
   onConnectionStateChange?: (
     state: 'connected' | 'disconnected' | 'error',
   ) => void;
@@ -64,6 +70,9 @@ export function LiveKitStreamView({
   session,
   isHost,
   cameraFacing = 'front',
+  audioEnabled = true,
+  objectFit = 'contain',
+  onVideoReady,
   onConnectionStateChange,
 }: LiveKitStreamViewProps) {
   const [permissionState, setPermissionState] = useState<PermissionState>(
@@ -144,6 +153,9 @@ export function LiveKitStreamView({
         setConnectionMessage('');
         onConnectionStateChange?.('connected');
       }
+      if (eventName === 'live_native_video_attached') {
+        onVideoReady?.();
+      }
       if (eventName === 'live_native_room_disconnected') {
         setConnectionMessage('Đã ngắt kết nối live');
         onConnectionStateChange?.('disconnected');
@@ -156,6 +168,7 @@ export function LiveKitStreamView({
     [
       liveRole,
       onConnectionStateChange,
+      onVideoReady,
       session.roomName,
       session.streamName,
       traceId,
@@ -210,6 +223,8 @@ export function LiveKitStreamView({
         streamName={session.streamName}
         liveRole={isHost ? 'host' : 'viewer'}
         cameraFacing={cameraFacing}
+        audioEnabled={audioEnabled}
+        objectFit={objectFit}
         connect={permissionState === 'granted'}
         onLiveNativeEvent={handleNativeEvent}
       />

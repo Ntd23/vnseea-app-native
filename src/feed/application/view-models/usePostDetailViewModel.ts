@@ -1,21 +1,15 @@
-// Description: ViewModel for the PostDetail screen — loads a single
-// post by id (with comments), exposes the comment composer state, and
-// keeps the in-memory post in sync with the route param so the screen
-// can re-mount from a list push without re-fetching.
+// Description: ViewModel for the PostDetail screen — keeps the post state and
+// mutations separate from the comment VM so the screen can paint immediately.
 import { useCallback, useEffect, useState } from 'react';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
-import { createReelsRepository } from '../../../reels/infrastructure/repositories/ApiReelsRepository';
-import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { FeedPost } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   GetPostByIdResult,
-  PostComment,
   ReportPostInput,
 } from '../../domain/repositories/FeedRepository';
 
 const feedRepository = createFeedRepository();
-const reelsRepository = createReelsRepository();
 
 export interface UsePostDetailViewModelOptions {
   /**
@@ -34,55 +28,26 @@ export function usePostDetailViewModel({
   postId,
 }: UsePostDetailViewModelOptions) {
   const [post, setPost] = useState<FeedPost | undefined>(fallbackPost);
-  const [comments, setComments] = useState<PostComment[]>([]);
-  const [likedUsers, setLikedUsers] = useState<Array<Record<string, unknown>>>(
-    [],
-  );
   const [isLoading, setIsLoading] = useState(fallbackPost === undefined);
-  const [isLoadingComments, setIsLoadingComments] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch the post + initial comments on mount if we don't already
-  // have the post from the route param. The result is also used to
-  // back-fill the post when the param was missing.
+  // The feed passes the complete post object, so the first paint is already
+  // available. Do not refetch it during the transition; deep links without a
+  // fallback still fetch immediately.
   useEffect(() => {
     let cancelled = false;
     setError(null);
 
     const needsPostFetch = fallbackPost === undefined;
 
-    if (needsPostFetch) {
-      setIsLoading(true);
-    }
-    setIsLoadingComments(true);
+    if (!needsPostFetch) return;
 
+    setIsLoading(true);
     feedRepository
       .getPostById(postId, { fetchComments: false, addView: true })
       .then((result: GetPostByIdResult) => {
         if (cancelled) return;
-        setPost(prev => prev ?? result.post);
-        setComments(result.comments);
-
-        // Fetch liked users preview list (max 3 users for stacked avatar visual feedback)
-        feedRepository
-          .getPostReactions(postId, undefined, 3)
-          .then(reactionsPage => {
-            if (cancelled) return;
-            const mapped = (reactionsPage.users ?? []).map(u => ({
-              avatar: u.avatarUrl,
-              name: u.name,
-              username: u.username,
-              id: u.id,
-            }));
-            setLikedUsers(mapped);
-          })
-          .catch(err => {
-            console.warn(
-              '[usePostDetailViewModel] Failed to fetch liked users preview',
-              err,
-            );
-          });
+        setPost(result.post);
       })
       .catch(caught => {
         if (cancelled) return;
@@ -91,72 +56,13 @@ export function usePostDetailViewModel({
         );
       })
       .finally(() => {
-        if (cancelled) return;
-        setIsLoading(false);
-        setIsLoadingComments(false);
+        if (!cancelled) setIsLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
   }, [fallbackPost, postId]);
-
-  const submitComment = useCallback(
-    async (text: string) => {
-      if (!post) return;
-      setIsSubmitting(true);
-      try {
-        // The comments API lives in the reels domain because WoWonder
-        // uses the same endpoint for both. We route through reels here
-        // for consistency with the existing feed comments VM.
-        const newComment = await reelsRepository.addComment(post.id, text);
-        const session = sessionStorage.getSession();
-
-        // Optimistic shape — we don't get a full publisher object back
-        // from `addComment` so we fall back to the current user from
-        // session storage. The list re-renders instantly; if the API
-        // returns more, the user can pull-to-refresh in a follow-up.
-        const optimistic: PostComment = {
-          id: newComment.id,
-          text: newComment.text,
-          postedAt: newComment.postedAt,
-          publisher: {
-            id: session?.userId ?? '',
-            name: newComment.publisher.name,
-            username: newComment.publisher.username,
-            avatarUrl: newComment.publisher.avatarUrl,
-          },
-          likeCount: 0,
-          isLiked: false,
-        };
-        setComments(prev => [optimistic, ...prev]);
-        // Bump the post's comment count locally so the header reflects
-        // the new total without a refetch.
-        setPost(prev => {
-          if (!prev) return prev;
-          if ('commentCount' in prev) {
-            return {
-              ...prev,
-              commentCount: (prev as any).commentCount + 1,
-            } as FeedPost;
-          }
-          return prev;
-        });
-      } catch (caught) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'Không gửi được bình luận.',
-        );
-        // Re-throw so the composer can keep the draft text in place
-        // if the caller wants to surface the error inline.
-        throw caught;
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [post],
-  );
 
   const toggleReaction = useCallback(
     async (reaction: ReactionType | null) => {
@@ -206,19 +112,6 @@ export function usePostDetailViewModel({
 
       try {
         await feedRepository.setReaction(postId, reaction);
-        // Refresh liked users preview list after updating reaction
-        const reactionsPage = await feedRepository.getPostReactions(
-          postId,
-          undefined,
-          3,
-        );
-        const mapped = (reactionsPage.users ?? []).map(u => ({
-          avatar: u.avatarUrl,
-          name: u.name,
-          username: u.username,
-          id: u.id,
-        }));
-        setLikedUsers(mapped);
       } catch (err) {
         console.warn('[usePostDetailViewModel] Failed to toggle reaction', err);
         // Rollback state on error
@@ -275,29 +168,10 @@ export function usePostDetailViewModel({
     return result;
   }, []);
 
-  const refreshRealtimeComments = useCallback(async () => {
-    try {
-      const result = await feedRepository.getPostById(postId, {
-        fetchComments: true,
-        addView: false,
-      });
-      setPost(result.post);
-      setComments(result.comments);
-      setError(null);
-    } catch {
-      // Keep the current detail and draft when a best-effort refresh fails.
-    }
-  }, [postId]);
-
   return {
     post,
-    comments,
     isLoading,
-    isLoadingComments,
     error,
-    submitComment,
-    isSubmitting,
-    likedUsers,
     toggleReaction,
     applyRealtimePost,
     markRealtimeDeleted,
@@ -305,6 +179,5 @@ export function usePostDetailViewModel({
     savePost,
     reportPost,
     deletePost,
-    refreshRealtimeComments,
   };
 }

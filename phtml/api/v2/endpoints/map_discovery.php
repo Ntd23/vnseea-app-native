@@ -573,6 +573,15 @@ function Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input) {
     if (preg_match('/\b(caf|cafe|ca phe|coffee|tra sua|tra|nuoc|do uong|uong)\b/', $normalized_input)) {
         return 'cafe';
     }
+    if (preg_match('/\b(toc|cat toc|tiem toc|quan toc|salon toc|lam toc|toc nam|toc nu|uon toc|nhuom toc|barber|barbershop|barber shop|haircut|hair salon|hairdresser)\b/', $normalized_input)) {
+        return 'hair_care';
+    }
+    if (preg_match('/\b(spa|tham my|lam dep|beauty salon|nail|tiem nail)\b/', $normalized_input)) {
+        return 'beauty_salon';
+    }
+    if (preg_match('/\b(xang|xang dau|cay xang|tram xang|tram xang dau|tram do xang|cua hang xang dau|do xang|gas|gas station|gasoline|petrol|petrol station|fuel|fuel station)\b/', $normalized_input)) {
+        return 'gas_station';
+    }
 
     $clean = mb_strtolower(trim($input), 'UTF-8');
     
@@ -596,7 +605,10 @@ function Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input) {
     if (strpos($clean, 'caf') !== false || strpos($clean, 'phe') !== false || strpos($clean, 'coffee') !== false || strpos($clean, 'tra') !== false || strpos($clean, 'sua') !== false || strpos($clean, 'nuoc') !== false || strpos($clean, 'uong') !== false) {
         return 'cafe';
     }
-    if (strpos($clean, 'toc') !== false || strpos($clean, 'salon') !== false || strpos($clean, 'barber') !== false || strpos($clean, 'spa') !== false || strpos($clean, 'lam dep') !== false) {
+    if (strpos($clean, 'toc') !== false || strpos($clean, 'barber') !== false || strpos($clean, 'hair') !== false) {
+        return 'hair_care';
+    }
+    if (strpos($clean, 'salon') !== false || strpos($clean, 'spa') !== false || strpos($clean, 'lam dep') !== false) {
         return 'beauty_salon';
     }
     if (strpos($clean, 'xang') !== false || strpos($clean, 'fuel') !== false || strpos($clean, 'gas') !== false) {
@@ -946,6 +958,9 @@ function Wo_ApiMapDiscoveryAutocomplete() {
             'language' => $language,
             'region' => $country
         );
+        if ($detected_type !== null) {
+            $text_search_query['type'] = $detected_type;
+        }
         if ($origin_lat !== null && $origin_lng !== null) {
             $text_search_query['location'] = number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', '');
             $text_search_query['radius'] = $radius;

@@ -21,6 +21,8 @@ type Dependencies = {
   currentUserId?: string;
   currentUserProfile?: AuthUserProfile | null;
   emitStory: (story: StoryItem) => void;
+  waitForStory?: boolean;
+  onStoryError?: (error: unknown) => void;
   now?: () => number;
 };
 
@@ -102,7 +104,7 @@ export async function updateAvatarAndShareStory(
     return { avatarUpdated: false, storyCreated: false };
   }
 
-  try {
+  const createAvatarStory = async () => {
     const created = await dependencies.createStory(
       buildAvatarStoryDraft(avatarFile),
     );
@@ -117,6 +119,22 @@ export async function updateAvatarAndShareStory(
     if (optimisticStory) {
       dependencies.emitStory(optimisticStory);
     }
+
+    return created;
+  };
+
+  // Profile media is the foreground action. The profile UI must not stay on
+  // a spinner while the same image is uploaded a second time to Stories.
+  if (dependencies.waitForStory === false) {
+    createAvatarStory().catch(storyError => {
+      dependencies.onStoryError?.(storyError);
+    });
+
+    return { avatarUpdated: true, storyCreated: false, profileMedia };
+  }
+
+  try {
+    await createAvatarStory();
 
     return { avatarUpdated: true, storyCreated: true, profileMedia };
   } catch (storyError) {

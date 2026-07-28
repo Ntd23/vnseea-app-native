@@ -1,7 +1,8 @@
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Image,
+  InteractionManager,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -9,7 +10,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Bell, Menu, MessageCircle, Search } from 'lucide-react-native';
 
@@ -23,6 +24,7 @@ import { navigateToNotifications } from '../../../navigation/notificationNavigat
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
+import { preloadMessagesStartupChats } from '../../../messages/application/services/messagesStartupCache';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -70,13 +72,26 @@ export const FeedHeader = React.memo(function FeedHeader() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
-  useEffect(() => {
-    const warmMountTimer = setTimeout(() => {
-      setHasOpenedMenu(true);
-    }, 650);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      let started = false;
+      const startPreload = () => {
+        if (cancelled || started) return;
+        started = true;
+        preloadMessagesStartupChats().catch(() => undefined);
+        navigation.getParent()?.preload(ROUTES.MESSAGES);
+      };
+      const task = InteractionManager.runAfterInteractions(startPreload);
+      const fallbackTimer = setTimeout(startPreload, 700);
 
-    return () => clearTimeout(warmMountTimer);
-  }, []);
+      return () => {
+        cancelled = true;
+        clearTimeout(fallbackTimer);
+        task.cancel();
+      };
+    }, [navigation]),
+  );
 
   const handlePressLogo = useCallback(() => {
     feedLogoEvents.emitScrollToTop();
@@ -93,6 +108,11 @@ export const FeedHeader = React.memo(function FeedHeader() {
   const handleCloseFutureDrawer = useCallback(() => {
     setMenuVisible(false);
   }, []);
+
+  const handleOpenMessages = useCallback(() => {
+    preloadMessagesStartupChats().catch(() => undefined);
+    navigation.navigate(ROUTES.MESSAGES);
+  }, [navigation]);
 
   return (
     <>
@@ -151,7 +171,7 @@ export const FeedHeader = React.memo(function FeedHeader() {
             </HeaderGlassActionButton>
             <HeaderGlassActionButton
               accessibilityLabel="Messages"
-              onPress={() => navigation.navigate(ROUTES.MESSAGES)}
+              onPress={handleOpenMessages}
               badge={
                 messageCount > 0 ? (
                   <View style={styles.badge}>

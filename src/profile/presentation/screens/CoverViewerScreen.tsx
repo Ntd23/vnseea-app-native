@@ -29,6 +29,11 @@ import {
   type CropSourceImage,
   type CroppedImageAsset,
 } from '../../../shared-kernel/presentation/components/ImageCropperModal';
+import {
+  PROFILE_IMAGE_PICKER_OPTIONS,
+  prepareProfileImageForCrop,
+  waitForImagePickerDismissal,
+} from '../../../shared-kernel/presentation/utils/profileImagePicker';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CoverRoute = RouteProp<RootStackParamList, typeof ROUTES.COVER_VIEWER>;
@@ -143,12 +148,9 @@ function CoverViewerScreen({ route, navigation }: Props) {
           text: 'Chọn ảnh',
           onPress: async () => {
             try {
-              const result = await launchImageLibrary({
-                mediaType: 'photo',
-                selectionLimit: 1,
-                quality: 1,
-                includeBase64: false,
-              });
+              const result = await launchImageLibrary(
+                PROFILE_IMAGE_PICKER_OPTIONS,
+              );
 
               if (result.didCancel || result.errorCode) {
                 return;
@@ -160,12 +162,18 @@ function CoverViewerScreen({ route, navigation }: Props) {
                 return;
               }
 
+              await waitForImagePickerDismissal();
+              const preparedAsset = await prepareProfileImageForCrop(
+                asset,
+                'cover',
+              );
+
               setCropImage({
-                uri: asset.uri,
-                width: asset.width,
-                height: asset.height,
-                fileName: asset.fileName,
-                type: asset.type,
+                uri: preparedAsset.uri!,
+                width: preparedAsset.width,
+                height: preparedAsset.height,
+                fileName: preparedAsset.fileName,
+                type: preparedAsset.type,
               });
             } catch (error) {
               console.error('[CoverViewer] Change cover error:', error);
@@ -179,6 +187,7 @@ function CoverViewerScreen({ route, navigation }: Props) {
 
   const handleCroppedCover = useCallback(async (asset: CroppedImageAsset) => {
     setCropImage(null);
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
     const attemptUpload = async (): Promise<void> => {
       setIsLoading(true);

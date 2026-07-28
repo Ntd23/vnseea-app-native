@@ -298,6 +298,23 @@ describe('map and place discovery performance contracts', () => {
     expect(backendSource).not.toContain('search_debug.log');
   });
 
+  it('keeps short Vietnamese category searches aligned across app and backend', () => {
+    const backendSource = read('phtml/api/v2/endpoints/map_discovery.php');
+
+    expect(backendSource).toContain(
+      "preg_match('/\\b(toc|cat toc|tiem toc|quan toc|salon toc|lam toc|toc nam|toc nu|uon toc|nhuom toc|barber|barbershop|barber shop|haircut|hair salon|hairdresser)\\b/'",
+    );
+    expect(backendSource).toContain("return 'hair_care';");
+    expect(backendSource).toContain("strpos($clean, 'toc') !== false");
+    expect(backendSource).toContain(
+      "preg_match('/\\b(xang|xang dau|cay xang|tram xang|tram xang dau|tram do xang|cua hang xang dau|do xang|gas|gas station|gasoline|petrol|petrol station|fuel|fuel station)\\b/'",
+    );
+    expect(backendSource).toContain("return 'gas_station';");
+    expect(backendSource).toContain(
+      "$text_search_query['type'] = $detected_type;",
+    );
+  });
+
   it('commits only the latest discovery request and keeps loading true for concurrent actions', () => {
     const source = read('src/user/application/view-models/useUserViewModel.ts');
 

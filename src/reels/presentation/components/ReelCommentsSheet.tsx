@@ -46,6 +46,7 @@ import {
   Easing,
   FlatList,
   Image,
+  InteractionManager,
   Keyboard,
   type KeyboardEvent,
   Modal,
@@ -942,8 +943,13 @@ function ReelCommentsSheetBase({
       return;
     }
 
-    const timer = setTimeout(() => inputRef.current?.focus(), 220);
-    return () => clearTimeout(timer);
+    // Wait for the native PostDetail transition to finish before opening the
+    // IME. A fixed 220ms timer used to race the slide animation and caused a
+    // visible relayout/flash in the comments sheet.
+    const task = InteractionManager.runAfterInteractions(() =>
+      inputRef.current?.focus(),
+    );
+    return () => task.cancel();
   }, [
     autoFocusComposer,
     composerFocusSignal,

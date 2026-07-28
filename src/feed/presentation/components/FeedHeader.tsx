@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
@@ -59,6 +59,7 @@ export const FeedHeader = React.memo(function FeedHeader({
   const { user } = useCurrentUserViewModel();
   useNotificationBadgeViewModel();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const avatarUrl = user?.avatar;
   const transitionAnim = useRef(new Animated.Value(0)).current;
@@ -76,23 +77,26 @@ export const FeedHeader = React.memo(function FeedHeader({
     }
   }, [avatarUrl, transitionAnim]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let started = false;
-    const startPreload = () => {
-      if (cancelled || started) return;
-      started = true;
-      preloadMessagesStartupChats().catch(() => undefined);
-    };
-    const task = InteractionManager.runAfterInteractions(startPreload);
-    const fallbackTimer = setTimeout(startPreload, 700);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      let started = false;
+      const startPreload = () => {
+        if (cancelled || started) return;
+        started = true;
+        preloadMessagesStartupChats().catch(() => undefined);
+        navigation.getParent()?.preload(ROUTES.MESSAGES);
+      };
+      const task = InteractionManager.runAfterInteractions(startPreload);
+      const fallbackTimer = setTimeout(startPreload, 700);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(fallbackTimer);
-      task.cancel();
-    };
-  }, []);
+      return () => {
+        cancelled = true;
+        clearTimeout(fallbackTimer);
+        task.cancel();
+      };
+    }, [navigation]),
+  );
 
   const handlePressLogo = useCallback(() => {
     // Always navigate to the Feed tab first. If we're already on the
@@ -109,6 +113,7 @@ export const FeedHeader = React.memo(function FeedHeader({
   }, [navigation]);
 
   const handleOpenMenu = useCallback(() => {
+    setHasOpenedMenu(true);
     setMenuVisible(true);
   }, []);
 
@@ -260,10 +265,12 @@ export const FeedHeader = React.memo(function FeedHeader({
           </View>
         </View>
       </View>
-      <HeaderProfileDrawer
-        visible={menuVisible}
-        onClose={handleCloseMenu}
-      />
+      {hasOpenedMenu ? (
+        <HeaderProfileDrawer
+          visible={menuVisible}
+          onClose={handleCloseMenu}
+        />
+      ) : null}
     </>
   );
 });

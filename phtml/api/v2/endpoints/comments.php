@@ -340,7 +340,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                         }
                     }
                     $comments[$key]['text'] = strip_tags($comments[$key]['text']);
-                    $comments[$key]['replies'] = Wo_CountCommentReplies($comments[$key]['id']);
+                    // Wo_GetPostComment() already calculates replies_count.
+                    // Reuse it here instead of running one extra COUNT query
+                    // for every comment in the page.
+                    $comments[$key]['replies'] = $comments[$key]['replies_count'] ?? 0;
                     if (!empty($comments[$key]['record'])) {
                         $comments[$key]['record'] = Wo_GetMedia($comments[$key]['record']);
                     }

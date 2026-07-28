@@ -94,7 +94,11 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+} from '@react-navigation/native';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -139,8 +143,6 @@ import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/
 
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 
-import { useNotificationBadgeViewModel } from '../../../notifications';
-
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
 import { sortMessageUserChats } from '../utils/messageListOrdering';
 import {
@@ -160,6 +162,9 @@ type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 type ChatFilter = 'broadcast' | 'users' | 'groups';
 
 const MESSAGE_BROADCAST_RECIPIENT_LIST_MAX_HEIGHT = 240;
+const MESSAGE_LIST_INITIAL_RENDER_COUNT = 8;
+const MESSAGE_LIST_BATCH_SIZE = 8;
+const MESSAGE_LIST_WINDOW_SIZE = 5;
 
 const MESSAGE_COPY: Record<
 
@@ -1157,7 +1162,7 @@ function getVisibleLastMessage(
 
 // Chat list item
 
-function ChatListItem({
+const ChatListItem = React.memo(function ChatListItem({
 
   chat,
 
@@ -1476,7 +1481,7 @@ function ChatListItem({
 
   );
 
-}
+});
 
 // Group list item
 
@@ -2151,6 +2156,8 @@ function MessageScreen() {
 
   const navigation = useNavigation<MessagesNav>();
 
+  const isFocused = useIsFocused();
+
   const language = useAppLanguage();
 
   const copy = MESSAGE_COPY[language];
@@ -2163,9 +2170,9 @@ function MessageScreen() {
 
   const { user } = useCurrentUserViewModel();
 
-  useNotificationBadgeViewModel();
-
   const [menuVisible, setMenuVisible] = useState(false);
+
+  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const [showTooltip, setShowTooltip] = useState(true);
 
@@ -2243,6 +2250,8 @@ function MessageScreen() {
 
     loadChats,
 
+    syncLatestChats,
+
     loadLabels,
 
     loadFollowingUserIds,
@@ -2291,6 +2300,8 @@ function MessageScreen() {
 
   useEffect(() => {
 
+    if (!isFocused) return;
+
     let completed = false;
 
     const revealDeferredContent = () => {
@@ -2321,7 +2332,7 @@ function MessageScreen() {
 
     };
 
-  }, []);
+  }, [isFocused]);
 
   const [broadcastText, setBroadcastText] = useState('');
 
@@ -2354,6 +2365,15 @@ function MessageScreen() {
   const handleCreateGroupChat = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_GROUP_CHAT);
   }, [navigation]);
+
+  const handleOpenMenu = useCallback(() => {
+    setHasOpenedMenu(true);
+    setMenuVisible(true);
+  }, []);
+
+  const handleCloseMenu = useCallback(() => {
+    setMenuVisible(false);
+  }, []);
 
   const handleOpenLabels = useCallback(
     (chat: ChatItem) => {
@@ -2482,7 +2502,6 @@ function MessageScreen() {
       let realtimeRefreshRunning = false;
       let realtimeRefreshDirty = false;
       let realtimeRefreshCancelled = false;
-      let realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
       const flushRealtimeRefresh = async () => {
         if (realtimeRefreshRunning || realtimeRefreshCancelled) return;
@@ -2490,20 +2509,7 @@ function MessageScreen() {
         try {
           while (realtimeRefreshDirty && !realtimeRefreshCancelled) {
             realtimeRefreshDirty = false;
-            const refreshed = await loadChats(false, {
-              forceRefresh: true,
-              includeDiscovery: false,
-            });
-            if (!refreshed && !realtimeRefreshCancelled) {
-              realtimeRefreshDirty = true;
-              if (!realtimeRetryTimer) {
-                realtimeRetryTimer = setTimeout(() => {
-                  realtimeRetryTimer = null;
-                  flushRealtimeRefresh().catch(() => undefined);
-                }, 300);
-              }
-              return;
-            }
+            await syncLatestChats();
           }
         } finally {
           realtimeRefreshRunning = false;
@@ -2538,23 +2544,27 @@ function MessageScreen() {
         return () => {
           realtimeRefreshCancelled = true;
           unsubscribeRealtime();
-          if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);
         };
       }
 
       const interval = setInterval(() => {
         if (AppState.currentState !== 'active') return;
-        loadChats(false).catch(() => undefined);
+        syncLatestChats().catch(() => undefined);
       }, 5000);
 
       return () => {
         realtimeRefreshCancelled = true;
         unsubscribeRealtime();
-        if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);
         clearInterval(interval);
       };
 
-    }, [isRealtimeConnected, loadChats, loadFollowingUserIds, loadLabels]),
+    }, [
+      isRealtimeConnected,
+      loadChats,
+      loadFollowingUserIds,
+      loadLabels,
+      syncLatestChats,
+    ]),
 
   );
 
@@ -2751,6 +2761,54 @@ function MessageScreen() {
     },
 
     [activeFilter, broadcastLabelId, navigation],
+
+  );
+
+  const renderBroadcastChatItem = useCallback(
+
+    ({ item }: { item: ChatItem }) => (
+
+      <ChatListItem
+
+        chat={item}
+
+        onPress={handleChatPress}
+
+        onOpenLabels={handleOpenLabels}
+
+        selectable
+
+        selected={selectedRecipients.has(item.userId)}
+
+        copy={copy}
+
+      />
+
+    ),
+
+    [copy, handleChatPress, handleOpenLabels, selectedRecipients],
+
+  );
+
+  const renderConversationChatItem = useCallback(
+
+    ({ item }: { item: ChatItem }) => (
+
+      <ChatListItem
+
+        chat={item}
+
+        onPress={handleChatPress}
+
+        onOpenLabels={handleOpenLabels}
+
+        copy={copy}
+
+      />
+
+    ),
+
+    [copy, handleChatPress, handleOpenLabels],
 
   );
 
@@ -2980,7 +3038,7 @@ function MessageScreen() {
 
               activeOpacity={0.75}
 
-              onPress={() => setMenuVisible(true)}
+              onPress={handleOpenMenu}
 
               style={styles.headerIcon}
 
@@ -3152,7 +3210,15 @@ function MessageScreen() {
 
             keyExtractor={item => item.id}
 
-            extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}:${isLoadingChats}:${refreshing}:${error}`}
+            extraData={selectedRecipients}
+
+            initialNumToRender={MESSAGE_LIST_INITIAL_RENDER_COUNT}
+
+            maxToRenderPerBatch={MESSAGE_LIST_BATCH_SIZE}
+
+            windowSize={MESSAGE_LIST_WINDOW_SIZE}
+
+            removeClippedSubviews={Platform.OS === 'android'}
 
             ListHeaderComponent={
 
@@ -3554,25 +3620,7 @@ function MessageScreen() {
 
             ListEmptyComponent={renderListEmpty('broadcast')}
 
-            renderItem={({ item }) => (
-
-              <ChatListItem
-
-                chat={item}
-
-                onPress={handleChatPress}
-
-                onOpenLabels={handleOpenLabels}
-
-                selectable={true}
-
-                selected={selectedRecipients.has(item.userId)}
-
-                copy={copy}
-
-              />
-
-            )}
+            renderItem={renderBroadcastChatItem}
 
             contentContainerStyle={
 
@@ -3616,7 +3664,13 @@ function MessageScreen() {
 
             keyExtractor={item => item.id}
 
-            extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}:${isLoadingChats}:${refreshing}:${error}`}
+            initialNumToRender={MESSAGE_LIST_INITIAL_RENDER_COUNT}
+
+            maxToRenderPerBatch={MESSAGE_LIST_BATCH_SIZE}
+
+            windowSize={MESSAGE_LIST_WINDOW_SIZE}
+
+            removeClippedSubviews={Platform.OS === 'android'}
 
             ListHeaderComponent={
 
@@ -3647,25 +3701,7 @@ function MessageScreen() {
 
             ListEmptyComponent={renderListEmpty('users')}
 
-            renderItem={({ item }) => (
-
-              <ChatListItem
-
-                chat={item}
-
-                onPress={handleChatPress}
-
-                onOpenLabels={handleOpenLabels}
-
-                selectable={false}
-
-                selected={false}
-
-                copy={copy}
-
-              />
-
-            )}
+            renderItem={renderConversationChatItem}
 
             contentContainerStyle={
 
@@ -3709,7 +3745,13 @@ function MessageScreen() {
 
             keyExtractor={item => item.id}
 
-            extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}:${isLoadingChats}:${refreshing}:${error}`}
+            initialNumToRender={MESSAGE_LIST_INITIAL_RENDER_COUNT}
+
+            maxToRenderPerBatch={MESSAGE_LIST_BATCH_SIZE}
+
+            windowSize={MESSAGE_LIST_WINDOW_SIZE}
+
+            removeClippedSubviews={Platform.OS === 'android'}
 
             ListHeaderComponent={
 
@@ -3747,25 +3789,7 @@ function MessageScreen() {
 
             ListEmptyComponent={renderListEmpty('groups')}
 
-            renderItem={({ item }) => (
-
-              <ChatListItem
-
-                chat={item}
-
-                onPress={handleChatPress}
-
-                onOpenLabels={handleOpenLabels}
-
-                selectable={false}
-
-                selected={false}
-
-                copy={copy}
-
-              />
-
-            )}
+            renderItem={renderConversationChatItem}
 
             contentContainerStyle={
 
@@ -3801,13 +3825,17 @@ function MessageScreen() {
 
       </ScrollView>
 
-      <HeaderProfileDrawer
+      {hasOpenedMenu ? (
 
-        visible={menuVisible}
+        <HeaderProfileDrawer
 
-        onClose={() => setMenuVisible(false)}
+          visible={menuVisible}
 
-      />
+          onClose={handleCloseMenu}
+
+        />
+
+      ) : null}
 
     </SafeAreaView>
 

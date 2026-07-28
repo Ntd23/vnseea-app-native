@@ -23,6 +23,7 @@ import {
   ConnectionState,
   RoomEvent,
   Track,
+  type RemoteTrackPublication,
   type VideoCaptureOptions,
 } from 'livekit-client';
 import { requestCallMediaPermissions } from '../../../shared-kernel/application/utils/microphonePermission';
@@ -88,6 +89,9 @@ const LIVE_ROOM_OPTIONS = {
 } as const;
 const LIVE_CONNECT_OPTIONS = {
   autoSubscribe: true,
+} as const;
+const LIVE_VIDEO_ONLY_CONNECT_OPTIONS = {
+  autoSubscribe: false,
 } as const;
 const LIVE_MEDIA_STATS_INTERVAL_MS = 1_000;
 const LIVE_MEDIA_STATS_SAMPLES = 12;
@@ -850,12 +854,49 @@ function LiveAudioVolumeDiagnostics({
   return null;
 }
 
+function LiveVideoOnlySubscriptionController({ enabled }: { enabled: boolean }) {
+  const room = useRoomContext();
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+
+    const syncPublication = (publication: RemoteTrackPublication) => {
+      const shouldSubscribe =
+        publication.source === Track.Source.Camera ||
+        (publication.source === Track.Source.Unknown &&
+          publication.kind === Track.Kind.Video);
+      publication.setSubscribed(shouldSubscribe);
+    };
+
+    room.remoteParticipants.forEach(participant => {
+      participant.trackPublications.forEach(publication => {
+        syncPublication(publication as RemoteTrackPublication);
+      });
+    });
+
+    const handleTrackPublished = (publication: RemoteTrackPublication) => {
+      syncPublication(publication);
+    };
+
+    room.on(RoomEvent.TrackPublished, handleTrackPublished);
+    return () => {
+      room.off(RoomEvent.TrackPublished, handleTrackPublished);
+    };
+  }, [enabled, room]);
+
+  return null;
+}
+
 function LiveKitVideoSurface({
   isHost,
   cameraFacing,
+  objectFit,
+  onVideoReady,
 }: {
   isHost: boolean;
   cameraFacing: 'front' | 'back';
+  objectFit: 'contain' | 'cover';
+  onVideoReady?: () => void;
 }) {
   const tracks = useTracks([Track.Source.Camera]);
   const { localParticipant } = useLocalParticipant();
@@ -869,6 +910,10 @@ function LiveKitVideoSurface({
     const remoteTrack = trackRefs.find(item => !item.participant.isLocal);
     return isHost ? localTrack ?? remoteTrack : remoteTrack ?? localTrack;
   }, [isHost, tracks]);
+
+  useEffect(() => {
+    if (cameraTrack) onVideoReady?.();
+  }, [cameraTrack, onVideoReady]);
 
   useEffect(() => {
     if (!isHost) return;
@@ -905,7 +950,7 @@ function LiveKitVideoSurface({
       <VideoTrack
         key={`camera-${trackRenderKey}`}
         trackRef={cameraTrack}
-        objectFit={isHost ? 'cover' : 'contain'}
+        objectFit={isHost ? 'cover' : objectFit}
         mirror={isHost && cameraTrack.participant.isLocal && cameraFacing === 'front'}
         style={absoluteFillStyle}
       />
@@ -926,6 +971,10 @@ export type LiveKitStreamViewProps = {
   session: LiveSession;
   isHost: boolean;
   cameraFacing?: 'front' | 'back';
+  audioEnabled?: boolean;
+  diagnosticsEnabled?: boolean;
+  objectFit?: 'contain' | 'cover';
+  onVideoReady?: () => void;
   onConnectionStateChange?: (
     state: 'connected' | 'disconnected' | 'error',
   ) => void;
@@ -935,6 +984,10 @@ export function LiveKitStreamView({
   session,
   isHost,
   cameraFacing = 'front',
+  audioEnabled = true,
+  diagnosticsEnabled = true,
+  objectFit = 'contain',
+  onVideoReady,
   onConnectionStateChange,
 }: LiveKitStreamViewProps) {
   const [permissionState, setPermissionState] = useState<PermissionState>(
@@ -953,7 +1006,11 @@ export function LiveKitStreamView({
     session.wsUrl && session.token && permissionState === 'granted',
   );
   const canConnectLiveKitRoom =
-    canPrepareLiveAudioSession && liveAudioSessionReady;
+    canPrepareLiveAudioSession && (!audioEnabled || liveAudioSessionReady);
+  const connectOptions =
+    isHost || audioEnabled
+      ? LIVE_CONNECT_OPTIONS
+      : LIVE_VIDEO_ONLY_CONNECT_OPTIONS;
   const traceId = useMemo(
     () => `${session.roomName}|${liveRole}|${deviceTraceIdRef.current}`,
     [liveRole, session.roomName],
@@ -1024,12 +1081,13 @@ export function LiveKitStreamView({
       traceId,
       wsUrl: session.wsUrl,
       tokenLength: session.token.length,
-      autoSubscribe: LIVE_CONNECT_OPTIONS.autoSubscribe,
+      autoSubscribe: connectOptions.autoSubscribe,
       audio: isHost,
       video: Boolean(hostVideoCaptureOptions),
     });
   }, [
     canConnectLiveKitRoom,
+    connectOptions.autoSubscribe,
     hostVideoCaptureOptions,
     isHost,
     liveRole,
@@ -1132,7 +1190,7 @@ export function LiveKitStreamView({
     );
   }
 
-  const audioSessionBoundary = (
+  const audioSessionBoundary = audioEnabled ? (
     <LiveAudioSessionBoundary
       enabled={canPrepareLiveAudioSession}
       role={liveRole}
@@ -1141,9 +1199,9 @@ export function LiveKitStreamView({
       traceId={traceId}
       onReadyChange={setLiveAudioSessionReady}
     />
-  );
+  ) : null;
 
-  if (!liveAudioSessionReady) {
+  if (audioEnabled && !liveAudioSessionReady) {
     return (
       <>
         {audioSessionBoundary}
@@ -1167,7 +1225,7 @@ export function LiveKitStreamView({
         audio={isHost}
         video={hostVideoCaptureOptions}
         options={LIVE_ROOM_OPTIONS}
-        connectOptions={LIVE_CONNECT_OPTIONS}
+        connectOptions={connectOptions}
         onConnected={handleConnected}
         onDisconnected={handleDisconnected}
         onError={handleError}
@@ -1183,25 +1241,39 @@ export function LiveKitStreamView({
         }}
       >
         <View style={styles.container}>
-          <LiveMediaDiagnostics
-            role={liveRole}
-            roomName={session.roomName}
-            streamName={session.streamName}
-            traceId={traceId}
+          <LiveVideoOnlySubscriptionController
+            enabled={!isHost && !audioEnabled}
           />
-          <LiveAudioPlaybackGate
-            role={liveRole}
-            roomName={session.roomName}
-            streamName={session.streamName}
-            traceId={traceId}
+          {diagnosticsEnabled ? (
+            <LiveMediaDiagnostics
+              role={liveRole}
+              roomName={session.roomName}
+              streamName={session.streamName}
+              traceId={traceId}
+            />
+          ) : null}
+          {audioEnabled ? (
+            <LiveAudioPlaybackGate
+              role={liveRole}
+              roomName={session.roomName}
+              streamName={session.streamName}
+              traceId={traceId}
+            />
+          ) : null}
+          {diagnosticsEnabled && audioEnabled ? (
+            <LiveAudioVolumeDiagnostics
+              role={liveRole}
+              roomName={session.roomName}
+              streamName={session.streamName}
+              traceId={traceId}
+            />
+          ) : null}
+          <LiveKitVideoSurface
+            isHost={isHost}
+            cameraFacing={cameraFacing}
+            objectFit={objectFit}
+            onVideoReady={onVideoReady}
           />
-          <LiveAudioVolumeDiagnostics
-            role={liveRole}
-            roomName={session.roomName}
-            streamName={session.streamName}
-            traceId={traceId}
-          />
-          <LiveKitVideoSurface isHost={isHost} cameraFacing={cameraFacing} />
           {connectionMessage ? (
             <View style={styles.statusPill}>
               <Text style={styles.statusText}>{connectionMessage}</Text>
