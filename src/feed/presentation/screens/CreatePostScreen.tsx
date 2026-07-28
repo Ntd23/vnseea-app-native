@@ -24,11 +24,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -40,19 +38,27 @@ import {
 } from 'react-native-image-picker';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  AtSign,
+  initialWindowMetrics,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import {
+  Check,
   ChevronDown,
   ChevronRight,
+  Ellipsis,
   Globe2,
-  EyeOff,
-  Hash,
   Image as ImageIcon,
   Lock,
-  Music2,
+  MapPin,
+  Pause,
+  Pencil,
+  Play,
+  Search,
   Smile,
   Square,
+  UserPlus,
   Users,
   Video as VideoIcon,
   X,
@@ -67,7 +73,6 @@ import { useCreatePostViewModel } from '../../application/view-models/useCreateP
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
 import {
   formatAudioDuration,
-  pickSupportedAudioFile,
 } from '../../../shared-kernel/application/utils/audioFiles';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
@@ -83,19 +88,47 @@ import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import type { RootStackRouteName } from '../../../navigation/types';
 import type {
   PostFeeling,
+  PostLocation,
   PostPhotoAttachment,
   PostPrivacy,
+  PostTaggedUser,
   PostVideoAttachment,
   PostAudioAttachment,
 } from '../../domain/types/feed.types';
 import type { ReelCaptionSuggestion } from '../../../reels/domain/types/reels.types';
+import AddressSearchContent from '../../../shared-kernel/presentation/components/AddressSearchContent';
+import type { ResolvedAddress } from '../../../shared-kernel/domain/types/addressSearch.types';
+import {
+  buildPostActivityContext,
+  getPostFeelingLabel,
+} from '../../application/composer/postActivityContext';
+import { FeedMediaFrame } from '../components/FeedCardChrome';
+import {
+  getPhotoGridItemGutterStyle,
+  getPhotoGridItemLayout,
+  getPhotoGridRows,
+} from '../components/photoGridLayout';
+import {
+  CREATE_POST_KEYBOARD_ACTION_KEYS,
+  CREATE_POST_MORE_EXCLUDED_ACTION_KEYS,
+  CREATE_POST_TRAY_ACTION_KEYS,
+  type CreatePostTrayActionKey,
+} from './createPostActionConfig';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CreatePostRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_POST>;
 
 const COMPOSER_PHOTO_LIMIT = 9;
-const PHOTO_GRID_COLUMNS = 3;
-const PHOTO_GRID_GAP = 8;
+const CAPTION_LINE_HEIGHT = 24;
+const CAPTION_MAX_LINES = 12;
+const PHOTO_GRID_GAP = 2;
+const MAX_TAGGED_USERS = 20;
+const createPostMoreExcludedActionKeys = new Set<string>(
+  CREATE_POST_MORE_EXCLUDED_ACTION_KEYS,
+);
+const createPostMoreActions = CREATE_ACTIONS.filter(
+  action => !createPostMoreExcludedActionKeys.has(action.key),
+);
 
 // ── Translation copy dictionary ───────────────────────────────────────
 const CREATE_POST_COPY = {
@@ -114,6 +147,22 @@ const CREATE_POST_COPY = {
     discardConfirm: 'Bỏ',
     feelingsTitle: 'Cảm xúc của bạn',
     feelingsClear: 'Xoá',
+    tagPeople: 'Gắn thẻ',
+    tagPeopleTitle: 'Gắn thẻ mọi người',
+    tagPeopleSearch: 'Tìm bạn bè hoặc người bạn đang theo dõi',
+    tagPeopleEmpty: 'Không tìm thấy người phù hợp.',
+    tagPeopleLimit: 'Bạn chỉ có thể gắn tối đa 20 người.',
+    tagPeopleSelected: 'Đã chọn {count}/20',
+    taggedPeopleTitle: 'Những người được gắn thẻ',
+    location: 'Vị trí',
+    locationTitle: 'Thêm vị trí',
+    locationClear: 'Xóa vị trí',
+    tagsRemovedForPrivacy: 'Đã bỏ {count} người không thể xem bài viết với phạm vi mới.',
+    editMedia: 'Chỉnh sửa',
+    editMediaTitle: 'Chỉnh sửa nội dung đa phương tiện',
+    removeMedia: 'Xóa',
+    addMorePhotos: 'Thêm ảnh',
+    loadMore: 'Tải thêm',
     recording: 'Đang ghi âm',
     recordingTip: 'Nhấn nút dừng để dùng bản ghi này.',
     audioError: 'Không chọn được âm thanh',
@@ -157,6 +206,8 @@ const CREATE_POST_COPY = {
     postAsPage: 'Đăng với tư cách Trang',
     poll: 'Thăm dò',
     product: 'Sản phẩm',
+    job: 'Công việc',
+    ad: 'Quảng cáo',
     live: 'Trực tiếp',
     page: 'Trang',
   },
@@ -175,6 +226,22 @@ const CREATE_POST_COPY = {
     discardConfirm: 'Discard',
     feelingsTitle: 'Your feelings',
     feelingsClear: 'Clear',
+    tagPeople: 'Tag people',
+    tagPeopleTitle: 'Tag people',
+    tagPeopleSearch: 'Search friends or people you follow',
+    tagPeopleEmpty: 'No eligible people found.',
+    tagPeopleLimit: 'You can tag up to 20 people.',
+    tagPeopleSelected: '{count}/20 selected',
+    taggedPeopleTitle: 'Tagged people',
+    location: 'Location',
+    locationTitle: 'Add location',
+    locationClear: 'Remove location',
+    tagsRemovedForPrivacy: '{count} people were removed because they cannot view the new audience.',
+    editMedia: 'Edit',
+    editMediaTitle: 'Edit media',
+    removeMedia: 'Remove',
+    addMorePhotos: 'Add photos',
+    loadMore: 'Load more',
     recording: 'Recording',
     recordingTip: 'Press stop to use this recording.',
     audioError: 'Could not select audio',
@@ -218,52 +285,11 @@ const CREATE_POST_COPY = {
     postAsPage: 'Post as Page',
     poll: 'Poll',
     product: 'Product',
+    job: 'Job',
+    ad: 'Advertisement',
     live: 'Live',
     page: 'Page',
   },
-};
-
-const FEELING_LABELS: Record<string, Record<string, string>> = {
-  vi: {
-    happy: 'vui vẻ',
-    loved: 'được yêu',
-    lovely: 'yêu thương',
-    funny: 'vui nhộn',
-    cool: 'ngầu',
-    blessed: 'may mắn',
-    pretty: 'thư thái',
-    smirk: 'đắc ý',
-    sad: 'buồn',
-    so_sad: 'rất buồn',
-    angry: 'tức giận',
-    tired: 'mệt mỏi',
-    sleepy: 'buồn ngủ',
-    bored: 'chán',
-    confused: 'bối rối',
-    shocked: 'sốc',
-    broke: 'tan vỡ',
-    expressionless: 'vô cảm',
-  },
-  en: {
-    happy: 'happy',
-    loved: 'loved',
-    lovely: 'lovely',
-    funny: 'funny',
-    cool: 'cool',
-    blessed: 'blessed',
-    pretty: 'pretty',
-    smirk: 'smirk',
-    sad: 'sad',
-    so_sad: 'very sad',
-    angry: 'angry',
-    tired: 'tired',
-    sleepy: 'sleepy',
-    bored: 'bored',
-    confused: 'confused',
-    shocked: 'shocked',
-    broke: 'brokenhearted',
-    expressionless: 'expressionless',
-  }
 };
 
 const FEELING_OPTIONS: PostFeeling[] = [
@@ -632,6 +658,301 @@ function FeelingPickerSheet({
   );
 }
 
+type TaggableUsersResult = {
+  users: PostTaggedUser[];
+  nextCursor?: string;
+  hasMore: boolean;
+};
+
+function TagPeoplePickerSheet({
+  visible,
+  selected,
+  onClose,
+  onDone,
+  onSearch,
+  copy,
+}: {
+  visible: boolean;
+  selected: PostTaggedUser[];
+  onClose: () => void;
+  onDone: (users: PostTaggedUser[]) => void;
+  onSearch: (input: {
+    query?: string;
+    cursor?: string;
+    userIds?: string[];
+  }) => Promise<TaggableUsersResult>;
+  copy: any;
+}) {
+  const [query, setQuery] = useState('');
+  const [users, setUsers] = useState<PostTaggedUser[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<PostTaggedUser[]>(selected);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const requestIdRef = useRef(0);
+  const safeAreaInsets = useSafeAreaInsets();
+  const safeTopInset = Math.max(
+    safeAreaInsets.top,
+    initialWindowMetrics?.insets.top ?? 0,
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+    setSelectedUsers(selected);
+  }, [selected, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const requestId = ++requestIdRef.current;
+    const timer = setTimeout(async () => {
+      setIsLoading(true);
+      try {
+        const page = await onSearch({ query });
+        if (requestId !== requestIdRef.current) return;
+        setUsers(page.users);
+        setNextCursor(page.nextCursor);
+        setHasMore(page.hasMore);
+      } catch {
+        if (requestId !== requestIdRef.current) return;
+        setUsers([]);
+        setNextCursor(undefined);
+        setHasMore(false);
+      } finally {
+        if (requestId === requestIdRef.current) setIsLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [onSearch, query, visible]);
+
+  const toggleUser = (user: PostTaggedUser) => {
+    setSelectedUsers(current => {
+      const exists = current.some(item => item.id === user.id);
+      if (exists) return current.filter(item => item.id !== user.id);
+      if (current.length >= MAX_TAGGED_USERS) {
+        Alert.alert(copy.tagPeopleTitle, copy.tagPeopleLimit);
+        return current;
+      }
+      return [...current, user];
+    });
+  };
+
+  const loadMore = async () => {
+    if (!hasMore || !nextCursor || isLoading) return;
+    setIsLoading(true);
+    try {
+      const page = await onSearch({ query, cursor: nextCursor });
+      setUsers(current => {
+        const merged = new Map(current.map(user => [user.id, user]));
+        page.users.forEach(user => merged.set(user.id, user));
+        return Array.from(merged.values());
+      });
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView
+        edges={['left', 'right', 'bottom']}
+        style={{
+          flex: 1,
+          paddingTop: safeTopInset,
+          backgroundColor: '#F8FAFC',
+        }}
+      >
+        <FocusAwareStatusBar
+          backgroundColor="#F8FAFC"
+          barStyle="dark-content"
+        />
+        <View className="h-16 flex-row items-center border-b border-slate-200 bg-white px-4">
+          <TouchableOpacity
+            onPress={onClose}
+            className="h-11 w-11 items-center justify-center rounded-full bg-slate-100"
+          >
+            <X size={21} color="#0F172A" />
+          </TouchableOpacity>
+          <View className="ml-3 flex-1">
+            <Text className="text-[17px] font-bold text-slate-900">
+              {copy.tagPeopleTitle}
+            </Text>
+            <Text className="mt-0.5 text-[12px] font-semibold text-slate-500">
+              {copy.tagPeopleSelected.replace(
+                '{count}',
+                String(selectedUsers.length),
+              )}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => onDone(selectedUsers)}
+            className="h-11 items-center justify-center rounded-full bg-brand px-4"
+          >
+            <Text className="text-[14px] font-bold text-white">{copy.done}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View className="mx-4 mt-4 h-12 flex-row items-center rounded-xl border border-slate-200 bg-white px-3">
+          <Search size={18} color="#94A3B8" />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={copy.tagPeopleSearch}
+            placeholderTextColor="#94A3B8"
+            autoCorrect={false}
+            className="ml-2 flex-1 text-[15px] text-slate-900"
+          />
+        </View>
+
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 32,
+          }}
+        >
+          {users.map(user => {
+            const isSelected = selectedUsers.some(item => item.id === user.id);
+            return (
+              <TouchableOpacity
+                key={user.id}
+                onPress={() => toggleUser(user)}
+                activeOpacity={0.72}
+                className="mb-2 flex-row items-center rounded-xl border border-slate-200 bg-white p-3"
+              >
+                {user.avatarUrl ? (
+                  <Image
+                    source={{ uri: user.avatarUrl }}
+                    style={{ width: 44, height: 44, borderRadius: 22 }}
+                  />
+                ) : (
+                  <View className="h-11 w-11 items-center justify-center rounded-full bg-slate-200">
+                    <Text className="font-bold text-slate-600">
+                      {user.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                <View className="mx-3 flex-1">
+                  <Text className="text-[14px] font-bold text-slate-900">
+                    {user.name}
+                  </Text>
+                  <Text className="mt-0.5 text-[12px] text-slate-500">
+                    @{user.username}
+                  </Text>
+                </View>
+                <View
+                  className={
+                    isSelected
+                      ? 'h-7 w-7 items-center justify-center rounded-full bg-brand'
+                      : 'h-7 w-7 rounded-full border-2 border-slate-300'
+                  }
+                >
+                  {isSelected ? <Check size={16} color="#FFFFFF" /> : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          {!isLoading && users.length === 0 ? (
+            <Text className="py-10 text-center text-[14px] text-slate-500">
+              {copy.tagPeopleEmpty}
+            </Text>
+          ) : null}
+          {isLoading ? (
+            <ActivityIndicator
+              style={{ marginVertical: 20 }}
+              color={APP_BRAND_COLOR}
+            />
+          ) : null}
+          {hasMore && !isLoading ? (
+            <TouchableOpacity
+              onPress={() => void loadMore()}
+              className="h-11 items-center justify-center rounded-xl bg-slate-100"
+            >
+              <Text className="text-[13px] font-bold text-brand">
+                {copy.loadMore}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function LocationPickerSheet({
+  visible,
+  current,
+  onClose,
+  onPick,
+  onClear,
+  copy,
+}: {
+  visible: boolean;
+  current?: PostLocation;
+  onClose: () => void;
+  onPick: (location: PostLocation) => void;
+  onClear: () => void;
+  copy: any;
+}) {
+  const [query, setQuery] = useState(current?.label ?? '');
+
+  useEffect(() => {
+    if (visible) setQuery(current?.label ?? '');
+  }, [current?.label, visible]);
+
+  const chooseResolved = (address: ResolvedAddress) => {
+    onPick({ label: address.formattedAddress.trim() });
+    onClose();
+  };
+
+  const chooseTyped = (address: string) => {
+    const label = address.trim();
+    if (!label) return;
+    onPick({ label });
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        {current ? (
+          <TouchableOpacity
+            onPress={() => {
+              onClear();
+              onClose();
+            }}
+            className="absolute right-4 top-3 z-20 h-10 justify-center rounded-full bg-red-50 px-3"
+          >
+            <Text className="text-[13px] font-bold text-red-600">
+              {copy.locationClear}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+        <AddressSearchContent
+          key={`${visible ? 'visible' : 'hidden'}:${current?.label ?? ''}`}
+          initialQuery={query}
+          onClose={onClose}
+          onQueryChange={setQuery}
+          onResolvedAddress={chooseResolved}
+          onUseTypedAddress={chooseTyped}
+        />
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 // ── Screen ────────────────────────────────────────────────────────────
 
 // ── Sub-components React.memo ──────────────────────────────────────────
@@ -720,11 +1041,18 @@ interface AuthorPrivacyCardProps {
   avatarUrl?: string;
   displayName: string;
   feeling?: PostFeeling;
-  feelingLabel: string | null;
+  taggedUsers: PostTaggedUser[];
+  location?: PostLocation;
   targetPage?: any;
   currentPrivacy: PostPrivacy;
   privacyOptions: Array<{ value: PostPrivacy; label: string; Icon: any; description: string }>;
-  onSelectPrivacy: (privacy: PostPrivacy) => void;
+  canSelectPrivacy: boolean;
+  onSelectPrivacy: (privacy: PostPrivacy) => void | Promise<void>;
+  onTagPeoplePress: () => void;
+  onTaggedPeopleLabelPress: () => void;
+  onLocationPress: () => void;
+  onFeelingPress: () => void;
+  language: 'vi' | 'en';
   copy: any;
 }
 
@@ -732,11 +1060,18 @@ const AuthorPrivacyCard = React.memo(({
   avatarUrl,
   displayName,
   feeling,
-  feelingLabel,
+  taggedUsers,
+  location,
   targetPage,
   currentPrivacy,
   privacyOptions,
+  canSelectPrivacy,
   onSelectPrivacy,
+  onTagPeoplePress,
+  onTaggedPeopleLabelPress,
+  onLocationPress,
+  onFeelingPress,
+  language,
   copy,
 }: AuthorPrivacyCardProps) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -744,8 +1079,44 @@ const AuthorPrivacyCard = React.memo(({
   const currentOpt = useMemo(() => {
     return privacyOptions.find(opt => opt.value === currentPrivacy) ?? privacyOptions[0];
   }, [privacyOptions, currentPrivacy]);
+  const activity = useMemo(
+    () =>
+      buildPostActivityContext({
+        language,
+        feeling,
+        taggedUsers,
+        location,
+      }),
+    [feeling, language, location, taggedUsers],
+  );
 
   const PrivacyIcon = currentOpt.Icon;
+  const metadataActions = [
+    {
+      key: 'tag',
+      label: copy.tagPeople,
+      Icon: UserPlus,
+      onPress: onTagPeoplePress,
+      disabled: currentPrivacy === 'only_me',
+      active: taggedUsers.length > 0,
+    },
+    {
+      key: 'location',
+      label: copy.location,
+      Icon: MapPin,
+      onPress: onLocationPress,
+      disabled: false,
+      active: Boolean(location),
+    },
+    {
+      key: 'feeling',
+      label: copy.feeling,
+      Icon: Smile,
+      onPress: onFeelingPress,
+      disabled: false,
+      active: Boolean(feeling),
+    },
+  ];
 
   return (
     <View
@@ -757,73 +1128,131 @@ const AuthorPrivacyCard = React.memo(({
         elevation: 2,
         zIndex: 100,
       }}
-      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 flex-row items-center"
+      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4"
     >
-      <View className="relative">
-        {avatarUrl ? (
-          <Image
-            source={{ uri: avatarUrl }}
-            style={{ height: 56, width: 56, borderRadius: 28 }}
-            resizeMode="cover"
-          />
-        ) : (
-          <View
-            style={{
-              height: 56,
-              width: 56,
-              borderRadius: 28,
-              backgroundColor: '#E2E8F0',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text style={{ fontSize: 22, color: '#64748B', fontWeight: 'bold' }}>
-              {displayName.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-        )}
-        <View className="absolute bottom-0 right-0 h-4.5 w-4.5 rounded-full bg-brand border border-white items-center justify-center">
-          <Text className="text-white text-[10px] font-bold leading-none">+</Text>
-        </View>
-      </View>
-      <View style={{ flex: 1, marginLeft: 16, zIndex: 200 }}>
-        <View className="flex-row items-center flex-wrap">
-          <Text className="text-[16px] font-bold text-slate-800" numberOfLines={1}>
-            {displayName}
-          </Text>
-          {feeling ? (
-            <Text
-              className="ml-1.5 text-[14px] text-slate-500 font-medium"
-              numberOfLines={1}
+      <View className="flex-row items-center">
+        <View className="relative">
+          {avatarUrl ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={{ height: 56, width: 56, borderRadius: 28 }}
+              resizeMode="cover"
+            />
+          ) : (
+            <View
+              style={{
+                height: 56,
+                width: 56,
+                borderRadius: 28,
+                backgroundColor: '#E2E8F0',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
-              {copy.feelingLabel} {feeling.emoji}{' '}
-              {feelingLabel}
+              <Text style={{ fontSize: 22, color: '#64748B', fontWeight: 'bold' }}>
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={{ flex: 1, marginLeft: 16, minWidth: 0 }}>
+          <Text
+            style={{ color: '#1E293B', fontSize: 16, lineHeight: 21 }}
+            numberOfLines={2}
+          >
+            <Text style={{ fontWeight: '800' }}>{displayName}</Text>
+            {activity.fullText ? (
+              <>
+                {' '}
+                {activity.segments.map((segment, index) => {
+                  if (segment.kind === 'tagged_users') {
+                    return (
+                      <Text
+                        key={`${segment.kind}:${index}`}
+                        onPress={onTaggedPeopleLabelPress}
+                        style={{ color: APP_BRAND_COLOR, fontWeight: '700' }}
+                      >
+                        {segment.text}
+                      </Text>
+                    );
+                  }
+
+                  const isEmphasized =
+                    segment.kind === 'feeling' ||
+                    segment.kind === 'location';
+                  return (
+                    <Text
+                      key={`${segment.kind}:${index}`}
+                      style={{
+                        color: isEmphasized ? '#1E293B' : '#64748B',
+                        fontWeight: isEmphasized ? '700' : '500',
+                      }}
+                    >
+                      {segment.text}
+                    </Text>
+                  );
+                })}
+              </>
+            ) : null}
+          </Text>
+          {targetPage ? (
+            <Text className="mt-1 text-[12px] font-semibold text-brand">
+              {copy.postAsPage}
             </Text>
           ) : null}
         </View>
-        {targetPage ? (
-          <Text className="mt-1 text-[12px] font-semibold text-brand">
-            {copy.postAsPage}
-          </Text>
-        ) : null}
-        <View style={{ position: 'relative', zIndex: 300 }} className="mt-1.5 self-start">
+      </View>
+
+      <View
+        style={{
+          marginTop: 12,
+          flexDirection: 'row',
+          alignItems: 'center',
+          columnGap: 6,
+          zIndex: 300,
+        }}
+      >
+        <View
+          style={{
+            position: 'relative',
+            width: 112,
+            flexShrink: 0,
+            zIndex: 400,
+          }}
+        >
           <TouchableOpacity
-            onPress={() => setIsDropdownOpen(prev => !prev)}
+            onPress={() => {
+              if (canSelectPrivacy) setIsDropdownOpen(prev => !prev);
+            }}
             activeOpacity={0.7}
-            className="flex-row items-center rounded-full bg-slate-100 px-3 py-1"
+            accessibilityRole="button"
+            accessibilityLabel={currentOpt.label}
+            style={{
+              height: 44,
+              minWidth: 0,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 14,
+              backgroundColor: '#F1F5F9',
+              paddingHorizontal: 10,
+            }}
           >
-            <PrivacyIcon size={12} color="#475569" />
-            <Text className="mx-1.5 text-[12px] font-semibold text-slate-600">
+            <PrivacyIcon size={15} color="#475569" />
+            <Text
+              className="mx-1.5 text-[12px] font-semibold text-slate-600"
+              numberOfLines={1}
+            >
               {currentOpt.label}
             </Text>
-            <ChevronDown size={12} color="#475569" />
+            {canSelectPrivacy ? <ChevronDown size={13} color="#475569" /> : null}
           </TouchableOpacity>
 
-          {isDropdownOpen && (
+          {isDropdownOpen && canSelectPrivacy ? (
             <View
               style={{
                 position: 'absolute',
-                top: 28,
+                top: 48,
                 left: 0,
                 width: 260,
                 backgroundColor: '#ffffff',
@@ -846,7 +1275,7 @@ const AuthorPrivacyCard = React.memo(({
                   <TouchableOpacity
                     key={opt.value}
                     onPress={() => {
-                      onSelectPrivacy(opt.value);
+                      void onSelectPrivacy(opt.value);
                       setIsDropdownOpen(false);
                     }}
                     style={{
@@ -873,8 +1302,67 @@ const AuthorPrivacyCard = React.memo(({
                 );
               })}
             </View>
-          )}
+          ) : null}
         </View>
+
+        <ScrollView
+          testID="create-post-metadata-actions"
+          horizontal
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            alignItems: 'center',
+            columnGap: 6,
+            paddingRight: 2,
+          }}
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {metadataActions.map(action => {
+            const ActionIcon = action.Icon;
+            return (
+              <TouchableOpacity
+                key={action.key}
+                accessibilityRole="button"
+                accessibilityLabel={action.label}
+                onPress={action.onPress}
+                disabled={action.disabled}
+                activeOpacity={0.72}
+                style={{
+                  height: 44,
+                  borderRadius: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 10,
+                  backgroundColor: action.active
+                    ? APP_COLORS.brand.softPressed
+                    : '#F8FAFC',
+                  borderWidth: 1,
+                  borderColor: action.active
+                    ? APP_COLORS.brand.border
+                    : '#E2E8F0',
+                  opacity: action.disabled ? 0.4 : 1,
+                }}
+              >
+                <ActionIcon
+                  size={17}
+                  color={action.active ? APP_BRAND_COLOR : '#64748B'}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    marginLeft: 6,
+                    color: action.active ? APP_BRAND_COLOR : '#475569',
+                    fontSize: 12,
+                    fontWeight: '700',
+                  }}
+                >
+                  {action.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
     </View>
   );
@@ -887,14 +1375,13 @@ interface CaptionComposerProps {
   onFocus: () => void;
   onBlur: () => void;
   placeholder: string;
-  onInsertChar: (char: '#' | '@') => void;
-  onFeelingPress: () => void;
   copy: any;
   onPickPhotos: () => void;
   onPickVideo: () => void;
   onCreateProduct: () => void;
   onCreatePoll: () => void;
   showPrimaryActions?: boolean;
+  embedded?: boolean;
 }
 
 const CharacterCounter = React.memo(({ length }: { length: number }) => {
@@ -912,15 +1399,17 @@ const CaptionComposer = React.memo(({
   onFocus,
   onBlur,
   placeholder,
-  onInsertChar,
-  onFeelingPress,
   copy,
   onPickPhotos,
   onPickVideo,
   onCreateProduct,
   onCreatePoll,
   showPrimaryActions = true,
+  embedded = false,
 }: CaptionComposerProps) => {
+  const [inputHeight, setInputHeight] = useState(CAPTION_LINE_HEIGHT);
+  const [isCaptionOverflowing, setIsCaptionOverflowing] = useState(false);
+  const maxInputHeight = CAPTION_LINE_HEIGHT * CAPTION_MAX_LINES;
   const isVi = copy.photo === 'Ảnh';
   const photoLabel = isVi ? 'Đăng tải hình ảnh' : 'Upload photos';
   const videoLabel = isVi ? 'Tải đoạn phim lên' : 'Upload video';
@@ -929,14 +1418,22 @@ const CaptionComposer = React.memo(({
 
   return (
     <View
-      style={{
-        shadowColor: '#94a3b8',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 2,
-      }}
-      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[220px] justify-between"
+      style={
+        embedded
+          ? undefined
+          : {
+              shadowColor: '#94a3b8',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.05,
+              shadowRadius: 10,
+              elevation: 2,
+            }
+      }
+      className={
+        embedded
+          ? 'bg-white px-4 pb-3 pt-4'
+          : 'mx-4 mt-4 rounded-[20px] border border-slate-100 bg-white p-4'
+      }
     >
       <TextInput
         ref={textInputRef}
@@ -948,44 +1445,32 @@ const CaptionComposer = React.memo(({
         placeholderTextColor="#94A3B8"
         multiline
         autoFocus
-        scrollEnabled
+        scrollEnabled={isCaptionOverflowing}
         textAlignVertical="top"
+        onContentSizeChange={event => {
+          const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
+          setIsCaptionOverflowing(contentHeight > maxInputHeight);
+          const nextHeight = Math.max(
+            CAPTION_LINE_HEIGHT,
+            Math.min(
+              maxInputHeight,
+              contentHeight,
+            ),
+          );
+          setInputHeight(nextHeight);
+        }}
         style={{
           fontSize: 17,
-          lineHeight: 24,
+          lineHeight: CAPTION_LINE_HEIGHT,
           color: '#1e293b',
           padding: 0,
-          minHeight: 82,
-          maxHeight: 128,
+          height: inputHeight,
+          minHeight: CAPTION_LINE_HEIGHT,
+          maxHeight: maxInputHeight,
         }}
       />
 
-      {/* Word counts & inline shortcuts */}
-      <View className="flex-row items-center justify-end mt-3 gap-3">
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => onInsertChar('#')}
-          className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
-        >
-          <Hash size={18} color="#64748b" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => onInsertChar('@')}
-          className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
-        >
-          <AtSign size={18} color="#64748b" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={onFeelingPress}
-          className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
-        >
-          <Smile size={18} color="#64748b" />
-        </TouchableOpacity>
-
+      <View className="mt-2 flex-row items-center justify-end">
         <CharacterCounter length={text.length} />
       </View>
 
@@ -1076,6 +1561,28 @@ const CaptionComposer = React.memo(({
   );
 });
 
+const PostContentPreview = React.memo(({
+  children,
+}: {
+  children: React.ReactNode;
+}) => {
+  return (
+    <View
+      testID="create-post-content-preview"
+      className="mx-4 mt-4 overflow-hidden rounded-[20px] border border-slate-100 bg-white"
+      style={{
+        shadowColor: '#94A3B8',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
+      }}
+    >
+      {children}
+    </View>
+  );
+});
+
 interface MediaPreviewStripProps {
   photos: PostPhotoAttachment[];
   onRemovePhoto: (uri: string) => void;
@@ -1084,6 +1591,7 @@ interface MediaPreviewStripProps {
   isProcessing: boolean;
   maxPhotos: number;
   copy: any;
+  embedded?: boolean;
 }
 
 const MediaPreviewStrip = React.memo(({
@@ -1094,11 +1602,15 @@ const MediaPreviewStrip = React.memo(({
   isProcessing,
   maxPhotos,
   copy,
+  embedded = false,
 }: MediaPreviewStripProps) => {
   const { width } = useWindowDimensions();
-  const visiblePhotos = useMemo(
-    () => photos.slice(0, COMPOSER_PHOTO_LIMIT),
-    [photos],
+  const [gridWidth, setGridWidth] = useState(Math.max(width - 32, 0));
+  const [isEditing, setIsEditing] = useState(false);
+  const visiblePhotos = useMemo(() => photos.slice(0, 4), [photos]);
+  const photoRows = useMemo(
+    () => getPhotoGridRows(photos.length),
+    [photos.length],
   );
 
   if (photos.length === 0 && !isProcessing) {
@@ -1106,158 +1618,221 @@ const MediaPreviewStrip = React.memo(({
   }
 
   const effectiveMaxPhotos = Math.min(maxPhotos, COMPOSER_PHOTO_LIMIT);
-  const containerWidth = Math.max(width - 32, 0);
-  const itemSize = Math.floor(
-    (containerWidth - PHOTO_GRID_GAP * (PHOTO_GRID_COLUMNS - 1)) / PHOTO_GRID_COLUMNS,
-  );
   const canAddMore = photos.length < effectiveMaxPhotos;
-
-  const renderAddTile = canAddMore && photos.length > 0;
-  const showSummaryHeader = photos.length > 0 || isProcessing;
+  const singlePhoto = photos[0];
+  const singleAspectRatio =
+    singlePhoto?.width && singlePhoto?.height
+      ? Math.max(0.75, Math.min(1.91, singlePhoto.width / singlePhoto.height))
+      : 1.4;
 
   return (
-    <View className="mx-4 mt-4">
-      {showSummaryHeader ? (
-        <View className="mb-3 flex-row items-center justify-between">
-          <View>
-            <Text className="text-[15px] font-bold text-slate-900">
-              {copy.selectedPhotos}
-            </Text>
-            <Text className="mt-0.5 text-[12px] font-semibold text-slate-400">
-              {Math.min(photos.length, COMPOSER_PHOTO_LIMIT)}/{effectiveMaxPhotos}
-            </Text>
-          </View>
+    <View className={embedded ? 'mt-1' : 'mx-4 mt-4'}>
+      <View
+        className={
+          embedded
+            ? 'mb-2 flex-row items-center justify-between px-4'
+            : 'mb-2 flex-row items-center justify-between'
+        }
+      >
+        <Text className="text-[13px] font-semibold text-slate-500">
+          {photos.length}/{effectiveMaxPhotos}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={() => setIsEditing(true)}
+          accessibilityRole="button"
+          accessibilityLabel={copy.editMedia}
+          className="h-9 flex-row items-center rounded-full bg-slate-100 px-3"
+        >
+          <Pencil size={15} color={APP_BRAND_COLOR} />
+          <Text className="ml-1.5 text-[13px] font-bold text-brand">
+            {copy.editMedia}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-          {photos.length > 0 ? (
-            <TouchableOpacity
-              activeOpacity={0.78}
-              onPress={onClearPhotos}
-              className="rounded-full bg-red-50 px-3.5 py-2"
-            >
-              <Text className="text-[12px] font-bold text-red-500">
-                {copy.clearPhotos}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
+      {photos.length === 1 ? (
+        <FeedMediaFrame
+          className="overflow-hidden bg-slate-100"
+          style={{ width: '100%', aspectRatio: singleAspectRatio }}
+        >
+          <Image
+            source={{ uri: photos[0].uri }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        </FeedMediaFrame>
+      ) : photos.length > 1 ? (
+        <FeedMediaFrame
+          className="overflow-hidden bg-transparent"
+          onLayout={event => setGridWidth(event.nativeEvent.layout.width)}
+          style={{ width: '100%' }}
+        >
+          {photoRows.map((row, rowIndex) => {
+            const rowHeight = getPhotoGridItemLayout(
+              row[0],
+              photos.length,
+              gridWidth,
+            ).height;
+
+            return (
+              <View
+                key={`row:${rowIndex}`}
+                style={{
+                  width: '100%',
+                  height: rowHeight,
+                  flexDirection: 'row',
+                }}
+              >
+                {row.map(index => {
+                  const photo = visiblePhotos[index];
+                  if (!photo) return null;
+                  const layout = getPhotoGridItemLayout(
+                    index,
+                    photos.length,
+                    gridWidth,
+                  );
+                  const gutter = getPhotoGridItemGutterStyle(
+                    index,
+                    photos.length,
+                    PHOTO_GRID_GAP,
+                  );
+                  const hiddenCount =
+                    index === 3 ? Math.max(photos.length - 4, 0) : 0;
+
+                  return (
+                    <View
+                      key={photo.uri}
+                      style={[
+                        {
+                          width: layout.width,
+                          height: '100%',
+                        },
+                        gutter,
+                      ]}
+                    >
+                      <View
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          overflow: 'hidden',
+                          backgroundColor: '#F1F5F9',
+                        }}
+                      >
+                        <Image
+                          source={{ uri: photo.uri }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode="cover"
+                        />
+                        {hiddenCount > 0 ? (
+                          <View
+                            style={[
+                              StyleSheet.absoluteFill,
+                              {
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                              },
+                            ]}
+                          >
+                            <Text className="text-[22px] font-black text-white">
+                              +{hiddenCount}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </FeedMediaFrame>
+      ) : null}
+
+      {isProcessing ? (
+        <View
+          className={
+            embedded
+              ? 'mx-4 mt-2 h-20 items-center justify-center rounded-lg bg-slate-100'
+              : 'mt-2 h-20 items-center justify-center rounded-lg bg-slate-100'
+          }
+        >
+          <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
+          <Text className="mt-2 text-[11px] font-semibold text-slate-500">
+            {copy.processing}
+          </Text>
         </View>
       ) : null}
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {visiblePhotos.map((photo, index) => {
-          const isLastInRow = index % PHOTO_GRID_COLUMNS === PHOTO_GRID_COLUMNS - 1;
-          const hasHiddenPhotos =
-            index === COMPOSER_PHOTO_LIMIT - 1 && photos.length > COMPOSER_PHOTO_LIMIT;
-          const hiddenCount = Math.max(photos.length - COMPOSER_PHOTO_LIMIT, 0);
-          const cellStyle = {
-            width: itemSize,
-            height: itemSize,
-            borderRadius: 18,
-            overflow: 'hidden' as const,
-            marginBottom: PHOTO_GRID_GAP,
-            marginRight: isLastInRow ? 0 : PHOTO_GRID_GAP,
-            backgroundColor: '#f8fafc',
-            position: 'relative' as const,
-          };
-
-          return (
-            <View key={photo.uri} style={cellStyle}>
-              <Image
-                source={{ uri: photo.uri }}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="cover"
-                resizeMethod="resize"
-              />
-
-              {hasHiddenPhotos ? (
-                <View
-                  style={StyleSheet.absoluteFill}
-                  className="items-center justify-center bg-black/60"
-                >
-                  <Text className="text-[22px] font-black text-white">
-                    +{hiddenCount}
-                  </Text>
-                </View>
-              ) : null}
-
+      <Modal
+        visible={isEditing}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setIsEditing(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+          <View className="h-16 flex-row items-center border-b border-slate-200 bg-white px-4">
+            <TouchableOpacity
+              onPress={() => setIsEditing(false)}
+              className="h-11 w-11 items-center justify-center rounded-full bg-slate-100"
+            >
+              <X size={21} color="#0F172A" />
+            </TouchableOpacity>
+            <Text className="ml-3 flex-1 text-[17px] font-bold text-slate-900">
+              {copy.editMediaTitle}
+            </Text>
+            {canAddMore ? (
               <TouchableOpacity
-                activeOpacity={0.82}
-                onPress={() => onRemovePhoto(photo.uri)}
-                className="absolute right-1.5 top-1.5 h-7 w-7 items-center justify-center rounded-full bg-white/95 shadow-sm"
+                onPress={onPickPhotos}
+                className="h-11 flex-row items-center rounded-full bg-brand px-3"
               >
-                <X size={14} color="#0F172A" strokeWidth={2.6} />
+                <ImageIcon size={17} color="#FFFFFF" />
+                <Text className="ml-1.5 text-[13px] font-bold text-white">
+                  {copy.addMorePhotos}
+                </Text>
               </TouchableOpacity>
-            </View>
-          );
-        })}
-
-        {isProcessing ? (() => {
-          const index = visiblePhotos.length;
-          const isLastInRow = index % PHOTO_GRID_COLUMNS === PHOTO_GRID_COLUMNS - 1;
-          return (
-            <View
-              key="grid-processing"
-              style={{
-                width: itemSize,
-                height: itemSize,
-                borderRadius: 18,
-                marginBottom: PHOTO_GRID_GAP,
-                marginRight: isLastInRow ? 0 : PHOTO_GRID_GAP,
-                backgroundColor: '#FFFFFF',
-                borderWidth: 1,
-                borderColor: '#E2E8F0',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
-              <Text className="mt-2 text-center text-[10px] font-bold text-slate-500">
-                {copy.processing}
-              </Text>
-            </View>
-          );
-        })() : null}
-
-        {renderAddTile ? (() => {
-          const index = visiblePhotos.length + (isProcessing ? 1 : 0);
-          const isLastInRow = index % PHOTO_GRID_COLUMNS === PHOTO_GRID_COLUMNS - 1;
-          return (
-            <Pressable
-              key="grid-add-btn"
-              onPress={onPickPhotos}
-              style={{
-                width: itemSize,
-                height: itemSize,
-                marginBottom: PHOTO_GRID_GAP,
-                marginRight: isLastInRow ? 0 : PHOTO_GRID_GAP,
-              }}
-            >
-              {({ pressed }) => (
-                <View
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: 18,
-                    borderStyle: 'dashed',
-                    borderWidth: 2,
-                    borderColor: pressed ? APP_BRAND_COLOR : '#BAC7D6',
-                    backgroundColor: pressed ? APP_COLORS.brand.soft : '#F8FAFC',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transform: [{ scale: pressed ? 0.98 : 1 }],
-                  }}
+            ) : null}
+          </View>
+          <ScrollView
+            contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {photos.map((photo, index) => (
+              <View
+                key={photo.uri}
+                className="mb-3 flex-row items-center rounded-xl border border-slate-200 bg-white p-2"
+              >
+                <Image
+                  source={{ uri: photo.uri }}
+                  style={{ width: 72, height: 72, borderRadius: 8 }}
+                  resizeMode="cover"
+                />
+                <Text className="mx-3 flex-1 text-[14px] font-semibold text-slate-700">
+                  {copy.photo} {index + 1}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => onRemovePhoto(photo.uri)}
+                  accessibilityLabel={copy.removeMedia}
+                  className="h-11 w-11 items-center justify-center rounded-full bg-red-50"
                 >
-                  <Text className="text-[32px] font-light leading-8 text-slate-400">
-                    +
-                  </Text>
-                  <Text className="mt-1 text-center text-[12px] font-bold text-slate-500">
-                    {copy.addPhoto}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          );
-        })() : null}
-      </View>
+                  <X size={18} color={APP_COLORS.status.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {photos.length > 0 ? (
+              <TouchableOpacity
+                onPress={onClearPhotos}
+                className="mt-2 h-12 items-center justify-center rounded-xl border border-red-200 bg-red-50"
+              >
+                <Text className="text-[14px] font-bold text-red-600">
+                  {copy.clearPhotos}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 });
@@ -1267,6 +1842,7 @@ interface VideoPreviewCardProps {
   onRemove: () => void;
   copy: any;
   isKeyboardActive: boolean;
+  embedded?: boolean;
 }
 
 const VideoPreviewCard = React.memo(({
@@ -1274,15 +1850,14 @@ const VideoPreviewCard = React.memo(({
   onRemove,
   copy,
   isKeyboardActive,
+  embedded = false,
 }: VideoPreviewCardProps) => {
   const [isPlaying, setIsPlaying] = useState(true);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
-  const { width, height } = useWindowDimensions();
-  const frameWidth = Math.max(width - 52, 240);
-  const frameHeight = Math.min(
-    Math.floor(height * 0.22),
-    Math.max(132, Math.floor(frameWidth * 9 / 16)),
-  );
+  const aspectRatio =
+    video.width && video.height
+      ? Math.max(0.75, Math.min(1.91, video.width / video.height))
+      : 16 / 9;
 
   // Pause video if keyboard becomes active
   useEffect(() => {
@@ -1299,118 +1874,123 @@ const VideoPreviewCard = React.memo(({
     setIsVideoLoaded(true);
   };
 
+  const handleEdit = () => {
+    Alert.alert(copy.editMediaTitle, video.name, [
+      { text: copy.audioCancel, style: 'cancel' },
+      { text: copy.removeMedia, style: 'destructive', onPress: onRemove },
+    ]);
+  };
+
   return (
-    <View
-      className="mx-4 mt-4 overflow-hidden rounded-[20px] border border-slate-800 bg-slate-950 shadow-lg"
-      style={{ maxHeight: frameHeight + 54 }}
-    >
-      <View className="flex-row items-center border-b border-white/5 bg-black/25 px-3 py-2.5">
-        <View className="h-8 w-8 items-center justify-center rounded-xl border border-brand/20 bg-brand/10">
-          <VideoIcon size={15} color={APP_BRAND_COLOR} />
-        </View>
-        <View className="ml-3 flex-1">
-          <Text className="text-[13px] font-bold text-slate-100" numberOfLines={1}>
-            {video.name}
-          </Text>
-          <Text className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-            {copy.addVideo}
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={onRemove}
-          activeOpacity={0.7}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          className="h-8 w-8 items-center justify-center rounded-full bg-white/10 active:scale-95"
+    <View className={embedded ? 'mt-1' : 'mx-4 mt-4'}>
+      <View
+        className={
+          embedded
+            ? 'mb-2 flex-row items-center justify-between px-4'
+            : 'mb-2 flex-row items-center justify-between'
+        }
+      >
+        <Text
+          className="mr-3 flex-1 text-[13px] font-semibold text-slate-500"
+          numberOfLines={1}
         >
-          <X size={15} color="#E2E8F0" />
+          {video.name}
+        </Text>
+        <TouchableOpacity
+          onPress={handleEdit}
+          activeOpacity={0.75}
+          accessibilityLabel={copy.editMedia}
+          className="h-9 flex-row items-center rounded-full bg-slate-100 px-3"
+        >
+          <Pencil size={15} color={APP_BRAND_COLOR} />
+          <Text className="ml-1.5 text-[13px] font-bold text-brand">
+            {copy.editMedia}
+          </Text>
         </TouchableOpacity>
       </View>
 
-      <Pressable
-        onPress={handlePlayPause}
-        style={({ pressed }) => [
-          {
-            margin: 10,
-            width: frameWidth,
-            maxWidth: '100%',
-            height: frameHeight,
-            borderRadius: 14,
-            overflow: 'hidden',
-            backgroundColor: '#020617',
-            position: 'relative',
+      <FeedMediaFrame
+        className="overflow-hidden bg-black"
+        style={{ width: '100%', aspectRatio }}
+      >
+        <View
+          style={{
+            width: '100%',
+            height: '100%',
             justifyContent: 'center',
             alignItems: 'center',
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-            borderWidth: 1,
-            borderColor: 'rgba(255, 255, 255, 0.08)',
-          }
-        ]}
-      >
-        {/* Skeleton/Placeholder until first frame loads */}
-        {!isVideoLoaded && (
-          <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-slate-950 z-10">
-            {video.thumbnailUri ? (
-              <Image
-                source={{ uri: video.thumbnailUri }}
-                style={StyleSheet.absoluteFill}
-                resizeMode="cover"
-              />
-            ) : null}
-            <View style={StyleSheet.absoluteFill} className="bg-black/25" />
-            <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
-            <Text className="mt-2 text-xs text-slate-400 font-semibold">{copy.processing}</Text>
-          </View>
-        )}
-
-        <VideoPlayer
-          source={{ uri: video.uri }}
-          style={{ width: '100%', height: '100%' }}
-          paused={!isPlaying}
-          resizeMode="contain"
-          onLoad={handleLoad}
-          repeat
-        />
-
-        {/* Play/Pause Overlay */}
-        <View
-          style={StyleSheet.absoluteFill}
-          className="bg-black/30 items-center justify-center"
-          pointerEvents="none"
+          }}
         >
-          {!isPlaying ? (
-            <View className="h-14 w-14 items-center justify-center rounded-full border border-brand/30 bg-brand/90 shadow-lg">
-              <View style={{
-                width: 0,
-                height: 0,
-                borderLeftWidth: 15,
-                borderTopWidth: 9,
-                borderBottomWidth: 9,
-                borderStyle: 'solid',
-                borderLeftColor: '#FFFFFF',
-                borderTopColor: 'transparent',
-                borderBottomColor: 'transparent',
-                marginLeft: 5
-              }} />
+          {/* Skeleton/Placeholder until first frame loads */}
+          {!isVideoLoaded && (
+            <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-slate-950 z-10">
+              {video.thumbnailUri ? (
+                <Image
+                  source={{ uri: video.thumbnailUri }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                />
+              ) : null}
+              <View style={StyleSheet.absoluteFill} className="bg-black/25" />
+              <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
+              <Text className="mt-2 text-xs font-semibold text-slate-400">
+                {copy.processing}
+              </Text>
+            </View>
+          )}
+
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <VideoPlayer
+              source={{ uri: video.uri }}
+              style={{ width: '100%', height: '100%' }}
+              paused={!isPlaying}
+              resizeMode="cover"
+              onLoad={handleLoad}
+              repeat
+            />
+          </View>
+
+          <View
+            style={StyleSheet.absoluteFill}
+            className="bg-black/20"
+            pointerEvents="none"
+          />
+
+          <TouchableOpacity
+            onPress={handlePlayPause}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={isPlaying ? copy.tapToPause : copy.tapToPlay}
+            className="absolute h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-black/55"
+            style={{
+              top: '50%',
+              left: '50%',
+              marginTop: -28,
+              marginLeft: -28,
+            }}
+          >
+            {isPlaying ? (
+              <Pause size={24} color="#FFFFFF" fill="#FFFFFF" />
+            ) : (
+              <Play
+                size={24}
+                color="#FFFFFF"
+                fill="#FFFFFF"
+                style={{ marginLeft: 3 }}
+              />
+            )}
+          </TouchableOpacity>
+
+          {/* Meta Info overlay (Duration) */}
+          {video.duration ? (
+            <View className="absolute bottom-2.5 right-2.5 rounded-lg border border-white/10 bg-black/70 px-2.5 py-1">
+              <Text className="text-[11px] font-bold text-slate-100">
+                {formatAudioDuration(video.duration * 1000)}
+              </Text>
             </View>
           ) : null}
         </View>
-
-        {/* Meta Info overlay (Duration) */}
-        {video.duration ? (
-          <View className="absolute bottom-2.5 right-2.5 rounded-lg border border-white/10 bg-black/70 px-2.5 py-1">
-            <Text className="text-[11px] font-bold text-slate-100">
-              {formatAudioDuration(video.duration * 1000)}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Click to Play/Pause Hint */}
-        <View className="absolute bottom-2.5 left-2.5 rounded-lg border border-white/5 bg-black/55 px-2.5 py-1">
-          <Text className="text-[10px] font-semibold text-slate-300">
-            {isPlaying ? copy.tapToPause : copy.tapToPlay}
-          </Text>
-        </View>
-      </Pressable>
+      </FeedMediaFrame>
     </View>
   );
 });
@@ -1580,16 +2160,13 @@ interface ComposerActionTrayProps {
   isFloating: boolean;
   copy: any;
   onPickPhotos: () => void;
-  onFeelingPress: () => void;
-  onAudioAction: () => void;
   onPickVideo: () => void;
   onNavigate: (route: string) => void;
-  isRecording: boolean;
   insetsBottom: number;
 }
 
 interface ComposerShortcutButton {
-  key: string;
+  key: CreatePostTrayActionKey;
   label: string;
   onPress: () => void;
   Icon: React.ComponentType<{
@@ -1599,84 +2176,96 @@ interface ComposerShortcutButton {
   }>;
   iconBg: string;
   iconColor: string;
-  altIcon?: React.ReactNode;
 }
 
 const ComposerActionTray = React.memo(({
   isFloating,
   copy,
   onPickPhotos,
-  onFeelingPress,
-  onAudioAction,
   onPickVideo,
   onNavigate,
-  isRecording,
   insetsBottom,
 }: ComposerActionTrayProps) => {
-  const compactButtons = useMemo<ComposerShortcutButton[]>(() => [
-    {
-      key: 'photo',
-      label: copy.photo,
-      onPress: onPickPhotos,
-      Icon: ImageIcon,
-      iconBg: '#f0fdf4',
-      iconColor: '#22c55e',
-    },
-    {
-      key: 'feeling',
-      label: copy.feeling,
-      onPress: onFeelingPress,
-      Icon: Smile,
-      iconBg: '#fef9c3',
-      iconColor: '#eab308',
-    },
-    {
-      key: 'audio',
-      label: copy.audio,
-      onPress: onAudioAction,
-      Icon: Music2,
-      iconBg: '#fdf2f8',
-      iconColor: '#ec4899',
-      altIcon: <Square size={14} color="#ec4899" fill="#ec4899" />,
-    },
-    {
-      key: 'video',
-      label: copy.video,
-      onPress: onPickVideo,
-      Icon: VideoIcon,
-      iconBg: APP_COLORS.brand.soft,
-      iconColor: APP_BRAND_COLOR,
-    },
-  ], [
-    copy,
-    onAudioAction,
-    onFeelingPress,
+  const allButtons = useMemo<ComposerShortcutButton[]>(() => {
+    const createRouteButton = (
+      key: Exclude<CreatePostTrayActionKey, 'photo' | 'video'>,
+      label: string,
+      route: RootStackRouteName,
+    ): ComposerShortcutButton | null => {
+      const action = CREATE_ACTIONS.find(candidate => candidate.key === key);
+      if (!action) return null;
+
+      return {
+        key,
+        label,
+        onPress: () => onNavigate(route),
+        Icon: action.Icon,
+        iconBg: action.iconBg,
+        iconColor: action.iconColor,
+      };
+    };
+
+    const buttons: Array<ComposerShortcutButton | null> = [
+      {
+        key: 'photo',
+        label: copy.photo,
+        onPress: onPickPhotos,
+        Icon: ImageIcon,
+        iconBg: '#f0fdf4',
+        iconColor: '#22c55e',
+      },
+      {
+        key: 'video',
+        label: copy.video,
+        onPress: onPickVideo,
+        Icon: VideoIcon,
+        iconBg: APP_COLORS.brand.soft,
+        iconColor: APP_BRAND_COLOR,
+      },
+      createRouteButton('product', copy.product, ROUTES.CREATE_PRODUCT),
+      createRouteButton('job', copy.job, ROUTES.CREATE_JOB),
+      createRouteButton('live', copy.live, ROUTES.GO_LIVE),
+      createRouteButton('poll', copy.poll, ROUTES.CREATE_POLL),
+      createRouteButton('ad', copy.ad, ROUTES.CREATE_AD),
+    ];
+    const buttonByKey = new Map(
+      buttons
+        .filter(
+          (button): button is ComposerShortcutButton => button !== null,
+        )
+        .map(button => [button.key, button]),
+    );
+
+    return CREATE_POST_TRAY_ACTION_KEYS.map(key => buttonByKey.get(key)).filter(
+      (button): button is ComposerShortcutButton => Boolean(button),
+    );
+  }, [
+    copy.ad,
+    copy.job,
+    copy.live,
+    copy.photo,
+    copy.poll,
+    copy.product,
+    copy.video,
+    onNavigate,
     onPickPhotos,
     onPickVideo,
   ]);
 
-  const expandedRow2 = useMemo(() => [
-    {
-      actionKey: 'poll' as const,
-      label: copy.poll,
-      route: ROUTES.CREATE_POLL,
-    },
-    {
-      actionKey: 'product' as const,
-      label: copy.product,
-      route: ROUTES.CREATE_PRODUCT,
-    },
-    {
-      actionKey: 'live' as const,
-      label: copy.live,
-      route: ROUTES.GO_LIVE,
-    },
-    {
-      actionKey: 'page' as const,
-      label: copy.page,
-      route: ROUTES.CREATE_PAGE,
-    },
-  ], [copy]);
+  const visibleButtons = useMemo(() => {
+    const visibleKeys = isFloating
+      ? CREATE_POST_KEYBOARD_ACTION_KEYS
+      : CREATE_POST_TRAY_ACTION_KEYS;
+    const buttonByKey = new Map(
+      allButtons.map(button => [button.key, button]),
+    );
+
+    return visibleKeys
+      .map(key => buttonByKey.get(key))
+      .filter(
+        (button): button is ComposerShortcutButton => Boolean(button),
+      );
+  }, [allButtons, isFloating]);
 
   const SECONDARY_LABEL_COLOR = '#475569';
 
@@ -1685,7 +2274,6 @@ const ComposerActionTray = React.memo(({
     size: 44 | 48,
   ) => {
     const Icon = button.Icon;
-    const showAlt = button.altIcon && button.key === 'audio' && isRecording;
     return (
       <TouchableOpacity
         key={button.key}
@@ -1694,7 +2282,10 @@ const ComposerActionTray = React.memo(({
         style={{
           alignItems: 'center',
           justifyContent: 'center',
-          flex: 1,
+          flex: isFloating ? 1 : undefined,
+          width: isFloating ? undefined : '25%',
+          paddingHorizontal: 2,
+          marginBottom: isFloating ? 0 : 14,
         }}
       >
         <View
@@ -1708,14 +2299,21 @@ const ComposerActionTray = React.memo(({
             ...(size === 48 ? { marginBottom: 8 } : null),
           }}
         >
-          {showAlt ? (
-            button.altIcon
-          ) : (
-            <Icon size={size === 44 ? 20 : 22} color={button.iconColor} />
-          )}
+          <Icon size={size === 44 ? 20 : 22} color={button.iconColor} />
         </View>
         {isFloating ? null : (
-          <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+            style={{
+              width: '100%',
+              fontSize: 12,
+              fontWeight: '600',
+              color: SECONDARY_LABEL_COLOR,
+              textAlign: 'center',
+            }}
+          >
             {button.label}
           </Text>
         )}
@@ -1748,8 +2346,8 @@ const ComposerActionTray = React.memo(({
           ...(isFloating ? null : { marginBottom: 8 }),
         }}
       >
-        <ChevronRight
-          size={isFloating ? 18 : 20}
+        <Ellipsis
+          size={isFloating ? 20 : 22}
           color="#475569"
           strokeWidth={2.4}
         />
@@ -1761,52 +2359,6 @@ const ComposerActionTray = React.memo(({
       )}
     </TouchableOpacity>
   );
-
-  const renderRow2Shortcut = (
-    entry: typeof expandedRow2[number],
-  ) => {
-    const action = CREATE_ACTIONS.find(
-      candidate => candidate.key === entry.actionKey,
-    );
-    if (!action) return null;
-
-    const Icon = action.Icon;
-    return (
-      <TouchableOpacity
-        key={entry.actionKey}
-        onPress={() => onNavigate(entry.route)}
-        activeOpacity={0.7}
-        style={{
-          alignItems: 'center',
-          justifyContent: 'center',
-          flex: 1,
-        }}
-      >
-        <View
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 24,
-            backgroundColor: action.iconBg,
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 8,
-          }}
-        >
-          <Icon size={22} color={action.iconColor} strokeWidth={2} />
-        </View>
-        <Text
-          style={{
-            fontSize: 12,
-            fontWeight: '600',
-            color: SECONDARY_LABEL_COLOR,
-          }}
-        >
-          {entry.label}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
 
   if (isFloating) {
     return (
@@ -1822,7 +2374,7 @@ const ComposerActionTray = React.memo(({
           justifyContent: 'space-between',
         }}
       >
-        {compactButtons.map(b => renderShortcutButton(b, 44))}
+        {visibleButtons.map(button => renderShortcutButton(button, 44))}
         {renderMoreButton()}
       </View>
     );
@@ -1848,48 +2400,20 @@ const ComposerActionTray = React.memo(({
         elevation: 3,
       }}
     >
-      {/* Header Row */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <View style={{ marginBottom: 16 }}>
         <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1e293b' }}>{copy.addPost}</Text>
-        <TouchableOpacity
-          onPress={() => onNavigate('more_sheet')}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center' }}
-        >
-          <Text
-            style={{
-              fontSize: 13,
-              fontWeight: '600',
-              color: APP_BRAND_COLOR,
-              marginRight: 2,
-            }}
-          >
-            {copy.more}
-          </Text>
-          <ChevronRight
-            size={16}
-            color={APP_BRAND_COLOR}
-            strokeWidth={2.4}
-          />
-        </TouchableOpacity>
       </View>
 
-      {/* Row 1 - actions that enrich the current post. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' }}>
-        {compactButtons.map(b => renderShortcutButton(b, 48))}
-      </View>
-
-      {/* Row 2 - creation flows that leave the current composer. */}
       <View
         style={{
           flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginTop: 14,
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+          marginHorizontal: -2,
+          marginBottom: -14,
         }}
       >
-        {expandedRow2.map(renderRow2Shortcut)}
+        {visibleButtons.map(button => renderShortcutButton(button, 48))}
       </View>
     </View>
   );
@@ -1926,7 +2450,6 @@ export function CreatePostModal({
   const copy = CREATE_POST_COPY[language];
   const targetPage = page ?? route.params?.page;
   const targetGroupId = groupId ?? route.params?.groupId;
-  const isPersonalComposer = !targetPage && !targetGroupId && !eventId;
   const composerContext = targetPage
     ? 'page'
     : targetGroupId
@@ -1962,6 +2485,8 @@ export function CreatePostModal({
 
   const [privacyMenuVisible, setPrivacyMenuVisible] = useState(false);
   const [feelingSheetVisible, setFeelingSheetVisible] = useState(false);
+  const [tagPeopleSheetVisible, setTagPeopleSheetVisible] = useState(false);
+  const [locationSheetVisible, setLocationSheetVisible] = useState(false);
   const [moreSheetVisible, setMoreSheetVisible] = useState(false);
   const [discardDialogVisible, setDiscardDialogVisible] = useState(false);
   const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
@@ -2003,19 +2528,15 @@ export function CreatePostModal({
   const translatedFeelings = useMemo(() => {
     return FEELING_OPTIONS.map(feeling => ({
       ...feeling,
-      label: FEELING_LABELS[language]?.[feeling.value] ?? feeling.label,
+      label: getPostFeelingLabel(feeling, language),
     }));
   }, [language]);
-
-  const currentFeelingLabel = useMemo(() => {
-    if (!vm.draft.feeling) return null;
-    return FEELING_LABELS[language]?.[vm.draft.feeling.value] ?? vm.draft.feeling.label;
-  }, [vm.draft.feeling, language]);
 
   const textInputRef = useRef<TextInput | null>(null);
   const scrollViewRef = useRef<ScrollView | null>(null);
   const appliedInitialTextRef = useRef('');
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
+  const [isContentDragging, setIsContentDragging] = useState(false);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -2047,19 +2568,17 @@ export function CreatePostModal({
     }
   }, []);
 
+  const handleContentScrollBegin = useCallback(() => {
+    setIsContentDragging(true);
+  }, []);
+
+  const handleContentScrollEnd = useCallback(() => {
+    setIsContentDragging(false);
+  }, []);
+
   // Save callbacks in refs to make handlers stable & prevent re-renders
   const vmRef = useRef(vm);
   vmRef.current = vm;
-
-  const insertCaptionChar = useCallback(
-    (char: '#' | '@') => {
-      const current = vmRef.current.draft.text;
-      const needsSpace = current.length > 0 && !/\s$/.test(current);
-      vmRef.current.setText(`${current}${needsSpace ? ' ' : ''}${char}`);
-      textInputRef.current?.focus();
-    },
-    [],
-  );
 
   const handlePickPhotos = useCallback(async () => {
     const maxPhotos = Math.min(vmRef.current.maxPhotos, COMPOSER_PHOTO_LIMIT);
@@ -2092,18 +2611,6 @@ export function CreatePostModal({
       }
     } finally {
       setIsProcessingPhotos(false);
-    }
-  }, [copy]);
-
-  const handlePickAudio = useCallback(async () => {
-    try {
-      const audio = await pickSupportedAudioFile();
-      if (audio) vmRef.current.setAudio(audio);
-    } catch (caught) {
-      Alert.alert(
-        copy.audioError,
-        caught instanceof Error ? caught.message : copy.audioErrorTip,
-      );
     }
   }, [copy]);
 
@@ -2156,29 +2663,6 @@ export function CreatePostModal({
     }
   }, [wavRecorder, copy]);
 
-  const handleAudioAction = useCallback(() => {
-    if (wavRecorder.isRecording) {
-      handleToggleAudioRecording().catch(() => undefined);
-      return;
-    }
-
-    Alert.alert(copy.audioAdd, copy.audioAddPrompt, [
-      {
-        text: copy.audioRecord,
-        onPress: () => {
-          handleToggleAudioRecording().catch(() => undefined);
-        },
-      },
-      {
-        text: copy.audioPick,
-        onPress: () => {
-          handlePickAudio().catch(() => undefined);
-        },
-      },
-      { text: copy.audioCancel, style: 'cancel' },
-    ]);
-  }, [handlePickAudio, handleToggleAudioRecording, wavRecorder.isRecording, copy]);
-
   const handleSubmit = useCallback(async () => {
     await vmRef.current.submit();
   }, []);
@@ -2221,7 +2705,10 @@ export function CreatePostModal({
       vmRef.current.draft.text.trim().length > 0 ||
       vmRef.current.draft.photos.length > 0 ||
       Boolean(vmRef.current.draft.audio) ||
-      Boolean(vmRef.current.draft.video);
+      Boolean(vmRef.current.draft.video) ||
+      Boolean(vmRef.current.draft.feeling) ||
+      Boolean(vmRef.current.draft.location) ||
+      Boolean(vmRef.current.draft.taggedUsers?.length);
     if (!hasContent) {
       onClose();
       return;
@@ -2262,13 +2749,15 @@ export function CreatePostModal({
     vmRef.current.setText(txt);
   }, []);
 
-  const stableSetPrivacy = useCallback((prv: PostPrivacy) => {
-    vmRef.current.setPrivacy(prv);
-  }, []);
-
-  const stableSetAnonymous = useCallback((isAnonymous: boolean) => {
-    vmRef.current.setAnonymous(isAnonymous);
-  }, []);
+  const stableSetPrivacy = useCallback(async (prv: PostPrivacy) => {
+    const removedCount = await vmRef.current.setPrivacy(prv);
+    if (removedCount > 0) {
+      Alert.alert(
+        copy.privacyTitle,
+        copy.tagsRemovedForPrivacy.replace('{count}', String(removedCount)),
+      );
+    }
+  }, [copy]);
 
   const stableSetFeeling = useCallback((flg: PostFeeling) => {
     vmRef.current.setFeeling(flg);
@@ -2277,6 +2766,28 @@ export function CreatePostModal({
   const stableClearFeeling = useCallback(() => {
     vmRef.current.setFeeling(undefined);
   }, []);
+
+  const stableSetTaggedUsers = useCallback((users: PostTaggedUser[]) => {
+    vmRef.current.setTaggedUsers(users);
+    setTagPeopleSheetVisible(false);
+  }, []);
+
+  const stableSetLocation = useCallback((location: PostLocation) => {
+    vmRef.current.setLocation(location);
+  }, []);
+
+  const stableClearLocation = useCallback(() => {
+    vmRef.current.setLocation(undefined);
+  }, []);
+
+  const stableSearchTaggableUsers = useCallback(
+    (input: {
+      query?: string;
+      cursor?: string;
+      userIds?: string[];
+    }) => vmRef.current.getTaggableUsers(input),
+    [],
+  );
 
   const handleCreateProduct = useCallback(() => {
     stableMoreNavigate(ROUTES.CREATE_PRODUCT);
@@ -2347,121 +2858,96 @@ export function CreatePostModal({
           backgroundColor="#f4f7fa"
         />
         <KeyboardSafeView style={{ flex: 1 }}>
-          <TouchableWithoutFeedback
-            onPress={Keyboard.dismiss}
-            accessible={false}
-          >
-            <View style={{ flex: 1 }}>
-              <CreatePostHeader
-                onDiscard={handleDiscard}
-                onSubmit={handleSubmit}
-                onLivePress={() => handleMoreNavigate(ROUTES.GO_LIVE)}
-                canSubmit={vm.canSubmit}
-                isSubmitting={vm.isSubmitting}
-                isProcessingPhotos={isProcessingPhotos}
-                copy={copy}
-              />
+          <View style={{ flex: 1 }}>
+            <CreatePostHeader
+              onDiscard={handleDiscard}
+              onSubmit={handleSubmit}
+              onLivePress={() => handleMoreNavigate(ROUTES.GO_LIVE)}
+              canSubmit={vm.canSubmit}
+              isSubmitting={vm.isSubmitting}
+              isProcessingPhotos={isProcessingPhotos}
+              copy={copy}
+            />
 
-              <ScrollView
-                ref={scrollViewRef}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{
-                  paddingBottom: Math.max(insets.bottom + 24, 60),
-                }}
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-              >
+            <ScrollView
+              ref={scrollViewRef}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={
+                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+              }
+              nestedScrollEnabled={Platform.OS === 'android'}
+              onScrollBeginDrag={handleContentScrollBegin}
+              onScrollEndDrag={handleContentScrollEnd}
+              onMomentumScrollBegin={handleContentScrollBegin}
+              onMomentumScrollEnd={handleContentScrollEnd}
+              contentContainerStyle={{
+                paddingBottom: Math.max(insets.bottom + 24, 60),
+              }}
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+            >
                 <AuthorPrivacyCard
                   avatarUrl={avatarUrl}
                   displayName={displayName}
                   feeling={vm.draft.feeling}
-                  feelingLabel={currentFeelingLabel}
+                  taggedUsers={vm.draft.taggedUsers ?? []}
+                  location={vm.draft.location}
                   targetPage={targetPage}
                   currentPrivacy={vm.draft.privacy}
                   privacyOptions={privacyOptions}
+                  canSelectPrivacy={canSelectPrivacy}
                   onSelectPrivacy={stableSetPrivacy}
-                  copy={copy}
-                />
-
-                {isPersonalComposer ? (
-                  <View
-                    style={{
-                      marginHorizontal: 16,
-                      marginTop: 12,
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      borderRadius: 16,
-                      borderWidth: 1,
-                      borderColor: '#e2e8f0',
-                      backgroundColor: '#ffffff',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <EyeOff size={18} color="#475569" />
-                    <View style={{ flex: 1, marginHorizontal: 10 }}>
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: '600',
-                          color: '#334155',
-                        }}
-                      >
-                        {copy.privacyAnonymous}
-                      </Text>
-                      <Text
-                        style={{
-                          marginTop: 2,
-                          fontSize: 11,
-                          color: '#64748b',
-                        }}
-                      >
-                        {copy.privacyAnonymousDesc}
-                      </Text>
-                    </View>
-                    <Switch
-                      value={vm.draft.isAnonymous}
-                      onValueChange={stableSetAnonymous}
-                      trackColor={{
-                        false: '#cbd5e1',
-                        true: APP_BRAND_COLOR,
-                      }}
-                      thumbColor="#ffffff"
-                    />
-                  </View>
-                ) : null}
-
-                <CaptionComposer
-                  textInputRef={textInputRef}
-                  text={vm.draft.text}
-                  onChangeText={stableSetText}
-                  onFocus={handleInputFocus}
-                  onBlur={handleInputBlur}
-                  placeholder={copy.placeholder}
-                  onInsertChar={insertCaptionChar}
+                  onTagPeoplePress={() => setTagPeopleSheetVisible(true)}
+                  onTaggedPeopleLabelPress={() => setTagPeopleSheetVisible(true)}
+                  onLocationPress={() => setLocationSheetVisible(true)}
                   onFeelingPress={() => setFeelingSheetVisible(true)}
+                  language={language}
                   copy={copy}
-                  onPickPhotos={handlePickPhotos}
-                  onPickVideo={handlePickVideo}
-                  onCreateProduct={handleCreateProduct}
-                  onCreatePoll={handleCreatePoll}
-                  showPrimaryActions={false}
                 />
 
-                {!vm.draft.video ? (
-                  <MediaPreviewStrip
-                    photos={vm.draft.photos}
-                    onRemovePhoto={handleRemovePhoto}
-                    onClearPhotos={handleClearPhotos}
-                    onPickPhotos={handlePickPhotos}
-                    isProcessing={isProcessingPhotos}
-                    maxPhotos={Math.min(
-                      vm.maxPhotos,
-                      COMPOSER_PHOTO_LIMIT,
-                    )}
+                <PostContentPreview>
+                  <CaptionComposer
+                    textInputRef={textInputRef}
+                    text={vm.draft.text}
+                    onChangeText={stableSetText}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
+                    placeholder={copy.placeholder}
                     copy={copy}
+                    onPickPhotos={handlePickPhotos}
+                    onPickVideo={handlePickVideo}
+                    onCreateProduct={handleCreateProduct}
+                    onCreatePoll={handleCreatePoll}
+                    showPrimaryActions={false}
+                    embedded
                   />
-                ) : null}
+
+                  {!vm.draft.video ? (
+                    <MediaPreviewStrip
+                      photos={vm.draft.photos}
+                      onRemovePhoto={handleRemovePhoto}
+                      onClearPhotos={handleClearPhotos}
+                      onPickPhotos={handlePickPhotos}
+                      isProcessing={isProcessingPhotos}
+                      maxPhotos={Math.min(
+                        vm.maxPhotos,
+                        COMPOSER_PHOTO_LIMIT,
+                      )}
+                      copy={copy}
+                      embedded
+                    />
+                  ) : null}
+
+                  {vm.draft.video ? (
+                    <VideoPreviewCard
+                      video={vm.draft.video}
+                      onRemove={handleRemoveVideo}
+                      copy={copy}
+                      isKeyboardActive={isKeyboardActive}
+                      embedded
+                    />
+                  ) : null}
+                </PostContentPreview>
 
                 <AudioPreviewCard
                   isRecording={wavRecorder.isRecording}
@@ -2472,15 +2958,6 @@ export function CreatePostModal({
                   onRemoveAudio={handleRemoveAudio}
                   copy={copy}
                 />
-
-                {vm.draft.video ? (
-                  <VideoPreviewCard
-                    video={vm.draft.video}
-                    onRemove={handleRemoveVideo}
-                    copy={copy}
-                    isKeyboardActive={isKeyboardActive}
-                  />
-                ) : null}
 
                 {vm.error ? (
                   <View className="mx-4 mt-4 rounded-lg bg-red-50 px-3 py-2">
@@ -2500,28 +2977,21 @@ export function CreatePostModal({
                     isFloating={false}
                     copy={copy}
                     onPickPhotos={handlePickPhotos}
-                    onFeelingPress={() => setFeelingSheetVisible(true)}
-                    onAudioAction={handleAudioAction}
                     onPickVideo={handlePickVideo}
                     onNavigate={handleActionNavigate}
-                    isRecording={wavRecorder.isRecording}
                     insetsBottom={0}
                   />
                 ) : null}
-              </ScrollView>
-            </View>
-          </TouchableWithoutFeedback>
+            </ScrollView>
+          </View>
 
-          {isKeyboardActive ? (
+          {isKeyboardActive && !isContentDragging ? (
             <ComposerActionTray
               isFloating
               copy={copy}
               onPickPhotos={handlePickPhotos}
-              onFeelingPress={() => setFeelingSheetVisible(true)}
-              onAudioAction={handleAudioAction}
               onPickVideo={handlePickVideo}
               onNavigate={handleActionNavigate}
-              isRecording={wavRecorder.isRecording}
               insetsBottom={insets.bottom}
             />
           ) : null}
@@ -2535,6 +3005,24 @@ export function CreatePostModal({
             options={translatedFeelings}
             title={copy.feelingsTitle}
             clearLabel={copy.feelingsClear}
+          />
+
+          <TagPeoplePickerSheet
+            visible={tagPeopleSheetVisible}
+            selected={vm.draft.taggedUsers ?? []}
+            onClose={() => setTagPeopleSheetVisible(false)}
+            onDone={stableSetTaggedUsers}
+            onSearch={stableSearchTaggableUsers}
+            copy={copy}
+          />
+
+          <LocationPickerSheet
+            visible={locationSheetVisible}
+            current={vm.draft.location}
+            onClose={() => setLocationSheetVisible(false)}
+            onPick={stableSetLocation}
+            onClear={stableClearLocation}
+            copy={copy}
           />
 
           <DiscardPostDialog
@@ -2551,6 +3039,7 @@ export function CreatePostModal({
             visible={moreSheetVisible}
             onClose={() => setMoreSheetVisible(false)}
             onNavigate={handleMoreNavigate}
+            actions={createPostMoreActions}
           />
         </KeyboardSafeView>
       </SafeAreaView>
@@ -2591,6 +3080,24 @@ export function CreatePostModal({
             }}
             onPress={(e) => e.stopPropagation()}
           >
+            <AuthorPrivacyCard
+              avatarUrl={avatarUrl}
+              displayName={displayName}
+              feeling={vm.draft.feeling}
+              taggedUsers={vm.draft.taggedUsers ?? []}
+              location={vm.draft.location}
+              targetPage={targetPage}
+              currentPrivacy={vm.draft.privacy}
+              privacyOptions={privacyOptions}
+              canSelectPrivacy={canSelectPrivacy}
+              onSelectPrivacy={stableSetPrivacy}
+              onTagPeoplePress={() => setTagPeopleSheetVisible(true)}
+              onTaggedPeopleLabelPress={() => setTagPeopleSheetVisible(true)}
+              onLocationPress={() => setLocationSheetVisible(true)}
+              onFeelingPress={() => setFeelingSheetVisible(true)}
+              language={language}
+              copy={copy}
+            />
             <View style={{ position: 'relative', zIndex: 20, elevation: 20 }}>
               {/* Row 1: Avatar, highlighted text input, hashtag/mention shortcuts */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
@@ -2603,49 +3110,6 @@ export function CreatePostModal({
                   onFocus={handleInputFocus}
                   onBlur={handleInputBlur}
                 />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => insertCaptionChar('#')}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: '#f1f5f9',
-                    }}
-                  >
-                    <Hash size={18} color="#64748b" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => insertCaptionChar('@')}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: '#f1f5f9',
-                    }}
-                  >
-                    <AtSign size={18} color="#64748b" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => setFeelingSheetVisible(true)}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Smile size={22} color="#64748b" />
-                  </TouchableOpacity>
-                </View>
               </View>
 
               <CaptionSuggestionBar
@@ -2669,32 +3133,6 @@ export function CreatePostModal({
               showsVerticalScrollIndicator={false}
               style={{ maxHeight: 200, marginBottom: 8 }}
             >
-              {/* Feeling Preview Chip */}
-              {vm.draft.feeling && (
-                <View style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  alignSelf: 'flex-start',
-                  backgroundColor: '#f1f5f9',
-                  borderRadius: 16,
-                  paddingVertical: 6,
-                  paddingHorizontal: 12,
-                  marginBottom: 8,
-                }}>
-                  <Text style={{ fontSize: 18, marginRight: 6 }}>{vm.draft.feeling.emoji}</Text>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569' }}>
-                    {language === 'vi' ? 'Đang cảm thấy' : 'Feeling'} {currentFeelingLabel}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={stableClearFeeling}
-                    style={{ marginLeft: 8, padding: 2 }}
-                    activeOpacity={0.7}
-                  >
-                    <X size={14} color="#94a3b8" />
-                  </TouchableOpacity>
-                </View>
-              )}
-
               {/* Photos Preview Strip */}
               {!vm.draft.video ? (
                 <MediaPreviewStrip
@@ -2813,9 +3251,7 @@ export function CreatePostModal({
                   flexShrink: 1,
                 }}
               >
-                {vm.draft.isAnonymous ? (
-                  <EyeOff size={16} color="#64748b" style={{ marginRight: 6 }} />
-                ) : vm.draft.privacy === 'public' ? (
+                {vm.draft.privacy === 'public' ? (
                   <Globe2 size={16} color="#64748b" style={{ marginRight: 6 }} />
                 ) : vm.draft.privacy === 'friends' || vm.draft.privacy === 'followers' ? (
                   <Users size={16} color="#64748b" style={{ marginRight: 6 }} />
@@ -2828,9 +3264,7 @@ export function CreatePostModal({
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {vm.draft.isAnonymous
-                    ? copy.privacyAnonymous
-                    : vm.draft.privacy === 'public'
+                  {vm.draft.privacy === 'public'
                     ? copy.privacyPublic
                     : vm.draft.privacy === 'friends'
                     ? copy.privacyFriends
@@ -2931,9 +3365,8 @@ export function CreatePostModal({
                     <TouchableOpacity
                       key={option.value}
                       activeOpacity={0.8}
-                      disabled={vm.draft.isAnonymous}
                       onPress={() => {
-                        stableSetPrivacy(option.value);
+                        void stableSetPrivacy(option.value);
                         setPrivacyMenuVisible(false);
                       }}
                       style={{
@@ -2942,7 +3375,6 @@ export function CreatePostModal({
                         backgroundColor: isSelected
                           ? APP_BRAND_COLOR
                           : 'transparent',
-                        opacity: vm.draft.isAnonymous ? 0.45 : 1,
                       }}
                     >
                       <Text
@@ -2958,40 +3390,6 @@ export function CreatePostModal({
                   );
                 })}
 
-                {isPersonalComposer ? (
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingVertical: 12,
-                      paddingHorizontal: 16,
-                      borderTopWidth: 1,
-                      borderTopColor: '#e2e8f0',
-                    }}
-                  >
-                    <EyeOff size={18} color="#475569" />
-                    <View style={{ flex: 1, marginHorizontal: 10 }}>
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: '600',
-                          color: '#334155',
-                        }}
-                      >
-                        {copy.privacyAnonymous}
-                      </Text>
-                      <Text style={{ marginTop: 2, fontSize: 11, color: '#64748b' }}>
-                        {copy.privacyAnonymousDesc}
-                      </Text>
-                    </View>
-                    <Switch
-                      value={vm.draft.isAnonymous}
-                      onValueChange={stableSetAnonymous}
-                      trackColor={{ false: '#cbd5e1', true: APP_BRAND_COLOR }}
-                      thumbColor="#ffffff"
-                    />
-                  </View>
-                ) : null}
               </View>
             </Pressable>
           </Modal>
@@ -3006,6 +3404,24 @@ export function CreatePostModal({
           options={translatedFeelings}
           title={copy.feelingsTitle}
           clearLabel={copy.feelingsClear}
+        />
+
+        <TagPeoplePickerSheet
+          visible={tagPeopleSheetVisible}
+          selected={vm.draft.taggedUsers ?? []}
+          onClose={() => setTagPeopleSheetVisible(false)}
+          onDone={stableSetTaggedUsers}
+          onSearch={stableSearchTaggableUsers}
+          copy={copy}
+        />
+
+        <LocationPickerSheet
+          visible={locationSheetVisible}
+          current={vm.draft.location}
+          onClose={() => setLocationSheetVisible(false)}
+          onPick={stableSetLocation}
+          onClear={stableClearLocation}
+          copy={copy}
         />
 
         <DiscardPostDialog
@@ -3027,6 +3443,7 @@ function CreatePostScreen() {
   const route = useRoute<any>();
   const targetPage = route.params?.page;
   const targetGroupId = route.params?.groupId;
+  const targetEventId = route.params?.eventId;
   const initialAction = route.params?.initialAction;
   const initialText = route.params?.initialText;
 
@@ -3038,6 +3455,7 @@ function CreatePostScreen() {
       onClose={() => navigation.goBack()}
       page={targetPage}
       groupId={targetGroupId}
+      eventId={targetEventId}
       initialAction={initialAction}
       initialText={initialText}
     />

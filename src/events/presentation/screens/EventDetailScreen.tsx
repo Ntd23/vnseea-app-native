@@ -12,7 +12,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import {
@@ -51,7 +56,6 @@ import {
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
-import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
@@ -155,8 +159,6 @@ function EventDetailScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FeedFilterTabKey>('all');
-  const [composerVisible, setComposerVisible] = useState(false);
-  const [composerAction, setComposerAction] = useState<'photo' | 'video' | 'product' | 'poll' | undefined>();
   const [pickerAnchor, setPickerAnchor] = useState<{ postId: string; x: number; y: number } | null>(null);
   const [sharingPost, setSharingPost] = useState<FeedPost | undefined>();
   const [shareVisible, setShareVisible] = useState(false);
@@ -216,9 +218,11 @@ function EventDetailScreen() {
     }
   }, [eventId]);
 
-  useEffect(() => {
-    void loadPosts();
-  }, [loadPosts]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadPosts();
+    }, [loadPosts]),
+  );
 
   useEffect(() => {
     const update = () => {
@@ -282,9 +286,11 @@ function EventDetailScreen() {
   }, [copy.error, event.id, isGoing, isInterested, toggleGoing, toggleInterested]);
 
   const handleCreatePost = useCallback((action?: 'photo' | 'video' | 'product' | 'poll') => {
-    setComposerAction(action);
-    setComposerVisible(true);
-  }, []);
+    navigation.navigate(ROUTES.CREATE_POST, {
+      eventId,
+      initialAction: action,
+    });
+  }, [eventId, navigation]);
 
   const handleToggleReaction = useCallback(async (postId: string, nextReaction: ReactionType) => {
     let snapshot: FeedTextPost | FeedVideoPost | FeedPollPost | undefined;
@@ -452,7 +458,6 @@ function EventDetailScreen() {
         </View>
       </ScrollView>
 
-      <CreatePostModal visible={composerVisible} onClose={() => { setComposerVisible(false); setComposerAction(undefined); }} onCreated={() => void loadPosts(true)} eventId={eventId} initialAction={composerAction} />
       <ReactionPickerOverlay anchor={pickerAnchor} onPick={reaction => { if (pickerAnchor) void handleToggleReaction(pickerAnchor.postId, reaction); setPickerAnchor(null); }} onDismiss={() => setPickerAnchor(null)} gestureX={gestureX} gestureY={gestureY} gestureActive={gestureActive} hasDragged={hasDragged} />
       <ReelCommentsSheet
         visible={commentVm.isCommentsOpen} comments={commentVm.comments} commentCount={selectedCommentPost?.commentCount ?? commentVm.comments.length}

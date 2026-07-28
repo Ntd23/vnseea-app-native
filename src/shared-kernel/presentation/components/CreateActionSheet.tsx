@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import {
   BarChart3,
+  BriefcaseBusiness,
   CalendarDays,
   CircleDot,
   FilePlus2,
@@ -34,12 +35,13 @@ import {
   APP_COLORS,
 } from '../theme/appColors';
 
-type CreateActionKey =
+export type CreateActionKey =
   | 'post'
   | 'story'
   | 'album'
   | 'ad'
   | 'event'
+  | 'job'
   | 'poll'
   | 'product'
   | 'page'
@@ -76,6 +78,7 @@ export const CREATE_ACTIONS: CreateAction[] = [
   { key: 'live', Icon: Radio, iconColor: '#ef4444', iconBg: '#fef2f2', route: ROUTES.GO_LIVE },
   { key: 'poll', Icon: BarChart3, iconColor: '#0284c7', iconBg: '#f0f9ff', route: ROUTES.CREATE_POLL },
   { key: 'product', Icon: PackagePlus, iconColor: '#8b5cf6', iconBg: '#f5f3ff', route: ROUTES.CREATE_PRODUCT },
+  { key: 'job', Icon: BriefcaseBusiness, iconColor: '#0f766e', iconBg: '#f0fdfa', route: ROUTES.CREATE_JOB },
   { key: 'page', Icon: FilePlus2, iconColor: '#0ea5e9', iconBg: '#f0f9ff', route: ROUTES.CREATE_PAGE },
   { key: 'group', Icon: Users, iconColor: '#ec4899', iconBg: '#fdf2f8', route: ROUTES.CREATE_GROUP },
   { key: 'reel', Icon: PlaySquare, iconColor: '#9333ea', iconBg: '#faf5ff', route: ROUTES.CREATE_REEL },
@@ -95,6 +98,7 @@ export const CREATE_ACTIONS_COPY = {
       event: { label: 'Tạo sự kiện', subtitle: 'Lên lịch và mời mọi người' },
       poll: { label: 'Tạo cuộc thăm dò', subtitle: 'Đặt câu hỏi và khảo sát ý kiến' },
       product: { label: 'Tạo sản phẩm', subtitle: 'Giới thiệu sản phẩm' },
+      job: { label: 'Tạo công việc', subtitle: 'Đăng cơ hội việc làm' },
       page: { label: 'Tạo trang mới', subtitle: 'Bắt đầu trang của bạn' },
       group: { label: 'Tạo nhóm mới', subtitle: 'Kết nối với nhiều người hơn' },
       reel: { label: 'Tạo video', subtitle: 'Chia sẻ video với mọi người' },
@@ -112,6 +116,7 @@ export const CREATE_ACTIONS_COPY = {
       event: { label: 'Create event', subtitle: 'Schedule and invite people' },
       poll: { label: 'Create poll', subtitle: 'Ask questions and conduct surveys' },
       product: { label: 'Create product', subtitle: 'Introduce products' },
+      job: { label: 'Create job', subtitle: 'Post a job opportunity' },
       page: { label: 'Create new page', subtitle: 'Start your page' },
       group: { label: 'Create new group', subtitle: 'Connect with more people' },
       reel: { label: 'Create video', subtitle: 'Share video with everyone' },

@@ -47,7 +47,6 @@ import {
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
-import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
@@ -278,8 +277,6 @@ function GroupDetailScreen() {
   const activeUserAvatar = profile?.avatarUrl;
   const activeUserDisplayName = profile?.name || copy.fallbackUsername;
   const [searchQuery, setSearchQuery] = useState('');
-  const [composerModalVisible, setComposerModalVisible] = useState(false);
-  const [composerInitialAction, setComposerInitialAction] = useState<'photo' | 'video' | 'product' | 'poll' | undefined>(undefined);
   const [posts, setPosts] = useState<Array<FeedTextPost | FeedVideoPost | FeedPollPost>>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
   const [isRefreshingPosts, setIsRefreshingPosts] = useState(false);
@@ -422,24 +419,19 @@ function GroupDetailScreen() {
         return;
       }
 
-      setComposerInitialAction(initialAction);
-      setComposerModalVisible(true);
+      navigation.navigate(ROUTES.CREATE_POST, {
+        groupId: targetGroupId,
+        initialAction,
+      });
     },
     [
       canCreatePost,
       copy.groupContextMissingMessage,
       copy.groupContextMissingTitle,
+      navigation,
       targetGroupId,
     ],
   );
-  const handleCloseComposer = useCallback(() => {
-    setComposerModalVisible(false);
-    setComposerInitialAction(undefined);
-  }, []);
-  const handleComposerCreated = useCallback(() => {
-    setComposerInitialAction(undefined);
-    void loadGroupPosts(true);
-  }, [loadGroupPosts]);
   const handleEditGroup = useCallback(
     () => {
       if (group) {
@@ -735,9 +727,11 @@ function GroupDetailScreen() {
     },
     [navigation],
   );
-  useEffect(() => {
-    void loadGroupPosts(false);
-  }, [loadGroupPosts]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadGroupPosts(false);
+    }, [loadGroupPosts]),
+  );
   const displayedPosts = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     if (!normalizedQuery) {
@@ -982,13 +976,6 @@ function GroupDetailScreen() {
         </View>
       </ScrollView>
 
-      <CreatePostModal
-        visible={canCreatePost && composerModalVisible}
-        onClose={handleCloseComposer}
-        onCreated={handleComposerCreated}
-        groupId={targetGroupId}
-        initialAction={composerInitialAction}
-      />
       <ReactionPickerOverlay
         anchor={pickerAnchor}
         onPick={handlePickReaction}

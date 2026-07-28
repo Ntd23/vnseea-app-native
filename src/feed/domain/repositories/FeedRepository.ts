@@ -12,6 +12,7 @@ import type {
   FeedPost,
   FeedTextPost,
   FeedVideoPost,
+  PostTaggedUser,
   PostPrivacy,
 } from '../types/feed.types';
 import type {
@@ -85,6 +86,22 @@ export interface PostReactionsPage {
   reactions: PostReactionCount[];
   nextOffset?: string;
   reachedEnd: boolean;
+}
+
+export interface GetTaggableUsersInput {
+  query?: string;
+  privacy: PostPrivacy;
+  pageId?: string;
+  groupId?: string;
+  eventId?: string;
+  cursor?: string;
+  userIds?: string[];
+}
+
+export interface TaggableUsersPage {
+  users: PostTaggedUser[];
+  nextCursor?: string;
+  hasMore: boolean;
 }
 
 export interface FeedRepository {
@@ -165,7 +182,9 @@ export interface FeedRepository {
    * The draft contains:
    *   - text       → wire field `postText`
    *   - photos[]   → wire field `postPhotos[]` (single OR multi)
-   *   - privacy    -> wire field `postPrivacy` (0=public, 1=following, 2=followers, 3=only me, 4=anonymous)
+   *   - privacy    -> wire field `postPrivacy` (0=public, 1=friends, 2=followers, 3=only me)
+   *   - taggedUsers → wire field `tagged_user_ids` (JSON, max 20)
+   *   - location   → wire field `postMap`
    *   - feeling    → wire fields `feeling_type` + `feeling`
    *
    * The repository handles the FormData serialisation + privacy
@@ -173,6 +192,10 @@ export interface FeedRepository {
    * optimistically prepend it to the feed without a refetch.
    */
   createPost(draft: CreatePostDraft): Promise<CreatePostResult>;
+
+  getTaggableUsers(
+    input: GetTaggableUsersInput,
+  ): Promise<TaggableUsersPage>;
 
   /**
    * Search people the current viewer follows for composer @mentions.

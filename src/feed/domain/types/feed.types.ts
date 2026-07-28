@@ -40,6 +40,9 @@ export interface FeedPostPermissionCarrier {
   sharedPostId?: string;
   sharedPost?: SharedPostPreviewModel;
   activity?: ProfileMediaActivity;
+  feeling?: PostFeeling;
+  taggedUsers?: PostTaggedUser[];
+  location?: PostLocation;
 }
 
 export interface PostLinkPreview {
@@ -81,23 +84,24 @@ export interface SharedPostPreviewModel {
   privacy: PostPrivacy;
   caption?: string;
   mentionNames?: string[];
+  feeling?: PostFeeling;
+  taggedUsers?: PostTaggedUser[];
+  location?: PostLocation;
   content: SharedPostPreviewContent;
 }
 
 // ── Create-post types (Facebook-style composer) ─────────────────────────
 //
-// WoWonder's `/api/new_post` accepts MANY fields, but for the MVP composer
-// we only surface: text, multi-photos, privacy, feeling. Other fields
-// (poll, sticker, check-in, color background, link preview) are
-// intentionally deferred — we can add them later without breaking this
-// contract because they're all optional in the wire format.
+// WoWonder's `/api/new_post` accepts many fields. The App composer keeps a
+// typed subset here so privacy, activity metadata and media stay consistent.
 
 /**
  * Privacy levels mirroring WoWonder's `postPrivacy` numeric field:
  *
  *   public   → 0
  *   friends  → 1
- *   only_me  → 2
+ *   followers → 2
+ *   only_me   → 3
  *
  * We use string literals here (not numbers) so the domain stays readable
  * and grep-able. The repository layer is responsible for the mapping.
@@ -156,6 +160,17 @@ export interface PostFeeling {
   label?: string;
 }
 
+export interface PostTaggedUser {
+  id: string;
+  name: string;
+  username: string;
+  avatarUrl?: string;
+}
+
+export interface PostLocation {
+  label: string;
+}
+
 /**
  * The local "draft" the composer screen owns. View-model mutates this as
  * the user types / picks photos / changes privacy. On submit we pass it
@@ -170,6 +185,8 @@ export interface CreatePostDraft {
   privacy: PostPrivacy;
   isAnonymous?: boolean;
   feeling?: PostFeeling;
+  taggedUsers?: PostTaggedUser[];
+  location?: PostLocation;
   pageId?: string;
   groupId?: string;
   eventId?: string;

@@ -199,18 +199,25 @@ describe('ApiFeedRepository create-post privacy contexts', () => {
     expect(payload).not.toHaveProperty('is_anonymous');
   });
 
-  it('rejects anonymous/non-page audiences and ambiguous composer contexts', async () => {
+  it('rejects non-page audiences and ambiguous composer contexts', async () => {
     const repository = createFeedRepository();
 
     await expect(
       repository.createPost(draft({ pageId: '9', privacy: 'friends' })),
     ).rejects.toThrow(/page/i);
     await expect(
-      repository.createPost(draft({ groupId: '4', isAnonymous: true })),
-    ).rejects.toThrow(/anonymous/i);
-    await expect(
       repository.createPost(draft({ pageId: '9', eventId: '5' })),
     ).rejects.toThrow(/context/i);
     expect(backendApi.multipart).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale anonymous draft state for the new composer', async () => {
+    await createFeedRepository().createPost(
+      draft({ isAnonymous: true }),
+    );
+
+    expect((backendApi.multipart as jest.Mock).mock.calls[0][1]).toMatchObject({
+      is_anonymous: '0',
+    });
   });
 });

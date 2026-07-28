@@ -9340,9 +9340,37 @@ function FFMPEGUpload($data)
 	}
 
 
-	$shell                         = shell_exec("$ffmpeg_b -y -i $video_file_full_path -vcodec libx264 -preset " . $wo['config']['convert_speed'] . " -filter:v scale=426:-2 -crf 26 $video_output_full_path_240 2>&1");
-	$data['post_data']['postFile'] = $video_path_240;
-	$data['id']                    = Wo_RegisterPost($data['post_data']);
+		$shell                         = shell_exec("$ffmpeg_b -y -i $video_file_full_path -vcodec libx264 -preset " . $wo['config']['convert_speed'] . " -filter:v scale=426:-2 -crf 26 $video_output_full_path_240 2>&1");
+		$tagged_user_ids = array();
+		if (isset($data['post_data']['_vnseea_tagged_user_ids'])) {
+			$normalized_tags = VNSEEA_NormalizeTaggedUserIds($data['post_data']['_vnseea_tagged_user_ids']);
+			if (!$normalized_tags['valid']) {
+				return false;
+			}
+			$tagged_user_ids = $normalized_tags['ids'];
+			unset($data['post_data']['_vnseea_tagged_user_ids']);
+		}
+		$tag_transaction_started = false;
+		if (!empty($tagged_user_ids)) {
+			$tag_transaction_started = mysqli_begin_transaction($sqlConnect);
+			if (!$tag_transaction_started) {
+				return false;
+			}
+		}
+		$data['post_data']['postFile'] = $video_path_240;
+		$data['id']                    = Wo_RegisterPost($data['post_data']);
+		if (!empty($tagged_user_ids)) {
+			$tags_saved = !empty($data['id'])
+				&& VNSEEA_SavePostTaggedUsers($data['id'], (int) $wo['user']['user_id'], $tagged_user_ids);
+			if (!$tags_saved || !mysqli_commit($sqlConnect)) {
+				mysqli_rollback($sqlConnect);
+				return false;
+			}
+			VNSEEA_NotifyPostTaggedUsers($data['id'], (int) $wo['user']['user_id'], $tagged_user_ids);
+		}
+		if (empty($data['id'])) {
+			return false;
+		}
 	if (file_exists($video_output_full_path_240)) {
 		if ($wo['config']['amazone_s3'] == 1 || $wo['config']['wasabi_storage'] == 1 || $wo['config']['ftp_upload'] == 1 || $wo['config']['spaces'] == 1 || $wo['config']['cloud_upload'] == 1 || $wo['config']['backblaze_storage'] == 1) {
 			$upload_s3 = Wo_UploadToS3($video_path_240);

@@ -7089,6 +7089,9 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
             }
         }
     }
+    $story['tagged_users'] = function_exists('VNSEEA_GetPostTaggedUsers')
+        ? VNSEEA_GetPostTaggedUsers($story['id'])
+        : array();
 
     $story['post_is_promoted'] = 0;
     $story['postText_API'] = Wo_MarkupAPI($story['postText'], true, true, true, $story['post_id']);
@@ -7997,6 +8000,11 @@ function Wo_DeletePost($post_id = 0, $type = '')
         // }
         // delete shared posts
         //if (!empty($post_info->parent_id)) {
+        mysqli_query(
+            $sqlConnect,
+            "DELETE FROM " . T_POST_TAGGED_USERS .
+            " WHERE `post_id` IN (SELECT `id` FROM " . T_POSTS . " WHERE `parent_id` = {$post_id})"
+        );
         mysqli_query($sqlConnect, "DELETE FROM " . T_POSTS . " WHERE `parent_id` = {$post_id}");
         //}
         // delete shared posts
@@ -8259,6 +8267,7 @@ function Wo_DeletePost($post_id = 0, $type = '')
         if (($is_me > 0 || (Wo_IsAdmin() || Wo_IsModerator())) && !empty($fetched_data['user_id'])) {
             Wo_RegisterPoint($post_id, "createpost", "-", $fetched_data['user_id']);
         }
+        mysqli_query($sqlConnect, "DELETE FROM " . T_POST_TAGGED_USERS . " WHERE `post_id` = {$post_id}");
         $query_delete = mysqli_query($sqlConnect, "DELETE FROM " . T_POSTS . " WHERE `id` = {$post_id}");
         $query_delete .= mysqli_query($sqlConnect, "DELETE FROM " . T_POSTS . " WHERE `post_id` = {$post_id}");
         $query_delete .= mysqli_query($sqlConnect, "DELETE FROM " . T_ALBUMS_MEDIA . " WHERE `post_id` = {$post_id}");

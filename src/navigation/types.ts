@@ -269,7 +269,13 @@ export type RootStackParamList = {
   [ROUTES.AD_DETAILS]: { ad: AdItem };
   [ROUTES.CREATE_AD]: { ad?: AdItem } | undefined;
   [ROUTES.CREATE_REEL]: undefined;
-  [ROUTES.CREATE_POST]: { page?: PagesItem; groupId?: string; initialAction?: 'photo' | 'video' | 'product' | 'poll'; initialText?: string } | undefined;
+  [ROUTES.CREATE_POST]: {
+    page?: PagesItem;
+    groupId?: string;
+    eventId?: string;
+    initialAction?: 'photo' | 'video' | 'product' | 'poll';
+    initialText?: string;
+  } | undefined;
   [ROUTES.CREATE_STORY]: undefined;
   /**
    * Pass the full stories list + the user-index to open at. The viewer

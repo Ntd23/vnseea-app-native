@@ -33,6 +33,9 @@ export function buildSharedPostPreviewModel(
     publisher: post.publisher,
     postedAt: post.postedAt,
     privacy: 'privacy' in post ? post.privacy : ('public' as const),
+    feeling: post.feeling,
+    taggedUsers: post.taggedUsers,
+    location: post.location,
   };
 
   switch (post.kind) {

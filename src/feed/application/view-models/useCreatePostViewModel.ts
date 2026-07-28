@@ -13,7 +13,7 @@
 //   4. On failure    → keep the draft intact so the user doesn't lose
 //                      their typing/photos.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
 import type {
   CreatePostDraft,
@@ -22,14 +22,17 @@ import type {
   PostAudioAttachment,
   PostLinkPreview,
   PostFeeling,
+  PostLocation,
   PostPhotoAttachment,
   PostPrivacy,
+  PostTaggedUser,
   PostVideoAttachment,
 } from '../../domain/types/feed.types';
 import type {
   ReelCaptionSuggestion,
   ReelCaptionSuggestionKind,
 } from '../../../reels/domain/types/reels.types';
+import type { GetTaggableUsersInput } from '../../domain/repositories/FeedRepository';
 
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
@@ -132,6 +135,7 @@ const DEFAULT_DRAFT: CreatePostDraft = {
   photos: [],
   privacy: 'public',
   isAnonymous: false,
+  taggedUsers: [],
   linkPreview: undefined,
 };
 
@@ -179,6 +183,8 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   // ── Caption suggestion state ──────────────────────────────────────
   // Mirrors `useCreateReelViewModel`. The bar shows a debounced
@@ -204,17 +210,81 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     setDraft(prev => ({ ...prev, text }));
   }, []);
 
-  const setPrivacy = useCallback((privacy: PostPrivacy) => {
-    setDraft(prev => ({ ...prev, privacy, isAnonymous: false }));
-  }, []);
+  const setPrivacy = useCallback(async (privacy: PostPrivacy) => {
+    const selectedUsers = draftRef.current.taggedUsers ?? [];
+    setDraft(prev => ({
+      ...prev,
+      privacy,
+      isAnonymous: false,
+      taggedUsers: privacy === 'only_me' ? [] : prev.taggedUsers,
+    }));
 
-  const setAnonymous = useCallback((isAnonymous: boolean) => {
-    setDraft(prev => ({ ...prev, isAnonymous, privacy: isAnonymous ? 'public' : prev.privacy }));
-  }, []);
+    if (selectedUsers.length === 0) return 0;
+    if (privacy === 'only_me') return selectedUsers.length;
+
+    try {
+      const page = await repository.getTaggableUsers({
+        privacy,
+        pageId,
+        groupId,
+        eventId,
+        userIds: selectedUsers.map(user => user.id),
+      });
+      const validIds = new Set(page.users.map(user => user.id));
+      const removedCount = selectedUsers.filter(
+        user => !validIds.has(user.id),
+      ).length;
+      setDraft(prev =>
+        prev.privacy !== privacy
+          ? prev
+          : {
+              ...prev,
+              taggedUsers: (prev.taggedUsers ?? []).filter(user =>
+                validIds.has(user.id),
+              ),
+            },
+      );
+      return removedCount;
+    } catch {
+      return 0;
+    }
+  }, [eventId, groupId, pageId]);
 
   const setFeeling = useCallback((feeling: PostFeeling | undefined) => {
     setDraft(prev => ({ ...prev, feeling }));
   }, []);
+
+  const setTaggedUsers = useCallback((taggedUsers: PostTaggedUser[]) => {
+    const uniqueUsers = Array.from(
+      new Map(taggedUsers.map(user => [String(user.id), user])).values(),
+    ).slice(0, 20);
+    setDraft(prev => ({
+      ...prev,
+      isAnonymous: false,
+      taggedUsers: prev.privacy === 'only_me' ? [] : uniqueUsers,
+    }));
+  }, []);
+
+  const setLocation = useCallback((location: PostLocation | undefined) => {
+    setDraft(prev => ({ ...prev, location }));
+  }, []);
+
+  const getTaggableUsers = useCallback(
+    (
+      input: Omit<
+        GetTaggableUsersInput,
+        'privacy' | 'pageId' | 'groupId' | 'eventId'
+      >,
+    ) =>
+      repository.getTaggableUsers({
+        ...input,
+        privacy: draftRef.current.privacy,
+        pageId,
+        groupId,
+        eventId,
+      }),
+    [eventId, groupId, pageId],
+  );
 
   const setAudio = useCallback((audio: PostAudioAttachment | undefined) => {
     setError(null);
@@ -396,7 +466,9 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       d.photos.length === 0 &&
       !d.audio &&
       !d.video &&
-      !d.linkPreview
+      !d.linkPreview &&
+      !d.feeling &&
+      !d.location
     ) {
       return copy.errEmpty;
     }
@@ -463,6 +535,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
 
       const apiDraft: CreatePostDraft = {
         ...uploadDraft,
+        isAnonymous: false,
         text: serializeTextForBackend(
           uploadDraft.text,
           captionMentionReplacements,
@@ -506,8 +579,10 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     // Mutators
     setText,
     setPrivacy,
-    setAnonymous,
     setFeeling,
+    setTaggedUsers,
+    setLocation,
+    getTaggableUsers,
     setAudio,
     setVideo,
     setLinkPreview,

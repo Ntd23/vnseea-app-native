@@ -43,6 +43,7 @@ export const apiRoutes = {
     comments: 'comments',
     getPost: 'get-post-data',
     postActivity: 'post-activity',
+    taggableUsers: 'post-taggable-users',
     generalData: 'get-general-data',
   },
   social: {
