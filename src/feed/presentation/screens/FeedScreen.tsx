@@ -137,7 +137,6 @@ import { FeedHeader } from '../components/FeedHeader';
 import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
 import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 import { HomeFeedIntro } from '../components/HomeFeedIntro';
-import { CreatePostModal } from './CreatePostScreen';
 import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
 import { FeedFilterTabs } from '../components/FeedFilterTabs';
 import {
@@ -2250,16 +2249,27 @@ function FeedScreen() {
     return unsubscribe;
   }, [prependFeedPost]);
 
-  const [composerModalVisible, setComposerModalVisible] = useState(false);
-  const [composerInitialAction, setComposerInitialAction] = useState<
-    'photo' | 'video' | 'product' | 'poll' | undefined
-  >(undefined);
-
-  const goToCreatePost = useCallback((action?: any) => {
-    const cleanAction = typeof action === 'string' ? action : undefined;
-    setComposerInitialAction(cleanAction as any);
-    setComposerModalVisible(true);
-  }, []);
+  const goToCreatePost = useCallback(
+    (action?: unknown) => {
+      const initialAction = typeof action === 'string' &&
+        (
+          action === 'photo' ||
+          action === 'video' ||
+          action === 'product' ||
+          action === 'poll'
+        )
+        ? action
+        : undefined;
+      (navigation as any).navigate(
+        ROUTES.CREATE_POST,
+        initialAction ? { initialAction } : undefined,
+      );
+    },
+    [navigation],
+  );
+  const openCreatePost = useCallback(() => {
+    goToCreatePost();
+  }, [goToCreatePost]);
 
   // Navigate to user profile
   const navigateToProfile = useCallback(
@@ -3898,7 +3908,7 @@ function FeedScreen() {
     () => (
       <View>
         <HomeFeedIntro
-          onCreatePostPress={goToCreatePost}
+          onCreatePostPress={openCreatePost}
           onCreatePostPressAction={goToCreatePost}
           onPressAvatar={() => navigateToOwnProfile(navigation)}
           avatarUrl={userVm.user?.avatar}
@@ -3907,7 +3917,14 @@ function FeedScreen() {
         />
       </View>
     ),
-    [copy, goToCreatePost, navigation, userVm.user?.avatar, userVm.user?.name],
+    [
+      copy,
+      goToCreatePost,
+      navigation,
+      openCreatePost,
+      userVm.user?.avatar,
+      userVm.user?.name,
+    ],
   );
 
   const renderItem = useCallback(
@@ -4229,12 +4246,6 @@ function FeedScreen() {
           onHide={handleHidePost}
           onDelete={handleDeletePost}
           onReport={handleReportPost}
-        />
-        {/* ── Post Composer Modal ── */}
-        <CreatePostModal
-          visible={composerModalVisible}
-          onClose={() => setComposerModalVisible(false)}
-          initialAction={composerInitialAction}
         />
       </SafeAreaView>
     </GestureHandlerRootView>
