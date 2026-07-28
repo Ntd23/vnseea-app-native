@@ -60,6 +60,12 @@
             ReferencedContainer = "container:VNSEEA.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+         <CommandLineArgument
+            argument = "-RCT_jsLocation apples-MacBook-Pro.local:8081"
+            isEnabled = "YES">
+         </CommandLineArgument>
+      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

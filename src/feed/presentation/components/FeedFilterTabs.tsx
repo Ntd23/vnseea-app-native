@@ -1,6 +1,6 @@
 // Description: Shared feed chrome filter tabs used by home feed and group detail surfaces.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   House,
   Image as ImageIcon,
@@ -20,15 +20,25 @@ export type FeedFilterTabsVariant = 'default' | 'header';
 export function FeedFilterTabs({
   activeSource,
   onChangeSource,
-  onHomePress,
+  onActiveSourcePress,
   variant = 'default',
 }: {
   activeSource: FeedFilterActiveSource;
   onChangeSource: (source: FeedFilterTabKey) => void;
-  onHomePress?: () => void;
+  onActiveSourcePress?: (source: FeedFilterTabKey) => void;
   variant?: FeedFilterTabsVariant;
 }) {
   const navigation = useNavigation<any>();
+  const handleSourcePress = useCallback(
+    (source: FeedFilterTabKey) => {
+      if (activeSource === source) {
+        onActiveSourcePress?.(source);
+        return;
+      }
+      onChangeSource(source);
+    },
+    [activeSource, onActiveSourcePress, onChangeSource],
+  );
   const items = useMemo(
     () => [
       {
@@ -42,12 +52,7 @@ export function FeedFilterTabs({
             fill="transparent"
           />
         ),
-        onPress: onHomePress
-          ? () => {
-              onChangeSource('all');
-              onHomePress();
-            }
-          : undefined,
+        onPress: () => handleSourcePress('all'),
       },
       {
         key: 'nearby' as const,
@@ -65,6 +70,7 @@ export function FeedFilterTabs({
             strokeWidth={active ? 2.5 : 2.0}
           />
         ),
+        onPress: () => handleSourcePress('photos'),
       },
       {
         key: 'videos' as const,
@@ -79,7 +85,7 @@ export function FeedFilterTabs({
         onPress: () => navigation.navigate(ROUTES.MARKETPLACE),
       },
     ],
-    [navigation, onChangeSource, onHomePress],
+    [handleSourcePress, navigation],
   );
 
   return (
@@ -89,7 +95,7 @@ export function FeedFilterTabs({
       variant={variant}
       onChange={key => {
         if (key === 'all' || key === 'photos') {
-          onChangeSource(key);
+          handleSourcePress(key);
         }
       }}
     />

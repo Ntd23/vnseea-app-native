@@ -446,6 +446,15 @@ function CheckoutAddressSheet({
     [vm],
   );
 
+  const handleUseTypedAddress = useCallback(
+    (address: string) => {
+      vm.updateAddressField('address', address);
+      Keyboard.dismiss();
+      setAddressSearchVisible(false);
+    },
+    [vm],
+  );
+
   return (
     <Modal
       transparent
@@ -512,6 +521,7 @@ function CheckoutAddressSheet({
                   vm.updateAddressField('address', value)
                 }
                 onResolvedAddress={handleResolvedAddress}
+                onUseTypedAddress={handleUseTypedAddress}
               />
             ) : (
               <>

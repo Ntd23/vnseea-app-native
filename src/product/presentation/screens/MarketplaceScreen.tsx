@@ -18,7 +18,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { NavigationContext } from '@react-navigation/native';
+import { NavigationContext, useIsFocused } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { navigationRef } from '../../../navigation/navigationRef';
@@ -52,6 +52,7 @@ import {
   publishNativeTabScrollBehavior,
   publishNativeTabScrollIntent,
 } from '../../../navigation/nativeTabScrollPublisher';
+import { getTabReselectAction } from '../../../navigation/tabReselectAction';
 
 const MARKETPLACE_COLUMN_STYLE = {
   justifyContent: 'space-between',
@@ -401,12 +402,17 @@ function DistancePickerModal({
 
 function MarketplaceScreen() {
   const navigation = useContext(NavigationContext);
+  const isMarketplaceFocused = useIsFocused();
+  const marketplaceListRef = useRef<FlatList<ProductItem>>(null);
   const {
     bottomContentPadding,
     scrollIndicatorBottomInset,
   } = useMainTabContentInsets();
   const vm = useMarketplaceViewModel();
   const setMarketplaceDistance = vm.setDistance;
+  const isMarketplaceRefreshing = vm.isRefreshing;
+  const reloadMarketplace = vm.reload;
+  const marketplaceTabRefreshRef = useRef(false);
   const nativeTabScrollPublisherStateRef = useRef(
     createNativeTabScrollPublisherState(),
   );
@@ -642,6 +648,51 @@ function MarketplaceScreen() {
     },
     [filterPanelProgress],
   );
+
+  const handleMarketplaceTabReselect = useCallback(() => {
+    if (
+      getTabReselectAction(latestScrollYRef.current) === 'scroll-to-top'
+    ) {
+      animateFiltersCollapsed(false);
+      publishNativeTabScrollBehavior('none');
+      marketplaceListRef.current?.scrollToOffset({
+        offset: 0,
+        animated: true,
+      });
+      return;
+    }
+
+    if (
+      isMarketplaceRefreshing ||
+      marketplaceTabRefreshRef.current
+    ) {
+      return;
+    }
+
+    marketplaceTabRefreshRef.current = true;
+    reloadMarketplace()
+      .catch(() => undefined)
+      .finally(() => {
+        marketplaceTabRefreshRef.current = false;
+      });
+  }, [
+    animateFiltersCollapsed,
+    isMarketplaceRefreshing,
+    reloadMarketplace,
+  ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !navigation) return undefined;
+
+    return navigation.addListener('tabPress' as never, () => {
+      if (!isMarketplaceFocused) return;
+      handleMarketplaceTabReselect();
+    });
+  }, [
+    handleMarketplaceTabReselect,
+    isMarketplaceFocused,
+    navigation,
+  ]);
 
   const handleProductPress = useCallback(
     (product: ProductItem) => {
@@ -1103,6 +1154,7 @@ function MarketplaceScreen() {
       {renderHeaderOutsideList ? marketplaceHeader : null}
 
       <FlatList
+        ref={marketplaceListRef}
         data={vm.products}
         keyExtractor={item => String(item.id)}
         renderItem={renderProduct}

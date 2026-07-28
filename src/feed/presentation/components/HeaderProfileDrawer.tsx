@@ -69,7 +69,7 @@ import {
   Clock,
   LayoutGrid,
   Megaphone,
-  MessageSquare,
+  // MessageSquare,
   Compass,
   Settings,
   Newspaper,
@@ -793,11 +793,15 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              icon={<Users size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'groups' })}
             />
+            {/*
             <MenuRow
-             title={copy.featForums}
-             icon={<MessageSquare size={18} color="#64748b" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'forum' })}
+              title={copy.featForums}
+              icon={<MessageSquare size={18} color="#64748b" />}
+              onPress={() =>
+                handleItemPress({ type: 'feature', feature: 'forum' })
+              }
             />
+            */}
             <MenuRow
              title={copy.featAds}
              icon={<Megaphone size={18} color="#64748b" />}

@@ -7,6 +7,13 @@ function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
 }
 
+function withoutComments(source) {
+  return source
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+}
+
 describe('FeedHeader platform chrome', () => {
   it('keeps Liquid Glass behind the iOS-only feed header wrapper', () => {
     const defaultSource = read('src/feed/presentation/components/FeedHeader.tsx');
@@ -327,5 +334,27 @@ describe('FeedHeader platform chrome', () => {
     );
     expect(iosSource).toContain("backgroundColor: 'transparent'");
     expect(iosSource).toContain('color={APP_BRAND_COLOR}');
+  });
+
+  it('hides Forum from App Bar and Settings menus without removing navigation support', () => {
+    const drawerSource = withoutComments(
+      read('src/feed/presentation/components/HeaderProfileDrawer.tsx'),
+    );
+    const settingsSource = withoutComments(
+      read('src/settings/application/view-models/useSettingsViewModel.ts'),
+    );
+    const registrySource = read('src/navigation/routeRegistry.tsx');
+    const notificationSource = read(
+      'src/notifications/application/navigation/navigateToNotification.ts',
+    );
+
+    expect(drawerSource).not.toContain('title={copy.featForums}');
+    expect(settingsSource).not.toContain("id: 'forum'");
+    expect(registrySource).toContain(
+      '{ name: ROUTES.FORUM, component: ForumScreen }',
+    );
+    expect(notificationSource).toContain(
+      'navigation.navigate(ROUTES.FORUM)',
+    );
   });
 });

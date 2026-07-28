@@ -58,6 +58,7 @@ import {
   type PhotoViewerState,
 } from '../../../shared-kernel/presentation/components/PhotoViewerModal';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
+import { getTabReselectAction } from '../../../navigation/tabReselectAction';
 import {
   createNativeTabScrollPublisherState,
   publishNativeTabScrollBehavior,
@@ -1456,6 +1457,7 @@ function FeedScreen() {
   const peekLatestFeedPosts = vm.peekLatestPosts;
   const updateFeedPublisherFollowState = vm.updatePublisherFollowState;
   const mainFeedListRef = useRef<FlashListRef<FeedListItem>>(null);
+  const feedTabRefreshInFlightRef = useRef(false);
   const [hasNewPosts, setHasNewPosts] = useState(false);
   const pendingNewPostsRef = useRef<FeedPost[]>([]);
   const feedPostsRef = useRef<FeedPost[]>(feedPosts);
@@ -1611,13 +1613,6 @@ function FeedScreen() {
   }, [isFeedTabFocused, reloadFeedPosts]);
   const setFeedScrollBusy = vm.setScrollBusy;
   const setActiveFeedSource = vm.setFeedSource;
-  const handlePressHomeFilter = useCallback(() => {
-    if (activeFeedSource === 'all') {
-      feedLogoEvents.emitScrollToTop();
-      return;
-    }
-    mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
-  }, [activeFeedSource]);
   useEffect(() => {
     if (route.params?.filter !== 'photos') return;
     setActiveFeedSource('photos');
@@ -3306,6 +3301,40 @@ function FeedScreen() {
     reloadProducts,
   ]);
 
+  const handleFeedTabReselect = useCallback(() => {
+    if (getTabReselectAction(feedScrollYRef.current) === 'scroll-to-top') {
+      feedChromeCollapseStateRef.current = createFeedChromeCollapseState();
+      nativeTabScrollPublisherStateRef.current =
+        createNativeTabScrollPublisherState(0, 'none');
+      publishNativeTabScrollBehavior('none');
+      setIsFeedChromeHidden(false);
+      mainFeedListRef.current?.scrollToOffset({
+        offset: 0,
+        animated: true,
+      });
+      return;
+    }
+
+    if (vm.isRefreshing || feedTabRefreshInFlightRef.current) return;
+    feedTabRefreshInFlightRef.current = true;
+    handleRefresh();
+  }, [handleRefresh, vm.isRefreshing]);
+
+  useEffect(() => {
+    if (!vm.isRefreshing) {
+      feedTabRefreshInFlightRef.current = false;
+    }
+  }, [vm.isRefreshing]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+
+    return navigation.addListener('tabPress' as never, () => {
+      if (!isFeedTabFocusedRef.current) return;
+      handleFeedTabReselect();
+    });
+  }, [handleFeedTabReselect, navigation]);
+
   const ListFooterComponent = useMemo(() => {
     if (isFeedLoadingMore && !isFeedAllLoaded) {
       return (
@@ -4106,7 +4135,7 @@ function FeedScreen() {
                 variant="header"
                 activeSource={activeFeedSource}
                 onChangeSource={setActiveFeedSource}
-                onHomePress={handlePressHomeFilter}
+                onActiveSourcePress={handleFeedTabReselect}
               />
             </FeedHeaderCollapseFrame>
             {hasNewPosts && (
