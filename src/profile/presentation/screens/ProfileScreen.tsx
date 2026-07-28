@@ -26,6 +26,7 @@ import {
   ActivityIndicator,
   BackHandler,
   InteractionManager,
+  RefreshControl,
   StatusBar,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -89,6 +90,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import {
   FlashList,
+  type FlashListRef,
   type ListRenderItemInfo as FlashListRenderItemInfo,
   type ViewToken as FlashListViewToken,
 } from '@shopify/flash-list';
@@ -163,6 +165,7 @@ import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/
 import { COUNTRY_OPTIONS } from '../../../settings/domain/constants/countries';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
+import { getTabReselectAction } from '../../../navigation/tabReselectAction';
 import {
   createNativeTabScrollPublisherState,
   publishNativeTabScrollBehavior,
@@ -1436,6 +1439,8 @@ function ProfileScreen() {
   const profilePostsRef = useRef<ProfileFeedPost[]>([]);
   const profilePostIndexByIdRef = useRef<Map<string, number>>(new Map());
   const [isPostsLoading, setIsPostsLoading] = useState(false);
+  const [isProfileRefreshing, setIsProfileRefreshing] = useState(false);
+  const profileRefreshInFlightRef = useRef(false);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
   const [hasMorePosts, setHasMorePosts] = useState(false);
   const [postsCursor, setPostsCursor] = useState<string | undefined>(undefined);
@@ -1462,6 +1467,7 @@ function ProfileScreen() {
     typeof InteractionManager.runAfterInteractions
   > | null>(null);
   const profileScrollYRef = useRef(0);
+  const profileListRef = useRef<FlashListRef<ProfileListItem>>(null);
   const profileHeaderSolidRef = useRef(false);
   const profileHeaderSolidProgress = useRef(new Animated.Value(0)).current;
   const isProfileScrollingRef = useRef(false);
@@ -1548,6 +1554,50 @@ function ProfileScreen() {
   const feedRepo = useMemo(() => createFeedRepository(), []);
   const pollRepo = useMemo(() => createPollRepository(), []);
   const storiesRepo = useMemo(() => createStoriesRepository(), []);
+  const refreshProfileContent = useCallback(async () => {
+    if (!targetUserId || profileRefreshInFlightRef.current) return;
+
+    profileRefreshInFlightRef.current = true;
+    setIsProfileRefreshing(true);
+    setPostsError(null);
+    try {
+      const [, response] = await Promise.all([
+        loadProfile({
+          userId: route.params?.userId,
+          includeFriends: true,
+        }),
+        feedRepo.getUserPosts(targetUserId, PROFILE_POST_PAGE_SIZE),
+      ]);
+      const refreshedPosts = (response ?? []).filter(
+        (post): post is ProfileFeedPost =>
+          post.kind === 'text' ||
+          post.kind === 'video' ||
+          post.kind === 'poll',
+      );
+      const nextCursor = getOldestProfilePostId(refreshedPosts);
+
+      isLoadingMorePostsRef.current = false;
+      setIsLoadingMorePosts(false);
+      setPosts(refreshedPosts);
+      setPostsCursor(nextCursor);
+      setHasMorePosts(refreshedPosts.length >= PROFILE_POST_PAGE_SIZE);
+    } catch (caughtError) {
+      setPostsError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : copy.loadPostsError,
+      );
+    } finally {
+      profileRefreshInFlightRef.current = false;
+      setIsProfileRefreshing(false);
+    }
+  }, [
+    copy.loadPostsError,
+    feedRepo,
+    loadProfile,
+    route.params?.userId,
+    targetUserId,
+  ]);
   const updateProfileCommentCount = useCallback(
     (postId: string, delta: number) => {
       setPosts(prev =>
@@ -3148,6 +3198,43 @@ function ProfileScreen() {
     },
     [profileHeaderSolidProgress],
   );
+
+  const handleProfileTabReselect = useCallback(() => {
+    if (getTabReselectAction(profileScrollYRef.current) === 'scroll-to-top') {
+      profileHeaderSolidRef.current = false;
+      animateProfileHeaderSolid(false);
+      setProfileHeaderSolid(false);
+      nativeTabScrollPublisherStateRef.current =
+        createNativeTabScrollPublisherState(0, 'none');
+      publishNativeTabScrollBehavior('none');
+      profileListRef.current?.scrollToOffset({
+        offset: 0,
+        animated: true,
+      });
+      return;
+    }
+
+    if (isProfileRefreshing || profileRefreshInFlightRef.current) return;
+    refreshProfileContent();
+  }, [
+    animateProfileHeaderSolid,
+    isProfileRefreshing,
+    refreshProfileContent,
+  ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !isOwnProfile) return undefined;
+
+    return navigation.addListener('tabPress' as never, () => {
+      if (!isProfileFocused || !isOwnProfile) return;
+      handleProfileTabReselect();
+    });
+  }, [
+    handleProfileTabReselect,
+    isOwnProfile,
+    isProfileFocused,
+    navigation,
+  ]);
 
   const handleProfileScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -4961,8 +5048,28 @@ function ProfileScreen() {
     };
   });
 
+  const profileRefreshControl = useMemo(
+    () =>
+      isOwnProfile ? (
+        <RefreshControl
+          refreshing={isProfileRefreshing}
+          onRefresh={refreshProfileContent}
+          tintColor={APP_BRAND_COLOR}
+          colors={[APP_BRAND_COLOR]}
+          progressViewOffset={profileHeaderHeight}
+        />
+      ) : undefined,
+    [
+      isOwnProfile,
+      isProfileRefreshing,
+      profileHeaderHeight,
+      refreshProfileContent,
+    ],
+  );
+
   const profilePostsListElement = (
     <FlashList
+      ref={profileListRef}
       style={profileMainStyles.postsList}
       data={profileListItems}
       keyExtractor={profileListItemKeyExtractor}
@@ -4973,6 +5080,7 @@ function ProfileScreen() {
       showsVerticalScrollIndicator={false}
       contentContainerStyle={profilePostsListContentStyle}
       scrollIndicatorInsets={profileScrollIndicatorInsets}
+      refreshControl={profileRefreshControl}
       onLayout={handleProfileViewportLayout}
       onScroll={handleProfileScroll}
       onScrollBeginDrag={handleProfileScrollBegin}

@@ -31,18 +31,22 @@ describe('FeedFilterTabs layout ownership', () => {
     expect(source).toContain("'h-[66px] flex-1 items-center justify-center'");
   });
 
-  it('makes the Home filter icon reuse the feed logo scroll and reload behavior', () => {
+  it('reselects the active Home or Photos filter without changing navigation items', () => {
     const tabs = read('src/feed/presentation/components/FeedFilterTabs.tsx');
     const feed = read('src/feed/presentation/screens/FeedScreen.tsx');
 
-    expect(tabs).toContain('onHomePress?: () => void');
-    expect(tabs).toContain("onChangeSource('all')");
-    expect(feed).toContain('const handlePressHomeFilter = useCallback');
-    expect(feed).toContain('onHomePress={handlePressHomeFilter}');
-    expect(feed).toContain(
-      'mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true })',
+    expect(tabs).toContain(
+      'onActiveSourcePress?: (source: FeedFilterTabKey) => void',
     );
-    expect(feed).toContain("if (activeFeedSource === 'all')");
-    expect(feed).toContain('feedLogoEvents.emitScrollToTop()');
+    expect(tabs).toContain("handleSourcePress('all')");
+    expect(tabs).toContain("handleSourcePress('photos')");
+    expect(feed).toContain('const handleFeedTabReselect = useCallback');
+    expect(feed).toContain(
+      'onActiveSourcePress={handleFeedTabReselect}',
+    );
+    expect(feed).toContain(
+      'mainFeedListRef.current?.scrollToOffset({',
+    );
+    expect(feed).toContain('getTabReselectAction(feedScrollYRef.current)');
   });
 });
