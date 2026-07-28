@@ -67,6 +67,45 @@ if ($type == 'new_post') {
             exit();
         } else {
 
+            // Reject unauthorized group posts before resolving links or
+            // uploading media. Otherwise the post can be persisted even
+            // though the non-member author cannot read it back.
+            if (!empty($_POST['group_id'])) {
+                $requested_group_id = Wo_Secure($_POST['group_id']);
+                $requested_group = Wo_GroupData($requested_group_id);
+
+                if (empty($requested_group['id'])) {
+                    $json_error_data = array(
+                        'api_status' => '400',
+                        'api_text' => 'failed',
+                        'api_version' => $api_version,
+                        'errors' => array(
+                            'error_id' => '15',
+                            'error_text' => 'Group not found'
+                        )
+                    );
+                } else if (
+                    Wo_IsGroupOnwer($requested_group_id) !== true &&
+                    Wo_IsGroupJoined($requested_group_id) !== true
+                ) {
+                    $json_error_data = array(
+                        'api_status' => '400',
+                        'api_text' => 'failed',
+                        'api_version' => $api_version,
+                        'errors' => array(
+                            'error_id' => '16',
+                            'error_text' => 'You must join this group before posting.'
+                        )
+                    );
+                }
+
+                if (!empty($json_error_data)) {
+                    header("Content-type: application/json");
+                    echo json_encode($json_error_data, JSON_PRETTY_PRINT);
+                    exit();
+                }
+            }
+
             if (!empty($_POST['postText']) && Wo_IsUrl($_POST['postText'])) {
 
 

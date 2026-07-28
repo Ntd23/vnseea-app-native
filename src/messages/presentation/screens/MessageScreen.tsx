@@ -144,6 +144,7 @@ import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
+import { feedLogoEvents } from '../../../feed/application/events/feedLogoEvents';
 import { sortMessageUserChats } from '../utils/messageListOrdering';
 import {
   isMessageRealtimeConnected,
@@ -2174,21 +2175,15 @@ function MessageScreen() {
 
   const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
-  const [showTooltip, setShowTooltip] = useState(true);
+  const isAndroid = Platform.OS === 'android';
 
-  React.useEffect(() => {
-
-    const timer = setTimeout(() => {
-
-      setShowTooltip(false);
-
-    }, 8000);
-
-    return () => clearTimeout(timer);
-
-  }, []);
+  const headerIconColor = isAndroid
+    ? APP_COLORS.brand.onPrimary
+    : APP_BRAND_COLOR;
 
   const handlePressLogo = useCallback(() => {
+
+    feedLogoEvents.emitScrollToTop();
 
     if (navigation.canGoBack()) {
 
@@ -2934,13 +2929,24 @@ function MessageScreen() {
 
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
 
-      <FocusAwareStatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar
+        barStyle={isAndroid ? 'light-content' : 'dark-content'}
+        backgroundColor={isAndroid ? APP_BRAND_COLOR : '#ffffff'}
+        translucent={false}
+      />
 
       {/* Header */}
 
-      <View style={styles.headerRoot}>
+      <View
+        style={[
+          styles.headerRoot,
+          isAndroid ? styles.androidHeaderRoot : null,
+        ]}
+      >
 
-        <View style={styles.topBar}>
+        <View
+          style={[styles.topBar, isAndroid ? styles.androidTopBar : null]}
+        >
 
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
 
@@ -2960,13 +2966,21 @@ function MessageScreen() {
 
               {logoUrl && imageErrorCount === 0 ? (
 
-                <View style={styles.logoPill}>
+                <View
+                  style={[
+                    styles.logoPill,
+                    isAndroid ? styles.androidLogoPill : null,
+                  ]}
+                >
 
                   <Image
 
                     source={{ uri: logoUrl }}
 
-                    style={styles.logoImage}
+                    style={[
+                      styles.logoImage,
+                      isAndroid ? styles.androidLogoImage : null,
+                    ]}
 
                     resizeMode="contain"
 
@@ -2978,9 +2992,21 @@ function MessageScreen() {
 
               ) : (
 
-                <View style={styles.textLogoPill}>
+                <View
+                  style={[
+                    styles.textLogoPill,
+                    isAndroid ? styles.androidTextLogoPill : null,
+                  ]}
+                >
 
-                  <Text style={styles.brandText}>VNSEEA</Text>
+                  <Text
+                    style={[
+                      styles.brandText,
+                      isAndroid ? styles.androidBrandText : null,
+                    ]}
+                  >
+                    VNSEEA
+                  </Text>
 
                 </View>
 
@@ -2998,11 +3024,18 @@ function MessageScreen() {
 
               onPress={() => navigation.navigate(ROUTES.SEARCH)}
 
-              style={styles.headerIcon}
+              style={[
+                styles.headerIcon,
+                isAndroid ? styles.androidHeaderIcon : null,
+              ]}
 
             >
 
-              <Search size={19} color={APP_BRAND_COLOR} strokeWidth={2.4} />
+              <Search
+                size={isAndroid ? 24 : 19}
+                color={headerIconColor}
+                strokeWidth={2.4}
+              />
 
             </TouchableOpacity>
 
@@ -3012,17 +3045,32 @@ function MessageScreen() {
 
               onPress={() => navigateToNotifications(navigation)}
 
-              style={[styles.headerIcon, styles.messageButton]}
+              style={[
+                styles.headerIcon,
+                styles.messageButton,
+                isAndroid ? styles.androidHeaderIcon : null,
+              ]}
 
             >
 
-              <Bell size={19} color={APP_BRAND_COLOR} strokeWidth={2.35} />
+              <Bell
+                size={isAndroid ? 24 : 19}
+                color={headerIconColor}
+                strokeWidth={2.35}
+              />
 
               {notificationCount > 0 ? (
 
-                <View style={styles.badge}>
+                <View
+                  style={[styles.badge, isAndroid ? styles.androidBadge : null]}
+                >
 
-                  <Text style={styles.badgeText}>
+                  <Text
+                    style={[
+                      styles.badgeText,
+                      isAndroid ? styles.androidBadgeText : null,
+                    ]}
+                  >
 
                     {notificationCount > 99 ? '99+' : notificationCount}
 
@@ -3040,7 +3088,10 @@ function MessageScreen() {
 
               onPress={handleOpenMenu}
 
-              style={styles.headerIcon}
+              style={[
+                styles.headerIcon,
+                isAndroid ? styles.androidHeaderIcon : null,
+              ]}
 
             >
 
@@ -3084,7 +3135,11 @@ function MessageScreen() {
 
                 >
 
-                  <CircleUser size={19} color={APP_BRAND_COLOR} strokeWidth={2.2} />
+                  <CircleUser
+                    size={isAndroid ? 24 : 19}
+                    color={headerIconColor}
+                    strokeWidth={2.2}
+                  />
 
                 </Animated.View>
 
@@ -3126,7 +3181,10 @@ function MessageScreen() {
 
                       source={{ uri: avatarUrl }}
 
-                      style={styles.avatarImage}
+                      style={[
+                        styles.avatarImage,
+                        isAndroid ? styles.androidAvatarImage : null,
+                      ]}
 
                     />
 
@@ -3143,18 +3201,6 @@ function MessageScreen() {
         </View>
 
       </View>
-
-      {showTooltip && (
-
-        <View style={styles.tooltipBubble}>
-
-          <Text style={styles.tooltipText}>Chạm logo để về Home 🏠</Text>
-
-          <View style={styles.tooltipArrow} />
-
-        </View>
-
-      )}
 
       {/* Fixed Tab Bar right below the Header */}
 
@@ -3957,6 +4003,18 @@ const styles = StyleSheet.create({
 
   },
 
+  androidHeaderRoot: {
+
+    borderBottomWidth: 0,
+
+    backgroundColor: APP_BRAND_COLOR,
+
+    shadowOpacity: 0,
+
+    elevation: 0,
+
+  },
+
   topBar: {
 
     flex: 1,
@@ -3968,6 +4026,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
 
     paddingHorizontal: 8,
+
+  },
+
+  androidTopBar: {
+
+    paddingHorizontal: 12,
 
   },
 
@@ -4009,11 +4073,37 @@ const styles = StyleSheet.create({
 
   },
 
+  androidLogoPill: {
+
+    minWidth: 126,
+
+    height: 46,
+
+    borderRadius: 0,
+
+    paddingHorizontal: 0,
+
+    paddingVertical: 0,
+
+    backgroundColor: 'transparent',
+
+    shadowOpacity: 0,
+
+    elevation: 0,
+
+  },
+
   logoImage: {
 
     width: 100,
 
     height: '100%',
+
+  },
+
+  androidLogoImage: {
+
+    width: 122,
 
   },
 
@@ -4043,6 +4133,22 @@ const styles = StyleSheet.create({
 
   },
 
+  androidTextLogoPill: {
+
+    minWidth: 126,
+
+    height: 46,
+
+    borderRadius: 0,
+
+    backgroundColor: 'transparent',
+
+    shadowOpacity: 0,
+
+    elevation: 0,
+
+  },
+
   brandText: {
 
     fontSize: 20,
@@ -4052,6 +4158,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
 
     letterSpacing: 1,
+
+  },
+
+  androidBrandText: {
+
+    fontSize: 24,
 
   },
 
@@ -4095,6 +4207,24 @@ const styles = StyleSheet.create({
 
   },
 
+  androidHeaderIcon: {
+
+    width: 42,
+
+    height: 42,
+
+    borderRadius: 21,
+
+    backgroundColor: 'transparent',
+
+    borderWidth: 0,
+
+    shadowOpacity: 0,
+
+    elevation: 0,
+
+  },
+
   messageButton: {
 
     position: 'relative',
@@ -4125,6 +4255,20 @@ const styles = StyleSheet.create({
 
   },
 
+  androidBadge: {
+
+    top: -1,
+
+    right: -1,
+
+    minWidth: 18,
+
+    height: 18,
+
+    borderRadius: 9,
+
+  },
+
   badgeText: {
 
     fontSize: 9,
@@ -4132,6 +4276,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
 
     color: '#ffffff',
+
+  },
+
+  androidBadgeText: {
+
+    fontSize: 10,
 
   },
 
@@ -4229,73 +4379,17 @@ const styles = StyleSheet.create({
 
   },
 
-  tooltipBubble: {
+  androidAvatarImage: {
 
-    position: 'absolute',
+    width: 34,
 
-    top: 60,
+    height: 34,
 
-    left: 12,
+    borderRadius: 17,
 
-    backgroundColor: '#0f172a',
+    borderWidth: 2,
 
-    paddingHorizontal: 10,
-
-    paddingVertical: 6,
-
-    borderRadius: 8,
-
-    zIndex: 9999,
-
-    shadowColor: '#000000',
-
-    shadowOffset: { width: 0, height: 4 },
-
-    shadowOpacity: 0.2,
-
-    shadowRadius: 6,
-
-    elevation: 10,
-
-    minWidth: 150,
-
-  },
-
-  tooltipText: {
-
-    color: '#ffffff',
-
-    fontSize: 10,
-
-    fontWeight: 'bold',
-
-    textAlign: 'center',
-
-  },
-
-  tooltipArrow: {
-
-    position: 'absolute',
-
-    top: -6,
-
-    left: 51,
-
-    width: 0,
-
-    height: 0,
-
-    borderLeftWidth: 6,
-
-    borderLeftColor: 'transparent',
-
-    borderRightWidth: 6,
-
-    borderRightColor: 'transparent',
-
-    borderBottomWidth: 6,
-
-    borderBottomColor: '#0f172a',
+    borderColor: '#ffffff',
 
   },
 

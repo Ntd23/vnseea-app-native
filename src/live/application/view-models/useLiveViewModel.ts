@@ -53,14 +53,55 @@ function mergeComments(
   });
 }
 
-function applyLiveViewerCounts(
-  items: LiveStreamItem[],
-  counts: Record<number, number>,
+function areLiveStreamSnapshotsEqual(
+  current: LiveStreamItem,
+  next: LiveStreamItem,
 ) {
-  return items.map(item => {
-    const nextCount = counts[item.postId];
-    return nextCount === undefined ? item : { ...item, viewerCount: nextCount };
+  return (
+    current.id === next.id &&
+    current.state === next.state &&
+    current.viewerCount === next.viewerCount &&
+    current.streamName === next.streamName &&
+    current.title === next.title &&
+    current.description === next.description &&
+    current.thumbnailUrl === next.thumbnailUrl &&
+    current.startedAt === next.startedAt &&
+    current.privacy === next.privacy &&
+    current.publisher.id === next.publisher.id &&
+    current.publisher.name === next.publisher.name &&
+    current.publisher.username === next.publisher.username &&
+    current.publisher.avatarUrl === next.publisher.avatarUrl
+  );
+}
+
+function applyLiveStreamSnapshots(
+  items: LiveStreamItem[],
+  snapshots: ReadonlyMap<number, LiveStreamItem | null | undefined>,
+) {
+  let changed = false;
+  const nextItems: LiveStreamItem[] = [];
+
+  items.forEach(item => {
+    const snapshot = snapshots.get(item.postId);
+    if (snapshot === null || snapshot?.state === 'offline') {
+      changed = true;
+      return;
+    }
+    if (!snapshot) {
+      nextItems.push(item);
+      return;
+    }
+
+    if (areLiveStreamSnapshotsEqual(item, snapshot)) {
+      nextItems.push(item);
+      return;
+    }
+
+    changed = true;
+    nextItems.push(snapshot);
   });
+
+  return changed ? nextItems : items;
 }
 
 type UseLiveViewModelOptions = {
@@ -84,11 +125,31 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
   const [isLoading, setIsLoading] = useState(autoLoad);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeProbeGenerationRef = useRef(0);
+  const activeProbeInFlightGenerationRef = useRef<number | null>(null);
+  const enabledRef = useRef(enabled);
+  const foregroundLoadGenerationRef = useRef(0);
+  const loadGenerationRef = useRef(0);
+  const loadInFlightGenerationRef = useRef<number | null>(null);
   const localOwnerId = sessionStorage.getSession()?.userId;
+  const localOwnerIdRef = useRef(localOwnerId);
+  enabledRef.current = enabled;
+  localOwnerIdRef.current = localOwnerId;
 
   const load = useCallback(
     async (mode: 'initial' | 'refresh' | 'background' = 'initial') => {
-      if (!enabled) return;
+      if (!enabledRef.current) return;
+      if (loadInFlightGenerationRef.current !== null) return;
+      const loadGeneration = loadGenerationRef.current + 1;
+      loadGenerationRef.current = loadGeneration;
+      loadInFlightGenerationRef.current = loadGeneration;
+      const foregroundLoadGeneration =
+        mode === 'background'
+          ? null
+          : foregroundLoadGenerationRef.current + 1;
+      if (foregroundLoadGeneration !== null) {
+        foregroundLoadGenerationRef.current = foregroundLoadGeneration;
+      }
       if (mode === 'refresh') {
         setIsRefreshing(true);
       } else if (mode === 'initial') {
@@ -99,37 +160,106 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
       }
 
       try {
-        const [streams, friends] = userId
-          ? [await repository.getUserLiveStreams(userId), []]
-          : await Promise.all([
-              repository.getLiveStreams(),
-              repository.getLiveFriends(),
-            ]);
-        setLiveStreams(
-          endedLivePostsStorage.filterActiveStreams(streams, localOwnerId),
-        );
-        setFriendsLive(
-          endedLivePostsStorage.filterActiveStreams(friends, localOwnerId),
-        );
+        if (userId) {
+          const streams = await repository.getUserLiveStreams(userId);
+          if (
+            !enabledRef.current ||
+            localOwnerIdRef.current !== localOwnerId ||
+            loadGenerationRef.current !== loadGeneration
+          ) {
+            return;
+          }
+          setLiveStreams(
+            endedLivePostsStorage.filterActiveStreams(streams, localOwnerId),
+          );
+          setFriendsLive([]);
+        } else {
+          const [streamsResult, friendsResult] = await Promise.allSettled([
+            repository.getLiveStreams(),
+            repository.getLiveFriends(),
+          ]);
+          if (
+            !enabledRef.current ||
+            localOwnerIdRef.current !== localOwnerId ||
+            loadGenerationRef.current !== loadGeneration
+          ) {
+            return;
+          }
+
+          if (streamsResult.status === 'fulfilled') {
+            setLiveStreams(
+              endedLivePostsStorage.filterActiveStreams(
+                streamsResult.value,
+                localOwnerId,
+              ),
+            );
+          }
+          if (friendsResult.status === 'fulfilled') {
+            setFriendsLive(
+              endedLivePostsStorage.filterActiveStreams(
+                friendsResult.value,
+                localOwnerId,
+              ),
+            );
+          }
+          if (
+            streamsResult.status === 'rejected' &&
+            friendsResult.status === 'rejected'
+          ) {
+            throw streamsResult.reason;
+          }
+        }
       } catch (err) {
+        if (
+          !enabledRef.current ||
+          localOwnerIdRef.current !== localOwnerId ||
+          loadGenerationRef.current !== loadGeneration
+        ) {
+          return;
+        }
         console.error('[Live] load error:', err);
         if (mode !== 'background') {
           setError('Không tải được danh sách live.');
         }
       } finally {
-        if (mode !== 'background') {
+        if (loadInFlightGenerationRef.current === loadGeneration) {
+          loadInFlightGenerationRef.current = null;
+        }
+        if (
+          foregroundLoadGeneration !== null &&
+          foregroundLoadGenerationRef.current === foregroundLoadGeneration
+        ) {
           setIsLoading(false);
           setIsRefreshing(false);
         }
       }
     },
-    [enabled, localOwnerId, repository, userId],
+    [localOwnerId, repository, userId],
   );
 
   useEffect(() => {
+    activeProbeGenerationRef.current += 1;
+    activeProbeInFlightGenerationRef.current = null;
+    foregroundLoadGenerationRef.current += 1;
+    loadGenerationRef.current += 1;
+    loadInFlightGenerationRef.current = null;
+    setIsLoading(false);
+    setIsRefreshing(false);
     setLiveStreams([]);
     setFriendsLive([]);
-  }, [userId]);
+  }, [localOwnerId, userId]);
+
+  useEffect(() => {
+    if (!enabled) {
+      activeProbeGenerationRef.current += 1;
+      activeProbeInFlightGenerationRef.current = null;
+      foregroundLoadGenerationRef.current += 1;
+      loadGenerationRef.current += 1;
+      loadInFlightGenerationRef.current = null;
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [enabled]);
 
   useEffect(() => {
     const ownerKey = localOwnerId || 'guest';
@@ -139,6 +269,11 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
         const endedPostId = String(event?.postId ?? '').trim();
         if (!endedPostId) return;
         if (event?.userId && event.userId !== ownerKey) return;
+
+        activeProbeGenerationRef.current += 1;
+        activeProbeInFlightGenerationRef.current = null;
+        loadGenerationRef.current += 1;
+        loadInFlightGenerationRef.current = null;
 
         setLiveStreams(current =>
           current.filter(item => String(item.postId) !== endedPostId),
@@ -179,38 +314,91 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
     };
   }, [enabled, load, refreshIntervalMs]);
 
-  const refreshViewerCounts = useCallback(async () => {
-    const postIds = Array.from(
-      new Set([...liveStreams, ...friendsLive].map(item => item.postId)),
-    );
+  const refreshActiveStreams = useCallback(async (postIds: number[]) => {
+    if (!enabledRef.current) return;
     if (postIds.length === 0) return;
+    if (activeProbeInFlightGenerationRef.current !== null) return;
+    const probeGeneration = activeProbeGenerationRef.current + 1;
+    activeProbeGenerationRef.current = probeGeneration;
+    activeProbeInFlightGenerationRef.current = probeGeneration;
 
     try {
-      const counts = await repository.getLiveViewerCounts(postIds);
-      setLiveStreams(prev => applyLiveViewerCounts(prev, counts));
-      setFriendsLive(prev => applyLiveViewerCounts(prev, counts));
-    } catch (err) {
-      console.error('[Live] viewer count refresh error:', err);
+      const probeResults = await Promise.all(
+        postIds.map(async postId => {
+          try {
+            const snapshot = await repository.getLivePost(postId);
+            return [postId, snapshot] as const;
+          } catch (err) {
+            console.log('[Live] active stream probe skipped:', { postId, err });
+            return [postId, undefined] as const;
+          }
+        }),
+      );
+      if (
+        !enabledRef.current ||
+        localOwnerIdRef.current !== localOwnerId ||
+        activeProbeGenerationRef.current !== probeGeneration
+      ) {
+        return;
+      }
+      const snapshots = new Map<number, LiveStreamItem | null | undefined>(
+        probeResults,
+      );
+
+      probeResults.forEach(([postId, snapshot]) => {
+        if (snapshot === null) {
+          endedLivePostsStorage.markEnded(postId, localOwnerId);
+        } else if (snapshot?.state === 'offline') {
+          endedLivePostsStorage.notifyInactive(postId, localOwnerId);
+        }
+      });
+
+      setLiveStreams(previous =>
+        applyLiveStreamSnapshots(previous, snapshots),
+      );
+      setFriendsLive(previous =>
+        applyLiveStreamSnapshots(previous, snapshots),
+      );
+    } finally {
+      if (activeProbeInFlightGenerationRef.current === probeGeneration) {
+        activeProbeInFlightGenerationRef.current = null;
+      }
     }
-  }, [friendsLive, liveStreams, repository]);
+  }, [localOwnerId, repository]);
+
+  const trackedLivePostIdsKey = useMemo(
+    () =>
+      Array.from(
+        new Set([...liveStreams, ...friendsLive].map(item => item.postId)),
+      )
+        .sort((left, right) => left - right)
+        .join(','),
+    [friendsLive, liveStreams],
+  );
 
   useEffect(() => {
-    if (isLoading) return undefined;
-    const hasLiveItems = liveStreams.length > 0 || friendsLive.length > 0;
-    if (!hasLiveItems) return undefined;
+    if (!enabled || isLoading || !trackedLivePostIdsKey) return undefined;
+    const postIds = trackedLivePostIdsKey
+      .split(',')
+      .map(value => Number(value))
+      .filter(postId => Number.isFinite(postId) && postId > 0);
 
-    refreshViewerCounts().catch(err => {
-      console.error('[Live] viewer count immediate refresh error:', err);
+    refreshActiveStreams(postIds).catch(err => {
+      console.error('[Live] active stream immediate probe error:', err);
     });
 
     const timer = setInterval(() => {
-      refreshViewerCounts().catch(err => {
-        console.error('[Live] viewer count polling error:', err);
+      refreshActiveStreams(postIds).catch(err => {
+        console.error('[Live] active stream polling error:', err);
       });
     }, 5000);
 
-    return () => clearInterval(timer);
-  }, [friendsLive.length, isLoading, liveStreams.length, refreshViewerCounts]);
+    return () => {
+      activeProbeGenerationRef.current += 1;
+      activeProbeInFlightGenerationRef.current = null;
+      clearInterval(timer);
+    };
+  }, [enabled, isLoading, refreshActiveStreams, trackedLivePostIdsKey]);
 
   return {
     liveStreams,

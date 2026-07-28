@@ -66,9 +66,7 @@ import {
 } from '../../../navigation/nativeTabScrollPublisher';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
-import {
-  preloadReelsStartupPage,
-} from '../../../reels/application/services/reelsStartupFeed';
+import { preloadReelsStartupPage } from '../../../reels/application/services/reelsStartupFeed';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import PostReactionsSheet from '../components/PostReactionsSheet';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
@@ -176,6 +174,7 @@ import {
 } from '../../../live/application/inlineLiveAutoplay';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import { InlineLiveStreamPlayer } from '../../../live/presentation/components/InlineLiveStreamPlayer';
+import { useInlineLiveAspectRatio } from '../../../live/presentation/components/inlineLiveAspect';
 import { usePagesOnFeedViewModel } from '../../../pages';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import {
@@ -598,6 +597,8 @@ const FeedLivePostCard = React.memo(
       ? formatPostTime(startedAtSeconds, copy)
       : copy.now;
     const isStale = item.state === 'stale';
+    const { aspectRatio, handleVideoDimensionsChange } =
+      useInlineLiveAspectRatio(`${item.postId}:${item.streamName}`);
 
     return (
       <FeedTouchableCardSurface activeOpacity={0.88} onPress={handlePress}>
@@ -632,8 +633,15 @@ const FeedLivePostCard = React.memo(
           </View>
         </FeedCardContent>
 
-        <FeedMediaFrame className="relative h-52 bg-[#0f172a]">
-          <InlineLiveStreamPlayer active={isActive} item={item} />
+        <FeedMediaFrame
+          className="relative bg-[#0f172a]"
+          style={{ aspectRatio }}
+        >
+          <InlineLiveStreamPlayer
+            active={isActive}
+            item={item}
+            onVideoDimensionsChange={handleVideoDimensionsChange}
+          />
           <View className="absolute right-3 top-3 flex-row items-center rounded-full bg-red-500 px-3 py-1">
             <View className="h-2 w-2 rounded-full bg-white" />
             <Text className="ml-1 text-xs font-extrabold text-white">LIVE</Text>
@@ -1161,7 +1169,9 @@ const SuggestedPagesCarousel = React.memo(
                   </View>
                   <View className="mt-4 flex-row gap-2">
                     <TouchableOpacity
-                      className={`flex-1 flex-row items-center justify-center rounded-xl py-2.5 ${item.isLiked ? 'bg-[#e7f0ff]' : 'bg-[#f1f5f9]'}`}
+                      className={`flex-1 flex-row items-center justify-center rounded-xl py-2.5 ${
+                        item.isLiked ? 'bg-[#e7f0ff]' : 'bg-[#f1f5f9]'
+                      }`}
                       activeOpacity={0.8}
                       onPress={() => onLikePage(item.pageId || item.id)}
                     >
@@ -1171,25 +1181,35 @@ const SuggestedPagesCarousel = React.memo(
                         fill={item.isLiked ? APP_BRAND_COLOR : 'transparent'}
                       />
                       <Text
-                        className={`ml-1 text-xs font-extrabold ${item.isLiked ? 'text-brand' : 'text-[#64748b]'}`}
+                        className={`ml-1 text-xs font-extrabold ${
+                          item.isLiked ? 'text-brand' : 'text-[#64748b]'
+                        }`}
                       >
                         {item.isLiked ? copy.pageLiked : copy.pageLike}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      className={`flex-1 flex-row items-center justify-center rounded-xl py-2.5 ${item.isFollowing ? 'bg-[#e7f0ff]' : 'bg-[#f1f5f9]'}`}
+                      className={`flex-1 flex-row items-center justify-center rounded-xl py-2.5 ${
+                        item.isFollowing ? 'bg-[#e7f0ff]' : 'bg-[#f1f5f9]'
+                      }`}
                       activeOpacity={0.8}
                       onPress={() => onFollowPage(item.pageId || item.id)}
                     >
                       <Bell
                         size={15}
                         color={item.isFollowing ? APP_BRAND_COLOR : '#64748b'}
-                        fill={item.isFollowing ? APP_BRAND_COLOR : 'transparent'}
+                        fill={
+                          item.isFollowing ? APP_BRAND_COLOR : 'transparent'
+                        }
                       />
                       <Text
-                        className={`ml-1 text-xs font-extrabold ${item.isFollowing ? 'text-brand' : 'text-[#64748b]'}`}
+                        className={`ml-1 text-xs font-extrabold ${
+                          item.isFollowing ? 'text-brand' : 'text-[#64748b]'
+                        }`}
                       >
-                        {item.isFollowing ? copy.pageFollowing : copy.pageFollow}
+                        {item.isFollowing
+                          ? copy.pageFollowing
+                          : copy.pageFollow}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -2372,7 +2392,11 @@ function FeedScreen() {
   const jobsVm = useJobsOnFeedViewModel({ autoLoad: false });
   const groupsVm = useSuggestedGroupsOnFeedViewModel({ autoLoad: false });
   const pagesVm = usePagesOnFeedViewModel({ autoLoad: false });
-  const liveVm = useLiveViewModel({ autoLoad: false });
+  const liveVm = useLiveViewModel({
+    autoLoad: true,
+    enabled: isFeedTabFocused,
+    refreshIntervalMs: 10_000,
+  });
   const fundingVm = useFundingOnFeedViewModel({ autoLoad: false });
   const reloadProducts = productsVm.reloadProducts;
   const reloadEvents = eventsVm.reloadEvents;
@@ -2405,9 +2429,6 @@ function FeedScreen() {
     const productsTimer = setTimeout(() => {
       runWhenScrollIdle(reloadProducts);
     }, 1200);
-    const liveTimer = setTimeout(() => {
-      runWhenScrollIdle(reloadLive);
-    }, 1800);
     const groupsTimer = setTimeout(() => {
       runWhenScrollIdle(reloadGroups);
     }, 2200);
@@ -2425,7 +2446,6 @@ function FeedScreen() {
     }, 3800);
     supplementalLoadTimersRef.current.push(
       productsTimer,
-      liveTimer,
       groupsTimer,
       pagesTimer,
       eventsTimer,
@@ -2440,7 +2460,6 @@ function FeedScreen() {
     reloadJobs,
     reloadPages,
     reloadProducts,
-    reloadLive,
     reloadFunding,
   ]);
 
@@ -3656,11 +3675,7 @@ function FeedScreen() {
     ) {
       scheduleActiveFeedInlineLivePostId(null, true);
     }
-  }, [
-    feedListItems,
-    scheduleActiveFeedInlineLivePostId,
-    setActiveFeedVideo,
-  ]);
+  }, [feedListItems, scheduleActiveFeedInlineLivePostId, setActiveFeedVideo]);
 
   // â”€â”€ Smart image prefetch â€” only the next ~10 upcoming items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Image prefetching is driven by FlashList viewability above so upcoming
@@ -3903,11 +3918,21 @@ function FeedScreen() {
           onPressAvatar={() => navigateToOwnProfile(navigation)}
           avatarUrl={userVm.user?.avatar}
           userName={userVm.user?.name}
+          liveStreams={feedLiveItems}
+          onLivePress={handleOpenLive}
           copy={copy}
         />
       </View>
     ),
-    [copy, goToCreatePost, navigation, userVm.user?.avatar, userVm.user?.name],
+    [
+      copy,
+      feedLiveItems,
+      goToCreatePost,
+      handleOpenLive,
+      navigation,
+      userVm.user?.avatar,
+      userVm.user?.name,
+    ],
   );
 
   const renderItem = useCallback(
@@ -4015,11 +4040,7 @@ function FeedScreen() {
         progressViewOffset={feedRefreshProgressViewOffset}
       />
     ),
-    [
-      feedRefreshProgressViewOffset,
-      handleRefresh,
-      vm.isRefreshing,
-    ],
+    [feedRefreshProgressViewOffset, handleRefresh, vm.isRefreshing],
   );
 
   const feedListEmptyComponent = useMemo(
@@ -4119,24 +4140,19 @@ function FeedScreen() {
           <>
             <FeedHeaderCollapseFrame
               hidden={isFeedChromeHidden}
-              height={FEED_HEADER_BAR_HEIGHT}
+              height={FEED_HEADER_CONTENT_HEIGHT}
               top={topInset}
-              translateDistance={FEED_HEADER_BAR_HEIGHT}
+              translateDistance={FEED_HEADER_CONTENT_HEIGHT}
             >
-              <FeedHeader />
-            </FeedHeaderCollapseFrame>
-            <FeedHeaderCollapseFrame
-              hidden={isFeedChromeHidden}
-              height={FEED_FILTER_BAR_HEIGHT}
-              top={topInset + FEED_HEADER_BAR_HEIGHT}
-              translateDistance={FEED_FILTER_BAR_HEIGHT}
-            >
-              <FeedFilterTabs
-                variant="header"
-                activeSource={activeFeedSource}
-                onChangeSource={setActiveFeedSource}
-                onActiveSourcePress={handleFeedTabReselect}
-              />
+              <View style={{ height: FEED_HEADER_CONTENT_HEIGHT }}>
+                <FeedHeader />
+                <FeedFilterTabs
+                  variant="header"
+                  activeSource={activeFeedSource}
+                  onChangeSource={setActiveFeedSource}
+                  onActiveSourcePress={handleFeedTabReselect}
+                />
+              </View>
             </FeedHeaderCollapseFrame>
             {hasNewPosts && (
               <TouchableOpacity

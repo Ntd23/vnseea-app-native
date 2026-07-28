@@ -8,6 +8,13 @@ const MAX_ENDED_LIVE_POST_IDS = 1_000;
 
 export const LOCAL_LIVE_ENDED_EVENT = 'localLiveEnded';
 
+function emitLiveInactive(postId: string, userId?: string) {
+  DeviceEventEmitter.emit(LOCAL_LIVE_ENDED_EVENT, {
+    postId,
+    userId: getOwnerKey(userId),
+  });
+}
+
 function getOwnerKey(userId?: string) {
   return userId?.trim() || 'guest';
 }
@@ -58,10 +65,13 @@ export const endedLivePostsStorage = {
     ].slice(0, MAX_ENDED_LIVE_POST_IDS);
 
     storage.set(getStorageKey(userId), JSON.stringify(nextIds));
-    DeviceEventEmitter.emit(LOCAL_LIVE_ENDED_EVENT, {
-      postId: normalizedPostId,
-      userId: getOwnerKey(userId),
-    });
+    emitLiveInactive(normalizedPostId, userId);
+  },
+
+  notifyInactive(postId: string | number, userId?: string) {
+    const normalizedPostId = String(postId).trim();
+    if (!normalizedPostId) return;
+    emitLiveInactive(normalizedPostId, userId);
   },
 
   filterVisiblePosts<T extends { id: string | number }>(

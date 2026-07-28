@@ -12,6 +12,7 @@ import {
   Image,
   Modal,
   Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -90,6 +91,9 @@ export function ImageCropperModal({
 }: ImageCropperModalProps) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const androidStatusBarHeight =
+    Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
+  const topSafeInset = Math.max(insets.top, androidStatusBarHeight, 12);
   const cropViewportRef = useRef<View | null>(null);
   const captureLockRef = useRef(false);
   const imageErrorHandledRef = useRef(false);
@@ -405,7 +409,7 @@ export function ImageCropperModal({
           style={[
             styles.header,
             {
-              paddingTop: Math.max(insets.top, 12) + 8,
+              paddingTop: topSafeInset + 8,
             },
           ]}
         >

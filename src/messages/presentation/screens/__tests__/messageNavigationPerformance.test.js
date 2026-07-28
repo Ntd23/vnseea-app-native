@@ -41,6 +41,19 @@ describe('Home and Messages navigation performance', () => {
     }
   });
 
+  it('matches the Android Home header chrome without showing a logo hint', () => {
+    const messages = read(
+      'src/messages/presentation/screens/MessageScreen.tsx',
+    );
+
+    expect(messages).toContain("const isAndroid = Platform.OS === 'android'");
+    expect(messages).toContain('isAndroid ? styles.androidHeaderRoot : null');
+    expect(messages).toContain('backgroundColor: APP_BRAND_COLOR');
+    expect(messages).toContain('APP_COLORS.brand.onPrimary');
+    expect(messages).not.toContain('showTooltip');
+    expect(messages).not.toContain('styles.tooltipBubble');
+  });
+
   it('uses lightweight latest-page syncs for realtime and polling updates', () => {
     const messages = read(
       'src/messages/presentation/screens/MessageScreen.tsx',

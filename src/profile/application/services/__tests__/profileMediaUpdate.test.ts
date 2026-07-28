@@ -1,8 +1,11 @@
 import type { ApiFile } from '../../../../shared-kernel/domain/types/api.types';
 import {
   PROFILE_MEDIA_CONTRACT,
+  buildLegacyProfileMediaUploadPayload,
   buildProfileMediaUploadPayload,
   parseProfileMediaUpdateResponse,
+  shouldRetryProfileMediaUploadWithoutContract,
+  uploadProfileMediaWithContractFallback,
   uploadProfileMediaWithReconciliation,
 } from '../profileMediaUpdate';
 
@@ -18,6 +21,95 @@ describe('profile media update contract', () => {
       profile_media_contract: PROFILE_MEDIA_CONTRACT,
       cover: coverFile,
     });
+  });
+
+  it('retries a deployed cover-geometry mismatch through the legacy payload', async () => {
+    const canonicalError = {
+      response: {
+        status: 422,
+        data: {
+          api_status: 422,
+          error_code: 'profile_media_invalid_geometry',
+        },
+      },
+    };
+    const uploadCanonical = jest.fn().mockRejectedValue(canonicalError);
+    const legacyResult = {
+      kind: 'cover' as const,
+      url: 'https://cdn.vnseea.vn/cover.jpg',
+      fullUrl: 'https://cdn.vnseea.vn/cover_full.jpg',
+      postId: '12',
+      postType: 'profile_cover_picture' as const,
+    };
+    const uploadLegacy = jest.fn().mockResolvedValue(legacyResult);
+
+    expect(buildLegacyProfileMediaUploadPayload('cover', coverFile)).toEqual({
+      cover: coverFile,
+    });
+    expect(
+      shouldRetryProfileMediaUploadWithoutContract('cover', canonicalError),
+    ).toBe(true);
+    await expect(
+      uploadProfileMediaWithContractFallback('cover', {
+        uploadCanonical,
+        uploadLegacy,
+      }),
+    ).resolves.toEqual(legacyResult);
+    expect(uploadLegacy).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles the profile after the compatible cover upload succeeds', async () => {
+    const loadSnapshot = jest.fn().mockResolvedValue({
+      coverUrl: 'https://cdn.vnseea.vn/legacy-cover.jpg',
+      coverPostId: '13',
+    });
+
+    await expect(
+      uploadProfileMediaWithReconciliation('cover', coverFile, {
+        upload: () =>
+          uploadProfileMediaWithContractFallback('cover', {
+            uploadCanonical: jest.fn().mockRejectedValue({
+              response: {
+                data: { error_code: 'profile_media_invalid_geometry' },
+              },
+            }),
+            uploadLegacy: async () =>
+              parseProfileMediaUpdateResponse({ api_status: 200 }, 'cover'),
+          }),
+        loadSnapshot,
+        beforeSnapshot: {
+          coverUrl: 'https://cdn.vnseea.vn/old-cover.jpg',
+          coverPostId: '12',
+        },
+      }),
+    ).resolves.toMatchObject({
+      kind: 'cover',
+      url: 'https://cdn.vnseea.vn/legacy-cover.jpg',
+      postId: '13',
+      reconciled: true,
+    });
+    expect(loadSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not use the legacy path for avatars or unrelated failures', async () => {
+    const geometryError = {
+      response: {
+        data: { error_code: 'profile_media_invalid_geometry' },
+      },
+    };
+    const unrelatedError = new Error('Network Error');
+    const uploadLegacy = jest.fn();
+
+    expect(
+      shouldRetryProfileMediaUploadWithoutContract('avatar', geometryError),
+    ).toBe(false);
+    await expect(
+      uploadProfileMediaWithContractFallback('cover', {
+        uploadCanonical: jest.fn().mockRejectedValue(unrelatedError),
+        uploadLegacy,
+      }),
+    ).rejects.toBe(unrelatedError);
+    expect(uploadLegacy).not.toHaveBeenCalled();
   });
 
   it('does not block a successful upload on another profile request', async () => {

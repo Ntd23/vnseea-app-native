@@ -28,16 +28,13 @@ describe('ProfileMore transition responsiveness', () => {
     expect(source).toContain('gestureEnabled: false');
   });
 
-  it('lets ProfileScreen reveal the previous screen during left-edge swipe back', () => {
+  it('keeps ProfileScreen navigation on its explicit back control', () => {
     const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
-    expect(source).toContain('GestureDetector gesture={profileSwipeBackGesture}');
-    expect(source).toContain('profileBackTranslateX.value = Math.min(');
-    expect(source).toContain('cancelAnimation(profileBackTranslateX);');
-    expect(source).toContain('duration: PROFILE_BACK_CANCEL_DURATION_MS');
-    expect(source).not.toContain('profileBackTranslateX.value = withSpring(0');
-    expect(source).toContain('runOnJS(handleProfileBack)();');
-    expect(source).toContain('profileMainStyles.profileSwipeBackCue');
-    expect(source).toContain('profileSwipeBackDimStyle');
+    expect(source).toContain('onPress={handleProfileBack}');
+    expect(source).toContain("'hardwareBackPress'");
+    expect(source).not.toContain('profileSwipeBackGesture');
+    expect(source).not.toContain('profileBackTranslateX');
+    expect(source).not.toContain('profileMainStyles.profileSwipeBackCue');
   });
 });

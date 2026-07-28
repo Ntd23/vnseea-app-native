@@ -1,4 +1,27 @@
 <?php
+// Group post authorization must happen before link previews or uploads are
+// processed. Without this guard Wo_RegisterPost persists the row, then
+// Wo_PostData hides it from the non-member author, making the client report a
+// false failure while active group members can still see the post.
+if (!empty($_POST['group_id'])) {
+    $requested_group_id = Wo_Secure($_POST['group_id']);
+    $requested_group = Wo_GroupData($requested_group_id);
+
+    if (empty($requested_group['id'])) {
+        $error_code = 15;
+        $error_message = 'Group not found';
+        return;
+    }
+
+    $can_post_to_group = Wo_IsGroupOnwer($requested_group_id) === true ||
+                         Wo_IsGroupJoined($requested_group_id) === true;
+    if (!$can_post_to_group) {
+        $error_code = 16;
+        $error_message = 'You must join this group before posting.';
+        return;
+    }
+}
+
 if (!empty($_POST['postText'])) {
 
 

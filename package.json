@@ -104,7 +104,8 @@
       "@livekit/react-native-webrtc@144.1.1": "patches/@livekit__react-native-webrtc@144.1.1.patch",
       "react-native-callkeep@4.3.16": "patches/react-native-callkeep@4.3.16.patch",
       "react-native-css-interop@0.2.3": "patches/react-native-css-interop@0.2.3.patch",
-      "react-native-video@6.19.2": "patches/react-native-video@6.19.2.patch"
+      "react-native-video@6.19.2": "patches/react-native-video@6.19.2.patch",
+      "@livekit/react-native@2.11.1": "patches/@livekit__react-native@2.11.1.patch"
     }
   },
   "volta": {

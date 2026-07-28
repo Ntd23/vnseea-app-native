@@ -79,7 +79,7 @@ describe('profile navigation route separation', () => {
     );
   });
 
-  it('uses transparent custom swipe-back routes for root profile screens', () => {
+  it('keeps root profile routes transparent with swipe-back disabled', () => {
     const appNavigatorSource = read('src/navigation/AppNavigator.tsx');
     const profileSource = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
@@ -90,14 +90,14 @@ describe('profile navigation route separation', () => {
     expect(appNavigatorSource).toContain("animation: 'none'");
     expect(appNavigatorSource).toContain("contentStyle: { backgroundColor: 'transparent' }");
     expect(appNavigatorSource).toContain('gestureEnabled: false');
-    expect(profileSource).toContain('const profileSwipeBackGesture = useMemo');
-    expect(profileSource).toContain('profileBackTranslateX.value = Math.min(');
-    expect(profileSource).toContain('cancelAnimation(profileBackTranslateX);');
-    expect(profileSource).toContain('duration: PROFILE_BACK_CANCEL_DURATION_MS');
-    expect(profileSource).not.toContain('profileBackTranslateX.value = withSpring(0');
-    expect(profileSource).toContain('profileSwipeBackScreenStyle');
-    expect(profileSource).toContain('profileSwipeBackCue');
-    expect(profileSource).toContain('navigation.canGoBack()');
+    expect(profileSource).toContain('onPress={handleProfileBack}');
+    expect(profileSource).not.toContain('profileSwipeBackGesture');
+    expect(profileSource).not.toContain(
+      'GestureDetector gesture={profileSwipeBackGesture}',
+    );
+    expect(profileSource).not.toContain('profileSwipeBackScreenStyle');
+    expect(profileSource).not.toContain('profileSwipeBackCue');
+    expect(profileSource).not.toContain('Swipe to go back');
   });
 
   it('opens profile connections with a short dedicated transition', () => {

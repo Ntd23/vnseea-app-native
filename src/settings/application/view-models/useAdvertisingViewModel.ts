@@ -1,5 +1,5 @@
 // Description: Loads the current user's ad campaigns for the Settings advertising screen.
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { createAdsRepository } from '../../../advertising/infrastructure/repositories/ApiAdsRepository';
 import type { AdItem, AdsOptions } from '../../../advertising/domain/types/ads.types';
 
@@ -12,6 +12,7 @@ export function useAdvertisingViewModel() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<AdsOptions | null>(null);
+  const syncRequestRef = useRef<Promise<void> | null>(null);
 
   const fetchAds = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
     if (mode === 'refresh') {
@@ -38,6 +39,26 @@ export function useAdvertisingViewModel() {
   }, []);
 
   const refresh = useCallback(() => fetchAds('refresh'), [fetchAds]);
+
+  const syncAds = useCallback(() => {
+    if (syncRequestRef.current) {
+      return syncRequestRef.current;
+    }
+
+    const request = (async () => {
+      try {
+        const data = await repository.getMyAds();
+        setAds(data);
+      } catch {
+        // Background synchronization keeps the latest successful snapshot visible.
+      } finally {
+        syncRequestRef.current = null;
+      }
+    })();
+
+    syncRequestRef.current = request;
+    return request;
+  }, []);
 
   const deleteAd = useCallback(async (id: number): Promise<{ success: boolean; error?: string }> => {
     setIsDeleting(true);
@@ -67,6 +88,7 @@ export function useAdvertisingViewModel() {
     options,
     fetchAds,
     refresh,
+    syncAds,
     deleteAd,
   };
 }

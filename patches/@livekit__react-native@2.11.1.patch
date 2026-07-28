@@ -1,0 +1,68 @@
+diff --git a/lib/typescript/src/components/VideoTrack.d.ts b/lib/typescript/src/components/VideoTrack.d.ts
+index c5f20da97919ec76bada910d6b97134725927044..0a071c9943aa98d158000fbf373c5504197ba2dc 100644
+--- a/lib/typescript/src/components/VideoTrack.d.ts
++++ b/lib/typescript/src/components/VideoTrack.d.ts
+@@ -22,6 +22,17 @@ export type VideoTrackProps = {
+      * 'contain': The entire video will be visible within the container, potentially leaving empty space.
+      */
+     objectFit?: 'cover' | 'contain' | undefined;
++    /**
++     * Reports the dimensions of the first/current decoded video frame.
++     * Android also includes the camera frame rotation when available.
++     */
++    onDimensionsChange?: (event: {
++        nativeEvent: {
++            width: number;
++            height: number;
++            rotation?: number;
++        };
++    }) => void;
+     /**
+      * Indicates whether the video should be mirrored during rendering.
+      * This is commonly used for front-facing cameras.
+diff --git a/src/components/VideoTrack.tsx b/src/components/VideoTrack.tsx
+index 7f310afb1f41477b9cbf7d98c38721a32342cdbf..dc3c6076d5d551b00bba976d5173d045b496789d 100644
+--- a/src/components/VideoTrack.tsx
++++ b/src/components/VideoTrack.tsx
+@@ -50,6 +50,17 @@ export type VideoTrackProps = {
+    * 'contain': The entire video will be visible within the container, potentially leaving empty space.
+    */
+   objectFit?: 'cover' | 'contain' | undefined;
++  /**
++   * Reports the dimensions of the first/current decoded video frame.
++   * Android also includes the camera frame rotation when available.
++   */
++  onDimensionsChange?: (event: {
++    nativeEvent: {
++      width: number;
++      height: number;
++      rotation?: number;
++    };
++  }) => void;
+   /**
+    * Indicates whether the video should be mirrored during rendering.
+    * This is commonly used for front-facing cameras.
+@@ -145,6 +156,7 @@ export const VideoTrack: ForwardRefExoticComponent<
+       style = {},
+       trackRef,
+       objectFit = 'cover',
++      onDimensionsChange,
+       zOrder,
+       mirror,
+       iosPIP,
+@@ -216,6 +228,7 @@ export const VideoTrack: ForwardRefExoticComponent<
+           // @ts-expect-error
+           streamURL={mediaStream?.toURL() ?? ''}
+           objectFit={objectFit}
++          onDimensionsChange={onDimensionsChange}
+           zOrder={zOrder}
+           mirror={mirror}
+           // @ts-ignore
+@@ -229,6 +242,7 @@ export const VideoTrack: ForwardRefExoticComponent<
+           // @ts-expect-error
+           streamURL={mediaStream?.toURL() ?? ''}
+           objectFit={objectFit}
++          onDimensionsChange={onDimensionsChange}
+           zOrder={zOrder}
+           mirror={mirror}
+           // TODO: fix this up in react-native-webrtc side.
