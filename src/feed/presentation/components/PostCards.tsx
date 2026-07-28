@@ -99,8 +99,11 @@ import {
 } from './FeedReactionAssets';
 import { SharedPostPreviewCard } from './SharedPostPreviewCard';
 import {
-  getProfileMediaActivityLabel,
-} from '../../application/mappers/profileMediaActivity';
+  cleanVnseeaPageShareCaption,
+  isVnseeaPageLink,
+  VnseeaPageLinkPreviewCard,
+} from './VnseeaPageLinkPreviewCard';
+import { getProfileMediaActivityLabel } from '../../application/mappers/profileMediaActivity';
 import {
   FEED_VIDEO_SURFACE_MAX_RECOVERY_ATTEMPTS,
   shouldRecoverFeedVideoSurface,
@@ -2232,9 +2235,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     !isActive &&
     (keepPreparedVideoMounted ? !warmPreviewReady : !hasRenderedFrame);
   const playing =
-    shouldMountVideo &&
-    !manuallyPaused &&
-    (isActive || warmPlaying);
+    shouldMountVideo && !manuallyPaused && (isActive || warmPlaying);
   const showPlayOverlay = canAttemptVideo && !playing;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
@@ -2287,14 +2288,20 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             }
             time={formatPostTime(post.postedAt, copy)}
             copy={copy}
-            onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
+            onPress={
+              !post.isAnonymous && post.publisher.id
+                ? handleProfilePress
+                : undefined
+            }
             onMorePress={onOpenPostMenu}
             post={post}
           />
         ) : null}
         {post.sharedFrom && !post.sharedPost ? (
           <Text
-            className={`${showIdentityHeader ? '-mt-3 ' : ''}mb-3 text-caption-secondary`}
+            className={`${
+              showIdentityHeader ? '-mt-3 ' : ''
+            }mb-3 text-caption-secondary`}
           >
             {copy.sharedPostLabel(
               post.sharedFrom.isAnonymous
@@ -2314,219 +2321,222 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       </FeedCardContent>
       {(() => {
         const videoMedia = (
-      <FeedMediaFrame style={{ aspectRatio }}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          onPress={handleVideoPress}
-          style={{ width: '100%', height: '100%' }}
-        >
-          {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
-          {resolvedThumbnailUrl ? (
-            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-              <FeedMediaImage
-                uri={resolvedThumbnailUrl}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="cover"
-                deferWhileScrolling={false}
-              />
-            </View>
-          ) : null}
-          {shouldMountVideo ? (
-            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-              <VideoPlayer
-                key={`${mediaIdentity}:${videoPlayerGeneration}`}
-                ref={videoRef}
-                source={videoSource}
-                style={[
-                  StyleSheet.absoluteFill,
-                  !hasRenderedFrame ? { opacity: 0 } : null,
-                ]}
-                resizeMode="contain"
-                paused={!playing}
-                controls={false}
-                muted={muted || !isActive || !hasRenderedFrame}
-                repeat
-                ignoreSilentSwitch="ignore"
-                disableAudioSessionManagement={
-                  Platform.OS === 'ios' && liveMediaActive
-                }
-                playInBackground={false}
-                playWhenInactive={false}
-                // SurfaceView is more reliable for Android codecs that can
-                // play audio while TextureView remains stuck on its poster.
-                // The poster/frame-cover layers still hide the first frame.
-                useTextureView={false}
-                bufferConfig={VIDEO_BUFFER_CONFIG}
-                maxBitRate={maxVideoBitRate}
-                progressUpdateInterval={250}
-                onReadyForDisplay={revealVideoFrame}
-                onLoad={handleVideoLoad}
-                onProgress={data => {
-                  if (mediaIdentity !== mediaIdentityRef.current) return;
-                  const nextTime = data?.currentTime;
-                  if (
-                    typeof nextTime !== 'number' ||
-                    !Number.isFinite(nextTime)
-                  ) {
-                    return;
-                  }
-                  if (isActive) {
-                    hasUserWatchedRef.current = true;
-                    currentTimeRef.current = nextTime;
-                    setVideoPlaybackTime(post.id, nextTime);
-                  } else {
-                    warmPreviewTimeRef.current = nextTime;
-                    if (
-                      keepPreparedVideoMounted &&
-                      nextTime >= VIDEO_WARM_PREVIEW_SECONDS
-                    ) {
-                      setWarmPreviewReady(true);
-                    }
-                  }
-
-                  if (
-                    Platform.OS === 'android' &&
-                    isActive &&
-                    playing &&
-                    !isScrollBusy &&
-                    !hasRenderedFrameRef.current
-                  ) {
-                    const playbackWindowStart =
-                      firstFrameProgressStartRef.current;
-                    if (
-                      playbackWindowStart === null ||
-                      nextTime < playbackWindowStart
-                    ) {
-                      firstFrameProgressStartRef.current = nextTime;
-                    } else if (
-                      shouldRecoverFeedVideoSurface({
-                        isAndroid: true,
-                        isActive,
-                        isPlaying: playing,
-                        isScrollBusy,
-                        hasRenderedFrame: hasRenderedFrameRef.current,
-                        recoveryInFlight:
-                          videoSurfaceRecoveryInFlightRef.current,
-                        recoveryAttempt: videoSurfaceRecoveryCountRef.current,
-                        playbackWindowStart,
-                        currentTime: nextTime,
-                      })
-                    ) {
-                      recoverAndroidVideoSurface(nextTime);
-                    }
-                  } else if (
-                    Platform.OS !== 'android' &&
-                    !hasRenderedFrameRef.current &&
-                    nextTime > 0.05
-                  ) {
-                    revealVideoFrame();
-                  }
-                }}
-                poster={resolvedThumbnailUrl}
-                posterResizeMode="cover"
-                onError={error => {
-                  if (mediaIdentity !== mediaIdentityRef.current) return;
-                  hasRenderedFrameRef.current = false;
-                  firstFrameProgressStartRef.current = null;
-                  videoSurfaceRecoveryInFlightRef.current = false;
-                  setHasVideoError(true);
-                  setIsReady(false);
-                  setHasRenderedFrame(false);
-                  setWarmPreviewReady(false);
-                  frameCoverOpacity.value = 1;
-                  setFrameCoverVisible(true);
-                  console.warn(
-                    '[HomeVideoPostCard] video error',
-                    post.id,
-                    post.videoUrl,
-                    error,
-                  );
-                }}
-              />
-              {resolvedThumbnailUrl && isFrameCoverVisible ? (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
-                >
+          <FeedMediaFrame style={{ aspectRatio }}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={handleVideoPress}
+              style={{ width: '100%', height: '100%' }}
+            >
+              {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
+              {resolvedThumbnailUrl ? (
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                   <FeedMediaImage
                     uri={resolvedThumbnailUrl}
                     style={{ width: '100%', height: '100%' }}
                     resizeMode="cover"
                     deferWhileScrolling={false}
                   />
-                </Animated.View>
-              ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
-                >
-                  <VideoFallbackPoster label={copy.video ?? 'Video'} />
-                </Animated.View>
+                </View>
               ) : null}
-            </View>
-          ) : resolvedThumbnailUrl ? null : (
-            <VideoFallbackPoster
-              label={
-                hasVideoUrl && !hasVideoError
-                  ? copy.video ?? 'Video'
-                  : copy.videoUnavailable
-              }
-            />
-          )}
-          {/* Big play button overlay while paused */}
-          {showPlayOverlay ? (
-            <View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                bottom: 0,
-                left: 0,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <View
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 32,
-                  backgroundColor: 'rgba(0,0,0,0.55)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ color: '#fff', fontSize: 26, marginLeft: 4 }}>
-                  {'\u25B6'}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-          {/* Mute toggle â€” top-right when playing */}
-          {playing && hasRenderedFrame ? (
-            <TouchableOpacity
-              onPress={() => publishFeedVideoMuted(!muted)}
-              activeOpacity={0.85}
-              style={{
-                position: 'absolute',
-                top: 10,
-                right: 10,
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: 'rgba(0,0,0,0.45)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ color: '#fff', fontSize: 16 }}>
-                {muted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}
-              </Text>
+              {shouldMountVideo ? (
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                  <VideoPlayer
+                    key={`${mediaIdentity}:${videoPlayerGeneration}`}
+                    ref={videoRef}
+                    source={videoSource}
+                    style={[
+                      StyleSheet.absoluteFill,
+                      !hasRenderedFrame ? { opacity: 0 } : null,
+                    ]}
+                    resizeMode="contain"
+                    paused={!playing}
+                    controls={false}
+                    muted={muted || !isActive || !hasRenderedFrame}
+                    repeat
+                    ignoreSilentSwitch="ignore"
+                    disableAudioSessionManagement={
+                      Platform.OS === 'ios' && liveMediaActive
+                    }
+                    playInBackground={false}
+                    playWhenInactive={false}
+                    // SurfaceView is more reliable for Android codecs that can
+                    // play audio while TextureView remains stuck on its poster.
+                    // The poster/frame-cover layers still hide the first frame.
+                    useTextureView={false}
+                    bufferConfig={VIDEO_BUFFER_CONFIG}
+                    maxBitRate={maxVideoBitRate}
+                    progressUpdateInterval={250}
+                    onReadyForDisplay={revealVideoFrame}
+                    onLoad={handleVideoLoad}
+                    onProgress={data => {
+                      if (mediaIdentity !== mediaIdentityRef.current) return;
+                      const nextTime = data?.currentTime;
+                      if (
+                        typeof nextTime !== 'number' ||
+                        !Number.isFinite(nextTime)
+                      ) {
+                        return;
+                      }
+                      if (isActive) {
+                        hasUserWatchedRef.current = true;
+                        currentTimeRef.current = nextTime;
+                        setVideoPlaybackTime(post.id, nextTime);
+                      } else {
+                        warmPreviewTimeRef.current = nextTime;
+                        if (
+                          keepPreparedVideoMounted &&
+                          nextTime >= VIDEO_WARM_PREVIEW_SECONDS
+                        ) {
+                          setWarmPreviewReady(true);
+                        }
+                      }
+
+                      if (
+                        Platform.OS === 'android' &&
+                        isActive &&
+                        playing &&
+                        !isScrollBusy &&
+                        !hasRenderedFrameRef.current
+                      ) {
+                        const playbackWindowStart =
+                          firstFrameProgressStartRef.current;
+                        if (
+                          playbackWindowStart === null ||
+                          nextTime < playbackWindowStart
+                        ) {
+                          firstFrameProgressStartRef.current = nextTime;
+                        } else if (
+                          shouldRecoverFeedVideoSurface({
+                            isAndroid: true,
+                            isActive,
+                            isPlaying: playing,
+                            isScrollBusy,
+                            hasRenderedFrame: hasRenderedFrameRef.current,
+                            recoveryInFlight:
+                              videoSurfaceRecoveryInFlightRef.current,
+                            recoveryAttempt:
+                              videoSurfaceRecoveryCountRef.current,
+                            playbackWindowStart,
+                            currentTime: nextTime,
+                          })
+                        ) {
+                          recoverAndroidVideoSurface(nextTime);
+                        }
+                      } else if (
+                        Platform.OS !== 'android' &&
+                        !hasRenderedFrameRef.current &&
+                        nextTime > 0.05
+                      ) {
+                        revealVideoFrame();
+                      }
+                    }}
+                    poster={resolvedThumbnailUrl}
+                    posterResizeMode="cover"
+                    onError={error => {
+                      if (mediaIdentity !== mediaIdentityRef.current) return;
+                      hasRenderedFrameRef.current = false;
+                      firstFrameProgressStartRef.current = null;
+                      videoSurfaceRecoveryInFlightRef.current = false;
+                      setHasVideoError(true);
+                      setIsReady(false);
+                      setHasRenderedFrame(false);
+                      setWarmPreviewReady(false);
+                      frameCoverOpacity.value = 1;
+                      setFrameCoverVisible(true);
+                      console.warn(
+                        '[HomeVideoPostCard] video error',
+                        post.id,
+                        post.videoUrl,
+                        error,
+                      );
+                    }}
+                  />
+                  {resolvedThumbnailUrl && isFrameCoverVisible ? (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
+                    >
+                      <FeedMediaImage
+                        uri={resolvedThumbnailUrl}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                        deferWhileScrolling={false}
+                      />
+                    </Animated.View>
+                  ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
+                    >
+                      <VideoFallbackPoster label={copy.video ?? 'Video'} />
+                    </Animated.View>
+                  ) : null}
+                </View>
+              ) : resolvedThumbnailUrl ? null : (
+                <VideoFallbackPoster
+                  label={
+                    hasVideoUrl && !hasVideoError
+                      ? copy.video ?? 'Video'
+                      : copy.videoUnavailable
+                  }
+                />
+              )}
+              {/* Big play button overlay while paused */}
+              {showPlayOverlay ? (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    left: 0,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      backgroundColor: 'rgba(0,0,0,0.55)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{ color: '#fff', fontSize: 26, marginLeft: 4 }}
+                    >
+                      {'\u25B6'}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+              {/* Mute toggle â€” top-right when playing */}
+              {playing && hasRenderedFrame ? (
+                <TouchableOpacity
+                  onPress={() => publishFeedVideoMuted(!muted)}
+                  activeOpacity={0.85}
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: 'rgba(0,0,0,0.45)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 16 }}>
+                    {muted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </TouchableOpacity>
-          ) : null}
-        </TouchableOpacity>
-      </FeedMediaFrame>
+          </FeedMediaFrame>
         );
         return post.sharedPost ? (
           <FeedCardContent>
@@ -2540,7 +2550,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
               }
             />
           </FeedCardContent>
-        ) : videoMedia;
+        ) : (
+          videoMedia
+        );
       })()}
       <FeedCardContent>
         <VideoReactionSummary
@@ -2773,10 +2785,15 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
 
 const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
   preview,
+  publisher,
+  caption,
 }: {
   preview: NonNullable<FeedTextPost['linkPreview']>;
+  publisher: FeedTextPost['publisher'];
+  caption?: string;
 }) {
   const navigation = useNavigation<any>();
+  const isPagePreview = isVnseeaPageLink(preview.url);
   const hostLabel = useMemo(() => {
     try {
       return new URL(preview.url).hostname.replace(/^www\./, '');
@@ -2801,6 +2818,17 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
 
     Linking.openURL(preview.url).catch(() => undefined);
   }, [navigation, preview.url]);
+
+  if (isPagePreview) {
+    return (
+      <VnseeaPageLinkPreviewCard
+        preview={preview}
+        publisher={publisher}
+        caption={caption}
+        onPress={handlePress}
+      />
+    );
+  }
 
   return (
     <TouchableOpacity
@@ -3203,6 +3231,9 @@ export const TextPostCard = React.memo(function TextPostCard({
   // Photo grid: Facebook-style 2x2 grid, shows 4 photos max
   // When total > 4, the 4th photo shows "+N" overlay
   const totalPhotos = post.photos.length;
+  const visibleCaption = post.linkPreview
+    ? cleanVnseeaPageShareCaption(post.caption, post.linkPreview.url)
+    : post.caption;
   const displayedPhotos = post.photos.slice(0, 4);
   const hasMorePhotos = totalPhotos > 4;
   const [photoGridWidth, setPhotoGridWidth] = useState(
@@ -3234,7 +3265,11 @@ export const TextPostCard = React.memo(function TextPostCard({
               totalPhotos,
             )})`}
             copy={copy}
-            onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
+            onPress={
+              !post.isAnonymous && post.publisher.id
+                ? handleProfilePress
+                : undefined
+            }
             onMorePress={onOpenPostMenu}
             onDetailPress={onPostPress}
             post={post}
@@ -3242,7 +3277,9 @@ export const TextPostCard = React.memo(function TextPostCard({
         ) : null}
         {post.sharedFrom && !post.sharedPost ? (
           <Text
-            className={`${showIdentityHeader ? '-mt-3 ' : ''}mb-3 text-caption-secondary`}
+            className={`${
+              showIdentityHeader ? '-mt-3 ' : ''
+            }mb-3 text-caption-secondary`}
           >
             {copy.sharedPostLabel(
               post.sharedFrom.isAnonymous
@@ -3251,9 +3288,9 @@ export const TextPostCard = React.memo(function TextPostCard({
             )}
           </Text>
         ) : null}
-        {post.caption ? (
+        {visibleCaption ? (
           <ExpandablePostCaption
-            text={post.caption}
+            text={visibleCaption}
             mentionNames={post.mentionNames}
             copy={copy}
             collapsible={totalPhotos > 0}
@@ -3266,7 +3303,11 @@ export const TextPostCard = React.memo(function TextPostCard({
           </Text>
         ) : null}
         {post.linkPreview ? (
-          <FeedLinkPreviewCard preview={post.linkPreview} />
+          <FeedLinkPreviewCard
+            preview={post.linkPreview}
+            publisher={post.publisher}
+            caption={post.caption}
+          />
         ) : null}
       </FeedCardContent>
       {post.sharedPost ? (

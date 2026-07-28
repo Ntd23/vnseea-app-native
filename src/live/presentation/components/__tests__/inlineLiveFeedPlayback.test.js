@@ -14,14 +14,27 @@ describe('inline live feed playback', () => {
     const sharedCard = read(
       'src/feed/presentation/components/LiveStreamPostCard.tsx',
     );
+    const aspect = read(
+      'src/live/presentation/components/inlineLiveAspect.ts',
+    );
 
-    expect(feed).toContain('<InlineLiveStreamPlayer active={isActive} item={item} />');
+    expect(feed).toContain('<InlineLiveStreamPlayer');
+    expect(feed).toContain('onVideoDimensionsChange={handleVideoDimensionsChange}');
     expect(feed).toContain('activeInlineLivePostId === item.item.postId');
     expect(profile).toContain('activeProfileInlineLivePostId === item.item.postId');
     expect(profile).toContain('extraData={activeProfileInlineLivePostId}');
+    expect(sharedCard).toContain('<InlineLiveStreamPlayer');
     expect(sharedCard).toContain(
-      '<InlineLiveStreamPlayer active={isActive} item={item} />',
+      'onVideoDimensionsChange={handleVideoDimensionsChange}',
     );
+    expect(feed).toContain('style={{ aspectRatio }}');
+    expect(sharedCard).toContain('style={{ aspectRatio }}');
+    expect(feed).not.toContain('className="relative h-52 bg-[#0f172a]"');
+    expect(sharedCard).not.toContain(
+      'className="relative h-52 bg-[#0f172a]"',
+    );
+    expect(aspect).toContain('DEFAULT_INLINE_LIVE_ASPECT_RATIO = 4 / 5');
+    expect(aspect).toContain('MIN_INLINE_LIVE_ASPECT_RATIO = 4 / 5');
     expect(sharedCard).not.toContain('copy.watchLive');
   });
 
@@ -32,14 +45,32 @@ describe('inline live feed playback', () => {
     const defaultLiveKit = read(
       'src/live/presentation/components/LiveKitStreamView.tsx',
     );
+    const sessionHook = read(
+      'src/live/presentation/hooks/useInlineLiveSession.ts',
+    );
 
     expect(player).toContain('audioEnabled={false}');
     expect(player).toContain('diagnosticsEnabled={false}');
-    expect(player).toContain('objectFit="cover"');
+    expect(player).toContain('objectFit="contain"');
+    expect(player).toContain('onVideoDimensionsChange={onVideoDimensionsChange}');
     expect(player).toContain('posterOpacity');
     expect(defaultLiveKit).toContain('LIVE_VIDEO_ONLY_CONNECT_OPTIONS');
+    expect(defaultLiveKit).not.toContain('autoSubscribe: false');
     expect(defaultLiveKit).toContain('publication.setSubscribed(shouldSubscribe)');
+    expect(defaultLiveKit).toContain('live_inline_track_subscribed');
+    expect(defaultLiveKit).toContain('RoomEvent.ParticipantConnected');
+    expect(defaultLiveKit).toContain('RoomEvent.Reconnected');
+    expect(defaultLiveKit).toContain('Boolean(item.publication.track)');
     expect(defaultLiveKit).toContain('enabled={!isHost && !audioEnabled}');
+    expect(defaultLiveKit).toContain('onDimensionsChange={handleNativeVideoDimensionsChange}');
+    expect(player).toContain("state === 'connected'");
+    expect(player).toContain('requestRetry(undefined, true)');
+    expect(player).toContain('INLINE_LIVE_VIDEO_READY_TIMEOUT_MS');
+    expect(player).toContain('INLINE_LIVE_SESSION_READY_TIMEOUT_MS');
+    expect(player).toContain('}, [playbackKey, shouldPlay]);');
+    expect(sessionHook).toContain(
+      'sessionEntry?.key === sessionKey ? sessionEntry.session : null',
+    );
   });
 
   it('keeps iOS inline playback muted and reports video readiness', () => {

@@ -13,8 +13,10 @@ import { createStoriesRepository } from '../../../stories/infrastructure/reposit
 import { storyCreatedEvents } from '../../../stories/application/events/storyCreatedEvents';
 import { updateAvatarAndShareStory } from '../services/updateAvatarAndShareStory';
 import {
+  buildLegacyProfileMediaUploadPayload,
   buildProfileMediaUploadPayload,
   parseProfileMediaUpdateResponse,
+  uploadProfileMediaWithContractFallback,
   uploadProfileMediaWithReconciliation,
   type RawProfileMediaResponse,
 } from '../services/profileMediaUpdate';
@@ -76,12 +78,27 @@ async function uploadCanonicalProfileMedia(
 ) {
   const route =
     kind === 'avatar' ? apiRoutes.user.update : apiRoutes.user.updateCover;
-  const response = await apiBridge.multipart<RawProfileMediaResponse>(
-    route,
-    buildProfileMediaUploadPayload(kind, file),
-    { timeout: PROFILE_MEDIA_UPLOAD_TIMEOUT_MS },
-  );
-  return parseProfileMediaUpdateResponse(response, kind);
+  return uploadProfileMediaWithContractFallback(kind, {
+    uploadCanonical: async () => {
+      const response = await apiBridge.multipart<RawProfileMediaResponse>(
+        route,
+        buildProfileMediaUploadPayload(kind, file),
+        { timeout: PROFILE_MEDIA_UPLOAD_TIMEOUT_MS },
+      );
+      return parseProfileMediaUpdateResponse(response, kind);
+    },
+    uploadLegacy: async () => {
+      console.warn(
+        '[useProfileViewModel] Cover crop contract rejected; retrying with the compatible upload path.',
+      );
+      const response = await apiBridge.multipart<RawProfileMediaResponse>(
+        route,
+        buildLegacyProfileMediaUploadPayload(kind, file),
+        { timeout: PROFILE_MEDIA_UPLOAD_TIMEOUT_MS },
+      );
+      return parseProfileMediaUpdateResponse(response, kind);
+    },
+  });
 }
 
 export function useProfileViewModel() {

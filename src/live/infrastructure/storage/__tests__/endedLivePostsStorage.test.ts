@@ -8,6 +8,7 @@ jest.mock('react-native-mmkv', () => ({
   }),
 }));
 
+import { DeviceEventEmitter } from 'react-native';
 import { endedLivePostsStorage } from '../endedLivePostsStorage';
 
 describe('endedLivePostsStorage', () => {
@@ -49,5 +50,17 @@ describe('endedLivePostsStorage', () => {
 
     endedLivePostsStorage.clear('user-1');
     expect(endedLivePostsStorage.hasEnded('42', 'user-1')).toBe(false);
+  });
+
+  it('can remove a temporarily inactive live without persisting a tombstone', () => {
+    const emitSpy = jest.spyOn(DeviceEventEmitter, 'emit');
+
+    endedLivePostsStorage.notifyInactive('42', 'user-1');
+
+    expect(endedLivePostsStorage.hasEnded('42', 'user-1')).toBe(false);
+    expect(emitSpy).toHaveBeenCalledWith('localLiveEnded', {
+      postId: '42',
+      userId: 'user-1',
+    });
   });
 });

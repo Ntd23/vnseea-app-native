@@ -73,4 +73,28 @@ describe('live viewer ended lifecycle', () => {
     expect(screenSource).toContain('onConnectionStateChange=');
     expect(screenSource).not.toMatch(/setTimeout[\s\S]{0,200}live đã kết thúc/);
   });
+
+  it('removes ended Home live cards without reviving stale requests', () => {
+    const repositorySource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../infrastructure/repositories/ApiLiveRepository.ts',
+      ),
+      'utf8',
+    );
+
+    expect(viewModelSource).toContain('Promise.allSettled([');
+    expect(viewModelSource).toContain('foregroundLoadGenerationRef');
+    expect(viewModelSource).toContain('activeProbeGenerationRef');
+    expect(viewModelSource).toContain('repository.getLivePost(postId)');
+    expect(viewModelSource).toContain(
+      'endedLivePostsStorage.markEnded(postId, localOwnerId)',
+    );
+    expect(viewModelSource).toContain(
+      'endedLivePostsStorage.notifyInactive(postId, localOwnerId)',
+    );
+    expect(repositorySource).toContain(
+      "throw new Error('Live post lookup returned an incomplete payload.')",
+    );
+  });
 });

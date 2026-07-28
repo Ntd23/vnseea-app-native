@@ -40,14 +40,16 @@ describe('ComposerCard platform layout', () => {
     expect(source).toContain("id: 'poll'");
   });
 
-  it('renders four labeled Android actions in one compact row', () => {
+  it('renders four accessible icon-only Android actions in one balanced row', () => {
     expect(source).toContain('styles.androidActionsRow');
     expect(source).not.toContain('actions.slice');
-    expect(source).toContain('<Text');
-    expect(source).toContain('{action.label}');
-    expect(source).toContain('ellipsizeMode="tail"');
+    expect(source).not.toContain('styles.androidActionLabel');
+    expect(source).not.toContain('ellipsizeMode="tail"');
+    expect(source).toContain(
+      '<action.Icon size={22} color={action.color} strokeWidth={2.4} />',
+    );
     expect(source).toMatch(
-      /androidActionButton:\s*\{[\s\S]*flex:\s*1,[\s\S]*minWidth:\s*0,/,
+      /androidActionButton:\s*\{[\s\S]*flex:\s*1,[\s\S]*minHeight:\s*46,[\s\S]*borderRadius:\s*16,/,
     );
   });
 });

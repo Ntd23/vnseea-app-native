@@ -21,20 +21,28 @@ export const HOME_INTRO_FALLBACK_AVATAR =
 export type HomeFeedIntroProps = {
   onCreatePostPress: () => void;
   onCreatePostPressAction?: (action: 'photo' | 'video' | 'product' | 'poll') => void;
+  onLivePress?: (item: LiveStreamItem) => void;
   onPressAvatar?: () => void;
   avatarUrl?: string;
   userName?: string;
+  liveStreams?: LiveStreamItem[];
   copy: FeedCopy;
 };
 
 type FeedIntroNav = NativeStackNavigationProp<RootStackParamList>;
 
-export function useHomeStoriesRail() {
+export function useHomeStoriesRail(options: {
+  liveStreams?: LiveStreamItem[];
+  onLivePress?: (item: LiveStreamItem) => void;
+} = {}) {
+  const { liveStreams: sharedLiveStreams, onLivePress } = options;
   const navigation = useNavigation<FeedIntroNav>();
   const isFocused = useIsFocused();
+  const usesSharedLiveStreams = sharedLiveStreams !== undefined;
   const vm = useStoriesViewModel();
   const liveVm = useLiveViewModel({
-    enabled: isFocused,
+    autoLoad: !usesSharedLiveStreams,
+    enabled: isFocused && !usesSharedLiveStreams,
     refreshIntervalMs: HOME_RAIL_REALTIME_REFRESH_MS,
   });
   const prependStory = vm.prependStory;
@@ -81,7 +89,11 @@ export function useHomeStoriesRail() {
 
   const liveStreams = useMemo<LiveStreamItem[]>(() => {
     const byPostId = new Map<number, LiveStreamItem>();
-    [...liveVm.friendsLive, ...liveVm.liveStreams].forEach(item => {
+    const source = sharedLiveStreams ?? [
+      ...liveVm.friendsLive,
+      ...liveVm.liveStreams,
+    ];
+    source.forEach(item => {
       if (item.state === 'offline') return;
       const existing = byPostId.get(item.postId);
       if (!existing || existing.state === 'stale') {
@@ -94,7 +106,7 @@ export function useHomeStoriesRail() {
         new Date(right.startedAt).getTime() -
         new Date(left.startedAt).getTime(),
     );
-  }, [liveVm.friendsLive, liveVm.liveStreams]);
+  }, [liveVm.friendsLive, liveVm.liveStreams, sharedLiveStreams]);
 
   const stories = useMemo(() => {
     const livePublisherIds = new Set(
@@ -127,9 +139,13 @@ export function useHomeStoriesRail() {
 
   const goToLive = useCallback(
     (item: LiveStreamItem) => {
+      if (onLivePress) {
+        onLivePress(item);
+        return;
+      }
       navigation.navigate(ROUTES.LIVE_ROOM, { postId: item.postId });
     },
-    [navigation],
+    [navigation, onLivePress],
   );
 
   return {

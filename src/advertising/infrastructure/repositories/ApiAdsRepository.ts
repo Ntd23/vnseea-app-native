@@ -8,6 +8,7 @@ import type {
   AdFormData,
   CreateAdResult,
   AdDailyStats,
+  AdStatsSnapshot,
   AdOption,
   AdPageOption,
   AdsOptions,
@@ -15,9 +16,23 @@ import type {
 
 const ADS_ROUTE = apiRoutes.ads.main;
 
+type RawAdStatsRow = {
+  DateOnly?: string;
+  ADClicks?: number | string;
+  ADviews?: number | string;
+  Spend?: number | string;
+};
+
+type RawAdStatsData = {
+  ad?: AdItem;
+  clicks?: RawAdStatsRow[];
+  views?: RawAdStatsRow[];
+  server_time?: number | string;
+};
+
 type AdsResponse = {
   api_status: number | string;
-  data?: AdItem | AdItem[] | { ad: AdItem; clicks: Array<{ DateOnly: string; ADClicks: number; Spend: number }>; views: Array<{ DateOnly: string; ADviews: number; Spend: number }> };
+  data?: AdItem | AdItem[] | RawAdStatsData;
   message?: string;
 };
 
@@ -46,18 +61,64 @@ function toNumber(value: unknown): number {
   return Number.isFinite(number) ? number : 0;
 }
 
+export function mapAdStatsSnapshot(data: RawAdStatsData): AdStatsSnapshot {
+  if (!data.ad) {
+    throw new Error('Không tìm thấy dữ liệu chiến dịch quảng cáo.');
+  }
+
+  const statsMap = new Map<string, AdDailyStats>();
+  const readDay = (date: unknown) => String(date ?? '').trim();
+  const getOrCreateDay = (date: string) => {
+    const existing = statsMap.get(date);
+    if (existing) return existing;
+    const created: AdDailyStats = { date, views: 0, clicks: 0, spent: 0 };
+    statsMap.set(date, created);
+    return created;
+  };
+
+  for (const row of data.clicks ?? []) {
+    const date = readDay(row.DateOnly);
+    if (!date) continue;
+    const day = getOrCreateDay(date);
+    day.clicks += toNumber(row.ADClicks);
+    day.spent += toNumber(row.Spend);
+  }
+
+  for (const row of data.views ?? []) {
+    const date = readDay(row.DateOnly);
+    if (!date) continue;
+    const day = getOrCreateDay(date);
+    day.views += toNumber(row.ADviews);
+    day.spent += toNumber(row.Spend);
+  }
+
+  const serverTime = toNumber(data.server_time);
+
+  return {
+    ad: data.ad,
+    dailyStats: Array.from(statsMap.values()).sort((left, right) =>
+      left.date.localeCompare(right.date),
+    ),
+    fetchedAt: serverTime > 0 ? serverTime : Date.now(),
+  };
+}
+
 function normalizeOptions(value: unknown): AdOption[] {
   if (Array.isArray(value)) {
-    return value.map((item, index) => {
-      if (item && typeof item === 'object') {
-        const record = item as Record<string, unknown>;
-        return {
-          value: String(record.id ?? record.value ?? index),
-          label: String(record.name ?? record.label ?? record.text ?? record.id ?? index),
-        };
-      }
-      return { value: String(index), label: String(item) };
-    }).filter(item => item.value !== '0');
+    return value
+      .map((item, index) => {
+        if (item && typeof item === 'object') {
+          const record = item as Record<string, unknown>;
+          return {
+            value: String(record.id ?? record.value ?? index),
+            label: String(
+              record.name ?? record.label ?? record.text ?? record.id ?? index,
+            ),
+          };
+        }
+        return { value: String(index), label: String(item) };
+      })
+      .filter(item => item.value !== '0');
   }
 
   if (value && typeof value === 'object') {
@@ -65,9 +126,14 @@ function normalizeOptions(value: unknown): AdOption[] {
       .filter(([key]) => key !== '0')
       .map(([key, label]) => ({
         value: key,
-        label: typeof label === 'object' && label !== null
-          ? String((label as Record<string, unknown>).name ?? (label as Record<string, unknown>).label ?? key)
-          : String(label),
+        label:
+          typeof label === 'object' && label !== null
+            ? String(
+                (label as Record<string, unknown>).name ??
+                  (label as Record<string, unknown>).label ??
+                  key,
+              )
+            : String(label),
       }));
   }
 
@@ -78,8 +144,8 @@ function normalizePages(value: unknown): AdPageOption[] {
   const rows = Array.isArray(value)
     ? value
     : value && typeof value === 'object'
-      ? Object.values(value as Record<string, unknown>)
-      : [];
+    ? Object.values(value as Record<string, unknown>)
+    : [];
 
   return rows.flatMap(item => {
     if (!item || typeof item !== 'object') return [];
@@ -87,12 +153,14 @@ function normalizePages(value: unknown): AdPageOption[] {
     const id = page.page_id ?? page.id;
     const name = page.page_name ?? page.username;
     if (id === undefined || name === undefined) return [];
-    return [{
-      id: String(id),
-      name: String(name),
-      title: String(page.page_title ?? page.name ?? name),
-      avatar: page.avatar ? String(page.avatar) : undefined,
-    }];
+    return [
+      {
+        id: String(id),
+        name: String(name),
+        title: String(page.page_title ?? page.name ?? name),
+        avatar: page.avatar ? String(page.avatar) : undefined,
+      },
+    ];
   });
 }
 
@@ -176,57 +244,25 @@ export function createAdsRepository(): AdsRepository {
       }
     },
 
+    async getAdStatsSnapshot(id: number): Promise<AdStatsSnapshot> {
+      const response = await apiBridge.post<AdsResponse>(ADS_ROUTE, {
+        type: 'fetch_ad_stats',
+        ad_id: id,
+      });
+
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        throw new Error(
+          response.message ?? 'Không tải được thống kê quảng cáo.',
+        );
+      }
+
+      return mapAdStatsSnapshot((response.data ?? {}) as RawAdStatsData);
+    },
+
     async getAdDailyStats(id: number): Promise<AdDailyStats[]> {
       try {
-        const response = await apiBridge.post<AdsResponse>(ADS_ROUTE, {
-          type: 'fetch_ad_stats',
-          ad_id: id,
-        });
-
-        if (response.api_status === 200 || response.api_status === '200') {
-          const data = response.data as { ad: AdItem; clicks: Array<{ DateOnly: string; ADClicks: number; Spend: number }>; views: Array<{ DateOnly: string; ADviews: number; Spend: number }> };
-          
-          // Merge clicks and views data by date
-          const statsMap = new Map<string, AdDailyStats>();
-          
-          // Process clicks data
-          if (data.clicks) {
-            data.clicks.forEach(click => {
-              const date = click.DateOnly;
-              statsMap.set(date, {
-                date,
-                views: 0,
-                clicks: click.ADClicks,
-                spent: click.Spend,
-              });
-            });
-          }
-          
-          // Process views data and merge with clicks
-          if (data.views) {
-            data.views.forEach(view => {
-              const date = view.DateOnly;
-              const existing = statsMap.get(date);
-              if (existing) {
-                existing.views = view.ADviews;
-                existing.spent = Math.max(existing.spent, view.Spend);
-              } else {
-                statsMap.set(date, {
-                  date,
-                  views: view.ADviews,
-                  clicks: 0,
-                  spent: view.Spend,
-                });
-              }
-            });
-          }
-          
-          // Convert map to array and sort by date descending
-          return Array.from(statsMap.values()).sort((a, b) => 
-            new Date(b.date).getTime() - new Date(a.date).getTime()
-          );
-        }
-        return [];
+        const snapshot = await this.getAdStatsSnapshot(id);
+        return snapshot.dailyStats;
       } catch (error) {
         console.error('[ApiAdsRepository] getAdDailyStats error:', error);
         return [];
@@ -234,17 +270,25 @@ export function createAdsRepository(): AdsRepository {
     },
 
     async getOptions(): Promise<AdsOptions> {
-      const optionsResponse = await apiBridge.post<RawOptionsResponse>(ADS_ROUTE, {
-        type: 'fetch_options',
-      });
+      const optionsResponse = await apiBridge.post<RawOptionsResponse>(
+        ADS_ROUTE,
+        {
+          type: 'fetch_options',
+        },
+      );
       let walletResponse: RawWalletResponse = {};
       try {
-        walletResponse = await apiBridge.get<RawWalletResponse>(apiRoutes.wallet.overview);
+        walletResponse = await apiBridge.get<RawWalletResponse>(
+          apiRoutes.wallet.overview,
+        );
       } catch (error) {
         console.warn('[ApiAdsRepository] wallet balance unavailable:', error);
       }
 
-      if (optionsResponse.api_status !== 200 && optionsResponse.api_status !== '200') {
+      if (
+        optionsResponse.api_status !== 200 &&
+        optionsResponse.api_status !== '200'
+      ) {
         throw new Error('Không tải được tùy chọn quảng cáo.');
       }
 
@@ -298,6 +342,7 @@ export function createAdsRepository(): AdsRepository {
         if (data.headline) payload.headline = data.headline;
         if (data.description) payload.description = data.description;
         if (data.audienceList) payload['audience-list'] = data.audienceList;
+        if (data.location) payload.location = data.location;
         if (data.gender) payload.gender = data.gender;
         if (data.bidding) payload.bidding = data.bidding;
         if (data.appears) payload.appears = data.appears;
@@ -307,11 +352,11 @@ export function createAdsRepository(): AdsRepository {
         if (data.budget) payload.budget = data.budget;
 
         // Check if media is a new local file to upload
-        const isLocalFile = data.media && (
-          data.media.startsWith('file://') ||
-          data.media.startsWith('content://') ||
-          !data.media.startsWith('http')
-        );
+        const isLocalFile =
+          data.media &&
+          (data.media.startsWith('file://') ||
+            data.media.startsWith('content://') ||
+            !data.media.startsWith('http'));
 
         let response;
         if (isLocalFile) {
@@ -328,8 +373,7 @@ export function createAdsRepository(): AdsRepository {
         }
 
         return response.api_status === 200 || response.api_status === '200';
-      } catch (error) {
-        console.error('[ApiAdsRepository] updateAd error:', error);
+      } catch {
         return false;
       }
     },

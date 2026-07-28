@@ -176,18 +176,7 @@ export function ComposerCard({
               onPress={() => handleActionPress(action.id)}
               style={styles.androidActionButton}
             >
-              <action.Icon
-                size={17}
-                color={action.color}
-                strokeWidth={2.5}
-              />
-              <Text
-                style={styles.androidActionLabel}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {action.label}
-              </Text>
+              <action.Icon size={22} color={action.color} strokeWidth={2.4} />
             </TouchableOpacity>
           ))}
         </View>
@@ -234,26 +223,18 @@ const styles = StyleSheet.create({
   androidActionsRow: {
     marginTop: 14,
     flexDirection: 'row',
-    gap: 6,
+    gap: 10,
   },
   androidActionButton: {
     flex: 1,
     minWidth: 0,
-    minHeight: 40,
-    flexDirection: 'row',
+    minHeight: 46,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
-    paddingVertical: 9,
-    paddingHorizontal: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e8eef4',
     backgroundColor: '#f1f5f9',
-  },
-  androidActionLabel: {
-    flexShrink: 1,
-    marginLeft: 4,
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
   },
 });
 

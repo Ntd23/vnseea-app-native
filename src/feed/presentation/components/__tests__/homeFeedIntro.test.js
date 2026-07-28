@@ -111,7 +111,8 @@ describe('HomeFeedIntro iOS header modules', () => {
       'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
     );
 
-    expect(iosSource).toContain("Pick<HomeFeedIntroProps, 'avatarUrl' | 'copy'>");
+    expect(iosSource).toContain('}: Pick<');
+    expect(iosSource).toContain("'avatarUrl' | 'copy'");
     expect(iosSource).toContain('source={{ uri: avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR }}');
     expect(iosSource).not.toContain('source={{ uri: HOME_INTRO_FALLBACK_AVATAR }}');
   });

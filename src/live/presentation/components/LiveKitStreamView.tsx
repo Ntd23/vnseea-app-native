@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   PermissionsAndroid,
@@ -23,11 +29,13 @@ import {
   ConnectionState,
   RoomEvent,
   Track,
+  type RemoteParticipant,
   type RemoteTrackPublication,
   type VideoCaptureOptions,
 } from 'livekit-client';
 import { requestCallMediaPermissions } from '../../../shared-kernel/application/utils/microphonePermission';
 import type { LiveSession } from '../../domain/types/live.types';
+import type { InlineLiveVideoDimensions } from './inlineLiveAspect';
 
 type PermissionState = 'checking' | 'granted' | 'denied';
 type RtcStatsSummary = {
@@ -91,7 +99,10 @@ const LIVE_CONNECT_OPTIONS = {
   autoSubscribe: true,
 } as const;
 const LIVE_VIDEO_ONLY_CONNECT_OPTIONS = {
-  autoSubscribe: false,
+  // Android's manual subscription path can connect to the room without ever
+  // attaching an already-published camera track. Start from LiveKit's proven
+  // auto-subscribe path, then immediately drop non-video publications below.
+  autoSubscribe: true,
 } as const;
 const LIVE_MEDIA_STATS_INTERVAL_MS = 1_000;
 const LIVE_MEDIA_STATS_SAMPLES = 12;
@@ -219,7 +230,10 @@ function readNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function summarizeRtcStats(report: unknown, type: 'outbound-rtp' | 'inbound-rtp') {
+function summarizeRtcStats(
+  report: unknown,
+  type: 'outbound-rtp' | 'inbound-rtp',
+) {
   const summary: RtcStatsSummary = {
     audioBytes: 0,
     audioPackets: 0,
@@ -265,7 +279,8 @@ function trackPublicationDebugPayload(
   return {
     trackKind: publication?.kind ?? publication?.track?.kind,
     trackSource: publication?.source ?? publication?.track?.source,
-    trackSid: publication?.trackSid ?? publication?.sid ?? publication?.track?.sid,
+    trackSid:
+      publication?.trackSid ?? publication?.sid ?? publication?.track?.sid,
     muted: publication?.isMuted ?? publication?.track?.isMuted,
     isSubscribed: publication?.isSubscribed,
     isDesired: publication?.isDesired,
@@ -348,9 +363,10 @@ function LiveAudioSessionBoundary({
           roomName,
           streamName,
           traceId,
-          error: error instanceof Error
-            ? { name: error.name, message: error.message }
-            : { message: String(error) },
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { message: String(error) },
         });
         onReadyChange(true);
       }
@@ -378,9 +394,10 @@ function LiveAudioSessionBoundary({
             roomName,
             streamName,
             traceId,
-            error: error instanceof Error
-              ? { name: error.name, message: error.message }
-              : { message: String(error) },
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { message: String(error) },
           });
         });
     };
@@ -409,7 +426,9 @@ function LiveAudioPlaybackGate({
       if (Platform.OS !== 'ios' || role !== 'viewer') return;
       if (track) setRemoteTrackVolume(track, 1);
 
-      const attemptKey = `${reason}|${room.canPlaybackAudio ? 'allowed' : 'blocked'}`;
+      const attemptKey = `${reason}|${
+        room.canPlaybackAudio ? 'allowed' : 'blocked'
+      }`;
       if (startedReasonsRef.current.has(attemptKey) && room.canPlaybackAudio) {
         return;
       }
@@ -445,9 +464,10 @@ function LiveAudioPlaybackGate({
           reason,
           canPlaybackAudioBefore,
           canPlaybackAudioAfter: room.canPlaybackAudio,
-          error: error instanceof Error
-            ? { name: error.name, message: error.message }
-            : { message: String(error) },
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { message: String(error) },
         });
       }
     },
@@ -464,12 +484,13 @@ function LiveAudioPlaybackGate({
   useEffect(() => {
     if (Platform.OS !== 'ios' || role !== 'viewer') return undefined;
 
-    const handleTrackSubscribed = (
-      track?: unknown,
-      publication?: unknown,
-    ) => {
-      const publicationLike = publication as LiveTrackPublicationDebug | undefined;
-      const trackLike = track as { source?: unknown; kind?: unknown } | undefined;
+    const handleTrackSubscribed = (track?: unknown, publication?: unknown) => {
+      const publicationLike = publication as
+        | LiveTrackPublicationDebug
+        | undefined;
+      const trackLike = track as
+        | { source?: unknown; kind?: unknown }
+        | undefined;
       const isRemoteMicrophone =
         publicationLike?.source === Track.Source.Microphone ||
         trackLike?.source === Track.Source.Microphone;
@@ -477,7 +498,9 @@ function LiveAudioPlaybackGate({
       if (!isRemoteMicrophone) return;
       setRemoteTrackVolume(track, 1);
       if (!room.canPlaybackAudio) {
-        startRoomAudio('remote_microphone_subscribed', track).catch(() => undefined);
+        startRoomAudio('remote_microphone_subscribed', track).catch(
+          () => undefined,
+        );
       }
     };
 
@@ -603,7 +626,10 @@ function LiveMediaDiagnostics({
       });
     };
 
-    const handleTrackUnmuted = (publication?: unknown, participant?: unknown) => {
+    const handleTrackUnmuted = (
+      publication?: unknown,
+      participant?: unknown,
+    ) => {
       logLiveDebug('live_track_unmuted', {
         role,
         roomName,
@@ -633,7 +659,10 @@ function LiveMediaDiagnostics({
       .on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
       .on(RoomEvent.TrackMuted, handleTrackMuted)
       .on(RoomEvent.TrackUnmuted, handleTrackUnmuted)
-      .on(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
+      .on(
+        RoomEvent.AudioPlaybackStatusChanged,
+        handleAudioPlaybackStatusChanged,
+      );
 
     return () => {
       room
@@ -643,7 +672,10 @@ function LiveMediaDiagnostics({
         .off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
         .off(RoomEvent.TrackMuted, handleTrackMuted)
         .off(RoomEvent.TrackUnmuted, handleTrackUnmuted)
-        .off(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
+        .off(
+          RoomEvent.AudioPlaybackStatusChanged,
+          handleAudioPlaybackStatusChanged,
+        );
     };
   }, [role, room, roomName, streamName, traceId]);
 
@@ -695,7 +727,8 @@ function LiveMediaDiagnostics({
           roomSid: (room as { sid?: unknown }).sid,
           canPlaybackAudio: room.canPlaybackAudio,
           participantIdentity:
-            selectedAudioParticipant?.identity ?? room.localParticipant.identity,
+            selectedAudioParticipant?.identity ??
+            room.localParticipant.identity,
           participantSid:
             selectedAudioParticipant?.sid ?? room.localParticipant.sid,
           trackSid:
@@ -742,9 +775,10 @@ function LiveMediaDiagnostics({
           roomName,
           streamName,
           traceId,
-          error: error instanceof Error
-            ? { name: error.name, message: error.message }
-            : { message: String(error) },
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { message: String(error) },
         });
       }
     };
@@ -842,47 +876,109 @@ function LiveAudioVolumeDiagnostics({
     return () => {
       clearInterval(interval);
     };
-  }, [
-    audioTrackRef,
-    connectionState,
-    role,
-    roomName,
-    streamName,
-    traceId,
-  ]);
+  }, [audioTrackRef, connectionState, role, roomName, streamName, traceId]);
 
   return null;
 }
 
-function LiveVideoOnlySubscriptionController({ enabled }: { enabled: boolean }) {
+function LiveVideoOnlySubscriptionController({
+  enabled,
+}: {
+  enabled: boolean;
+}) {
   const room = useRoomContext();
+  const connectionState = useConnectionState();
 
   useEffect(() => {
     if (!enabled) return undefined;
 
-    const syncPublication = (publication: RemoteTrackPublication) => {
-      const shouldSubscribe =
-        publication.source === Track.Source.Camera ||
-        (publication.source === Track.Source.Unknown &&
-          publication.kind === Track.Kind.Video);
-      publication.setSubscribed(shouldSubscribe);
-    };
-
-    room.remoteParticipants.forEach(participant => {
-      participant.trackPublications.forEach(publication => {
-        syncPublication(publication as RemoteTrackPublication);
+    const syncPublication = (
+      publication: RemoteTrackPublication,
+      participant?: RemoteParticipant,
+    ) => {
+      const shouldSubscribe = publication.kind === Track.Kind.Video;
+      const wasDesired = publication.isDesired;
+      if (!shouldSubscribe && publication.track) {
+        setRemoteTrackVolume(publication.track, 0);
+      }
+      if (publication.isDesired !== shouldSubscribe) {
+        publication.setSubscribed(shouldSubscribe);
+      }
+      logLiveDebug('live_inline_subscription_sync', {
+        roomName: room.name,
+        participantIdentity: participant?.identity,
+        trackSid: publication.trackSid,
+        trackKind: publication.kind,
+        trackSource: publication.source,
+        wasDesired,
+        shouldSubscribe,
+        isSubscribed: publication.isSubscribed,
       });
-    });
-
-    const handleTrackPublished = (publication: RemoteTrackPublication) => {
-      syncPublication(publication);
     };
 
-    room.on(RoomEvent.TrackPublished, handleTrackPublished);
+    const syncParticipant = (participant: RemoteParticipant) => {
+      participant.trackPublications.forEach(publication => {
+        syncPublication(publication as RemoteTrackPublication, participant);
+      });
+    };
+
+    const syncAllParticipants = () => {
+      room.remoteParticipants.forEach(syncParticipant);
+    };
+
+    const handleTrackPublished = (
+      publication: RemoteTrackPublication,
+      participant: RemoteParticipant,
+    ) => {
+      syncPublication(publication, participant);
+    };
+    const handleParticipantConnected = (participant: RemoteParticipant) => {
+      syncParticipant(participant);
+    };
+    const handleReconnected = () => {
+      syncAllParticipants();
+    };
+    const handleTrackSubscribed = (
+      track: unknown,
+      publication: RemoteTrackPublication,
+      participant: RemoteParticipant,
+    ) => {
+      if (publication.kind !== Track.Kind.Video) {
+        setRemoteTrackVolume(track, 0);
+      }
+      logLiveDebug('live_inline_track_subscribed', {
+        roomName: room.name,
+        participantIdentity: participant.identity,
+        trackSid: publication.trackSid,
+        trackKind: publication.kind,
+        trackSource: publication.source,
+      });
+      syncPublication(publication, participant);
+    };
+
+    if (connectionState === ConnectionState.Connected) {
+      syncAllParticipants();
+    }
+
+    const retryTimers =
+      connectionState === ConnectionState.Connected
+        ? [250, 1_000].map(delay => setTimeout(syncAllParticipants, delay))
+        : [];
+
+    room
+      .on(RoomEvent.ParticipantConnected, handleParticipantConnected)
+      .on(RoomEvent.TrackPublished, handleTrackPublished)
+      .on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
+      .on(RoomEvent.Reconnected, handleReconnected);
     return () => {
-      room.off(RoomEvent.TrackPublished, handleTrackPublished);
+      retryTimers.forEach(timer => clearTimeout(timer));
+      room
+        .off(RoomEvent.ParticipantConnected, handleParticipantConnected)
+        .off(RoomEvent.TrackPublished, handleTrackPublished)
+        .off(RoomEvent.TrackSubscribed, handleTrackSubscribed)
+        .off(RoomEvent.Reconnected, handleReconnected);
     };
-  }, [enabled, room]);
+  }, [connectionState, enabled, room]);
 
   return null;
 }
@@ -892,28 +988,82 @@ function LiveKitVideoSurface({
   cameraFacing,
   objectFit,
   onVideoReady,
+  onVideoDimensionsChange,
 }: {
   isHost: boolean;
   cameraFacing: 'front' | 'back';
   objectFit: 'contain' | 'cover';
   onVideoReady?: () => void;
+  onVideoDimensionsChange?: (dimensions: InlineLiveVideoDimensions) => void;
 }) {
-  const tracks = useTracks([Track.Source.Camera]);
+  const tracks = useTracks();
   const { localParticipant } = useLocalParticipant();
   const [trackRenderKey, setTrackRenderKey] = useState(0);
   const desiredFacingMode = cameraFacing === 'front' ? 'user' : 'environment';
   const lastFacingModeRef = useRef(desiredFacingMode);
 
   const cameraTrack = useMemo(() => {
-    const trackRefs = tracks.filter(isTrackReference);
-    const localTrack = trackRefs.find(item => item.participant.isLocal);
-    const remoteTrack = trackRefs.find(item => !item.participant.isLocal);
-    return isHost ? localTrack ?? remoteTrack : remoteTrack ?? localTrack;
+    const videoTrackRefs = tracks
+      .filter(isTrackReference)
+      .filter(
+        item =>
+          item.publication.kind === Track.Kind.Video &&
+          Boolean(item.publication.track),
+      );
+    const localCameraTrack = videoTrackRefs.find(
+      item =>
+        item.participant.isLocal &&
+        item.publication.source === Track.Source.Camera,
+    );
+    const remoteCameraTrack = videoTrackRefs.find(
+      item =>
+        !item.participant.isLocal &&
+        item.publication.source === Track.Source.Camera,
+    );
+    const localVideoTrack = videoTrackRefs.find(
+      item => item.participant.isLocal,
+    );
+    const remoteVideoTrack = videoTrackRefs.find(
+      item => !item.participant.isLocal,
+    );
+    return isHost
+      ? localCameraTrack ??
+          localVideoTrack ??
+          remoteCameraTrack ??
+          remoteVideoTrack
+      : remoteCameraTrack ??
+          remoteVideoTrack ??
+          localCameraTrack ??
+          localVideoTrack;
   }, [isHost, tracks]);
 
   useEffect(() => {
-    if (cameraTrack) onVideoReady?.();
+    if (!cameraTrack) return;
+    onVideoReady?.();
   }, [cameraTrack, onVideoReady]);
+
+  const handleNativeVideoDimensionsChange = useCallback(
+    (event: {
+      nativeEvent: { width: number; height: number; rotation?: number };
+    }) => {
+      const { width, height, rotation = 0 } = event.nativeEvent;
+      const isRotated = Math.abs(rotation) % 180 === 90;
+      const displayWidth = isRotated ? height : width;
+      const displayHeight = isRotated ? width : height;
+      logLiveDebug('live_video_dimensions', {
+        width,
+        height,
+        rotation,
+        displayWidth,
+        displayHeight,
+      });
+      onVideoDimensionsChange?.({
+        width: displayWidth,
+        height: displayHeight,
+      });
+    },
+    [onVideoDimensionsChange],
+  );
 
   useEffect(() => {
     if (!isHost) return;
@@ -938,9 +1088,10 @@ function LiveKitVideoSurface({
       .catch(error => {
         logLiveDebug('live_camera_restart_error', {
           facingMode: desiredFacingMode,
-          error: error instanceof Error
-            ? { name: error.name, message: error.message }
-            : { message: String(error) },
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { message: String(error) },
         });
       });
   }, [desiredFacingMode, isHost, localParticipant]);
@@ -951,7 +1102,10 @@ function LiveKitVideoSurface({
         key={`camera-${trackRenderKey}`}
         trackRef={cameraTrack}
         objectFit={isHost ? 'cover' : objectFit}
-        mirror={isHost && cameraTrack.participant.isLocal && cameraFacing === 'front'}
+        mirror={
+          isHost && cameraTrack.participant.isLocal && cameraFacing === 'front'
+        }
+        onDimensionsChange={handleNativeVideoDimensionsChange}
         style={absoluteFillStyle}
       />
     );
@@ -975,6 +1129,7 @@ export type LiveKitStreamViewProps = {
   diagnosticsEnabled?: boolean;
   objectFit?: 'contain' | 'cover';
   onVideoReady?: () => void;
+  onVideoDimensionsChange?: (dimensions: InlineLiveVideoDimensions) => void;
   onConnectionStateChange?: (
     state: 'connected' | 'disconnected' | 'error',
   ) => void;
@@ -988,6 +1143,7 @@ export function LiveKitStreamView({
   diagnosticsEnabled = true,
   objectFit = 'contain',
   onVideoReady,
+  onVideoDimensionsChange,
   onConnectionStateChange,
 }: LiveKitStreamViewProps) {
   const [permissionState, setPermissionState] = useState<PermissionState>(
@@ -995,7 +1151,9 @@ export function LiveKitStreamView({
       ? 'checking'
       : 'granted',
   );
-  const [connectionMessage, setConnectionMessage] = useState('Đang kết nối live...');
+  const [connectionMessage, setConnectionMessage] = useState(
+    'Đang kết nối live...',
+  );
   const [liveAudioSessionReady, setLiveAudioSessionReady] = useState(false);
   const connectStartLoggedRef = useRef('');
   const deviceTraceIdRef = useRef(
@@ -1132,25 +1290,29 @@ export function LiveKitStreamView({
     traceId,
   ]);
 
-  const handleError = useCallback((error: unknown) => {
-    logLiveDebug('live_room_error', {
-      role: liveRole,
-      roomName: session.roomName,
-      streamName: session.streamName,
+  const handleError = useCallback(
+    (error: unknown) => {
+      logLiveDebug('live_room_error', {
+        role: liveRole,
+        roomName: session.roomName,
+        streamName: session.streamName,
+        traceId,
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message }
+            : { message: String(error) },
+      });
+      setConnectionMessage('Không kết nối được live');
+      onConnectionStateChange?.('error');
+    },
+    [
+      liveRole,
+      onConnectionStateChange,
+      session.roomName,
+      session.streamName,
       traceId,
-      error: error instanceof Error
-        ? { name: error.name, message: error.message }
-        : { message: String(error) },
-    });
-    setConnectionMessage('Không kết nối được live');
-    onConnectionStateChange?.('error');
-  }, [
-    liveRole,
-    onConnectionStateChange,
-    session.roomName,
-    session.streamName,
-    traceId,
-  ]);
+    ],
+  );
 
   if (!session.wsUrl || !session.token) {
     return (
@@ -1167,7 +1329,9 @@ export function LiveKitStreamView({
     return (
       <View style={styles.placeholder}>
         <ActivityIndicator color="#ffffff" />
-        <Text style={styles.placeholderText}>Đang xin quyền camera và mic...</Text>
+        <Text style={styles.placeholderText}>
+          Đang xin quyền camera và mic...
+        </Text>
       </View>
     );
   }
@@ -1273,6 +1437,7 @@ export function LiveKitStreamView({
             cameraFacing={cameraFacing}
             objectFit={objectFit}
             onVideoReady={onVideoReady}
+            onVideoDimensionsChange={onVideoDimensionsChange}
           />
           {connectionMessage ? (
             <View style={styles.statusPill}>

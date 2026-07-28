@@ -536,7 +536,13 @@ function NotificationsScreen() {
       className="flex-1"
       edges={Platform.OS === 'ios' ? ['top', 'left', 'right'] : ['top']}
     >
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={
+          Platform.OS === 'android' ? APP_BRAND_COLOR : '#f4f7fa'
+        }
+        translucent={false}
+      />
       {/* FeedHeader is the app-wide top bar (menu, logo, search, create,
           messages). It already manages its own top safe-area inset, so we
           render it on top of the notifications body. */}

@@ -77,7 +77,8 @@ describe('LiveKit live stream native iOS media path', () => {
     expect(source).toContain('const LIVE_CONNECT_OPTIONS = {');
     expect(source).toContain('const LIVE_VIDEO_ONLY_CONNECT_OPTIONS = {');
     expect(source).toContain('autoSubscribe: true');
-    expect(source).toContain('autoSubscribe: false');
+    expect(source).not.toContain('autoSubscribe: false');
+    expect(source).toContain('setRemoteTrackVolume(track, 0)');
     expect(source).not.toContain('new Room(');
     expect(source).not.toContain('RoomContext.Provider');
     expect(source).not.toContain('ManualIosLiveHostRoom');
@@ -186,13 +187,18 @@ describe('LiveKit live stream native iOS media path', () => {
     expect(source).not.toContain("context.owner === 'live-stream'");
   });
 
-  it('removes live-specific native dependency patches while preserving call-related patches', () => {
+  it('keeps the minimal frame-dimensions bridge alongside call-related patches', () => {
     const packageJson = JSON.parse(read('package.json'));
     const webRtcPatch = read('patches/@livekit__react-native-webrtc@144.1.1.patch');
 
-    expect(packageJson.pnpm?.patchedDependencies?.['@livekit/react-native@2.11.1']).toBeUndefined();
+    expect(packageJson.pnpm?.patchedDependencies?.['@livekit/react-native@2.11.1']).toBe(
+      'patches/@livekit__react-native@2.11.1.patch',
+    );
+    const liveKitPatch = read('patches/@livekit__react-native@2.11.1.patch');
+    expect(liveKitPatch).toContain('onDimensionsChange');
     expect(webRtcPatch).toContain('native_webrtc_audio_engine_will_start');
     expect(webRtcPatch).toContain('native_webrtc_audio_microphone_unmuted');
+    expect(webRtcPatch).toContain('params.putInt("rotation", rotation);');
     expect(webRtcPatch).not.toContain('native_live_apm_capture_probe');
     expect(webRtcPatch).not.toContain('native_live_audio_sender_attach');
     expect(webRtcPatch).not.toContain('native_live_mic_pcm_probe');

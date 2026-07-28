@@ -4,6 +4,7 @@ import { Image, Text, View } from 'react-native';
 import { Radio, Users } from 'lucide-react-native';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import { InlineLiveStreamPlayer } from '../../../live/presentation/components/InlineLiveStreamPlayer';
+import { useInlineLiveAspectRatio } from '../../../live/presentation/components/inlineLiveAspect';
 import {
   FeedCardContent,
   FeedMediaFrame,
@@ -42,6 +43,8 @@ export const LiveStreamPostCard = React.memo(
       ? formatPostTime(startedAtSeconds, copy)
       : copy.now;
     const isStale = item.state === 'stale';
+    const { aspectRatio, handleVideoDimensionsChange } =
+      useInlineLiveAspectRatio(`${item.postId}:${item.streamName}`);
 
     return (
       <FeedTouchableCardSurface activeOpacity={0.88} onPress={handlePress}>
@@ -81,8 +84,15 @@ export const LiveStreamPostCard = React.memo(
           </View>
         </FeedCardContent>
 
-        <FeedMediaFrame className="relative h-52 bg-[#0f172a]">
-          <InlineLiveStreamPlayer active={isActive} item={item} />
+        <FeedMediaFrame
+          className="relative bg-[#0f172a]"
+          style={{ aspectRatio }}
+        >
+          <InlineLiveStreamPlayer
+            active={isActive}
+            item={item}
+            onVideoDimensionsChange={handleVideoDimensionsChange}
+          />
           <View className="absolute right-3 top-3 flex-row items-center rounded-full bg-red-500 px-3 py-1">
             <View className="h-2 w-2 rounded-full bg-white" />
             <Text className="ml-1 text-xs font-extrabold text-white">LIVE</Text>

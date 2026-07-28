@@ -44,8 +44,7 @@ interface PageShareActionSheetProps {
   onCopied?: () => void;
 }
 
-const FALLBACK_AVATAR =
-  'https://cdn-icons-png.flaticon.com/512/847/847969.png';
+const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
 
 const DESTINATIONS: Array<{
   id: Destination;
@@ -77,7 +76,9 @@ export function PageShareActionSheet({
   const [note, setNote] = useState('');
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
+  const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +89,18 @@ export function PageShareActionSheet({
     const body = [pageTitle, publicUrl].filter(Boolean).join('\n');
     return note.trim() ? `${note.trim()}\n\n${body}` : body;
   }, [note, pageTitle, publicUrl]);
+  const pagePreviewDescription = useMemo(() => {
+    const description = page?.pageDescription?.trim();
+    if (description) return description;
+
+    const summary = [
+      page?.followersCount
+        ? `${page.followersCount} người theo dõi`
+        : undefined,
+      page?.postCount ? `${page.postCount} bài viết` : undefined,
+    ].filter(Boolean);
+    return summary.join(' · ') || 'Khám phá Trang trên VNSEEA';
+  }, [page?.followersCount, page?.pageDescription, page?.postCount]);
 
   useEffect(() => {
     if (!visible || !page) return;
@@ -119,7 +132,9 @@ export function PageShareActionSheet({
 
   useEffect(() => {
     if (!selectedGroupId && groupsVm.groups.length > 0) {
-      setSelectedGroupId(String(groupsVm.groups[0].groupId || groupsVm.groups[0].id));
+      setSelectedGroupId(
+        String(groupsVm.groups[0].groupId || groupsVm.groups[0].id),
+      );
     }
   }, [groupsVm.groups, selectedGroupId]);
 
@@ -129,7 +144,11 @@ export function PageShareActionSheet({
   );
 
   useEffect(() => {
-    if (destination === 'message' && !selectedChatUserId && userChats.length > 0) {
+    if (
+      destination === 'message' &&
+      !selectedChatUserId &&
+      userChats.length > 0
+    ) {
       setSelectedChatUserId(String(userChats[0].userId));
     }
   }, [destination, selectedChatUserId, userChats]);
@@ -170,7 +189,9 @@ export function PageShareActionSheet({
       onCopied?.();
       setTimeout(() => setCopied(false), 1600);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không sao chép được liên kết.');
+      setError(
+        err instanceof Error ? err.message : 'Không sao chép được liên kết.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -189,7 +210,9 @@ export function PageShareActionSheet({
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể mở chia sẻ hệ thống.');
+      setError(
+        err instanceof Error ? err.message : 'Không thể mở chia sẻ hệ thống.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -207,15 +230,24 @@ export function PageShareActionSheet({
           throw new Error('Bạn chưa chọn cuộc trò chuyện để gửi trang.');
         }
 
-        const ok = await messagesVm.sendBulkMessages([String(recipientId)], shareText);
+        const ok = await messagesVm.sendBulkMessages(
+          [String(recipientId)],
+          shareText,
+        );
         if (!ok) {
           throw new Error('Không gửi được liên kết trang.');
         }
       } else {
         const draft = {
-          text: shareText,
+          text: note.trim(),
           photos: [],
           privacy: 'public' as const,
+          linkPreview: {
+            url: publicUrl,
+            title: pageTitle,
+            description: pagePreviewDescription,
+            image: page.cover || page.avatar,
+          },
           pageId: undefined as string | undefined,
           groupId: undefined as string | undefined,
         };
@@ -250,11 +282,14 @@ export function PageShareActionSheet({
     messagesVm,
     onClose,
     page,
+    pagePreviewDescription,
+    pageTitle,
     publicUrl,
     selectedChat?.userId,
     selectedChatUserId,
     selectedGroup,
     selectedPage,
+    note,
     shareText,
   ]);
 
@@ -263,13 +298,20 @@ export function PageShareActionSheet({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <Pressable onPress={onClose} style={styles.backdrop} />
       <View style={styles.sheet}>
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Chia sẻ trang</Text>
-            <Text style={styles.subtitle}>Chọn nơi bạn muốn chia sẻ trang này</Text>
+            <Text style={styles.subtitle}>
+              Chọn nơi bạn muốn chia sẻ trang này
+            </Text>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <X size={22} color="#64748B" />
@@ -343,7 +385,10 @@ export function PageShareActionSheet({
                     active && styles.destinationCardActive,
                   ]}
                 >
-                  <Icon size={16} color={active ? APP_BRAND_COLOR : '#64748B'} />
+                  <Icon
+                    size={16}
+                    color={active ? APP_BRAND_COLOR : '#64748B'}
+                  />
                   <Text
                     style={[
                       styles.destinationText,
@@ -374,7 +419,9 @@ export function PageShareActionSheet({
               onSelect={setSelectedPageId}
               getId={item => String(item.pageId || item.id)}
               getTitle={item => item.pageTitle || item.pageName}
-              getSubtitle={item => (item.pageName ? `@${item.pageName}` : 'Trang')}
+              getSubtitle={item =>
+                item.pageName ? `@${item.pageName}` : 'Trang'
+              }
               getAvatar={item => item.avatar}
             />
           ) : null}
@@ -392,7 +439,9 @@ export function PageShareActionSheet({
               onSelect={setSelectedGroupId}
               getId={item => String(item.groupId || item.id)}
               getTitle={item => item.groupTitle || item.groupName}
-              getSubtitle={item => (item.groupName ? `@${item.groupName}` : 'Nhóm')}
+              getSubtitle={item =>
+                item.groupName ? `@${item.groupName}` : 'Nhóm'
+              }
               getAvatar={item => item.avatar}
             />
           ) : null}
@@ -410,12 +459,14 @@ export function PageShareActionSheet({
               onSelect={setSelectedChatUserId}
               getId={item => String(item.userId)}
               getTitle={item => item.name}
-              getSubtitle={item => item.username ? `@${item.username}` : item.lastMessage}
+              getSubtitle={item =>
+                item.username ? `@${item.username}` : item.lastMessage
+              }
               getAvatar={item => item.avatar}
             />
           ) : null}
 
-          {(isLoading || error) ? (
+          {isLoading || error ? (
             <View style={styles.statusRow}>
               {isLoading ? <ActivityIndicator color={APP_BRAND_COLOR} /> : null}
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -554,7 +605,9 @@ function EntityTargetList<TItem>({
                   {getSubtitle(item)}
                 </Text>
               </View>
-              {selected ? <CheckCircle2 size={18} color={APP_BRAND_COLOR} /> : null}
+              {selected ? (
+                <CheckCircle2 size={18} color={APP_BRAND_COLOR} />
+              ) : null}
             </TouchableOpacity>
           );
         })

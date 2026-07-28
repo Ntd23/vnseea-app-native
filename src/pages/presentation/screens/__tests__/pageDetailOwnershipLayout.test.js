@@ -18,4 +18,13 @@ describe('PageDetailScreen ownership layout', () => {
       /\{isPageOwner \? \(\s*<ComposerCard[\s\S]*?\/>\s*\) : null\}/,
     );
   });
+
+  it('shows avatar and cover editing controls only on manageable Pages', () => {
+    expect(source).toMatch(/\{canManagePage && onChangeCover \? \(/);
+    expect(source).toMatch(/\{canManagePage && onChangeAvatar \? \(/);
+    expect(source).toContain('onPress={onChangeCover}');
+    expect(source).toContain('onPress={onChangeAvatar}');
+    expect(source).toContain('disabled={isUploadingCover}');
+    expect(source).toContain('disabled={isUploadingAvatar}');
+  });
 });

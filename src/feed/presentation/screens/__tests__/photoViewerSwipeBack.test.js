@@ -25,6 +25,23 @@ describe('PhotoViewer Reel-style exit affordance', () => {
     expect(source).not.toContain('Swipe to exit');
   });
 
+  test('returns an incomplete vertical dismiss without spring overshoot', () => {
+    expect(source).toContain('cancelAnimation(translateY)');
+    expect(source).toContain('const verticalDragStartY = useSharedValue(0)');
+    expect(source).toContain(
+      'translateY.value = verticalDragStartY.value + event.translationY',
+    );
+    expect(source).toContain(
+      'duration: PHOTO_VIEWER_VERTICAL_RETURN_DURATION_MS',
+    );
+    expect(source).toMatch(
+      /const panGesture = Gesture\.Pan\(\)[\s\S]*\.onFinalize\(\(_event, success\)/,
+    );
+    expect(source).not.toContain(
+      'translateY.value = withSpring(0, { damping: 15, stiffness: 200 })',
+    );
+  });
+
   test('adds a back button that preserves the viewer close animation', () => {
     expect(source).toMatch(
       /accessibilityLabel=\{\s*language === 'vi' \? 'Quay lại' : 'Go back'/,

@@ -74,20 +74,8 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Gesture,
-  GestureDetector,
-  GestureHandlerRootView,
-} from 'react-native-gesture-handler';
-import Reanimated, {
-  cancelAnimation,
-  Easing,
-  interpolate,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSharedValue } from 'react-native-reanimated';
 import {
   FlashList,
   type FlashListRef,
@@ -217,14 +205,6 @@ type ProfileRoute = RouteProp<
 >;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const PROFILE_BACK_GESTURE_START_X = Platform.OS === 'android' ? 18 : 0;
-const PROFILE_BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 86 : 16;
-const PROFILE_BACK_GESTURE_ACTIVE_OFFSET_X = Platform.OS === 'android' ? 8 : 14;
-const PROFILE_BACK_GESTURE_FAIL_OFFSET_Y = Platform.OS === 'android' ? 18 : 14;
-const PROFILE_BACK_GESTURE_DISTANCE_RATIO = 0.32;
-const PROFILE_BACK_GESTURE_VELOCITY = 700;
-const PROFILE_BACK_CLOSE_DURATION_MS = 180;
-const PROFILE_BACK_CANCEL_DURATION_MS = 140;
 const PROFILE_HEADER_BUTTON_HIT_SLOP = {
   top: 10,
   right: 10,
@@ -1378,7 +1358,6 @@ function ProfileScreen() {
     profile,
     followers,
     following,
-    isLoading,
     loadProfile,
     toggleFollow,
     pokeUser,
@@ -1389,6 +1368,9 @@ function ProfileScreen() {
   const session = sessionStorage.getSession();
   const currentUserId = session?.userId;
   const targetUserId = route.params?.userId ?? currentUserId ?? profile?.id;
+  const routeProfileKey = route.params?.userId
+    ? String(route.params.userId)
+    : 'self';
   const isOwnProfile = resolveProfileOwnership({
     currentUserId,
     routeUserId: route.params?.userId,
@@ -1432,7 +1414,9 @@ function ProfileScreen() {
   } = useDeferredVisiblePostIds();
   const profilePostsRef = useRef<ProfileFeedPost[]>([]);
   const profilePostIndexByIdRef = useRef<Map<string, number>>(new Map());
-  const [isPostsLoading, setIsPostsLoading] = useState(false);
+  const [initialPostsSettledKey, setInitialPostsSettledKey] = useState<
+    string | null
+  >(null);
   const [isProfileRefreshing, setIsProfileRefreshing] = useState(false);
   const profileRefreshInFlightRef = useRef(false);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
@@ -1549,8 +1533,6 @@ function ProfileScreen() {
   const gestureStartX = useSharedValue(0);
   const gestureStartY = useSharedValue(0);
   const hasDragged = useSharedValue(false);
-  const profileBackTranslateX = useSharedValue(0);
-  const profileBackClosing = useSharedValue(false);
 
   const feedRepo = useMemo(() => createFeedRepository(), []);
   const pollRepo = useMemo(() => createPollRepository(), []);
@@ -1687,14 +1669,6 @@ function ProfileScreen() {
         publishNativeTabScrollBehavior('onScrollDown');
       };
     }, []),
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      profileBackTranslateX.value = 0;
-      profileBackClosing.value = false;
-      return undefined;
-    }, [profileBackClosing, profileBackTranslateX]),
   );
 
   const setActiveProfileVideoId = useCallback((nextVideoId: string | null) => {
@@ -2277,9 +2251,6 @@ function ProfileScreen() {
   // trigger blur -> focus cycles. We do not want those to refetch the
   // profile data or reset the post list; only a real target change
   // should reload the screen state.
-  const routeProfileKey = route.params?.userId
-    ? String(route.params.userId)
-    : 'self';
   const lastLoadedUserIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (lastLoadedUserIdRef.current === routeProfileKey) {
@@ -2294,6 +2265,7 @@ function ProfileScreen() {
     setPostsCursor(undefined);
     setHasMorePosts(false);
     setPostsError(null);
+    setInitialPostsSettledKey(null);
     setUserStory(null);
     setAllStories([]);
     setIsStoryLoading(false);
@@ -2391,17 +2363,16 @@ function ProfileScreen() {
       setPostsCursor(undefined);
       setHasMorePosts(false);
       setPostsError(null);
-      setIsPostsLoading(false);
       return;
     }
 
     let cancelled = false;
+    const requestProfileKey = routeProfileKey;
     setPosts([]);
     setPostsCursor(undefined);
     setHasMorePosts(false);
     isLoadingMorePostsRef.current = false;
     setIsLoadingMorePosts(false);
-    setIsPostsLoading(true);
     setPostsError(null);
     feedRepo
       .getUserPosts(targetUserId, PROFILE_POST_PAGE_SIZE)
@@ -2425,14 +2396,14 @@ function ProfileScreen() {
       })
       .finally(() => {
         if (!cancelled) {
-          setIsPostsLoading(false);
+          setInitialPostsSettledKey(requestProfileKey);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [feedRepo, targetUserId]);
+  }, [feedRepo, routeProfileKey, targetUserId]);
 
   useEffect(() => {
     if (filteredProfilePosts.length === 0) return;
@@ -4945,12 +4916,7 @@ function ProfileScreen() {
 
   const profilePostsEmptyComponent = useMemo(
     () =>
-      isPostsLoading && posts.length === 0 ? (
-        <View>
-          <PostSkeletonCard />
-          <PostSkeletonCard />
-        </View>
-      ) : postsError ? (
+      postsError ? (
         <View style={profilePostStyles.stateCard}>
           <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
             {copy.loadPostsError}: {postsError}
@@ -4964,7 +4930,6 @@ function ProfileScreen() {
     [
       copy.loadPostsError,
       copy.noPosts,
-      isPostsLoading,
       posts.length,
       postsError,
     ],
@@ -5028,139 +4993,6 @@ function ProfileScreen() {
       renderProfilePostContent,
     ],
   );
-
-  const canSwipeBackToPreviousProfileScreen = navigation.canGoBack();
-  const isProfileSwipeBackBlocked =
-    Boolean(photoViewer) ||
-    profileCropRequest !== null ||
-    profileMediaSheet !== null ||
-    isActivitiesSheetVisible ||
-    isRelationshipSheetVisible ||
-    storyOptionsSheet !== null ||
-    shareModalVisible ||
-    postMenuVisible ||
-    reactionsSheetVisible ||
-    commentVm.isCommentsOpen;
-
-  const profileSwipeBackGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .hitSlop({
-          left: PROFILE_BACK_GESTURE_START_X,
-          width: PROFILE_BACK_GESTURE_WIDTH,
-          top: -profileHeaderHeight,
-        })
-        .activeOffsetX([PROFILE_BACK_GESTURE_ACTIVE_OFFSET_X, 999])
-        .failOffsetY([
-          -PROFILE_BACK_GESTURE_FAIL_OFFSET_Y,
-          PROFILE_BACK_GESTURE_FAIL_OFFSET_Y,
-        ])
-        .enabled(
-          canSwipeBackToPreviousProfileScreen && !isProfileSwipeBackBlocked,
-        )
-        .onBegin(() => {
-          'worklet';
-          if (profileBackClosing.value) return;
-          cancelAnimation(profileBackTranslateX);
-        })
-        .onUpdate(event => {
-          'worklet';
-          if (profileBackClosing.value) return;
-          profileBackTranslateX.value = Math.min(
-            SCREEN_WIDTH,
-            Math.max(0, event.translationX),
-          );
-        })
-        .onEnd(event => {
-          'worklet';
-          if (profileBackClosing.value) return;
-
-          const shouldClose =
-            event.translationX >
-              SCREEN_WIDTH * PROFILE_BACK_GESTURE_DISTANCE_RATIO ||
-            event.velocityX > PROFILE_BACK_GESTURE_VELOCITY;
-
-          if (shouldClose) {
-            profileBackClosing.value = true;
-            profileBackTranslateX.value = withTiming(
-              SCREEN_WIDTH,
-              {
-                duration: PROFILE_BACK_CLOSE_DURATION_MS,
-                easing: Easing.out(Easing.cubic),
-              },
-              finished => {
-                if (finished) {
-                  runOnJS(handleProfileBack)();
-                }
-              },
-            );
-            return;
-          }
-
-          profileBackTranslateX.value = withTiming(0, {
-            duration: PROFILE_BACK_CANCEL_DURATION_MS,
-            easing: Easing.out(Easing.cubic),
-          });
-        }),
-    [
-      canSwipeBackToPreviousProfileScreen,
-      handleProfileBack,
-      isProfileSwipeBackBlocked,
-      profileBackClosing,
-      profileBackTranslateX,
-      profileHeaderHeight,
-    ],
-  );
-
-  const profileSwipeBackScreenStyle = useAnimatedStyle(() => {
-    const progress = Math.min(1, profileBackTranslateX.value / SCREEN_WIDTH);
-
-    return {
-      borderTopLeftRadius: interpolate(progress, [0, 1], [0, 18], 'clamp'),
-      borderBottomLeftRadius: interpolate(progress, [0, 1], [0, 18], 'clamp'),
-      transform: [{ translateX: profileBackTranslateX.value }],
-    };
-  });
-
-  const profileSwipeBackDimStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      profileBackTranslateX.value,
-      [0, SCREEN_WIDTH * PROFILE_BACK_GESTURE_DISTANCE_RATIO, SCREEN_WIDTH],
-      [0.1, 0.06, 0],
-      'clamp',
-    ),
-  }));
-
-  const profileSwipeBackCueStyle = useAnimatedStyle(() => {
-    const threshold = SCREEN_WIDTH * PROFILE_BACK_GESTURE_DISTANCE_RATIO;
-
-    return {
-      opacity: interpolate(
-        profileBackTranslateX.value,
-        [0, 34, threshold],
-        [0, 0.85, 1],
-        'clamp',
-      ),
-      transform: [
-        {
-          translateX: interpolate(
-            profileBackTranslateX.value,
-            [0, threshold],
-            [-54, 18],
-            'clamp',
-          ),
-        },
-        {
-          scale: interpolate(
-            profileBackTranslateX.value,
-            [0, threshold],
-            [0.76, 1.08],
-            'clamp',
-          ),
-        },
-      ],
-    };
-  });
 
   const profileRefreshControl = useMemo(
     () =>
@@ -5273,36 +5105,22 @@ function ProfileScreen() {
     </View>
   );
 
-  if (isLoading && !profile) {
+  const expectedProfileUserId = route.params?.userId ?? currentUserId;
+  const hasCurrentProfile =
+    Boolean(profile) &&
+    (!expectedProfileUserId ||
+      String(profile?.id) === String(expectedProfileUserId));
+  const isInitialProfileContentReady =
+    hasCurrentProfile && initialPostsSettledKey === routeProfileKey;
+
+  if (!isInitialProfileContentReady) {
     return <FullProfileSkeleton onBack={handleProfileBack} />;
   }
 
   return (
     <GestureHandlerRootView style={profileMainStyles.gestureRoot}>
-      <Reanimated.View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          profileMainStyles.profileSwipeBackDim,
-          profileSwipeBackDimStyle,
-        ]}
-      />
-      <Reanimated.View
-        pointerEvents="none"
-        style={[
-          profileMainStyles.profileSwipeBackCue,
-          profileSwipeBackCueStyle,
-        ]}
-      >
-        <ArrowLeft size={18} color={APP_BRAND_COLOR} strokeWidth={2.6} />
-        <Text style={profileMainStyles.profileSwipeBackCueText}>
-          {language === 'vi' ? 'Vuốt để quay lại' : 'Swipe to go back'}
-        </Text>
-      </Reanimated.View>
-      <GestureDetector gesture={profileSwipeBackGesture}>
-        <Reanimated.View
-          style={[profileMainStyles.container, profileSwipeBackScreenStyle]}
-        >
+      <View style={profileMainStyles.profileContentRoot}>
+        <View style={profileMainStyles.container}>
           <FocusAwareStatusBar
             barStyle="dark-content"
             translucent
@@ -5867,8 +5685,8 @@ function ProfileScreen() {
             onCancel={() => setProfileCropRequest(null)}
             onComplete={handleCroppedProfileImage}
           />
-        </Reanimated.View>
-      </GestureDetector>
+        </View>
+      </View>
     </GestureHandlerRootView>
   );
 }
@@ -5878,37 +5696,13 @@ const profileMainStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
+  profileContentRoot: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#F0F2F5',
     overflow: 'hidden',
-  },
-  profileSwipeBackDim: {
-    backgroundColor: '#000000',
-  },
-  profileSwipeBackCue: {
-    position: 'absolute',
-    left: Platform.OS === 'android' ? 30 : 14,
-    top: '50%',
-    marginTop: -22,
-    zIndex: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  profileSwipeBackCueText: {
-    marginLeft: 7,
-    color: APP_BRAND_COLOR,
-    fontSize: 13,
-    fontWeight: '900',
   },
   postsList: {
     flex: 1,

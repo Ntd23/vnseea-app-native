@@ -3,11 +3,12 @@ import {
   APP_BRAND_COLOR,
   APP_COLORS,
 } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -66,6 +67,17 @@ import { usePagesViewModel } from '../../application/view-models/usePagesViewMod
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
+import {
+  ImageCropperModal,
+  type CropSourceImage,
+  type CroppedImageAsset,
+  type ImageCropTarget,
+} from '../../../shared-kernel/presentation/components/ImageCropperModal';
+import {
+  PROFILE_IMAGE_PICKER_OPTIONS,
+  prepareProfileImageForCrop,
+  waitForImagePickerDismissal,
+} from '../../../shared-kernel/presentation/utils/profileImagePicker';
 import PageLocationPickerModal, {
   type PageLocationSelection,
 } from '../components/PageLocationPickerModal';
@@ -622,12 +634,57 @@ function CreatePageScreen() {
   const [deletePassword, setDeletePassword] = useState('');
   const [pickedMediaNames, setPickedMediaNames] = useState<Record<string, string>>({});
   const [pickedMediaFiles, setPickedMediaFiles] = useState<Partial<Record<PageMediaField, PickedPageMedia>>>({});
+  const [pageCropRequest, setPageCropRequest] = useState<{
+    field: ImageCropTarget;
+    image: CropSourceImage;
+  } | null>(null);
   const [selectedAdmin, setSelectedAdmin] = useState<PageUser | null>(null);
   const [adminPrivileges, setAdminPrivileges] = useState<PagePrivileges>(DEFAULT_PAGE_PRIVILEGES);
   const [isLocationPickerVisible, setIsLocationPickerVisible] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const formScrollRef = useRef<ScrollView>(null);
+  const focusedInputTargetRef = useRef<unknown>(null);
 
   const currentError = localError || pagesVm.error;
   const isPageNameValid = draft.pageName.trim().length >= 5 && /^[a-z0-9_-]+$/.test(draft.pageName.trim());
+
+  const revealFocusedInput = useCallback((delay = 100) => {
+    const target = focusedInputTargetRef.current;
+    if (!target) return;
+
+    setTimeout(() => {
+      formScrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+        target,
+        120,
+        true,
+      );
+    }, delay);
+  }, []);
+
+  const handleInputFocus = useCallback(
+    (target: unknown) => {
+      focusedInputTargetRef.current = target;
+      revealFocusedInput(120);
+    },
+    [revealFocusedInput],
+  );
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      revealFocusedInput(60);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [revealFocusedInput]);
 
   const updateDraft = useCallback(
     <TKey extends keyof CreatePageDraft>(
@@ -949,13 +1006,36 @@ function CreatePageScreen() {
   const pickPageMedia = useCallback(
     async (field: PageMediaField) => {
       try {
-        const result = await launchImageLibrary({
-          mediaType: 'photo',
-          quality: 0.8,
-        });
+        const shouldCrop = field === 'avatar' || field === 'cover';
+        const result = await launchImageLibrary(
+          shouldCrop
+            ? PROFILE_IMAGE_PICKER_OPTIONS
+            : {
+                mediaType: 'photo',
+                quality: 0.8,
+                selectionLimit: 1,
+              },
+        );
         if (result.didCancel || !result.assets?.length) return;
         const asset = result.assets[0];
         if (!asset.uri) return;
+
+        if (field === 'avatar' || field === 'cover') {
+          await waitForImagePickerDismissal();
+          const preparedAsset = await prepareProfileImageForCrop(asset, field);
+          setPageCropRequest({
+            field,
+            image: {
+              uri: preparedAsset.uri!,
+              width: preparedAsset.width,
+              height: preparedAsset.height,
+              fileName: preparedAsset.fileName,
+              type: preparedAsset.type,
+            },
+          });
+          return;
+        }
+
         const name = asset.fileName || `${field}_${Date.now()}.jpg`;
         setPickedMediaFiles(prev => ({
           ...prev,
@@ -979,6 +1059,20 @@ function CreatePageScreen() {
       }
     },
     [pagesVm, updateDraft],
+  );
+
+  const handleCroppedPageMedia = useCallback(
+    (asset: CroppedImageAsset) => {
+      const field = pageCropRequest?.field;
+      if (!field) return;
+
+      setPageCropRequest(null);
+      setPickedMediaFiles(prev => ({ ...prev, [field]: asset }));
+      setPickedMediaNames(prev => ({ ...prev, [field]: asset.name }));
+      setLocalError(null);
+      pagesVm.clearError();
+    },
+    [pageCropRequest?.field, pagesVm],
   );
 
   const renderEditGeneralTab = () => {
@@ -1011,6 +1105,7 @@ function CreatePageScreen() {
             returnKeyType="next"
             value={draft.pageTitle}
             onChangeText={handleTitleChange}
+            onFocus={event => handleInputFocus(event.target)}
           />
         </View>
 
@@ -1069,6 +1164,7 @@ function CreatePageScreen() {
               returnKeyType="next"
               value={draft.pageName}
               onChangeText={handlePageNameChange}
+              onFocus={event => handleInputFocus(event.target)}
             />
           </View>
         </View>
@@ -1121,6 +1217,7 @@ function CreatePageScreen() {
             keyboardType="url"
             value={draft.callActionUrl}
             onChangeText={value => updateDraft('callActionUrl', value)}
+            onFocus={event => handleInputFocus(event.target)}
           />
         </View>
 
@@ -1189,6 +1286,7 @@ function CreatePageScreen() {
           placeholderTextColor="#94a3b8"
           value={draft.company}
           onChangeText={value => updateDraft('company', value)}
+          onFocus={event => handleInputFocus(event.target)}
         />
       </View>
 
@@ -1201,6 +1299,7 @@ function CreatePageScreen() {
           keyboardType="phone-pad"
           value={draft.phone}
           onChangeText={value => updateDraft('phone', value)}
+          onFocus={event => handleInputFocus(event.target)}
         />
       </View>
 
@@ -1212,6 +1311,7 @@ function CreatePageScreen() {
           placeholderTextColor="#94a3b8"
           value={draft.pageAddress}
           onChangeText={handleAddressChange}
+          onFocus={event => handleInputFocus(event.target)}
         />
       </View>
 
@@ -1226,6 +1326,7 @@ function CreatePageScreen() {
           keyboardType="url"
           value={draft.website}
           onChangeText={value => updateDraft('website', value)}
+          onFocus={event => handleInputFocus(event.target)}
         />
         <Text style={{ marginTop: 8, color: '#64748b', fontSize: 12, fontWeight: '500' }}>
           (ví dụ: http://www.siteurl.com)
@@ -1241,6 +1342,7 @@ function CreatePageScreen() {
           multiline
           value={draft.pageDescription}
           onChangeText={value => updateDraft('pageDescription', value)}
+          onFocus={event => handleInputFocus(event.target)}
         />
       </View>
     </>
@@ -1269,6 +1371,7 @@ function CreatePageScreen() {
               autoCorrect={false}
               value={(draft[key] as string | undefined) || ''}
               onChangeText={value => updateDraft(key, value as never)}
+              onFocus={event => handleInputFocus(event.target)}
             />
           </View>
         ))}
@@ -1457,6 +1560,7 @@ function CreatePageScreen() {
         secureTextEntry
         value={deletePassword}
         onChangeText={setDeletePassword}
+        onFocus={event => handleInputFocus(event.target)}
       />
       <Text style={{ marginTop: 10, color: '#ef4444', fontSize: 13, fontWeight: '700' }}>
         Xóa trang sẽ không thể hoàn tác.
@@ -1625,22 +1729,34 @@ function CreatePageScreen() {
     return renderEditAnalyticsTab();
   };
 
+  const headerBackgroundColor =
+    Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF';
+  const formBottomPadding = isKeyboardVisible ? 32 : 110 + insets.bottom;
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+    <View style={{ flex: 1, backgroundColor: '#F6F8FC' }}>
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={headerBackgroundColor}
+        translucent={false}
+      />
+      <SafeAreaFeedHeader safeAreaBackgroundColor={headerBackgroundColor} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
-          style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+          ref={formScrollRef}
+          style={{ flex: 1, backgroundColor: '#F6F8FC' }}
           contentContainerStyle={{
             flexGrow: 1,
-            paddingHorizontal: 20,
-            paddingBottom: 110 + insets.bottom,
-            paddingTop: 20,
+            paddingHorizontal: 16,
+            paddingBottom: formBottomPadding,
+            paddingTop: 16,
           }}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -1666,6 +1782,7 @@ function CreatePageScreen() {
               returnKeyType="next"
               value={draft.pageTitle}
               onChangeText={handleTitleChange}
+              onFocus={event => handleInputFocus(event.target)}
             />
             <Text style={{ fontSize: 12, fontWeight: '500', color: '#94A3B8', marginTop: 6 }}>
               Tiêu đề trang của bạn
@@ -1691,6 +1808,7 @@ function CreatePageScreen() {
               returnKeyType="next"
               value={draft.pageName}
               onChangeText={handlePageNameChange}
+              onFocus={event => handleInputFocus(event.target)}
             />
             <Text style={{ fontSize: 12, fontWeight: '500', color: '#94A3B8', marginTop: 6 }}>
               Link trang: {PAGE_URL_PREFIX}{draft.pageName || copy.step2InputPlaceholder}
@@ -1751,6 +1869,7 @@ function CreatePageScreen() {
               maxLength={200}
               value={draft.pageDescription}
               onChangeText={value => updateDraft('pageDescription', value)}
+              onFocus={event => handleInputFocus(event.target)}
             />
             <Text style={{ fontSize: 12, fontWeight: '500', color: '#94A3B8', marginTop: 6 }}>
               Mô tả Trang của bạn, Tối đa từ 10 đến 200 ký tự.
@@ -1847,8 +1966,9 @@ function CreatePageScreen() {
         </ScrollView>
 
         {/* Bottom Actions Footer */}
-        <View
-          style={{
+        {!isKeyboardVisible ? (
+          <View
+            style={{
             position: 'absolute',
             left: 0,
             right: 0,
@@ -1862,8 +1982,8 @@ function CreatePageScreen() {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-          }}
-        >
+            }}
+          >
           <TouchableOpacity
             activeOpacity={0.82}
             onPress={() => navigation.goBack()}
@@ -1894,7 +2014,16 @@ function CreatePageScreen() {
               </Text>
             )}
           </TouchableOpacity>
-        </View>
+          </View>
+        ) : null}
+
+        <ImageCropperModal
+          visible={pageCropRequest !== null}
+          image={pageCropRequest?.image ?? null}
+          target={pageCropRequest?.field ?? 'avatar'}
+          onCancel={() => setPageCropRequest(null)}
+          onComplete={handleCroppedPageMedia}
+        />
 
         <PageLocationPickerModal
           visible={isLocationPickerVisible}

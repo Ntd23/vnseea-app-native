@@ -50,6 +50,5 @@ describe('ProfileScreen reload behavior', () => {
     expect(source).toContain("block_action: 'block'");
     expect(source).toContain('UserMinus size={18} color={APP_BRAND_COLOR}');
     expect(source).toContain('UserRoundX size={18} color="#EF4444"');
-    expect(source).toContain('isRelationshipSheetVisible ||');
   });
 });
