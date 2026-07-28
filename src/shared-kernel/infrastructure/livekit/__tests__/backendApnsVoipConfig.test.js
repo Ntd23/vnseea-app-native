@@ -55,13 +55,28 @@ describe('backend APNs VoIP config wiring', () => {
 
   it('routes direct and group call VoIP sends through the shared helper', () => {
     const livekit = read('phtml/api/v2/endpoints/livekit.php');
+    expect(
+      fs.existsSync(
+        path.join(
+          root,
+          'phtml/assets/includes/vnseea_livekit_call.php',
+        ),
+      ),
+    ).toBe(true);
+    const directCallService = read(
+      'phtml/assets/includes/vnseea_livekit_call.php',
+    );
     const groupCall = read('phtml/api/v2/endpoints/group_call.php');
 
-    expect(livekit).toContain(
+    expect(directCallService).toContain(
       "Wo_ApiSendApnsVoipPush($recipient, $notification_data, $caller_name, $call_type, 'direct')",
     );
+    expect(livekit).toContain('Wo_SendCanonicalLiveKitCallPush(');
     expect(groupCall).toContain(
       "Wo_ApiSendApnsVoipPush($recipient, $notification_data, $display_name, $call_type, 'group')",
+    );
+    expect(directCallService).not.toContain(
+      'https://api.push.apple.com/3/device/',
     );
     expect(livekit).not.toContain('https://api.push.apple.com/3/device/');
     expect(groupCall).not.toContain('https://api.push.apple.com/3/device/');

@@ -18,17 +18,31 @@ function functionBody(source, name) {
 describe('backend LiveKit call payload and native action state', () => {
   it('builds direct CallKit payload with stable uuid, action token, expiry, and mobile API URL', () => {
     const source = read('phtml/api/v2/endpoints/livekit.php');
-    const sender = functionBody(source, 'Wo_ApiLiveKitSendCallPush');
+    expect(
+      fs.existsSync(
+        path.join(
+          root,
+          'phtml/assets/includes/vnseea_livekit_call.php',
+        ),
+      ),
+    ).toBe(true);
+    const service = read('phtml/assets/includes/vnseea_livekit_call.php');
+    const sender = functionBody(service, 'Wo_SendCanonicalLiveKitCallPush');
 
-    expect(source).toContain("md5('vnseea-livekit|' . $call_type . '|' . $call_id)");
+    expect(service).toContain(
+      "md5('vnseea-livekit|' . $call_type . '|' . $call_id)",
+    );
     expect(sender).toContain("'event_type' => 'livekit_call'");
     expect(sender).toContain("'call_context' => 'direct'");
     expect(sender).toContain("'provider' => 'livekit'");
-    expect(sender).toContain("'uuid' => Wo_ApiLiveKitCallUuid($call_id, $call_type)");
+    expect(sender).toContain(
+      "'uuid' => Wo_CanonicalLiveKitCallUuid($call_id, $call_type)",
+    );
     expect(sender).toContain("'expires_at' => (string) $expires_at");
     expect(sender).toContain("'action_token' => $action_token");
     expect(sender).toContain("'/api/livekit'");
     expect(sender).toContain('$expires_at = time() + 45;');
+    expect(source).toContain('Wo_SendCanonicalLiveKitCallPush(');
   });
 
   it('builds group CallKit payload with fullscreen policy, per-recipient token, and mobile API URL', () => {
