@@ -7,6 +7,7 @@ import {
   Keyboard,
   Modal,
   Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -840,6 +841,9 @@ export default function PageLocationPickerModal({
     hasPinnedCoordinate &&
     isValidCoordinate(region.latitude, region.longitude) &&
     Boolean(selectedAddress.trim());
+  const androidStatusBarHeight =
+    Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
+  const topSafeInset = Math.max(insets.top, androidStatusBarHeight, 10);
 
   return (
     <Modal
@@ -867,7 +871,7 @@ export default function PageLocationPickerModal({
 
         <View
           pointerEvents="box-none"
-          style={[styles.topOverlay, { paddingTop: Math.max(insets.top, 10) + 8 }]}
+          style={[styles.topOverlay, { paddingTop: topSafeInset + 8 }]}
         >
           <View style={styles.headerRow}>
             <TouchableOpacity onPress={onClose} style={styles.iconButton} activeOpacity={0.82}>

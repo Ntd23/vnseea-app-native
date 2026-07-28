@@ -19,22 +19,22 @@ export type AdAppearsType =
 export type AdGender = 'male' | 'female' | 'all';
 
 export interface AdFormData {
-  name: string;           // Company name (3-100 chars)
-  website: string;       // URL (required)
-  headline: string;      // Ad title (5-200 chars)
-  description: string;    // Ad description
-  audienceList: string;   // WoWonder country IDs: "233" or "233,1"
+  name: string; // Company name (3-100 chars)
+  website: string; // URL (required)
+  headline: string; // Ad title (5-200 chars)
+  description: string; // Ad description
+  audienceList: string; // WoWonder country IDs: "233" or "233,1"
   gender: AdGender;
   bidding: AdBiddingType;
-  media?: string;         // Local file URI for upload
+  media?: string; // Local file URI for upload
   mediaName?: string;
   mediaType?: string;
   appears: AdAppearsType;
   location?: string;
-  pageId?: string;        // Optional page ID
-  pageName?: string;      // Optional page slug expected by the backend
-  startDate?: string;     // Format: YYYY-MM-DD
-  endDate?: string;      // Format: YYYY-MM-DD
+  pageId?: string; // Optional page ID
+  pageName?: string; // Optional page slug expected by the backend
+  startDate?: string; // Format: YYYY-MM-DD
+  endDate?: string; // Format: YYYY-MM-DD
   budget?: number;
 }
 
@@ -102,4 +102,10 @@ export interface AdDailyStats {
   views: number;
   clicks: number;
   spent: number;
+}
+
+export interface AdStatsSnapshot {
+  ad: AdItem;
+  dailyStats: AdDailyStats[];
+  fetchedAt: number;
 }

@@ -24,6 +24,7 @@ import {
   TouchableOpacity as GHTouchableOpacity,
 } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   Easing,
   Extrapolation,
   interpolate,
@@ -82,6 +83,7 @@ const PHOTO_VIEWER_SWIPE_BACK_ACTIVE_OFFSET = 15;
 const PHOTO_VIEWER_SWIPE_BACK_VELOCITY = 700;
 const PHOTO_VIEWER_SWIPE_BACK_RETURN_MIN_MS = 90;
 const PHOTO_VIEWER_SWIPE_BACK_RETURN_MAX_MS = 180;
+const PHOTO_VIEWER_VERTICAL_RETURN_DURATION_MS = 170;
 
 // Relative-time formatter used in the bottom publisher row. Mirrors
 // `formatPostTime` in FeedScreen so the viewer caption shows the
@@ -381,6 +383,7 @@ export function PhotoViewerModal({
 
   const translateY = useSharedValue(0);
   const translateX = useSharedValue(0);
+  const verticalDragStartY = useSharedValue(0);
   const openProgress = useSharedValue(0);
   const openScale = useSharedValue(0.92);
   const contentOpacity = useSharedValue(0);
@@ -401,6 +404,7 @@ export function PhotoViewerModal({
     chromeOpacity.value = 1;
     translateX.value = 0;
     translateY.value = 0;
+    verticalDragStartY.value = 0;
     dismissInFlight.value = false;
 
     if (!state) {
@@ -410,6 +414,7 @@ export function PhotoViewerModal({
     setCurrentIndex(state.initialIndex);
     translateX.value = 0;
     translateY.value = 0;
+    verticalDragStartY.value = 0;
     dismissInFlight.value = false;
     openProgress.value = 0;
     openScale.value = 0.96;
@@ -436,6 +441,7 @@ export function PhotoViewerModal({
     contentOpacity,
     chromeOpacity,
     dismissInFlight,
+    verticalDragStartY,
   ]);
 
   useEffect(() => {
@@ -743,16 +749,23 @@ export function PhotoViewerModal({
     .enabled(!isPhotoZoomed)
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
+    .onStart(() => {
+      'worklet';
+      if (dismissInFlight.value) return;
+      cancelAnimation(translateY);
+      verticalDragStartY.value = translateY.value;
+    })
     .onUpdate(event => {
       'worklet';
       if (dismissInFlight.value) return;
-      translateY.value = event.translationY;
+      translateY.value = verticalDragStartY.value + event.translationY;
     })
     .onEnd(event => {
       'worklet';
       if (dismissInFlight.value) return;
       // Dismiss on big vertical drag or high velocity; otherwise snap back.
-      const absTranslationY = Math.abs(event.translationY);
+      const releasedTranslateY = translateY.value;
+      const absTranslationY = Math.abs(releasedTranslateY);
       const absVelocityY = Math.abs(event.velocityY);
       const shouldDismiss =
         absTranslationY > 120 ||
@@ -761,7 +774,8 @@ export function PhotoViewerModal({
 
       if (shouldDismiss) {
         dismissInFlight.value = true;
-        const targetY = event.translationY > 0 ? SCREEN_H : -SCREEN_H;
+        verticalDragStartY.value = 0;
+        const targetY = releasedTranslateY > 0 ? SCREEN_H : -SCREEN_H;
         translateY.value = withTiming(targetY, { duration: 150 });
         translateX.value = withTiming(0, { duration: 150 });
         openScale.value = withTiming(0.92, { duration: 150 });
@@ -776,8 +790,21 @@ export function PhotoViewerModal({
           },
         );
       } else {
-        translateY.value = withSpring(0, { damping: 15, stiffness: 200 });
+        verticalDragStartY.value = 0;
+        translateY.value = withTiming(0, {
+          duration: PHOTO_VIEWER_VERTICAL_RETURN_DURATION_MS,
+          easing: Easing.out(Easing.cubic),
+        });
       }
+    })
+    .onFinalize((_event, success) => {
+      'worklet';
+      if (success || dismissInFlight.value) return;
+      verticalDragStartY.value = 0;
+      translateY.value = withTiming(0, {
+        duration: PHOTO_VIEWER_VERTICAL_RETURN_DURATION_MS,
+        easing: Easing.out(Easing.cubic),
+      });
     });
 
   // Match the Reels exit affordance: a deliberate rightward swipe from the

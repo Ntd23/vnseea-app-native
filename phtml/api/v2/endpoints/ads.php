@@ -456,7 +456,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields))
                 $clicks = array();
                 $views = array();
                 $user_id = Wo_Secure($get_ad_data['user_id']);
-                $sqlclicks = "SELECT DATE(dt) DateOnly, SUM(clicks) AS ADClicks , SUM(spend) AS Spend FROM `" . T_USERADS_DATA ."` WHERE user_id = ". $user_id ." AND ad_id = " . $ad_id . " AND clicks > 0 GROUP BY DateOnly,clicks,Spend ORDER BY dt DESC LIMIT 30";
+                $sqlclicks = "SELECT DATE(dt) DateOnly, SUM(clicks) AS ADClicks, SUM(spend) AS Spend FROM `" . T_USERADS_DATA ."` WHERE user_id = ". $user_id ." AND ad_id = " . $ad_id . " AND clicks > 0 GROUP BY DATE(dt) ORDER BY DateOnly DESC LIMIT 30";
                 $queryclicks = mysqli_query($sqlConnect, $sqlclicks);
                 if ($queryclicks != false && mysqli_num_rows($queryclicks)) {
                     while ($fetched_data = mysqli_fetch_assoc($queryclicks)) {
@@ -464,7 +464,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields))
                     }
                 }
 
-                $sqlviews = "SELECT DATE(dt) DateOnly, SUM(views) AS ADviews , SUM(spend) AS Spend FROM `" . T_USERADS_DATA ."` WHERE user_id = ". $user_id ." AND ad_id = " . $ad_id . " AND views > 0 GROUP BY DateOnly,views,Spend ORDER BY dt DESC LIMIT 30";
+                $sqlviews = "SELECT DATE(dt) DateOnly, SUM(views) AS ADviews, SUM(spend) AS Spend FROM `" . T_USERADS_DATA ."` WHERE user_id = ". $user_id ." AND ad_id = " . $ad_id . " AND views > 0 GROUP BY DATE(dt) ORDER BY DateOnly DESC LIMIT 30";
                 $queryviews = mysqli_query($sqlConnect, $sqlviews);
                 if ($queryviews != false && mysqli_num_rows($queryviews)) {
                     while ($fetched_data = mysqli_fetch_assoc($queryviews)) {
@@ -482,7 +482,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields))
                     'data' => array(
                         'ad' => $get_ad_data,
                         'clicks' => $clicks,
-                        'views' => $views
+                        'views' => $views,
+                        'server_time' => round(microtime(true) * 1000)
                     )
                 );
             }

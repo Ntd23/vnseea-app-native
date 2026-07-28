@@ -43,6 +43,11 @@ describe('page location picker contract', () => {
     expect(source).toContain('resolveInitialPlace');
     expect(source).toContain('onMapReady={handleMapReady}');
     expect(source).toContain('navigationBarTranslucent');
+    expect(source).toContain('StatusBar.currentHeight');
+    expect(source).toContain(
+      'Math.max(insets.top, androidStatusBarHeight, 10)',
+    );
+    expect(source).toContain('paddingTop: topSafeInset + 8');
     expect(source).toContain('parseMapCoordinate(latitude, longitude)');
     expect(source).toContain('cancelPendingReverseGeocode');
     expect(source).toContain('onRegionChangeStart={handleRegionChangeStart}');

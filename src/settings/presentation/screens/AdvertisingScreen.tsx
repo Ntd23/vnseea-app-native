@@ -3,20 +3,21 @@ import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appCo
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  AppState,
   Image,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
-  ArrowLeft,
   BarChart3,
   CalendarDays,
+  ChevronRight,
   CreditCard,
   Edit,
   Eye,
@@ -25,20 +26,21 @@ import {
   Plus,
   Trash2,
   Video,
+  WalletCards,
+  X,
 } from 'lucide-react-native';
+
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdvertisingViewModel } from '../../application/view-models/useAdvertisingViewModel';
 import type { AdItem } from '../../../advertising/domain/types/ads.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
-import {
-  languageStorage,
-  type AppLanguage,
-} from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAdvertisingCopy } from '../../../advertising/application/i18n/advertisingCopy';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 
 const BRAND = APP_BRAND_COLOR;
+const AD_LIST_REFRESH_INTERVAL_MS = 5_000;
 
 function formatNumber(value: number | string | undefined) {
   const numeric = Number(value ?? 0);
@@ -55,12 +57,12 @@ function isVideoMedia(url?: string) {
 function getStatus(ad: AdItem, copy: Record<string, string>) {
   const status = String(ad.status ?? '');
   if (status === '1') {
-    return { label: copy.statusRunning, color: '#16a34a', bg: '#dcfce7' };
+    return { label: copy.statusRunning, color: '#15803d', bg: '#dcfce7' };
   }
   if (status === '2') {
-    return { label: copy.statusPaused, color: '#ca8a04', bg: '#fef9c3' };
+    return { label: copy.statusPaused, color: '#a16207', bg: '#fef3c7' };
   }
-  return { label: copy.statusPending, color: '#64748b', bg: '#f1f5f9' };
+  return { label: copy.statusPending, color: '#475569', bg: '#e2e8f0' };
 }
 
 function getAppearsLabel(value: string, copy: Record<string, string>) {
@@ -86,12 +88,14 @@ function getBiddingLabel(value: string, copy: Record<string, string>) {
 
 function AdCampaignCard({
   ad,
+  currencySymbol,
   onEdit,
   onDelete,
   onViewDetails,
   copy,
 }: {
   ad: AdItem;
+  currencySymbol: string;
   onEdit: (ad: AdItem) => void;
   onDelete: (ad: AdItem) => void;
   onViewDetails: (ad: AdItem) => void;
@@ -101,296 +105,516 @@ function AdCampaignCard({
   const title = ad.headline || ad.name || copy.advertisingTitle;
   const mediaUrl = ad.ad_media;
   const hasImage = Boolean(mediaUrl && !isVideoMedia(mediaUrl));
+  const schedule =
+    ad.start || ad.end
+      ? `${ad.start || '...'} - ${ad.end || '...'}`
+      : copy.unlimited;
 
   return (
-    <View className="surface-card mb-3 overflow-hidden">
-      {hasImage ? (
-        <Image source={{ uri: mediaUrl }} className="h-40 w-full bg-slate-100" resizeMode="cover" />
-      ) : mediaUrl ? (
-        <View className="h-40 w-full items-center justify-center bg-slate-900">
-          <Video size={38} color="#ffffff" />
-          <Text className="mt-2 text-sm font-semibold text-white">{copy.adVideo || "Quảng cáo video"}</Text>
-        </View>
-      ) : null}
+    <View className="mb-4 overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+      <TouchableOpacity activeOpacity={0.9} onPress={() => onViewDetails(ad)}>
+        {hasImage ? (
+          <Image
+            source={{ uri: mediaUrl }}
+            className="h-44 w-full bg-slate-100"
+            resizeMode="cover"
+          />
+        ) : mediaUrl ? (
+          <View className="h-44 w-full items-center justify-center bg-slate-900">
+            <View className="h-14 w-14 items-center justify-center rounded-full bg-white/15">
+              <Video size={28} color="#ffffff" />
+            </View>
+            <Text className="mt-3 text-sm font-semibold text-white">
+              {copy.adVideo || 'Video ad'}
+            </Text>
+          </View>
+        ) : (
+          <View className="h-36 w-full items-center justify-center bg-slate-100">
+            <Megaphone size={34} color="#94a3b8" />
+          </View>
+        )}
+      </TouchableOpacity>
 
-      <View className="px-4 py-4">
+      <View className="p-4">
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1">
-            <Text className="text-title-primary text-[#1a1c1e]" numberOfLines={2}>
+            <Text
+              className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+              numberOfLines={1}
+            >
               {ad.name || copy.advertisingTitle}
             </Text>
-            <Text className="mt-1 text-sm text-[#64748b]" numberOfLines={2}>
-              {ad.headline || ''}
+            <Text
+              className="mt-1 text-lg font-bold leading-6 text-slate-900"
+              numberOfLines={2}
+            >
+              {title}
             </Text>
           </View>
 
-          <View className="rounded-full px-3 py-1" style={{ backgroundColor: status.bg }}>
+          <View
+            className="rounded-full px-2.5 py-1"
+            style={{ backgroundColor: status.bg }}
+          >
             <Text className="text-xs font-semibold" style={{ color: status.color }}>
               {status.label}
             </Text>
           </View>
         </View>
 
-        <View className="mt-4 flex-row flex-wrap gap-2">
-          <View className="rounded-full bg-[#eef2ff] px-3 py-1">
-            <Text className="text-xs font-semibold text-[#3730a3]">
+        {!!ad.description && (
+          <Text className="mt-2 text-sm leading-5 text-slate-600" numberOfLines={2}>
+            {ad.description}
+          </Text>
+        )}
+
+        <View className="mt-3 flex-row flex-wrap gap-2">
+          <View className="rounded-full bg-brand-subtle px-3 py-1.5">
+            <Text className="text-xs font-semibold text-brand">
               {getAppearsLabel(ad.appears, copy)}
             </Text>
           </View>
-          <View className="rounded-full bg-[#f1f5f9] px-3 py-1">
-            <Text className="text-xs font-semibold text-[#475569]">
+          <View className="rounded-full bg-slate-100 px-3 py-1.5">
+            <Text className="text-xs font-semibold text-slate-600">
               {getBiddingLabel(ad.bidding, copy)}
             </Text>
           </View>
           {!!ad.budget && Number(ad.budget) > 0 && (
-            <View className="rounded-full bg-[#ecfeff] px-3 py-1">
-              <Text className="text-xs font-semibold text-[#0891b2]">
-                {copy.budgetTag} {formatNumber(ad.budget)}
+            <View className="rounded-full bg-blue-50 px-3 py-1.5">
+              <Text className="text-xs font-semibold text-blue-700">
+                {copy.budgetTag} {formatNumber(ad.budget)} {currencySymbol}
               </Text>
             </View>
           )}
         </View>
 
-        <View className="mt-4 h-px bg-[#e2e8f0]" />
-
-        {/* Metrics Section: 3 columns */}
-        <View className="mt-4 flex-row items-center">
-          <View className="w-1/3 items-center px-1">
-            <Eye size={18} color="#64748b" />
-            <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              {formatNumber(ad.views)} {copy.views}
+        <View className="mt-4 overflow-hidden rounded-2xl bg-slate-50">
+          <View className="flex-row items-center justify-between border-b border-slate-200 px-3 py-2.5">
+            <Text className="text-xs font-semibold text-slate-600">
+              {copy.liveMetrics}
             </Text>
+            <View className="flex-row items-center rounded-full bg-emerald-50 px-2 py-1">
+              <View className="mr-1.5 h-2 w-2 rounded-full bg-emerald-500" />
+              <Text className="text-[11px] font-bold text-emerald-700">
+                {copy.live}
+              </Text>
+            </View>
           </View>
-          <View className="w-1/3 items-center px-1">
-            <MousePointerClick size={18} color="#64748b" />
-            <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              {formatNumber(ad.clicks)} {copy.clicks}
-            </Text>
-          </View>
-          <View className="w-1/3 items-center px-1">
-            <BarChart3 size={18} color="#64748b" />
-            <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              {copy.spent} {formatNumber(ad.spent)}đ
-            </Text>
+          <View className="flex-row px-2 py-3">
+            <View className="flex-1 items-center px-1">
+              <Eye size={17} color="#64748b" />
+              <Text className="mt-1 text-base font-bold text-slate-900">
+                {formatNumber(ad.views)}
+              </Text>
+              <Text className="text-[11px] text-slate-500">{copy.viewsLabel}</Text>
+            </View>
+            <View className="my-1 w-px bg-slate-200" />
+            <View className="flex-1 items-center px-1">
+              <MousePointerClick size={17} color="#64748b" />
+              <Text className="mt-1 text-base font-bold text-slate-900">
+                {formatNumber(ad.clicks)}
+              </Text>
+              <Text className="text-[11px] text-slate-500">{copy.clicksLabel}</Text>
+            </View>
+            <View className="my-1 w-px bg-slate-200" />
+            <View className="flex-1 items-center px-1">
+              <BarChart3 size={17} color="#64748b" />
+              <Text
+                className="mt-1 text-base font-bold text-slate-900"
+                numberOfLines={1}
+              >
+                {formatNumber(ad.spent)}
+              </Text>
+              <Text className="text-[11px] text-slate-500">{copy.spentLabel}</Text>
+            </View>
           </View>
         </View>
 
-        <View className="mt-4 h-px bg-[#e2e8f0]" />
+        <View className="mt-3 flex-row items-center rounded-xl border border-slate-100 px-3 py-2.5">
+          <CalendarDays size={16} color="#64748b" />
+          <Text className="ml-2 flex-1 text-xs text-slate-600" numberOfLines={1}>
+            {schedule}
+          </Text>
+        </View>
 
-        {/* Actions Row */}
-        <View className="mt-4 flex-row items-center justify-between">
-          <View className="flex-row items-center flex-1 pr-2">
-            <CalendarDays size={14} color="#64748b" />
-            <Text className="ml-1 text-[11px] text-[#64748b]" numberOfLines={1}>
-              {ad.start || ad.end ? `${ad.start || '...'} - ${ad.end || '...'}` : copy.unlimited}
-            </Text>
-          </View>
+        <View className="mt-4 flex-row gap-2">
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => onViewDetails(ad)}
+            className="min-h-[46px] flex-1 flex-row items-center justify-center rounded-xl bg-brand px-3"
+          >
+            <BarChart3 size={17} color="#ffffff" />
+            <Text className="ml-2 text-sm font-semibold text-white">{copy.details}</Text>
+          </TouchableOpacity>
 
-          <View className="flex-row gap-2">
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => onViewDetails(ad)}
-              className="flex-row items-center rounded-lg border border-brand-border px-3 py-1.5 bg-brand-subtle"
-            >
-              <BarChart3 size={14} color={APP_BRAND_COLOR} />
-              <Text className="ml-1.5 text-xs font-semibold text-brand">{copy.details}</Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => onEdit(ad)}
+            className="min-h-[46px] flex-row items-center justify-center rounded-xl border border-slate-200 bg-white px-4"
+          >
+            <Edit size={17} color="#475569" />
+            <Text className="ml-2 text-sm font-semibold text-slate-700">{copy.edit}</Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => onEdit(ad)}
-              className="flex-row items-center rounded-lg border border-slate-200 px-3 py-1.5 bg-slate-50"
-            >
-              <Edit size={14} color="#475569" />
-              <Text className="ml-1.5 text-xs font-semibold text-slate-700">{copy.edit}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => onDelete(ad)}
-              className="flex-row items-center rounded-lg border border-red-200 px-3 py-1.5 bg-red-50"
-            >
-              <Trash2 size={14} color="#ef4444" />
-              <Text className="ml-1.5 text-xs font-semibold text-red-600">{copy.delete}</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            accessibilityLabel={copy.delete}
+            activeOpacity={0.8}
+            onPress={() => onDelete(ad)}
+            className="h-[46px] w-[46px] items-center justify-center rounded-xl border border-red-200 bg-red-50"
+          >
+            <Trash2 size={18} color="#dc2626" />
+          </TouchableOpacity>
         </View>
       </View>
     </View>
   );
 }
 
-function CampaignTableRow({
-  ad,
-  onEdit,
-  onDelete,
-  onViewDetails,
-  copy,
-}: {
-  ad: AdItem;
-  onEdit: (ad: AdItem) => void;
-  onDelete: (ad: AdItem) => void;
-  onViewDetails: (ad: AdItem) => void;
-  copy: Record<string, string>;
-}) {
-  const status = getStatus(ad, copy);
-  return (
-    <TouchableOpacity
-      activeOpacity={0.75}
-      onPress={() => onViewDetails(ad)}
-      className="min-h-[54px] flex-row items-center border-b border-[#e5e7eb] bg-white">
-      <Text className="w-12 px-2 text-xs text-[#475569]">{ad.id}</Text>
-      <Text className="w-40 px-2 text-xs text-[#475569]" numberOfLines={2}>{ad.name}</Text>
-      <Text className="w-24 px-2 text-xs text-[#475569]">{getBiddingLabel(ad.bidding, copy)}</Text>
-      <Text className="w-20 px-2 text-center text-xs text-[#475569]">{formatNumber(ad.clicks)}</Text>
-      <Text className="w-20 px-2 text-center text-xs text-[#475569]">{formatNumber(ad.views)}</Text>
-      <Text className="w-24 px-2 text-xs font-semibold" style={{ color: status.color }}>{status.label}</Text>
-      <Text className="w-24 px-2 text-xs text-[#475569]">{getAppearsLabel(ad.appears, copy)}</Text>
-      <View className="w-28 flex-row justify-center gap-4 px-2">
-        <TouchableOpacity onPress={() => onEdit(ad)} hitSlop={8}>
-          <Edit size={17} color={APP_BRAND_COLOR} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => onDelete(ad)} hitSlop={8}>
-          <Trash2 size={17} color="#ef4444" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 function AdvertisingScreen() {
   const navigation = useNavigation<any>();
-  const { ads, options, isLoading, isRefreshing, error, fetchAds, refresh, deleteAd } = useAdvertisingViewModel();
+  const {
+    ads,
+    options,
+    isLoading,
+    isRefreshing,
+    isDeleting,
+    error,
+    fetchAds,
+    refresh,
+    syncAds,
+    deleteAd,
+  } = useAdvertisingViewModel();
   const language = useAppLanguage();
   const copy = getAdvertisingCopy(language);
+  const currencySymbol = options?.currencySymbol || options?.currency || 'VNSEEA';
+  const [pendingDeleteAd, setPendingDeleteAd] = useState<AdItem | null>(null);
 
   useFocusEffect(
     useCallback(() => {
+      let appState = AppState.currentState;
+      let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+      const stopRealtimeSync = () => {
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = null;
+      };
+      const startRealtimeSync = () => {
+        if (appState !== 'active' || refreshTimer) return;
+        refreshTimer = setInterval(() => {
+          syncAds().catch(() => undefined);
+        }, AD_LIST_REFRESH_INTERVAL_MS);
+      };
+
       fetchAds();
-    }, [fetchAds]),
+      startRealtimeSync();
+
+      const appStateSubscription = AppState.addEventListener(
+        'change',
+        nextState => {
+          appState = nextState;
+          if (nextState === 'active') {
+            syncAds().catch(() => undefined);
+            startRealtimeSync();
+          } else {
+            stopRealtimeSync();
+          }
+        },
+      );
+
+      return () => {
+        stopRealtimeSync();
+        appStateSubscription.remove();
+      };
+    }, [fetchAds, syncAds]),
   );
 
-  const handleEdit = useCallback((ad: AdItem) => {
-    navigation.navigate(ROUTES.CREATE_AD, { ad });
-  }, [navigation]);
+  const handleEdit = useCallback(
+    (ad: AdItem) => {
+      navigation.navigate(ROUTES.CREATE_AD, { ad });
+    },
+    [navigation],
+  );
 
-  const handleViewDetails = useCallback((ad: AdItem) => {
-    navigation.navigate(ROUTES.AD_DETAILS, { ad });
-  }, [navigation]);
+  const handleViewDetails = useCallback(
+    (ad: AdItem) => {
+      navigation.navigate(ROUTES.AD_DETAILS, { ad });
+    },
+    [navigation],
+  );
 
   const handleDelete = useCallback((ad: AdItem) => {
-    Alert.alert(
-      copy.deleteConfirmTitle || 'Xóa quảng cáo',
-      (copy.deleteConfirmMessage || 'Bạn có chắc chắn muốn xóa chiến dịch "{name}" không? Hành động này không thể hoàn tác.').replace('{name}', ad.headline || ad.name || ''),
-      [
-        { text: copy.cancel || 'Hủy', style: 'cancel' },
-        {
-          text: copy.delete || 'Xóa',
-          style: 'destructive',
-          onPress: async () => {
-            const res = await deleteAd(ad.id);
-            if (res.success) {
-              Alert.alert(copy.success || 'Thành công', copy.deleteSuccess);
-            } else {
-              Alert.alert(copy.failed || 'Thất bại', res.error || copy.deleteFailed);
-            }
-          },
-        },
-      ]
-    );
-  }, [deleteAd, copy]);
+    setPendingDeleteAd(ad);
+  }, []);
+
+  const closeDeleteModal = useCallback(() => {
+    if (!isDeleting) setPendingDeleteAd(null);
+  }, [isDeleting]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDeleteAd || isDeleting) return;
+
+    const result = await deleteAd(pendingDeleteAd.id);
+    if (result.success) {
+      setPendingDeleteAd(null);
+      showSnackbar({ message: copy.deleteSuccess, type: 'success' });
+      return;
+    }
+
+    showSnackbar({
+      message: result.error || copy.deleteFailed,
+      type: 'error',
+    });
+  }, [copy.deleteFailed, copy.deleteSuccess, deleteAd, isDeleting, pendingDeleteAd]);
 
   const isEmpty = !isLoading && ads.length === 0;
+  const campaignCountLabel =
+    language === 'vi' ? `${ads.length} chiến dịch` : `${ads.length} campaigns`;
+  const campaignHelper =
+    language === 'vi'
+      ? 'Theo dõi hiệu suất và quản lý quảng cáo của bạn.'
+      : 'Track performance and manage your advertisements.';
+  const manageBalanceLabel =
+    language === 'vi' ? 'Quản lý số dư' : 'Manage balance';
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+    <View className="flex-1 bg-[#f6f8fc]">
+      <FocusAwareStatusBar
+        barStyle="light-content"
+        backgroundColor={APP_BRAND_COLOR}
+      />
+      <SafeAreaFeedHeader safeAreaBackgroundColor={APP_BRAND_COLOR} />
 
       <ScrollView
         className="flex-1"
-        contentContainerClassName="flex-grow"
+        contentContainerClassName="flex-grow px-4 pb-10 pt-4"
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={BRAND} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refresh}
+            tintColor={BRAND}
+            colors={[BRAND]}
+          />
         }
-        showsVerticalScrollIndicator={false}>
-        <View className="bg-[#eef3ff] px-3 pb-4 pt-3">
-          <View className="rounded-md bg-brand px-4 py-4">
-            <Text className="text-sm text-white/80">{copy.walletBalance || "Số Dư VNSEEA"}</Text>
-            <Text className="mt-1 text-[27px] font-normal text-white">
-              {formatNumber(options?.walletBalance)} {options?.currencySymbol || 'VNSEEA'}
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="overflow-hidden rounded-[24px] bg-brand p-5">
+          <View className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/10" />
+          <View className="absolute -bottom-16 right-20 h-32 w-32 rounded-full bg-black/5" />
+
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center">
+              <View className="h-10 w-10 items-center justify-center rounded-xl bg-white/15">
+                <WalletCards size={21} color="#ffffff" />
+              </View>
+              <Text className="ml-3 text-sm font-semibold text-white/85">
+                {copy.walletBalance}
+              </Text>
+            </View>
+            <View className="rounded-full bg-white/15 px-3 py-1.5">
+              <Text className="text-xs font-semibold text-white">{currencySymbol}</Text>
+            </View>
+          </View>
+
+          <Text className="mt-5 text-[34px] font-bold leading-10 text-white">
+            {formatNumber(options?.walletBalance)}
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            className="mt-5 min-h-[46px] flex-row items-center justify-center rounded-xl bg-white px-4"
+            onPress={() => navigation.navigate(ROUTES.MY_BALANCE)}
+          >
+            <CreditCard size={18} color={BRAND} />
+            <Text className="ml-2 flex-1 text-center text-sm font-bold text-brand">
+              {manageBalanceLabel}
+            </Text>
+            <ChevronRight size={18} color={BRAND} />
+          </TouchableOpacity>
+        </View>
+
+        <View className="mt-3 flex-row gap-3">
+          <TouchableOpacity
+            activeOpacity={0.82}
+            className="min-h-[86px] flex-1 flex-row items-center rounded-2xl border border-brand-border bg-white px-4"
+            onPress={() => navigation.navigate(ROUTES.CREATE_AD)}
+          >
+            <View className="h-11 w-11 items-center justify-center rounded-xl bg-brand-subtle">
+              <Plus size={22} color={BRAND} />
+            </View>
+            <View className="ml-3 flex-1">
+              <Text className="text-sm font-bold text-slate-900">{copy.newCampaign}</Text>
+              <Text className="mt-1 text-xs text-slate-500">{copy.createAd}</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.82}
+            className="min-h-[86px] flex-1 flex-row items-center rounded-2xl border border-slate-200 bg-white px-4"
+            onPress={() => navigation.navigate(ROUTES.MY_BALANCE)}
+          >
+            <View className="h-11 w-11 items-center justify-center rounded-xl bg-slate-100">
+              <CreditCard size={21} color="#475569" />
+            </View>
+            <View className="ml-3 flex-1">
+              <Text className="text-sm font-bold text-slate-900">
+                {copy.walletTitle}
+              </Text>
+              <Text className="mt-1 text-xs text-slate-500">{manageBalanceLabel}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <View className="mb-3 mt-7 flex-row items-end justify-between gap-3">
+          <View className="flex-1">
+            <View className="flex-row items-center">
+              <View className="h-9 w-9 items-center justify-center rounded-xl bg-brand-subtle">
+                <Megaphone size={19} color={BRAND} />
+              </View>
+              <Text className="ml-3 text-xl font-bold text-slate-900">
+                {copy.campaigns}
+              </Text>
+            </View>
+            <Text className="mt-2 text-sm leading-5 text-slate-500">
+              {campaignHelper}
             </Text>
           </View>
-
-          <View className="mt-3 bg-white">
-            <TouchableOpacity className="min-h-[52px] flex-row items-center border-l-2 border-brand px-4">
-              <Megaphone size={18} color="#111827" />
-              <Text className="ml-3 text-sm font-semibold text-[#111827]">{copy.campaigns || "Các Chiến Dịch"}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="min-h-[52px] flex-row items-center border-t border-[#f1f5f9] px-4"
-              onPress={() => navigation.navigate(ROUTES.MY_BALANCE)}>
-              <CreditCard size={18} color="#8b8b8b" />
-              <Text className="ml-3 text-sm text-[#8b8b8b]">{copy.walletTitle || "VNSEEA"}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="min-h-[52px] flex-row items-center border-t border-[#f1f5f9] px-4"
-              onPress={() => navigation.navigate(ROUTES.CREATE_AD)}>
-              <Plus size={18} color="#8b8b8b" />
-              <Text className="ml-3 text-sm text-[#8b8b8b]">{copy.newCampaign || "Chiến Dịch Mới"}</Text>
-            </TouchableOpacity>
+          <View className="rounded-full bg-slate-200 px-3 py-1.5">
+            <Text className="text-xs font-semibold text-slate-700">
+              {campaignCountLabel}
+            </Text>
           </View>
         </View>
 
-        <View className="mt-4 min-h-[52px] flex-row items-center border-b border-[#dbe2ef] bg-white px-4">
-          <Megaphone size={18} color={APP_BRAND_COLOR} />
-          <Text className="ml-2 text-sm font-semibold text-[#111827]">{copy.campaigns || "Các chiến dịch"}</Text>
-        </View>
-        {isLoading && ads.length === 0 ? (
-          <View className="flex-1 items-center justify-center px-8 py-20">
-            <ActivityIndicator size="large" color={BRAND} />
-            <Text className="mt-4 text-sm text-[#64748b]">{copy.loadingAds}</Text>
-          </View>
-        ) : isEmpty ? (
-          <View className="items-center bg-white px-8 py-16">
-            <Megaphone size={38} color="#94a3b8" />
-            <Text className="mt-3 text-sm text-[#64748b]">{error || copy.noAdsDesc}</Text>
-          </View>
-        ) : (
-          <View className="pb-8">
-            {!!error && (
-              <View className="mb-3 rounded-2xl bg-red-50 px-4 py-3">
-                <Text className="text-sm text-red-700">{error}</Text>
-              </View>
-            )}
-
-            <ScrollView horizontal showsHorizontalScrollIndicator>
-              <View className="w-[748px]">
-                <View className="min-h-[58px] flex-row items-center bg-[#e8efff]">
-                  <Text className="w-12 px-2 text-center text-xs font-semibold">{copy.id || "ID"}</Text>
-                  <Text className="w-40 px-2 text-center text-xs font-semibold">{copy.companyName || "Công ty"}</Text>
-                  <Text className="w-24 px-2 text-center text-xs font-semibold">{copy.bidding || "Đấu thầu"}</Text>
-                  <Text className="w-20 px-2 text-center text-xs font-semibold">{copy.clicksCount || "Số lần nhấp"}</Text>
-                  <Text className="w-20 px-2 text-center text-xs font-semibold">{copy.viewsLabel || "Lượt xem"}</Text>
-                  <Text className="w-24 px-2 text-center text-xs font-semibold">{copy.status || "Trạng thái"}</Text>
-                  <Text className="w-24 px-2 text-center text-xs font-semibold">{copy.positionLabel || "Vị trí"}</Text>
-                  <Text className="w-28 px-2 text-center text-xs font-semibold">{copy.actions || "Thao tác"}</Text>
-                </View>
-                {ads.map(ad => (
-                  <CampaignTableRow
-                    key={String(ad.id)}
-                    ad={ad}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onViewDetails={handleViewDetails}
-                    copy={copy}
-                  />
-                ))}
-              </View>
-            </ScrollView>
+        {!!error && (
+          <View className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+            <Text className="text-sm text-red-700">{error}</Text>
           </View>
         )}
+
+        {isLoading && ads.length === 0 ? (
+          <View className="min-h-[260px] items-center justify-center rounded-[24px] border border-slate-200 bg-white px-8">
+            <ActivityIndicator size="large" color={BRAND} />
+            <Text className="mt-4 text-sm text-slate-500">{copy.loadingAds}</Text>
+          </View>
+        ) : isEmpty ? (
+          <View className="items-center rounded-[24px] border border-slate-200 bg-white px-7 py-12">
+            <View className="h-16 w-16 items-center justify-center rounded-full bg-brand-subtle">
+              <Megaphone size={30} color={BRAND} />
+            </View>
+            <Text className="mt-4 text-lg font-bold text-slate-900">{copy.noAds}</Text>
+            <Text className="mt-2 text-center text-sm leading-5 text-slate-500">
+              {copy.noAdsDesc}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              className="mt-5 min-h-[46px] flex-row items-center justify-center rounded-xl bg-brand px-5"
+              onPress={() => navigation.navigate(ROUTES.CREATE_AD)}
+            >
+              <Plus size={18} color="#ffffff" />
+              <Text className="ml-2 text-sm font-bold text-white">
+                {copy.createNewAd}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          ads.map(ad => (
+            <AdCampaignCard
+              key={String(ad.id)}
+              ad={ad}
+              currencySymbol={currencySymbol}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onViewDetails={handleViewDetails}
+              copy={copy}
+            />
+          ))
+        )}
       </ScrollView>
+
+      <Modal
+        visible={Boolean(pendingDeleteAd)}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        presentationStyle="overFullScreen"
+        onRequestClose={closeDeleteModal}
+      >
+        <View className="flex-1 items-center justify-center bg-slate-950/55 px-5">
+          <Pressable
+            accessibilityLabel={copy.cancel}
+            className="absolute inset-0"
+            disabled={isDeleting}
+            onPress={closeDeleteModal}
+          />
+
+          <View
+            accessibilityRole="alert"
+            accessibilityViewIsModal
+            className="w-full max-w-[420px] rounded-[28px] bg-white px-5 pb-5 pt-6"
+          >
+            <TouchableOpacity
+              accessibilityLabel={copy.cancel}
+              activeOpacity={0.75}
+              className="absolute right-4 top-4 z-10 h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+              disabled={isDeleting}
+              onPress={closeDeleteModal}
+            >
+              <X size={19} color="#64748b" />
+            </TouchableOpacity>
+
+            <View className="h-14 w-14 items-center justify-center rounded-2xl bg-red-50">
+              <Trash2 size={27} color="#dc2626" />
+            </View>
+
+            <Text className="mt-5 pr-12 text-2xl font-bold leading-8 text-slate-900">
+              {copy.deleteConfirmTitle}
+            </Text>
+            <Text className="mt-2 text-sm leading-5 text-slate-600">
+              {copy.deleteCampaignPrompt}
+            </Text>
+
+            <View className="mt-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3">
+              <Text className="text-xs font-semibold uppercase tracking-wide text-red-600">
+                {language === 'vi' ? 'Chiến dịch' : 'Campaign'}
+              </Text>
+              <Text className="mt-1 text-base font-bold leading-6 text-slate-900" numberOfLines={2}>
+                {pendingDeleteAd?.headline || pendingDeleteAd?.name || copy.advertisingTitle}
+              </Text>
+            </View>
+
+            <Text className="mt-3 text-xs leading-5 text-slate-500">
+              {copy.deleteIrreversible}
+            </Text>
+
+            <View className="mt-6 flex-row gap-3">
+              <TouchableOpacity
+                activeOpacity={0.8}
+                className="min-h-[52px] flex-1 items-center justify-center rounded-2xl bg-slate-100 px-4"
+                disabled={isDeleting}
+                onPress={closeDeleteModal}
+              >
+                <Text className="text-sm font-bold text-slate-700">{copy.cancel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityLabel={copy.delete}
+                activeOpacity={0.85}
+                className="min-h-[52px] flex-1 flex-row items-center justify-center rounded-2xl bg-red-600 px-4"
+                disabled={isDeleting}
+                onPress={confirmDelete}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <>
+                    <Trash2 size={18} color="#ffffff" />
+                    <Text className="ml-2 text-sm font-bold text-white">{copy.delete}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

@@ -1,11 +1,15 @@
 // Description: Renders a WoWonder-style group profile with composer, filters, and group metadata.
-import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   Text,
@@ -14,6 +18,9 @@ import {
   View,
 } from 'react-native';
 import {
+  ArrowLeft,
+  Camera,
+  Check,
   Edit3,
   FileText,
   Globe2,
@@ -21,8 +28,11 @@ import {
   Info,
   Search,
   Tag,
+  UserPlus,
   Users,
+  X,
 } from 'lucide-react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useSharedValue } from 'react-native-reanimated';
 import {
   useFocusEffect,
@@ -37,6 +47,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
+import { FEED_CARD_CLASS } from '../../../feed/presentation/components/FeedCardChrome';
 import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
 import {
   FEED_COPY,
@@ -62,12 +73,34 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  ImageCropperModal,
+  type CropSourceImage,
+  type CroppedImageAsset,
+  type ImageCropTarget,
+} from '../../../shared-kernel/presentation/components/ImageCropperModal';
+import {
+  PROFILE_IMAGE_PICKER_OPTIONS,
+  prepareProfileImageForCrop,
+  waitForImagePickerDismissal,
+} from '../../../shared-kernel/presentation/utils/profileImagePicker';
 import { GroupPostMenuActionSheet } from './GroupPostMenuActionSheet';
 import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 import { createCommunityRepository } from '../../infrastructure/repositories/ApiCommunityRepository';
+import type {
+  GroupItem,
+  GroupMembershipStatus,
+} from '../../domain/types/community.types';
+import {
+  PageMediaViewerModal,
+  type PageMediaKind,
+} from '../../../pages/presentation/components/PageMediaViewerModal';
 
 type GroupDetailNav = NativeStackNavigationProp<RootStackParamList>;
-type GroupDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.GROUP_DETAIL>;
+type GroupDetailRoute = RouteProp<
+  RootStackParamList,
+  typeof ROUTES.GROUP_DETAIL
+>;
 
 const BRAND = APP_BRAND_COLOR;
 const FALLBACK_COVER =
@@ -78,12 +111,18 @@ const communityRepository = createCommunityRepository();
 
 const GROUP_DETAIL_COPY = {
   vi: {
-    membersCountSuffix: 'Các thành viên',
+    membersCountSuffix: 'thành viên',
     btnEdit: 'Chỉnh sửa',
     btnView: 'Xem nhóm',
     joinGroup: 'Tham gia nhóm',
     joiningGroup: 'Đang tham gia...',
     joinRequested: 'Đang chờ duyệt',
+    joinedGroup: 'Đã tham gia',
+    groupCoverAction: 'Ảnh bìa',
+    groupAvatarAction: 'Ảnh đại diện nhóm',
+    groupMediaUpdateError: 'Không thể cập nhật ảnh nhóm. Vui lòng thử lại.',
+    joinHint: 'Tham gia để đăng bài và kết nối cùng các thành viên.',
+    requestedHint: 'Yêu cầu của bạn đang chờ quản trị viên phê duyệt.',
     joinError: 'Không thể tham gia nhóm. Vui lòng thử lại.',
     composerPlaceholder: 'Hôm nay bạn thế nào ?',
     actionPhoto: 'Hình ảnh',
@@ -91,19 +130,28 @@ const GROUP_DETAIL_COPY = {
     actionProduct: 'Sản phẩm',
     actionPoll: 'Thăm dò',
     postsEmpty: 'Không có bài đăng nào để hiển thị',
+    postsSearchEmpty: 'Không tìm thấy bài viết phù hợp.',
+    postsSectionTitle: 'Bài viết trong nhóm',
+    postsLoadedLabel: 'bài viết',
+    retryPosts: 'Tải lại',
     searchTitle: 'Tìm kiếm các bài viết',
     searchPlaceholder: 'Tìm kiếm bài viết...',
+    clearSearch: 'Xóa nội dung tìm kiếm',
+    backLabel: 'Quay lại',
     sectionInfo: 'Thông tin',
-    sectionAbout: 'Về',
+    sectionAbout: 'Giới thiệu',
     noAbout: 'Chưa có mô tả nhóm.',
     membersStats: '+0 Tuần này',
     postsStatsSuffix: 'bài viết',
     fallbackUsername: 'Thành viên',
-    privacyPublic: 'Công cộng',
+    privacyPublic: 'Công khai',
     privacyPrivate: 'Riêng tư',
     categoryOther: 'Khác',
     groupContextMissingTitle: 'Không đăng được',
     groupContextMissingMessage: 'Không tìm thấy nhóm để đăng bài.',
+    groupMembershipRequiredMessage: 'Bạn cần tham gia nhóm trước khi đăng bài.',
+    groupMembershipCheckError:
+      'Không thể kiểm tra quyền đăng bài. Vui lòng thử lại.',
     editPostTitle: 'Chỉnh sửa bài',
     editPostPlaceholder: 'Nội dung bài viết',
     editPostCancel: 'Hủy',
@@ -122,21 +170,34 @@ const GROUP_DETAIL_COPY = {
     pinGroupMissing: 'Không tìm thấy nhóm để ghim bài viết.',
   },
   en: {
-    membersCountSuffix: 'Members',
+    membersCountSuffix: 'members',
     btnEdit: 'Edit',
     btnView: 'View Group',
     joinGroup: 'Join group',
     joiningGroup: 'Joining...',
     joinRequested: 'Request pending',
+    joinedGroup: 'Joined',
+    groupCoverAction: 'Cover photo',
+    groupAvatarAction: 'Group profile photo',
+    groupMediaUpdateError:
+      'Unable to update the group image. Please try again.',
+    joinHint: 'Join to create posts and connect with other members.',
+    requestedHint: 'Your request is waiting for an admin to approve it.',
     joinError: 'Unable to join this group. Please try again.',
-    composerPlaceholder: 'What\'s on your mind?',
+    composerPlaceholder: "What's on your mind?",
     actionPhoto: 'Photos',
     actionVideo: 'Videos',
     actionProduct: 'Product',
     actionPoll: 'Poll',
     postsEmpty: 'No posts to display',
+    postsSearchEmpty: 'No matching posts found.',
+    postsSectionTitle: 'Group posts',
+    postsLoadedLabel: 'posts',
+    retryPosts: 'Try again',
     searchTitle: 'Search Posts',
     searchPlaceholder: 'Search posts...',
+    clearSearch: 'Clear post search',
+    backLabel: 'Go back',
     sectionInfo: 'Information',
     sectionAbout: 'About',
     noAbout: 'No group description yet.',
@@ -148,6 +209,10 @@ const GROUP_DETAIL_COPY = {
     categoryOther: 'Other',
     groupContextMissingTitle: 'Cannot post',
     groupContextMissingMessage: 'Group context was not found.',
+    groupMembershipRequiredMessage:
+      'You need to join this group before posting.',
+    groupMembershipCheckError:
+      'Unable to verify posting access. Please try again.',
     editPostTitle: 'Edit post',
     editPostPlaceholder: 'Post content',
     editPostCancel: 'Cancel',
@@ -164,7 +229,7 @@ const GROUP_DETAIL_COPY = {
     unpinnedTitle: 'Post unpinned',
     unpinnedMessage: 'The post is no longer pinned in this group.',
     pinGroupMissing: 'Group context was not found for pinning this post.',
-  }
+  },
 };
 
 function formatCompact(value?: number) {
@@ -174,9 +239,23 @@ function formatCompact(value?: number) {
   return String(Math.round(safeValue));
 }
 
+function getGroupMembershipStatus(
+  group: GroupItem | undefined,
+): GroupMembershipStatus {
+  return (
+    group?.membershipStatus ??
+    (group?.isOwner ? 'owner' : group?.isJoined ? 'joined' : 'not_joined')
+  );
+}
+
+function canCurrentUserPostToGroup(group: GroupItem | undefined) {
+  const status = getGroupMembershipStatus(group);
+  return status === 'owner' || status === 'joined';
+}
+
 function GroupAvatar({
   avatar,
-  size = 92,
+  size = 88,
 }: {
   avatar?: string;
   size?: number;
@@ -192,7 +271,7 @@ function GroupAvatar({
       <Image
         source={{ uri: avatar }}
         style={{ height: size, width: size, borderRadius: size / 2 }}
-        className="border-2 border-white bg-slate-100"
+        className="border-4 border-white bg-slate-100 shadow-lg"
         resizeMode="cover"
         onError={() => setImageFailed(true)}
       />
@@ -202,9 +281,9 @@ function GroupAvatar({
   return (
     <View
       style={{ height: size, width: size, borderRadius: size / 2 }}
-      className="items-center justify-center border-2 border-white bg-red-100"
+      className="items-center justify-center border-4 border-white bg-brand-soft shadow-lg"
     >
-      <Users size={Math.round(size * 0.48)} color="#ff4d4f" />
+      <Users size={Math.round(size * 0.45)} color={APP_BRAND_COLOR} />
     </View>
   );
 }
@@ -219,10 +298,35 @@ function GroupCoverImage({ cover }: { cover?: string }) {
   return (
     <Image
       source={{ uri: !coverFailed && cover ? cover : FALLBACK_COVER }}
-      style={{ width: '100%', height: 128, backgroundColor: '#E2E8F0' }}
+      style={{
+        width: '100%',
+        height: 172,
+        backgroundColor: APP_COLORS.neutral.border,
+      }}
       resizeMode="cover"
       onError={() => setCoverFailed(true)}
     />
+  );
+}
+
+function GroupMetaRow({
+  membersLabel,
+  privacyLabel,
+  categoryLabel,
+}: {
+  membersLabel: string;
+  privacyLabel: string;
+  categoryLabel: string;
+}) {
+  return (
+    <View className="mt-2 flex-row flex-wrap items-center">
+      <Text className="text-body-secondary">{membersLabel}</Text>
+      <View className="mx-2 h-1 w-1 rounded-full bg-slate-300" />
+      <Globe2 size={15} color={APP_COLORS.neutral.textMuted} />
+      <Text className="ml-1 text-body-secondary">{privacyLabel}</Text>
+      <View className="mx-2 h-1 w-1 rounded-full bg-slate-300" />
+      <Text className="text-body-secondary">{categoryLabel}</Text>
+    </View>
   );
 }
 
@@ -234,10 +338,8 @@ function SectionTitle({
   title: string;
 }) {
   return (
-    <View className="flex-row items-center border-b border-slate-100 px-4 py-3">
-      <View className="h-7 w-7 items-center justify-center rounded-full bg-brand">
-        {icon}
-      </View>
+    <View className="flex-row items-center border-b border-slate-100 px-3 py-3">
+      {icon}
       <Text className="ml-2 text-title-primary">{title}</Text>
     </View>
   );
@@ -246,17 +348,20 @@ function SectionTitle({
 function InfoRow({
   icon,
   label,
-  right,
+  isLast = false,
 }: {
   icon: React.ReactNode;
   label: string;
-  right?: string;
+  isLast?: boolean;
 }) {
   return (
-    <View className="flex-row items-center border-b border-slate-100 px-4 py-2.5">
+    <View
+      className={`flex-row items-center px-3 py-3 ${
+        isLast ? '' : 'border-b border-slate-200'
+      }`}
+    >
       <View className="w-7 items-center">{icon}</View>
-      <Text className="ml-2 flex-1 text-caption-secondary">{label}</Text>
-      {right ? <Text className="text-caption-primary text-green-600">{right}</Text> : null}
+      <Text className="ml-2 flex-1 text-body-secondary">{label}</Text>
     </View>
   );
 }
@@ -273,22 +378,45 @@ function GroupDetailScreen() {
   const routeGroupId = routeGroup?.groupId || routeGroup?.id;
   const [group, setGroup] = useState(routeGroup);
   const [isJoiningGroup, setIsJoiningGroup] = useState(false);
+  const [updatingGroupMedia, setUpdatingGroupMedia] = useState<
+    'avatar' | 'cover' | null
+  >(null);
+  const [groupCropRequest, setGroupCropRequest] = useState<{
+    target: ImageCropTarget;
+    image: CropSourceImage;
+  } | null>(null);
+  const [groupMediaViewer, setGroupMediaViewer] =
+    useState<PageMediaKind | null>(null);
+  const [isCheckingPostAccess, setIsCheckingPostAccess] = useState(false);
   const profile = sessionStorage.getUserProfile();
   const activeUserAvatar = profile?.avatarUrl;
   const activeUserDisplayName = profile?.name || copy.fallbackUsername;
   const [searchQuery, setSearchQuery] = useState('');
-  const [posts, setPosts] = useState<Array<FeedTextPost | FeedVideoPost | FeedPollPost>>([]);
+  const [posts, setPosts] = useState<
+    Array<FeedTextPost | FeedVideoPost | FeedPollPost>
+  >([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
   const [isRefreshingPosts, setIsRefreshingPosts] = useState(false);
   const [postsError, setPostsError] = useState<string | null>(null);
-  const [pickerAnchor, setPickerAnchor] = useState<{ postId: string; x: number; y: number } | null>(null);
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    postId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
-  const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
+  const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(
+    undefined,
+  );
   const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
-  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<string | null>(null);
+  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<
+    string | null
+  >(null);
   const [postMenuVisible, setPostMenuVisible] = useState(false);
-  const [selectedPostForMenu, setSelectedPostForMenu] = useState<FeedPost | null>(null);
-  const [editingPost, setEditingPost] = useState<FeedTextPost | FeedVideoPost | FeedPollPost | null>(null);
+  const [selectedPostForMenu, setSelectedPostForMenu] =
+    useState<FeedPost | null>(null);
+  const [editingPost, setEditingPost] = useState<
+    FeedTextPost | FeedVideoPost | FeedPollPost | null
+  >(null);
   const [editPostText, setEditPostText] = useState('');
   const [editPostError, setEditPostError] = useState<string | null>(null);
   const [isSavingEditedPost, setIsSavingEditedPost] = useState(false);
@@ -299,19 +427,18 @@ function GroupDetailScreen() {
   const groupTitle = group?.groupTitle || group?.groupName || 'Nhóm';
   const groupCover = group?.cover || FALLBACK_COVER;
   const groupAbout = group?.about || copy.noAbout;
-  const privacyLabel = group?.privacy === 'private' ? copy.privacyPrivate : copy.privacyPublic;
+  const privacyLabel =
+    group?.privacy === 'private' ? copy.privacyPrivate : copy.privacyPublic;
   const membersCount = group?.members ?? 0;
   const categoryLabel = group?.category || copy.categoryOther;
-  const membershipStatus =
-    group?.membershipStatus ??
-    (group?.isOwner ? 'owner' : group?.isJoined ? 'joined' : 'not_joined');
+  const membershipStatus = getGroupMembershipStatus(group);
   const canEdit = membershipStatus === 'owner';
-  const canCreatePost =
-    membershipStatus === 'owner' || membershipStatus === 'joined';
+  const canCreatePost = canCurrentUserPostToGroup(group);
   const isJoinRequested = membershipStatus === 'requested';
-  const targetGroupId = group?.groupId || group?.id || routeGroupId
-    ? String(group?.groupId || group?.id || routeGroupId)
-    : undefined;
+  const targetGroupId =
+    group?.groupId || group?.id || routeGroupId
+      ? String(group?.groupId || group?.id || routeGroupId)
+      : undefined;
   const updatePostById = useCallback(
     (
       postId: string,
@@ -349,10 +476,14 @@ function GroupDetailScreen() {
       communityRepository
         .getGroupById(targetGroupId)
         .then(nextGroup => {
-          if (active) setGroup(nextGroup);
+          if (!active) return;
+          setGroup(nextGroup);
         })
         .catch(error => {
-          console.warn('[GroupDetailScreen] canonical group load failed', error);
+          console.warn(
+            '[GroupDetailScreen] canonical group load failed',
+            error,
+          );
         });
 
       return () => {
@@ -397,13 +528,14 @@ function GroupDetailScreen() {
       setPostsError(null);
 
       try {
-        const page = await feedRepository.getGroupPosts(targetGroupId, GROUP_POST_LIMIT);
+        const page = await feedRepository.getGroupPosts(
+          targetGroupId,
+          GROUP_POST_LIMIT,
+        );
         setPosts(page.posts);
       } catch (err) {
         setPostsError(
-          err instanceof Error
-            ? err.message
-            : 'Không thể tải bài viết nhóm.',
+          err instanceof Error ? err.message : 'Không thể tải bài viết nhóm.',
         );
       } finally {
         setIsLoadingPosts(false);
@@ -413,36 +545,208 @@ function GroupDetailScreen() {
     [targetGroupId],
   );
   const handleCreatePost = useCallback(
-    (initialAction?: 'photo' | 'video' | 'product' | 'poll') => {
-      if (!targetGroupId || !canCreatePost) {
-        Alert.alert(copy.groupContextMissingTitle, copy.groupContextMissingMessage);
+    async (initialAction?: 'photo' | 'video' | 'product' | 'poll') => {
+      if (!targetGroupId) {
+        Alert.alert(
+          copy.groupContextMissingTitle,
+          copy.groupContextMissingMessage,
+        );
         return;
       }
 
-      navigation.navigate(ROUTES.CREATE_POST, {
-        groupId: targetGroupId,
-        initialAction,
-      });
+      if (!canCreatePost) {
+        Alert.alert(
+          copy.groupContextMissingTitle,
+          copy.groupMembershipRequiredMessage,
+        );
+        return;
+      }
+
+      if (isCheckingPostAccess) return;
+      setIsCheckingPostAccess(true);
+
+      try {
+        const canonicalGroup = await communityRepository.getGroupById(
+          targetGroupId,
+        );
+        setGroup(canonicalGroup);
+
+        if (!canCurrentUserPostToGroup(canonicalGroup)) {
+          Alert.alert(
+            copy.groupContextMissingTitle,
+            copy.groupMembershipRequiredMessage,
+          );
+          return;
+        }
+
+        navigation.navigate(ROUTES.CREATE_POST, {
+          groupId: targetGroupId,
+          initialAction,
+        });
+      } catch (error) {
+        console.warn(
+          '[GroupDetailScreen] group_post_access_check_failed',
+          error,
+        );
+        Alert.alert(
+          copy.groupContextMissingTitle,
+          copy.groupMembershipCheckError,
+        );
+      } finally {
+        setIsCheckingPostAccess(false);
+      }
     },
     [
       canCreatePost,
       copy.groupContextMissingMessage,
       copy.groupContextMissingTitle,
+      copy.groupMembershipCheckError,
+      copy.groupMembershipRequiredMessage,
+      isCheckingPostAccess,
       navigation,
       targetGroupId,
     ],
   );
-  const handleEditGroup = useCallback(
-    () => {
-      if (group) {
-        navigation.navigate(ROUTES.EDIT_GROUP, { group });
+  const handleEditGroup = useCallback(() => {
+    if (group) {
+      navigation.navigate(ROUTES.EDIT_GROUP, { group });
+    }
+  }, [group, navigation]);
+  const uploadGroupMedia = useCallback(
+    async (field: ImageCropTarget, asset: CroppedImageAsset) => {
+      if (!canEdit || !targetGroupId || updatingGroupMedia) return;
+
+      setUpdatingGroupMedia(field);
+      try {
+        const updatedGroup = await communityRepository.updateGroupMedia(
+          targetGroupId,
+          field,
+          asset,
+        );
+
+        setGroup(current => {
+          if (!current) return updatedGroup;
+
+          return {
+            ...current,
+            ...updatedGroup,
+            groupName: updatedGroup.groupName || current.groupName,
+            groupTitle: updatedGroup.groupTitle || current.groupTitle,
+            avatar:
+              field === 'avatar'
+                ? updatedGroup.avatar || asset.uri
+                : updatedGroup.avatar || current.avatar,
+            cover:
+              field === 'cover'
+                ? updatedGroup.cover || asset.uri
+                : updatedGroup.cover || current.cover,
+          };
+        });
+      } catch (error) {
+        Alert.alert(
+          field === 'cover' ? copy.groupCoverAction : copy.groupAvatarAction,
+          error instanceof Error ? error.message : copy.groupMediaUpdateError,
+        );
+      } finally {
+        setUpdatingGroupMedia(null);
       }
     },
-    [group, navigation],
+    [
+      canEdit,
+      copy.groupAvatarAction,
+      copy.groupCoverAction,
+      copy.groupMediaUpdateError,
+      targetGroupId,
+      updatingGroupMedia,
+    ],
   );
+  const handleUpdateGroupMedia = useCallback(
+    async (field: ImageCropTarget) => {
+      if (
+        !canEdit ||
+        !targetGroupId ||
+        updatingGroupMedia ||
+        groupCropRequest
+      ) {
+        return;
+      }
+
+      try {
+        const result = await launchImageLibrary(PROFILE_IMAGE_PICKER_OPTIONS);
+        if (result.didCancel) return;
+        if (result.errorCode) {
+          throw new Error(result.errorMessage || copy.groupMediaUpdateError);
+        }
+
+        const asset = result.assets?.[0];
+        if (!asset?.uri) return;
+
+        await waitForImagePickerDismissal();
+        const preparedAsset = await prepareProfileImageForCrop(asset, field);
+        setGroupCropRequest({
+          target: field,
+          image: {
+            uri: preparedAsset.uri!,
+            width: preparedAsset.width,
+            height: preparedAsset.height,
+            fileName: preparedAsset.fileName,
+            type: preparedAsset.type,
+          },
+        });
+      } catch (error) {
+        Alert.alert(
+          field === 'cover' ? copy.groupCoverAction : copy.groupAvatarAction,
+          error instanceof Error ? error.message : copy.groupMediaUpdateError,
+        );
+      }
+    },
+    [
+      canEdit,
+      copy.groupAvatarAction,
+      copy.groupCoverAction,
+      copy.groupMediaUpdateError,
+      groupCropRequest,
+      targetGroupId,
+      updatingGroupMedia,
+    ],
+  );
+  const handleCroppedGroupMedia = useCallback(
+    async (asset: CroppedImageAsset) => {
+      const target = groupCropRequest?.target;
+      if (!target) return;
+
+      setGroupCropRequest(null);
+      await new Promise<void>(resolve =>
+        requestAnimationFrame(() => resolve()),
+      );
+      await uploadGroupMedia(target, asset);
+    },
+    [groupCropRequest?.target, uploadGroupMedia],
+  );
+  const handleViewGroupAvatar = useCallback(() => {
+    if (!group?.avatar) return;
+    setGroupMediaViewer('avatar');
+  }, [group?.avatar]);
+  const handleViewGroupCover = useCallback(() => {
+    if (!group?.cover) return;
+    setGroupMediaViewer('cover');
+  }, [group?.cover]);
+  const handleCloseGroupMediaViewer = useCallback(() => {
+    setGroupMediaViewer(null);
+  }, []);
+  const handleChangeGroupMediaFromViewer = useCallback(async () => {
+    const target = groupMediaViewer;
+    if (!target) return;
+
+    setGroupMediaViewer(null);
+    await new Promise<void>(resolve =>
+      setTimeout(resolve, Platform.OS === 'ios' ? 240 : 160),
+    );
+    await handleUpdateGroupMedia(target);
+  }, [groupMediaViewer, handleUpdateGroupMedia]);
   const handleComposerAction = useCallback(
     (action: 'photo' | 'video' | 'product' | 'poll') => {
-      handleCreatePost(action);
+      void handleCreatePost(action);
     },
     [handleCreatePost],
   );
@@ -463,10 +767,7 @@ function GroupDetailScreen() {
           : current,
       );
 
-      if (
-        nextStatus === 'joined' ||
-        nextStatus === 'owner'
-      ) {
+      if (nextStatus === 'joined' || nextStatus === 'owner') {
         void loadGroupPosts(true);
       }
 
@@ -516,7 +817,9 @@ function GroupDetailScreen() {
           nextTopReactions = [];
         }
         if (prevReaction && prevReaction !== targetReaction) {
-          nextTopReactions = nextTopReactions.filter(type => type !== prevReaction);
+          nextTopReactions = nextTopReactions.filter(
+            type => type !== prevReaction,
+          );
         }
         if (targetReaction && !nextTopReactions.includes(targetReaction)) {
           nextTopReactions = [targetReaction, ...nextTopReactions].slice(0, 3);
@@ -547,9 +850,12 @@ function GroupDetailScreen() {
     },
     [updatePostById],
   );
-  const handleOpenPicker = useCallback((postId: string, x: number, y: number) => {
-    setPickerAnchor({ postId, x, y });
-  }, []);
+  const handleOpenPicker = useCallback(
+    (postId: string, x: number, y: number) => {
+      setPickerAnchor({ postId, x, y });
+    },
+    [],
+  );
   const handlePickReaction = useCallback(
     (reaction: ReactionType) => {
       if (!pickerAnchor) return;
@@ -597,9 +903,12 @@ function GroupDetailScreen() {
       commentVm.openComments(commentVm.selectedCommentPostId);
     }
   }, [commentVm]);
-  const handlePhotoPress = useCallback((_post: FeedTextPost, _photoIndex: number) => {
-    // Keep the shared card stable until the group detail photo viewer is mounted here.
-  }, []);
+  const handlePhotoPress = useCallback(
+    (_post: FeedTextPost, _photoIndex: number) => {
+      // Keep the shared card stable until the group detail photo viewer is mounted here.
+    },
+    [],
+  );
   const handleNavigateToProfile = useCallback(
     (userId: string) => {
       navigateToUserProfile(navigation, userId);
@@ -620,7 +929,9 @@ function GroupDetailScreen() {
     }
 
     setEditingPost(post);
-    setEditPostText(post.caption ?? (post.kind === 'poll' ? post.pollQuestion ?? '' : ''));
+    setEditPostText(
+      post.caption ?? (post.kind === 'poll' ? post.pollQuestion ?? '' : ''),
+    );
     setEditPostError(null);
   }, []);
   const handleCloseEditPost = useCallback(() => {
@@ -678,7 +989,9 @@ function GroupDetailScreen() {
       const result = await feedRepository.togglePostComments(post.id);
       Alert.alert(
         result.enabled ? copy.commentsEnabledTitle : copy.commentsDisabledTitle,
-        result.enabled ? copy.commentsEnabledMessage : copy.commentsDisabledMessage,
+        result.enabled
+          ? copy.commentsEnabledMessage
+          : copy.commentsDisabledMessage,
       );
     },
     [
@@ -739,15 +1052,15 @@ function GroupDetailScreen() {
     }
 
     return posts.filter(post => {
-      const text = [
-        post.caption,
-        post.publisher.name,
-        post.publisher.username,
-      ].filter(Boolean).join(' ').toLowerCase();
+      const text = [post.caption, post.publisher.name, post.publisher.username]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
 
       return text.includes(normalizedQuery);
     });
   }, [posts, searchQuery]);
+  const hasSearchQuery = searchQuery.trim().length > 0;
   const renderGroupPost = useCallback(
     (post: FeedTextPost | FeedVideoPost | FeedPollPost) => {
       if (post.kind === 'video') {
@@ -819,13 +1132,28 @@ function GroupDetailScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+    <View className="flex-1 surface-base">
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={
+          Platform.OS === 'android'
+            ? APP_BRAND_COLOR
+            : APP_COLORS.neutral.surface
+        }
+        translucent={false}
+      />
+      <SafeAreaFeedHeader
+        safeAreaBackgroundColor={
+          Platform.OS === 'android'
+            ? APP_BRAND_COLOR
+            : APP_COLORS.neutral.surface
+        }
+      />
 
       <ScrollView
         className="flex-1"
         contentContainerClassName="pb-10"
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -836,146 +1164,337 @@ function GroupDetailScreen() {
           />
         }
       >
-        <View className="bg-white">
-          <GroupCoverImage cover={groupCover} />
-          <View className="items-center px-4 pb-5">
-            <View className="-mt-12">
-              <GroupAvatar avatar={group?.avatar} />
-            </View>
-            <Text className="mt-3 text-center text-heading">{groupTitle}</Text>
-            <Text className="mt-1 text-center text-caption-secondary">
-              {formatCompact(membersCount)} {copy.membersCountSuffix}
-            </Text>
+        <View className={`${FEED_CARD_CLASS} overflow-hidden`}>
+          <View className="relative">
+            <TouchableOpacity
+              activeOpacity={0.96}
+              accessibilityRole="imagebutton"
+              accessibilityLabel={copy.groupCoverAction}
+              disabled={!group?.cover || Boolean(updatingGroupMedia)}
+              onPress={handleViewGroupCover}
+            >
+              <GroupCoverImage cover={groupCover} />
+            </TouchableOpacity>
+            <View
+              pointerEvents="none"
+              className="absolute inset-0 bg-black/15"
+            />
+            {updatingGroupMedia === 'cover' ? (
+              <View className="absolute inset-0 items-center justify-center bg-black/30">
+                <ActivityIndicator size="large" color="#FFFFFF" />
+              </View>
+            ) : null}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={copy.backLabel}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={() => navigation.goBack()}
+              className="absolute left-3 top-3 h-11 w-11 items-center justify-center rounded-full border border-white/80 bg-white/95 shadow-sm"
+            >
+              <ArrowLeft size={22} color={APP_COLORS.neutral.text} />
+            </TouchableOpacity>
             {canEdit ? (
               <TouchableOpacity
-                activeOpacity={0.84}
-                onPress={handleEditGroup}
-                style={{
-                  marginTop: 16,
-                  minHeight: 36,
-                  borderRadius: 18,
-                  borderWidth: 1,
-                  borderColor: '#CBD5E1',
-                  backgroundColor: '#FFFFFF',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingHorizontal: 20,
-                }}
+                activeOpacity={0.82}
+                accessibilityRole="button"
+                accessibilityLabel={copy.groupCoverAction}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                disabled={Boolean(updatingGroupMedia)}
+                onPress={() => void handleUpdateGroupMedia('cover')}
+                className="absolute bottom-3 right-3 h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-[#E4E6EB] shadow-sm"
               >
-                <Edit3 size={15} color="#475569" />
-                <Text className="ml-2 text-caption-primary" style={{ color: '#475569', fontWeight: '700' }}>{copy.btnEdit}</Text>
+                {updatingGroupMedia === 'cover' ? (
+                  <ActivityIndicator size="small" color="#0F172A" />
+                ) : (
+                  <Camera size={18} color="#050505" />
+                )}
               </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View className="px-4 pb-5">
+            <View className="-mt-11 flex-row items-end justify-between">
+              <View className="relative">
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={copy.groupAvatarAction}
+                  disabled={!group?.avatar || Boolean(updatingGroupMedia)}
+                  onPress={handleViewGroupAvatar}
+                  className="rounded-full"
+                >
+                  <GroupAvatar avatar={group?.avatar} />
+                </TouchableOpacity>
+                {updatingGroupMedia === 'avatar' ? (
+                  <View className="absolute inset-0 items-center justify-center rounded-full bg-black/30">
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  </View>
+                ) : null}
+                {canEdit ? (
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    accessibilityRole="button"
+                    accessibilityLabel={copy.groupAvatarAction}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    disabled={Boolean(updatingGroupMedia)}
+                    onPress={() => void handleUpdateGroupMedia('avatar')}
+                    className="absolute bottom-0 right-0 h-[30px] w-[30px] items-center justify-center rounded-full border-2 border-white bg-[#E4E6EB]"
+                  >
+                    {updatingGroupMedia === 'avatar' ? (
+                      <ActivityIndicator size="small" color="#0F172A" />
+                    ) : (
+                      <Camera size={14} color="#050505" />
+                    )}
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {canEdit ? (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={copy.btnEdit}
+                  onPress={handleEditGroup}
+                  className="btn-secondary mb-1 min-h-[42px] px-4 py-2"
+                >
+                  <Edit3 size={16} color={APP_COLORS.neutral.textMuted} />
+                  <Text className="ml-2 text-caption-primary text-slate-600">
+                    {copy.btnEdit}
+                  </Text>
+                </TouchableOpacity>
+              ) : canCreatePost ? (
+                <View className="mb-1 flex-row items-center rounded-full border border-brand-border bg-brand-soft px-3 py-2">
+                  <Check size={15} color={APP_BRAND_COLOR} strokeWidth={2.6} />
+                  <Text className="ml-1.5 text-caption-primary text-brand">
+                    {copy.joinedGroup}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Text className="mt-3 text-heading" numberOfLines={2}>
+              {groupTitle}
+            </Text>
+            <GroupMetaRow
+              membersLabel={`${formatCompact(membersCount)} ${
+                copy.membersCountSuffix
+              }`}
+              privacyLabel={privacyLabel}
+              categoryLabel={categoryLabel}
+            />
+
+            {!canCreatePost && !canEdit ? (
+              <View className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <Text className="text-body-secondary">
+                  {isJoinRequested ? copy.requestedHint : copy.joinHint}
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    isJoinRequested ? copy.joinRequested : copy.joinGroup
+                  }
+                  disabled={!targetGroupId || isJoiningGroup || isJoinRequested}
+                  onPress={() => void handleJoinGroup()}
+                  className="btn-primary mt-3 min-h-[48px] self-stretch"
+                  style={{
+                    opacity:
+                      !targetGroupId || isJoiningGroup || isJoinRequested
+                        ? 0.62
+                        : 1,
+                  }}
+                >
+                  {isJoiningGroup ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={APP_COLORS.brand.onPrimary}
+                    />
+                  ) : isJoinRequested ? (
+                    <Check
+                      size={18}
+                      color={APP_COLORS.brand.onPrimary}
+                      strokeWidth={2.6}
+                    />
+                  ) : (
+                    <UserPlus
+                      size={18}
+                      color={APP_COLORS.brand.onPrimary}
+                      strokeWidth={2.4}
+                    />
+                  )}
+                  <Text className="ml-2 text-body-primary font-bold text-white">
+                    {isJoiningGroup
+                      ? copy.joiningGroup
+                      : isJoinRequested
+                      ? copy.joinRequested
+                      : copy.joinGroup}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             ) : null}
           </View>
         </View>
 
-        {canCreatePost ? (
-          <View className="mt-3 border-y border-slate-100 bg-white py-4">
-            <ComposerCard
-              onPress={() => handleCreatePost()}
-              onPressAction={handleComposerAction}
-              avatarUrl={activeUserAvatar}
-              displayName={activeUserDisplayName}
-              copy={{
-                createPostBtn: copy.composerPlaceholder,
-                composerPlaceholder: copy.composerPlaceholder,
-                photo: copy.actionPhoto,
-                video: copy.actionVideo,
-                product: copy.actionProduct,
-                poll: copy.actionPoll,
-              }}
+        <View className={FEED_CARD_CLASS}>
+          <SectionTitle
+            icon={<Info size={18} color={APP_BRAND_COLOR} strokeWidth={2.3} />}
+            title={copy.sectionAbout}
+          />
+          <Text className="px-3 py-3 text-body-secondary">{groupAbout}</Text>
+          <View className="border-t border-slate-100 bg-white">
+            <InfoRow
+              icon={<Users size={17} color={APP_COLORS.neutral.textMuted} />}
+              label={`${formatCompact(membersCount)} ${
+                copy.membersCountSuffix
+              }`}
+            />
+            <InfoRow
+              icon={<Globe2 size={17} color={APP_COLORS.neutral.textMuted} />}
+              label={privacyLabel}
+            />
+            <InfoRow
+              icon={<Tag size={17} color={APP_COLORS.neutral.textMuted} />}
+              label={categoryLabel}
+            />
+            <InfoRow
+              icon={<FileText size={17} color={APP_COLORS.neutral.textMuted} />}
+              label={`${formatCompact(posts.length)} ${copy.postsLoadedLabel}`}
+              isLast
             />
           </View>
-        ) : (
-          <View className="mt-3 border-y border-slate-100 bg-white px-4 py-4">
-            <TouchableOpacity
-              activeOpacity={0.82}
-              disabled={
-                !targetGroupId || isJoiningGroup || isJoinRequested
-              }
-              onPress={() => void handleJoinGroup()}
-              className="min-h-[46px] items-center justify-center rounded-xl bg-brand"
-              style={{
-                opacity:
-                  !targetGroupId || isJoiningGroup || isJoinRequested
-                    ? 0.62
-                    : 1,
-              }}
-            >
-              {isJoiningGroup ? (
-                <View className="flex-row items-center">
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text className="ml-2 text-base font-bold text-white">
-                    {copy.joiningGroup}
-                  </Text>
-                </View>
-              ) : (
-                <Text className="text-base font-bold text-white">
-                  {isJoinRequested ? copy.joinRequested : copy.joinGroup}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
+        </View>
 
-        {isLoadingPosts ? (
-          <View className="border-y border-slate-200 bg-white py-12">
-            <ActivityIndicator color={BRAND} />
-          </View>
-        ) : postsError ? (
-          <View className="border-y border-slate-200 bg-white px-4 py-6">
-            <Text className="text-center text-caption-primary text-red-600">{postsError}</Text>
-          </View>
-        ) : displayedPosts.length > 0 ? (
-          <View className="border-y border-slate-200 bg-white">
-            {displayedPosts.map(renderGroupPost)}
-          </View>
-        ) : (
-          <View className="border-y border-slate-200 bg-white py-12">
-            <View className="items-center justify-center">
-              <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-100">
-                <Grid3X3 size={28} color="#94A3B8" />
-              </View>
-              <Text className="mt-4 text-center text-body-secondary" style={{ color: '#64748B' }}>
-                {copy.postsEmpty}
+        {canCreatePost ? (
+          <ComposerCard
+            onPress={() => void handleCreatePost()}
+            onPressAction={handleComposerAction}
+            avatarUrl={activeUserAvatar}
+            displayName={activeUserDisplayName}
+            copy={{
+              createPostBtn: copy.composerPlaceholder,
+              composerPlaceholder: copy.composerPlaceholder,
+              photo: copy.actionPhoto,
+              video: copy.actionVideo,
+              product: copy.actionProduct,
+              poll: copy.actionPoll,
+            }}
+          />
+        ) : null}
+
+        <View className={`${FEED_CARD_CLASS} px-3 py-3`}>
+          <View className="flex-row items-center justify-between">
+            <View>
+              <Text className="text-title-primary">
+                {copy.postsSectionTitle}
+              </Text>
+              <Text className="mt-1 text-caption-secondary">
+                {hasSearchQuery
+                  ? `${displayedPosts.length}/${posts.length} ${copy.postsLoadedLabel}`
+                  : `${posts.length} ${copy.postsLoadedLabel}`}
               </Text>
             </View>
+            <FileText size={20} color={APP_BRAND_COLOR} />
           </View>
-        )}
-
-        <View className="bg-white px-4 py-4 border-y border-slate-100">
-          <Text className="mb-2 text-title-primary" style={{ fontWeight: '700' }}>{copy.searchTitle}</Text>
-          <View className="min-h-[44px] flex-row items-center border border-slate-200 rounded-xl px-3 bg-slate-50">
-            <Search size={17} color="#94A3B8" />
+          <View className="input-shell mt-3 min-h-[46px] flex-row items-center px-3">
+            <Search size={18} color={APP_COLORS.neutral.iconMuted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
               className="ml-2 flex-1 text-body-primary"
               placeholder={copy.searchPlaceholder}
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={APP_COLORS.neutral.iconMuted}
+              returnKeyType="search"
             />
+            {hasSearchQuery ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={copy.clearSearch}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                onPress={() => setSearchQuery('')}
+                className="ml-2 h-8 w-8 items-center justify-center rounded-full bg-slate-100"
+              >
+                <X size={16} color={APP_COLORS.neutral.textMuted} />
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
-        <View className="mt-3 bg-white">
-          <SectionTitle icon={<Info size={14} color="#FFFFFF" />} title={copy.sectionInfo} />
-          <InfoRow
-            icon={<Users size={17} color="#64748B" />}
-            label={`${formatCompact(membersCount)} ${copy.membersCountSuffix}`}
-            right={copy.membersStats}
-          />
-          <InfoRow icon={<Globe2 size={17} color="#64748B" />} label={privacyLabel} />
-          <InfoRow icon={<Tag size={17} color="#64748B" />} label={categoryLabel} />
-          <InfoRow icon={<FileText size={17} color="#64748B" />} label={`0 ${copy.postsStatsSuffix}`} />
-        </View>
-
-        <View className="mt-3 bg-white">
-          <SectionTitle icon={<FileText size={14} color="#FFFFFF" />} title={copy.sectionAbout} />
-          <Text className="px-4 py-4 text-body-secondary">{groupAbout}</Text>
-        </View>
+        {isLoadingPosts ? (
+          <View className={`${FEED_CARD_CLASS} py-12`}>
+            <ActivityIndicator color={BRAND} />
+          </View>
+        ) : postsError ? (
+          <View className={`${FEED_CARD_CLASS} px-3 py-8`}>
+            <Text className="text-center text-body-secondary">
+              {postsError}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel={copy.retryPosts}
+              onPress={() => void loadGroupPosts(false)}
+              className="btn-primary mt-4 min-h-[44px] self-center"
+            >
+              <Text className="text-body-primary font-bold text-white">
+                {copy.retryPosts}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : displayedPosts.length > 0 ? (
+          <View>{displayedPosts.map(renderGroupPost)}</View>
+        ) : (
+          <View className={`${FEED_CARD_CLASS} px-3 py-12`}>
+            <View className="items-center justify-center">
+              <View className="icon-chip h-16 w-16 items-center justify-center">
+                {hasSearchQuery ? (
+                  <Search size={28} color={APP_BRAND_COLOR} />
+                ) : (
+                  <Grid3X3 size={28} color={APP_BRAND_COLOR} />
+                )}
+              </View>
+              <Text className="mt-4 text-center text-body-secondary">
+                {hasSearchQuery ? copy.postsSearchEmpty : copy.postsEmpty}
+              </Text>
+              {hasSearchQuery ? (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={copy.clearSearch}
+                  onPress={() => setSearchQuery('')}
+                  className="btn-ghost mt-2"
+                >
+                  <Text className="text-body-primary font-semibold text-brand">
+                    {copy.clearSearch}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        )}
       </ScrollView>
 
+      <PageMediaViewerModal
+        visible={groupMediaViewer !== null}
+        uri={groupMediaViewer === 'avatar' ? group?.avatar : group?.cover}
+        kind={groupMediaViewer ?? 'avatar'}
+        pageTitle={groupTitle}
+        canEdit={canEdit}
+        isUploading={
+          groupMediaViewer === 'avatar'
+            ? updatingGroupMedia === 'avatar'
+            : updatingGroupMedia === 'cover'
+        }
+        onClose={handleCloseGroupMediaViewer}
+        onChange={handleChangeGroupMediaFromViewer}
+      />
+      <ImageCropperModal
+        visible={groupCropRequest !== null}
+        image={groupCropRequest?.image ?? null}
+        target={groupCropRequest?.target ?? 'avatar'}
+        onCancel={() => setGroupCropRequest(null)}
+        onComplete={handleCroppedGroupMedia}
+      />
       <ReactionPickerOverlay
         anchor={pickerAnchor}
         onPick={handlePickReaction}
@@ -988,7 +1507,9 @@ function GroupDetailScreen() {
       <ReelCommentsSheet
         visible={commentVm.isCommentsOpen}
         comments={commentVm.comments}
-        commentCount={selectedCommentPost?.commentCount ?? commentVm.comments.length}
+        commentCount={
+          selectedCommentPost?.commentCount ?? commentVm.comments.length
+        }
         isLoading={commentVm.isCommentsLoading}
         isLoadingMore={commentVm.isCommentsLoadingMore}
         isSubmitting={commentVm.isSubmittingComment}
@@ -1049,7 +1570,9 @@ function GroupDetailScreen() {
           className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pt-4"
           style={{ paddingBottom: editSheetBottomPadding }}
         >
-          <Text className="text-xl font-bold text-slate-900">{copy.editPostTitle}</Text>
+          <Text className="text-xl font-bold text-slate-900">
+            {copy.editPostTitle}
+          </Text>
           <TextInput
             value={editPostText}
             onChangeText={setEditPostText}
@@ -1072,7 +1595,9 @@ function GroupDetailScreen() {
               className="min-h-[46px] flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white"
               activeOpacity={0.78}
             >
-              <Text className="text-base font-bold text-slate-600">{copy.editPostCancel}</Text>
+              <Text className="text-base font-bold text-slate-600">
+                {copy.editPostCancel}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               disabled={isSavingEditedPost}
@@ -1083,10 +1608,14 @@ function GroupDetailScreen() {
               {isSavingEditedPost ? (
                 <View className="flex-row items-center">
                   <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text className="ml-2 text-base font-bold text-white">{copy.editPostSaving}</Text>
+                  <Text className="ml-2 text-base font-bold text-white">
+                    {copy.editPostSaving}
+                  </Text>
                 </View>
               ) : (
-                <Text className="text-base font-bold text-white">{copy.editPostSave}</Text>
+                <Text className="text-base font-bold text-white">
+                  {copy.editPostSave}
+                </Text>
               )}
             </TouchableOpacity>
           </View>

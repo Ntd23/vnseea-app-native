@@ -1,13 +1,16 @@
-// Description: Shows real WoWonder groups from Settings with website-style filters.
-import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback } from 'react';
+// Description: Shows VNSEEA groups with the same compact mobile layout used by Pages.
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
+import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
   Image,
+  Platform,
   RefreshControl,
-  ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -16,21 +19,24 @@ import {
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
-  ArrowLeft,
+  Edit3,
   ExternalLink,
+  Globe2,
   Lock,
   Plus,
   RotateCw,
-  Search,
+  Tag,
+  UserCheck,
   Users,
 } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useMyGroupsViewModel } from '../../application/view-models/useMyGroupsViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import type {
   GroupItem,
   GroupsFilter,
@@ -39,10 +45,45 @@ import type {
 type ExploreGroupsNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = APP_BRAND_COLOR;
+const TEXT = '#0F172A';
+const MUTED = '#64748B';
+const BORDER = '#E2E8F4';
+const GREEN_STATUS = '#22C55E';
+const FILTERS: GroupsFilter[] = ['mine', 'suggested', 'joined'];
 
-const EXPLORE_GROUPS_COPY = {
+type ExploreGroupsCopy = {
+  tabMine: string;
+  tabSuggested: string;
+  tabJoined: string;
+  titleMine: string;
+  subtitleMine: string;
+  titleSuggested: string;
+  subtitleSuggested: string;
+  titleJoined: string;
+  subtitleJoined: string;
+  emptyTitleSuggested: string;
+  emptySubtitleSuggested: string;
+  emptyActionRetry: string;
+  emptyTitleJoined: string;
+  emptySubtitleJoined: string;
+  emptyTitleMine: string;
+  emptySubtitleMine: string;
+  emptyActionCreate: string;
+  createNewGroup: string;
+  editGroup: string;
+  viewGroup: string;
+  membersSuffix: string;
+  publicGroup: string;
+  privateGroup: string;
+  managedGroup: string;
+  joinedGroup: string;
+  loadFailed: string;
+  categories: Record<string, string>;
+};
+
+const EXPLORE_GROUPS_COPY: Record<AppLanguage, ExploreGroupsCopy> = {
   vi: {
-    tabMine: 'Nhóm của tôi',
+    tabMine: 'Của tôi',
     tabSuggested: 'Đề xuất',
     tabJoined: 'Đã tham gia',
     titleMine: 'Nhóm của bạn',
@@ -52,17 +93,42 @@ const EXPLORE_GROUPS_COPY = {
     titleJoined: 'Nhóm đã tham gia',
     subtitleJoined: 'Các cộng đồng bạn đang theo dõi sẽ hiển thị tại đây.',
     emptyTitleSuggested: 'Chưa có nhóm đề xuất',
-    emptySubtitleSuggested: 'Hiện chưa có cộng đồng phù hợp để đề xuất cho bạn.',
+    emptySubtitleSuggested:
+      'Hiện chưa có cộng đồng phù hợp để đề xuất cho bạn.',
     emptyActionRetry: 'Thử lại',
     emptyTitleJoined: 'Bạn chưa tham gia nhóm nào',
     emptySubtitleJoined: 'Các nhóm bạn tham gia sẽ xuất hiện trong mục này.',
     emptyTitleMine: 'Bạn chưa có nhóm nào',
     emptySubtitleMine: 'Những nhóm bạn tạo hoặc quản lý sẽ hiển thị ở đây.',
     emptyActionCreate: 'Tạo nhóm mới',
-    btnCreate: 'Tạo ra',
-    btnEdit: 'Chỉnh sửa',
-    btnView: 'Xem nhóm',
-    membersSuffix: 'Các thành viên',
+    createNewGroup: 'Tạo nhóm mới',
+    editGroup: 'Chỉnh sửa nhóm',
+    viewGroup: 'Xem nhóm',
+    membersSuffix: 'thành viên',
+    publicGroup: 'Công khai',
+    privateGroup: 'Riêng tư',
+    managedGroup: 'Bạn quản lý',
+    joinedGroup: 'Đã tham gia',
+    loadFailed: 'Không tải được nhóm',
+    categories: {
+      '1': 'Hài kịch',
+      '2': 'Kinh tế và Thương mại',
+      '3': 'Giáo dục',
+      '4': 'Giải trí',
+      '5': 'Phim & Hoạt hình',
+      '6': 'Chơi game',
+      '7': 'Lịch sử và sự kiện',
+      '8': 'Cách sống',
+      '9': 'Thiên nhiên',
+      '10': 'Tin tức và Chính trị',
+      '11': 'Con người và Quốc gia',
+      '12': 'Thú cưng và Động vật',
+      '13': 'Địa điểm và Khu vực',
+      '14': 'Khoa học và Công nghệ',
+      '15': 'Thể thao',
+      '16': 'Du lịch và Sự kiện',
+      '17': 'Khác',
+    },
   },
   en: {
     tabMine: 'My Groups',
@@ -75,47 +141,67 @@ const EXPLORE_GROUPS_COPY = {
     titleJoined: 'Joined Groups',
     subtitleJoined: 'Communities you follow will display here.',
     emptyTitleSuggested: 'No suggested groups',
-    emptySubtitleSuggested: 'There are currently no matching communities to suggest to you.',
+    emptySubtitleSuggested:
+      'There are currently no matching communities to suggest to you.',
     emptyActionRetry: 'Retry',
-    emptyTitleJoined: 'You haven\'t joined any groups',
+    emptyTitleJoined: "You haven't joined any groups",
     emptySubtitleJoined: 'Groups you join will appear in this section.',
-    emptyTitleMine: 'You don\'t have any groups',
+    emptyTitleMine: "You don't have any groups",
     emptySubtitleMine: 'Groups you create or manage will be shown here.',
     emptyActionCreate: 'Create new group',
-    btnCreate: 'Create',
-    btnEdit: 'Edit',
-    btnView: 'View Group',
-    membersSuffix: 'Members',
-  }
+    createNewGroup: 'Create Group',
+    editGroup: 'Edit group',
+    viewGroup: 'View Group',
+    membersSuffix: 'members',
+    publicGroup: 'Public',
+    privateGroup: 'Private',
+    managedGroup: 'You manage',
+    joinedGroup: 'Joined',
+    loadFailed: 'Failed to load groups',
+    categories: {
+      '1': 'Comedy',
+      '2': 'Business',
+      '3': 'Education',
+      '4': 'Entertainment',
+      '5': 'Film & Animation',
+      '6': 'Gaming',
+      '7': 'History & Facts',
+      '8': 'Lifestyle',
+      '9': 'Natural',
+      '10': 'News & Politics',
+      '11': 'People & Nations',
+      '12': 'Pets & Animals',
+      '13': 'Places & Regions',
+      '14': 'Science & Technology',
+      '15': 'Sport',
+      '16': 'Travel & Events',
+      '17': 'Other',
+    },
+  },
 };
 
-function getFilterCopy(filter: GroupsFilter, copy: any) {
-  switch (filter) {
-    case 'mine':
-      return {
-        id: 'mine',
-        label: copy.tabMine,
-        title: copy.titleMine,
-        subtitle: copy.subtitleMine,
-      };
-    case 'suggested':
-      return {
-        id: 'suggested',
-        label: copy.tabSuggested,
-        title: copy.titleSuggested,
-        subtitle: copy.subtitleSuggested,
-      };
-    case 'joined':
-      return {
-        id: 'joined',
-        label: copy.tabJoined,
-        title: copy.titleJoined,
-        subtitle: copy.subtitleJoined,
-      };
+function getFilterCopy(filter: GroupsFilter, copy: ExploreGroupsCopy) {
+  if (filter === 'suggested') {
+    return {
+      title: copy.titleSuggested,
+      subtitle: copy.subtitleSuggested,
+    };
   }
+
+  if (filter === 'joined') {
+    return {
+      title: copy.titleJoined,
+      subtitle: copy.subtitleJoined,
+    };
+  }
+
+  return {
+    title: copy.titleMine,
+    subtitle: copy.subtitleMine,
+  };
 }
 
-function getEmptyCopy(filter: GroupsFilter, copy: any) {
+function getEmptyCopy(filter: GroupsFilter, copy: ExploreGroupsCopy) {
   if (filter === 'suggested') {
     return {
       title: copy.emptyTitleSuggested,
@@ -148,15 +234,19 @@ function formatCount(value?: number) {
 
 function GroupsSkeleton() {
   return (
-    <View className="gap-4">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <View key={index} className="surface-card overflow-hidden">
-          <View className="h-32 w-full bg-slate-200" />
-          <View className="px-4 pb-4">
-            <View className="-mt-8 h-16 w-16 rounded-full border-4 border-white bg-slate-100" />
-            <View className="mt-3 h-5 w-2/3 rounded-full bg-slate-200" />
-            <View className="mt-2 h-4 w-1/2 rounded-full bg-slate-100" />
-            <View className="mt-4 h-10 w-full rounded-xl bg-slate-100" />
+    <View style={styles.skeletonContainer}>
+      {Array.from({ length: 3 }).map((_, index) => (
+        <View key={index} style={styles.skeletonCard}>
+          <View style={styles.skeletonCover} />
+          <View style={styles.skeletonContent}>
+            <View style={styles.skeletonAvatar} />
+            <View style={styles.skeletonTitle} />
+            <View style={styles.skeletonSubtitle} />
+            <View style={styles.skeletonMetaRow}>
+              <View style={styles.skeletonMetaChip} />
+              <View style={styles.skeletonMetaChip} />
+            </View>
+            <View style={styles.skeletonAction} />
           </View>
         </View>
       ))}
@@ -175,39 +265,37 @@ function EmptyState({
   error: string | null;
   onCreate: () => void;
   onRetry: () => void;
-  copy: any;
+  copy: ExploreGroupsCopy;
 }) {
   const emptyCopy = getEmptyCopy(filter, copy);
   const showCreateAction = !error && filter === 'mine';
 
   return (
-    <View className="items-center px-6 py-16">
-      <View className="icon-chip h-20 w-20 items-center justify-center">
+    <View style={styles.emptyContainer}>
+      <View style={styles.emptyIconCircle}>
         {error ? (
-          <RotateCw size={38} color={BRAND} />
+          <RotateCw size={36} color={BRAND} />
         ) : (
-          <Users size={38} color={BRAND} />
+          <Users size={36} color={BRAND} />
         )}
       </View>
-      <Text className="mt-5 text-center text-heading">
-        {error ? 'Không tải được nhóm' : emptyCopy.title}
+      <Text style={styles.emptyTitle}>
+        {error ? copy.loadFailed : emptyCopy.title}
       </Text>
-      <Text className="mt-2 text-center text-body-secondary">
-        {error ?? emptyCopy.subtitle}
-      </Text>
+      <Text style={styles.emptySubtitle}>{error ?? emptyCopy.subtitle}</Text>
 
       <TouchableOpacity
-        className="btn-primary mt-6 min-h-[46px] rounded-xl px-6"
         activeOpacity={0.85}
         onPress={showCreateAction ? onCreate : onRetry}
+        style={styles.emptyActionButton}
       >
         {showCreateAction ? (
           <Plus size={18} color="#FFFFFF" />
         ) : (
           <RotateCw size={18} color="#FFFFFF" />
         )}
-        <Text className="text-title-primary text-inverse">
-          {error ? 'Thử lại' : emptyCopy.action}
+        <Text style={styles.emptyActionButtonText}>
+          {error ? copy.emptyActionRetry : emptyCopy.action}
         </Text>
       </TouchableOpacity>
     </View>
@@ -223,145 +311,57 @@ function FilterTabs({
   activeFilter: GroupsFilter;
   onChange: (filter: GroupsFilter) => void;
   onCreate: () => void;
-  copy: any;
+  copy: ExploreGroupsCopy;
 }) {
-  const [contentWidth, setContentWidth] = React.useState(0);
-  const [width, setWidth] = React.useState(0);
-  const scrollX = React.useRef(new Animated.Value(0)).current;
-
-  const showIndicator = contentWidth > width && width > 0;
-  const thumbWidth = showIndicator ? Math.max(20, (width / contentWidth) * width) : 0;
-
   return (
-    <View style={{ height: 56, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: '#FFFFFF' }}>
-      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ flex: 1, height: '100%', justifyContent: 'center' }}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            onContentSizeChange={(w) => setContentWidth(w)}
-            onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-              { useNativeDriver: false }
-            )}
-            scrollEventThrottle={16}
-            contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 4 }}
-            style={{ flex: 1 }}
-          >
-            {/* Tab: Nhóm của tôi */}
+    <View style={styles.filterSection}>
+      <View accessibilityRole="tablist" style={styles.filterTabs}>
+        {FILTERS.map(filter => {
+          const isActive = filter === activeFilter;
+          const label =
+            filter === 'mine'
+              ? copy.tabMine
+              : filter === 'suggested'
+              ? copy.tabSuggested
+              : copy.tabJoined;
+
+          return (
             <TouchableOpacity
-              activeOpacity={0.84}
-              onPress={() => onChange('mine')}
-              style={{
-                height: '100%',
-                justifyContent: 'center',
-                paddingHorizontal: 12,
-                borderBottomWidth: 3,
-                borderBottomColor: activeFilter === 'mine' ? APP_BRAND_COLOR : 'transparent',
-              }}
+              key={filter}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              activeOpacity={0.82}
+              onPress={() => onChange(filter)}
+              style={[styles.filterTab, isActive && styles.filterTabActive]}
             >
               <Text
-                style={{
-                  color: activeFilter === 'mine' ? '#0f172a' : '#64748b',
-                  fontSize: 13,
-                  fontWeight: activeFilter === 'mine' ? '800' : '700',
-                }}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                numberOfLines={1}
+                style={[
+                  styles.filterTabText,
+                  isActive && styles.filterTabTextActive,
+                ]}
               >
-                {copy.tabMine}
+                {label}
               </Text>
             </TouchableOpacity>
-
-            {/* Tab: Các nhóm được đề xuất */}
-            <TouchableOpacity
-              activeOpacity={0.84}
-              onPress={() => onChange('suggested')}
-              style={{
-                height: '100%',
-                justifyContent: 'center',
-                paddingHorizontal: 12,
-                borderBottomWidth: 3,
-                borderBottomColor: activeFilter === 'suggested' ? APP_BRAND_COLOR : 'transparent',
-              }}
-            >
-              <Text
-                style={{
-                  color: activeFilter === 'suggested' ? '#0f172a' : '#64748b',
-                  fontSize: 13,
-                  fontWeight: activeFilter === 'suggested' ? '800' : '700',
-                }}
-              >
-                {copy.titleSuggested}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Tab: Các nhóm đã tham gia */}
-            <TouchableOpacity
-              activeOpacity={0.84}
-              onPress={() => onChange('joined')}
-              style={{
-                height: '100%',
-                justifyContent: 'center',
-                paddingHorizontal: 12,
-                borderBottomWidth: 3,
-                borderBottomColor: activeFilter === 'joined' ? APP_BRAND_COLOR : 'transparent',
-              }}
-            >
-              <Text
-                style={{
-                  color: activeFilter === 'joined' ? '#0f172a' : '#64748b',
-                  fontSize: 13,
-                  fontWeight: activeFilter === 'joined' ? '800' : '700',
-                }}
-              >
-                {copy.titleJoined}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Custom Scroll Indicator */}
-          {showIndicator && (
-            <View style={{ position: 'absolute', bottom: 4, left: 0, right: 0, height: 2, backgroundColor: '#F1F5F9', pointerEvents: 'none' }}>
-              <Animated.View
-                style={{
-                  width: thumbWidth,
-                  height: '100%',
-                  backgroundColor: '#94A3B8',
-                  borderRadius: 1,
-                  transform: [
-                    {
-                      translateX: scrollX.interpolate({
-                        inputRange: [0, Math.max(1, contentWidth - width)],
-                        outputRange: [0, width - thumbWidth],
-                        extrapolate: 'clamp',
-                      }),
-                    },
-                  ],
-                }}
-              />
-            </View>
-          )}
-        </View>
-
-        {/* Button: + Tạo ra */}
-        <TouchableOpacity
-          activeOpacity={0.86}
-          onPress={onCreate}
-          style={{
-            marginRight: 16,
-            minHeight: 34,
-            borderRadius: 6,
-            backgroundColor: APP_BRAND_COLOR,
-            paddingHorizontal: 12,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          <Plus size={14} color="#ffffff" />
-          <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '900' }}>{copy.btnCreate}</Text>
-        </TouchableOpacity>
+          );
+        })}
       </View>
+
+      <TouchableOpacity
+        accessibilityRole="button"
+        activeOpacity={0.86}
+        onPress={onCreate}
+        style={styles.createGroupButton}
+      >
+        <View style={styles.createGroupIcon}>
+          <Plus size={20} color="#FFFFFF" strokeWidth={2.6} />
+        </View>
+        <Text style={styles.createGroupButtonText}>{copy.createNewGroup}</Text>
+        <Users size={20} color="#FFFFFF" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -371,14 +371,14 @@ function GroupAvatar({ group }: { group: GroupItem }) {
     return (
       <Image
         source={{ uri: group.avatar }}
-        className="h-16 w-16 rounded-full border-4 border-white bg-white"
+        style={styles.avatarImage}
         resizeMode="cover"
       />
     );
   }
 
   return (
-    <View className="h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-brand-soft">
+    <View style={styles.avatarPlaceholder}>
       <Users size={28} color={BRAND} />
     </View>
   );
@@ -389,105 +389,178 @@ function GroupCover({ group }: { group: GroupItem }) {
     return (
       <Image
         source={{ uri: group.cover }}
-        className="h-32 w-full bg-slate-200"
+        style={styles.coverImage}
         resizeMode="cover"
       />
     );
   }
 
   return (
-    <View className="h-32 w-full items-center justify-center bg-brand-soft">
-      <Users size={42} color={APP_BRAND_COLOR} opacity={0.34} strokeWidth={1.8} />
+    <View style={styles.coverPlaceholder}>
+      <Users size={38} color={BRAND} opacity={0.28} strokeWidth={1.8} />
     </View>
   );
 }
 
 function GroupCard({
   group,
-  onOpenProfile,
-  onAction,
+  onOpen,
+  onEdit,
   copy,
+  index,
 }: {
   group: GroupItem;
-  onOpenProfile: () => void;
-  onAction: () => void;
-  copy: any;
+  onOpen: () => void;
+  onEdit?: () => void;
+  copy: ExploreGroupsCopy;
+  index: number;
 }) {
-  const handleAction = () => {
-    onAction();
-  };
+  const title = group.groupTitle || group.groupName || 'Nhóm';
+  const handle = group.groupName ? `@${group.groupName}` : '';
+  const isManaged = Boolean(
+    group.isOwner || group.membershipStatus === 'owner',
+  );
+  const isJoined = Boolean(
+    isManaged || group.isJoined || group.membershipStatus === 'joined',
+  );
+  const privacyLabel =
+    group.privacy === 'private' ? copy.privateGroup : copy.publicGroup;
+  const categoryLabel = group.category
+    ? copy.categories[group.category] || group.category
+    : '';
+  const viewGroupAccessibilityLabel = `${copy.viewGroup}: ${title}`;
+  const editGroupAccessibilityLabel = `${copy.editGroup}: ${title}`;
+  const animationDelay = Math.min(80 + index * 60, 320);
 
   return (
-    <View 
-      style={{
-        backgroundColor: '#ffffff',
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        marginBottom: 16,
-        shadowColor: '#0f172a',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.03,
-        shadowRadius: 6,
-        elevation: 2,
-      }}
+    <Animated.View
+      entering={FadeInDown.delay(animationDelay).duration(420)}
+      style={styles.groupCard}
     >
-      {/* Cover Image - 1:1 Aspect Ratio (Square) */}
+      <View style={styles.groupCardCover}>
+        <TouchableOpacity
+          accessibilityLabel={viewGroupAccessibilityLabel}
+          accessibilityRole="button"
+          activeOpacity={0.9}
+          onPress={onOpen}
+          style={StyleSheet.absoluteFill}
+        >
+          <GroupCover group={group} />
+          <View style={styles.groupCoverShade} />
+        </TouchableOpacity>
+
+        {onEdit ? (
+          <TouchableOpacity
+            accessibilityLabel={editGroupAccessibilityLabel}
+            accessibilityRole="button"
+            activeOpacity={0.82}
+            onPress={onEdit}
+            style={styles.groupEditButton}
+          >
+            <Edit3 size={18} color={TEXT} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       <TouchableOpacity
-        activeOpacity={0.86}
-        onPress={onOpenProfile}
-        style={{ aspectRatio: 1, backgroundColor: '#ffe4e6' }}
+        accessibilityLabel={viewGroupAccessibilityLabel}
+        accessibilityRole="button"
+        activeOpacity={0.78}
+        onPress={onOpen}
+        style={styles.groupAvatarButton}
       >
-        {group.cover ? (
-          <Image
-            source={{ uri: group.cover }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : group.avatar ? (
-          <Image
-            source={{ uri: group.avatar }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffe4e6' }}>
-            <Users size={80} color="#f43f5e" strokeWidth={1.5} />
-          </View>
-        )}
+        <GroupAvatar group={group} />
+        {isJoined ? <View style={styles.activeBadge} /> : null}
       </TouchableOpacity>
 
-      {/* Info and Full-width Button */}
-      <View style={{ padding: 16 }}>
-        <TouchableOpacity activeOpacity={0.82} onPress={onOpenProfile}>
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }} numberOfLines={1}>
-            {group.groupTitle || group.groupName || 'Nhóm'}
-          </Text>
-        </TouchableOpacity>
-        
-        <Text style={{ fontSize: 13, color: '#64748b', marginTop: 4, marginBottom: 12 }}>
-          {formatCount(group.members)} {copy.membersSuffix}
-        </Text>
-
-        {/* Full-width Button */}
+      <View style={styles.groupCardBody}>
         <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={handleAction}
-          style={{
-            backgroundColor: '#e2e8f0',
-            borderRadius: 8,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+          accessibilityLabel={viewGroupAccessibilityLabel}
+          accessibilityRole="button"
+          activeOpacity={0.78}
+          onPress={onOpen}
+          style={styles.groupTitleArea}
         >
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#0f172a' }}>
-            {group.isOwner ? copy.btnEdit : copy.btnView}
+          <Text style={styles.groupTitle} numberOfLines={1}>
+            {title}
           </Text>
+          {handle ? (
+            <Text style={styles.groupHandle} numberOfLines={1}>
+              {handle}
+            </Text>
+          ) : null}
         </TouchableOpacity>
+
+        {group.about ? (
+          <Text style={styles.groupDescription} numberOfLines={2}>
+            {group.about}
+          </Text>
+        ) : null}
+
+        <View style={styles.groupMetaRow}>
+          <View style={styles.groupMetaChip}>
+            <Users size={14} color={BRAND} />
+            <Text style={styles.groupMetaText} numberOfLines={1}>
+              {formatCount(group.members)} {copy.membersSuffix}
+            </Text>
+          </View>
+
+          <View style={styles.groupMetaChip}>
+            {group.privacy === 'private' ? (
+              <Lock size={14} color={MUTED} />
+            ) : (
+              <Globe2 size={14} color={MUTED} />
+            )}
+            <Text style={styles.groupMetaText} numberOfLines={1}>
+              {privacyLabel}
+            </Text>
+          </View>
+
+          {categoryLabel ? (
+            <View style={styles.groupMetaChip}>
+              <Tag size={14} color={MUTED} />
+              <Text style={styles.groupMetaText} numberOfLines={1}>
+                {categoryLabel}
+              </Text>
+            </View>
+          ) : null}
+
+          {isJoined ? (
+            <View style={[styles.groupMetaChip, styles.groupStatusChip]}>
+              <UserCheck size={14} color={BRAND} />
+              <Text style={[styles.groupMetaText, styles.groupStatusText]}>
+                {isManaged ? copy.managedGroup : copy.joinedGroup}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.groupPrimaryActions}>
+          <TouchableOpacity
+            accessibilityLabel={viewGroupAccessibilityLabel}
+            accessibilityRole="button"
+            activeOpacity={0.84}
+            onPress={onOpen}
+            style={styles.groupOpenButton}
+          >
+            <ExternalLink size={18} color="#FFFFFF" />
+            <Text style={styles.groupOpenButtonText}>{copy.viewGroup}</Text>
+          </TouchableOpacity>
+
+          {onEdit ? (
+            <TouchableOpacity
+              accessibilityLabel={editGroupAccessibilityLabel}
+              accessibilityRole="button"
+              activeOpacity={0.82}
+              onPress={onEdit}
+              style={styles.groupEditAction}
+            >
+              <Edit3 size={20} color={BRAND} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -495,91 +568,134 @@ function ExploreGroupsScreen() {
   const language = useAppLanguage();
   const copy = EXPLORE_GROUPS_COPY[language] ?? EXPLORE_GROUPS_COPY.vi;
   const navigation = useNavigation<ExploreGroupsNav>();
-  const vm = useMyGroupsViewModel();
-  const activeCopy = getFilterCopy(vm.activeFilter, copy);
+  const {
+    activeFilter,
+    groups,
+    hasMore,
+    isLoading,
+    isRefreshing,
+    isLoadingMore,
+    error,
+    setActiveFilter,
+    loadFirstPage,
+    refresh,
+    loadMore,
+    retry,
+  } = useMyGroupsViewModel();
+
+  const activeCopy = useMemo(
+    () => getFilterCopy(activeFilter, copy),
+    [activeFilter, copy],
+  );
 
   useFocusEffect(
     useCallback(() => {
-      void vm.loadFirstPage(false);
-    }, [vm.loadFirstPage]),
+      loadFirstPage(false).catch(() => undefined);
+    }, [loadFirstPage]),
   );
 
   const handleCreate = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_GROUP);
   }, [navigation]);
 
-  const handleOpenGroupProfile = useCallback((group: GroupItem) => {
-    navigation.navigate(ROUTES.GROUP_DETAIL, { group });
-  }, [navigation]);
+  const handleOpenGroup = useCallback(
+    (group: GroupItem) => {
+      navigation.navigate(ROUTES.GROUP_DETAIL, { group });
+    },
+    [navigation],
+  );
 
-  const handleGroupAction = useCallback((group: GroupItem) => {
-    if (group.isOwner) {
+  const handleEditGroup = useCallback(
+    (group: GroupItem) => {
       navigation.navigate(ROUTES.EDIT_GROUP, { group });
-      return;
-    }
-
-    navigation.navigate(ROUTES.GROUP_DETAIL, { group });
-  }, [navigation]);
+    },
+    [navigation],
+  );
 
   const renderGroup = useCallback(
-    ({ item }: ListRenderItemInfo<GroupItem>) => (
+    ({ item, index }: ListRenderItemInfo<GroupItem>) => (
       <GroupCard
         group={item}
-        onOpenProfile={() => handleOpenGroupProfile(item)}
-        onAction={() => handleGroupAction(item)}
+        index={index}
+        onOpen={() => handleOpenGroup(item)}
+        onEdit={
+          activeFilter === 'mine' && item.isOwner
+            ? () => handleEditGroup(item)
+            : undefined
+        }
         copy={copy}
       />
     ),
-    [copy, handleGroupAction, handleOpenGroupProfile],
+    [activeFilter, copy, handleEditGroup, handleOpenGroup],
   );
 
-  return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+  const headerBackgroundColor =
+    Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF';
 
-      {/* Sticky Tab Bar Header */}
+  return (
+    <View style={styles.screen}>
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={headerBackgroundColor}
+        translucent={false}
+      />
+      <SafeAreaFeedHeader safeAreaBackgroundColor={headerBackgroundColor} />
+
       <FilterTabs
-        activeFilter={vm.activeFilter}
-        onChange={vm.setActiveFilter}
+        activeFilter={activeFilter}
+        onChange={setActiveFilter}
         onCreate={handleCreate}
         copy={copy}
       />
 
       <FlatList
-        className="flex-1"
-        data={vm.groups}
-        keyExtractor={item => String(item.id)}
+        style={styles.list}
+        data={groups}
+        keyExtractor={item => String(item.groupId || item.id)}
         renderItem={renderGroup}
-        contentContainerClassName="px-4 pb-10 pt-4"
+        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={vm.isRefreshing}
-            onRefresh={vm.refresh}
-            tintColor={APP_BRAND_COLOR}
-            colors={[APP_BRAND_COLOR]}
+            refreshing={isRefreshing}
+            onRefresh={refresh}
+            tintColor={BRAND}
+            colors={[BRAND]}
           />
         }
-        onEndReached={vm.loadMore}
+        onEndReached={loadMore}
         onEndReachedThreshold={0.45}
+        ListHeaderComponent={
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionTitle}>{activeCopy.title}</Text>
+              <Text style={styles.sectionSubtitle}>{activeCopy.subtitle}</Text>
+            </View>
+            <View style={styles.groupCountBadge}>
+              <Text style={styles.groupCountText}>
+                {groups.length}
+                {hasMore && groups.length > 0 ? '+' : ''}
+              </Text>
+            </View>
+          </View>
+        }
         ListEmptyComponent={
-          vm.isLoading ? (
+          isLoading ? (
             <GroupsSkeleton />
           ) : (
             <EmptyState
-              filter={vm.activeFilter}
-              error={vm.error}
+              filter={activeFilter}
+              error={error}
               onCreate={handleCreate}
-              onRetry={vm.retry}
+              onRetry={retry}
               copy={copy}
             />
           )
         }
         ListFooterComponent={
-          vm.isLoadingMore ? (
-            <View className="py-4">
-              <ActivityIndicator color={APP_BRAND_COLOR} />
+          isLoadingMore ? (
+            <View style={styles.loaderFooter}>
+              <ActivityIndicator color={BRAND} />
             </View>
           ) : null
         }
@@ -587,5 +703,430 @@ function ExploreGroupsScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#F6F8FC',
+  },
+  filterSection: {
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    paddingTop: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  filterTabs: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: 4,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+  },
+  filterTab: {
+    minHeight: 44,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 6,
+  },
+  filterTabActive: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: APP_COLORS.brand.border,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 7,
+    elevation: 2,
+  },
+  filterTabText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  filterTabTextActive: {
+    color: BRAND,
+    fontWeight: '900',
+  },
+  createGroupButton: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 18,
+    backgroundColor: BRAND,
+    paddingHorizontal: 14,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  createGroupIcon: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  createGroupButtonText: {
+    flex: 1,
+    marginHorizontal: 11,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  list: {
+    flex: 1,
+    backgroundColor: '#F6F8FC',
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 40,
+  },
+  sectionHeader: {
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+    paddingHorizontal: 2,
+  },
+  sectionHeaderText: {
+    flex: 1,
+  },
+  sectionTitle: {
+    color: TEXT,
+    fontSize: 21,
+    fontWeight: '900',
+  },
+  sectionSubtitle: {
+    marginTop: 4,
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 19,
+  },
+  groupCountBadge: {
+    minWidth: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: APP_COLORS.brand.soft,
+    paddingHorizontal: 10,
+  },
+  groupCountText: {
+    color: BRAND,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  groupCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  groupCardCover: {
+    height: 136,
+    overflow: 'hidden',
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  coverPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  groupCoverShade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(15,23,42,0.08)',
+  },
+  groupEditButton: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  groupAvatarButton: {
+    position: 'absolute',
+    left: 16,
+    top: 98,
+    zIndex: 2,
+    width: 76,
+    height: 76,
+  },
+  avatarImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 22,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#F1F5F9',
+  },
+  avatarPlaceholder: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  activeBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: GREEN_STATUS,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+  },
+  groupCardBody: {
+    padding: 16,
+    paddingTop: 14,
+  },
+  groupTitleArea: {
+    minHeight: 48,
+    justifyContent: 'center',
+    marginLeft: 88,
+  },
+  groupTitle: {
+    flexShrink: 1,
+    color: TEXT,
+    fontSize: 19,
+    fontWeight: '900',
+  },
+  groupHandle: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  groupDescription: {
+    marginTop: 13,
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
+  },
+  groupMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
+  groupMetaChip: {
+    maxWidth: '100%',
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 11,
+  },
+  groupMetaText: {
+    flexShrink: 1,
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  groupStatusChip: {
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  groupStatusText: {
+    color: BRAND,
+  },
+  groupPrimaryActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  groupOpenButton: {
+    minHeight: 52,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 16,
+    backgroundColor: BRAND,
+  },
+  groupOpenButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  groupEditAction: {
+    width: 52,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: APP_COLORS.brand.border,
+    borderRadius: 16,
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  skeletonContainer: {
+    gap: 16,
+  },
+  skeletonCard: {
+    overflow: 'hidden',
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+  },
+  skeletonCover: {
+    height: 136,
+    backgroundColor: '#E2E8F0',
+  },
+  skeletonContent: {
+    position: 'relative',
+    minHeight: 196,
+    padding: 16,
+    paddingTop: 14,
+  },
+  skeletonAvatar: {
+    position: 'absolute',
+    left: 16,
+    top: -38,
+    width: 76,
+    height: 76,
+    borderRadius: 22,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#E2E8F0',
+  },
+  skeletonTitle: {
+    width: '48%',
+    height: 18,
+    marginLeft: 88,
+    borderRadius: 9,
+    backgroundColor: '#E2E8F0',
+  },
+  skeletonSubtitle: {
+    width: '32%',
+    height: 14,
+    marginLeft: 88,
+    marginTop: 8,
+    borderRadius: 7,
+    backgroundColor: '#F1F5F9',
+  },
+  skeletonMetaRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 30,
+  },
+  skeletonMetaChip: {
+    width: 110,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+  },
+  skeletonAction: {
+    height: 52,
+    marginTop: 16,
+    borderRadius: 16,
+    backgroundColor: '#E2E8F0',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 48,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderRadius: 36,
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  emptyTitle: {
+    color: TEXT,
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    marginTop: 6,
+    color: MUTED,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  emptyActionButton: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 20,
+    borderRadius: 16,
+    backgroundColor: BRAND,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  emptyActionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  loaderFooter: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+});
 
 export default ExploreGroupsScreen;

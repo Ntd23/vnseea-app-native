@@ -12,6 +12,7 @@ export type RawProfileMediaResponse = {
   error_code?: string;
   message?: string;
   errors?: {
+    error_id?: unknown;
     error_text?: string;
   };
   profile_media?: {
@@ -37,6 +38,11 @@ type ProfileMediaUploadDependencies = {
   reconciliationAttempts?: number;
 };
 
+type ProfileMediaContractFallbackDependencies = {
+  uploadCanonical: () => Promise<ProfileMediaUpdateResult>;
+  uploadLegacy: () => Promise<ProfileMediaUpdateResult>;
+};
+
 const DEFAULT_RECONCILIATION_ATTEMPTS = 5;
 const RECONCILIATION_DELAY_MS = 250;
 
@@ -57,6 +63,54 @@ export function buildProfileMediaUploadPayload(
     profile_media_contract: PROFILE_MEDIA_CONTRACT,
     [kind]: file,
   };
+}
+
+export function buildLegacyProfileMediaUploadPayload(
+  kind: ProfileMediaKind,
+  file: ApiFile,
+) {
+  return {
+    [kind]: file,
+  };
+}
+
+export function shouldRetryProfileMediaUploadWithoutContract(
+  kind: ProfileMediaKind,
+  error: unknown,
+) {
+  if (kind !== 'cover' || !error || typeof error !== 'object') {
+    return false;
+  }
+
+  const response = (
+    error as {
+      response?: {
+        data?: RawProfileMediaResponse;
+      };
+    }
+  ).response;
+  const errorCode =
+    response?.data?.error_code || response?.data?.errors?.error_id;
+
+  // Some deployed API versions still validate cover photos using the legacy
+  // wide geometry. The app exports the newer canonical 16:9 crop, so retry
+  // only this explicit compatibility rejection without the contract marker.
+  return errorCode === 'profile_media_invalid_geometry';
+}
+
+export async function uploadProfileMediaWithContractFallback(
+  kind: ProfileMediaKind,
+  dependencies: ProfileMediaContractFallbackDependencies,
+) {
+  try {
+    return await dependencies.uploadCanonical();
+  } catch (error) {
+    if (!shouldRetryProfileMediaUploadWithoutContract(kind, error)) {
+      throw error;
+    }
+
+    return dependencies.uploadLegacy();
+  }
 }
 
 function expectedPostType(kind: ProfileMediaKind) {

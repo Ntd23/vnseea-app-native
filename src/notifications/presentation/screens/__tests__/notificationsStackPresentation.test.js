@@ -8,6 +8,20 @@ function read(relativePath) {
 }
 
 describe('Notifications stack presentation on iOS', () => {
+  it('uses the Home brand palette for the Android notification toolbar', () => {
+    const screen = read('src/notifications/presentation/screens/NotificationsScreen.tsx');
+    const header = read('src/notifications/presentation/components/NotificationsHeader.tsx');
+
+    expect(header).toContain("const isAndroid = Platform.OS === 'android'");
+    expect(header).toContain(
+      "isAndroid ? 'border-t border-white bg-brand' : 'bg-transparent'",
+    );
+    expect(header).toContain('APP_COLORS.brand.onPrimary');
+    expect(screen).toContain(
+      "Platform.OS === 'android' ? APP_BRAND_COLOR : '#f4f7fa'",
+    );
+  });
+
   it('shows a Back action outside tab presentation', () => {
     const screen = read('src/notifications/presentation/screens/NotificationsScreen.tsx');
     const header = read('src/notifications/presentation/components/NotificationsHeader.tsx');

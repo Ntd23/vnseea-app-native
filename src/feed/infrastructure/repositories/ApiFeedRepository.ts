@@ -2400,12 +2400,18 @@ export function createFeedRepository(): FeedRepository {
         api_status: number | string;
         post_data?: Record<string, unknown>;
         message?: string;
+        errors?: {
+          error_id?: number | string;
+          error_text?: string;
+        };
       }>(apiRoutes.feed.newPost, payload);
 
       const ok = String(response.api_status) === '200';
       if (!ok || !response.post_data) {
         throw new Error(
-          response.message ?? 'Không đăng được bài. Vui lòng thử lại.',
+          response.errors?.error_text ??
+            response.message ??
+            'Không đăng được bài. Vui lòng thử lại.',
         );
       }
 

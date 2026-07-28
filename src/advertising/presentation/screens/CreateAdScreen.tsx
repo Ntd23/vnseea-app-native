@@ -1,9 +1,11 @@
 // English description: Creates or edits an advertising campaign in a three-step wizard.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -19,17 +21,16 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronRight,
   DollarSign,
   Globe,
   ImagePlus,
   Megaphone,
-  Target,
-  Users,
+  Video,
 } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdsViewModel } from '../../application/view-models/useAdsViewModel';
@@ -38,79 +39,30 @@ import { showSnackbar as showToast } from '../../../shared-kernel/presentation/c
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
-import { Pressable } from 'react-native';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
-import {
-  languageStorage,
-  type AppLanguage,
-} from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAdvertisingCopy } from '../../application/i18n/advertisingCopy';
+import { hasAdDraftChanges } from '../../application/services/adFormChangeDetection';
+import {
+  AD_WEBSITE_PREFIX,
+  buildAdWebsiteUrl,
+  getAdWebsiteHost,
+  getAdWebsiteProtocol,
+} from '../../application/services/adWebsiteInput';
 
 type CreateAdNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = APP_BRAND_COLOR;
+const MODAL_SCROLL_CONTENT_STYLE = { paddingBottom: 24 };
 
-const AD_COUNTRY_OPTIONS = [
-  { id: '233', name: 'Vietnam' },
-  { id: '1', name: 'United States' },
-  { id: '2', name: 'Canada' },
-  { id: '73', name: 'France' },
-  { id: '229', name: 'United Kingdom' },
-  { id: '3', name: 'Australia' },
-  { id: '4', name: 'Germany' },
-  { id: '5', name: 'Japan' },
-  { id: '6', name: 'South Korea' },
-  { id: '7', name: 'China' },
-  { id: '8', name: 'Singapore' },
-  { id: '9', name: 'Malaysia' },
-  { id: '10', name: 'Thailand' },
-  { id: '11', name: 'Indonesia' },
-  { id: '12', name: 'Philippines' },
-  { id: '13', name: 'India' },
-  { id: '14', name: 'Brazil' },
-  { id: '15', name: 'Mexico' },
-  { id: '16', name: 'Spain' },
-  { id: '17', name: 'Italy' },
-  { id: '18', name: 'Netherlands' },
-  { id: '19', name: 'Russia' },
-  { id: '20', name: 'Turkey' },
-  { id: '21', name: 'Saudi Arabia' },
-  { id: '22', name: 'United Arab Emirates' },
-  { id: '23', name: 'South Africa' },
-  { id: '24', name: 'Egypt' },
-  { id: '25', name: 'Nigeria' },
-  { id: '26', name: 'Argentina' },
-  { id: '27', name: 'Colombia' },
-  { id: '28', name: 'Chile' },
-  { id: '29', name: 'Peru' },
-  { id: '30', name: 'Poland' },
-  { id: '31', name: 'Sweden' },
-  { id: '32', name: 'Norway' },
-  { id: '33', name: 'Denmark' },
-  { id: '34', name: 'Finland' },
-  { id: '35', name: 'Switzerland' },
-  { id: '36', name: 'Austria' },
-  { id: '37', name: 'Belgium' },
-  { id: '38', name: 'Ireland' },
-  { id: '39', name: 'Portugal' },
-  { id: '40', name: 'Greece' },
-  { id: '41', name: 'Czech Republic' },
-  { id: '42', name: 'Hungary' },
-  { id: '43', name: 'Romania' },
-  { id: '44', name: 'Ukraine' },
-  { id: '45', name: 'Israel' },
-  { id: '46', name: 'Pakistan' },
-  { id: '47', name: 'Bangladesh' },
-  { id: '48', name: 'Sri Lanka' },
-  { id: '49', name: 'Nepal' },
-  { id: '50', name: 'Myanmar' },
-  { id: '51', name: 'Cambodia' },
-  { id: '52', name: 'Laos' },
-  { id: '53', name: 'New Zealand' },
-  { id: '54', name: 'Hong Kong' },
-  { id: '55', name: 'Taiwan' },
-  { id: '56', name: 'Macau' },
-] as const;
+function isVideoPreview(
+  media: string | undefined,
+  mediaType: string | undefined,
+) {
+  return (
+    mediaType?.startsWith('video/') === true ||
+    /\.(mp4|mov|m4v|avi|webm)(\?|$)/i.test(media ?? '')
+  );
+}
 
 function CreateAdScreen() {
   const navigation = useNavigation<CreateAdNav>();
@@ -126,9 +78,11 @@ function CreateAdScreen() {
   const [genderSheetOpen, setGenderSheetOpen] = useState(false);
   const [placementSheetOpen, setPlacementSheetOpen] = useState(false);
   const [datePickerField, setDatePickerField] = useState<'startDate' | 'endDate' | null>(null);
-  const [formData, setFormData] = useState({
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const formScrollRef = useRef<ScrollView>(null);
+  const initialFormDataRef = useRef({
     name: editingAd?.name ?? '',
-    website: editingAd?.url ?? '',
+    website: editingAd?.url || AD_WEBSITE_PREFIX,
     headline: editingAd?.headline ?? '',
     description: editingAd?.description ?? '',
     audienceList: editingAd?.audience ?? '233',
@@ -144,12 +98,48 @@ function CreateAdScreen() {
     endDate: editingAd?.end ?? '',
     pageName: '',
   });
+  const [formData, setFormData] = useState(() => initialFormDataRef.current);
 
   const [imagePreview, setImagePreview] = useState<string | null>(editingAd?.ad_media ?? null);
+  const mediaPreviewIsVideo = isVideoPreview(
+    formData.media,
+    formData.mediaType,
+  );
+  const mediaPlacementMismatch = Boolean(formData.media) && (
+    (formData.appears === 'video' && !mediaPreviewIsVideo) ||
+    (formData.appears !== 'video' && mediaPreviewIsVideo)
+  );
+
+  const handleInputFocus = (target: unknown) => {
+    setIsKeyboardVisible(true);
+    setTimeout(() => {
+      formScrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+        target,
+        120,
+        true,
+      );
+    }, 120);
+  };
 
   useEffect(() => {
     fetchOptions();
   }, [fetchOptions]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!editingAd?.page_id || !options?.pages.length || formData.pageName) return;
@@ -185,9 +175,10 @@ function CreateAdScreen() {
   };
 
   const handleSelectImage = async () => {
+    Keyboard.dismiss();
     try {
       const result = await launchImageLibrary({
-        mediaType: formData.appears === 'video' ? 'video' : 'photo',
+        mediaType: 'mixed',
         quality: 0.8,
         maxWidth: 1200,
         maxHeight: 628,
@@ -282,6 +273,26 @@ function CreateAdScreen() {
   };
 
   const handleSubmit = async () => {
+    if (
+      editingAd &&
+      !hasAdDraftChanges(initialFormDataRef.current, formData)
+    ) {
+      showToast({ message: copy.successUpdate, type: 'success' });
+      navigation.goBack();
+      return;
+    }
+
+    if (mediaPlacementMismatch) {
+      showToast({
+        message:
+          language === 'vi'
+            ? 'Media đã chọn chưa phù hợp với vị trí hiển thị.'
+            : 'The selected media does not match the display placement.',
+        type: 'error',
+      });
+      return;
+    }
+
     const name = formData.name.trim();
     const website = formData.website.trim();
     const headline = formData.headline.trim();
@@ -337,6 +348,21 @@ function CreateAdScreen() {
       return;
     }
 
+    if (
+      isNewMedia &&
+      formData.appears !== 'video' &&
+      formData.mediaType?.startsWith('video/')
+    ) {
+      showToast({
+        message:
+          language === 'vi'
+            ? 'Vị trí đã chọn cần tệp hình ảnh.'
+            : 'The selected placement requires an image file.',
+        type: 'error',
+      });
+      return;
+    }
+
     const adData = {
       name,
       website,
@@ -377,360 +403,34 @@ function CreateAdScreen() {
 
   const getStepTitle = () => {
     switch (step) {
-      case 0: return editingAd ? copy.step1TitleEdit : copy.step1Title;
-      case 1: return copy.step2Title;
-      case 2: return copy.step3Title;
-      case 3: return copy.step4Title;
+      case 0:
+        return language === 'vi' ? 'Ảnh & doanh nghiệp' : 'Media & business';
+      case 1:
+        return language === 'vi' ? 'Nội dung & liên kết' : 'Content & link';
+      case 2:
+        return language === 'vi' ? 'Mục tiêu & ngân sách' : 'Targeting & budget';
       default: return '';
     }
   };
 
   const getStepHelper = () => {
     switch (step) {
-      case 0: return copy.step1Helper;
-      case 1: return copy.step2Helper;
-      case 2: return copy.step3Helper;
-      case 3: return copy.step4Helper;
+      case 0:
+        return language === 'vi'
+          ? 'Thêm tên doanh nghiệp và media đại diện cho chiến dịch.'
+          : 'Add the business name and campaign media.';
+      case 1:
+        return language === 'vi'
+          ? 'Viết nội dung ngắn gọn và chọn nơi người xem sẽ truy cập.'
+          : 'Write concise content and choose where viewers will go.';
+      case 2:
+        return language === 'vi'
+          ? 'Chọn đối tượng, vị trí hiển thị và ngân sách phù hợp.'
+          : 'Choose the audience, placement, and suitable budget.';
       default: return '';
     }
   };
 
-  const renderStepContent = () => {
-    switch (step) {
-      case 0:
-        return (
-          <View className="gap-5">
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.companyName}</Text>
-              <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
-                <Target size={20} color="#64748B" />
-                <TextInput
-                  className="ml-3 flex-1 text-body-primary"
-                  placeholder={copy.companyNamePlaceholder}
-                  placeholderTextColor="#94A3B8"
-                  value={formData.name}
-                  onChangeText={t => setFormData(p => ({ ...p, name: t }))}
-                />
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.website}</Text>
-              <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
-                <Globe size={20} color="#64748B" />
-                <TextInput
-                  className="ml-3 flex-1 text-body-primary"
-                  placeholder={copy.websitePlaceholder}
-                  placeholderTextColor="#94A3B8"
-                  value={formData.website}
-                  onChangeText={t => setFormData(p => ({ ...p, website: t }))}
-                  keyboardType="url"
-                  autoCapitalize="none"
-                />
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.headline}</Text>
-              <View className="min-h-[54px] rounded-xl border border-slate-200 bg-white px-4 justify-center">
-                <TextInput
-                  className="text-body-primary"
-                  placeholder={copy.headlinePlaceholder}
-                  placeholderTextColor="#94A3B8"
-                  value={formData.headline}
-                  onChangeText={t => setFormData(p => ({ ...p, headline: t }))}
-                />
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.description}</Text>
-              <View className="min-h-[100px] rounded-xl border border-slate-200 bg-white p-4">
-                <TextInput
-                  className="flex-1 text-body-primary"
-                  placeholder={copy.descriptionPlaceholder}
-                  placeholderTextColor="#94A3B8"
-                  multiline
-                  textAlignVertical="top"
-                  value={formData.description}
-                  onChangeText={t => setFormData(p => ({ ...p, description: t }))}
-                />
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.image}</Text>
-              <TouchableOpacity
-                className="min-h-[180px] items-center justify-center rounded-xl border-2 border-dashed border-brand p-6 bg-slate-50"
-                activeOpacity={0.85}
-                onPress={handleSelectImage}
-              >
-                {imagePreview ? (
-                  <View className="w-full">
-                    <Image
-                      source={{ uri: imagePreview }}
-                      className="h-40 w-full rounded-xl"
-                      resizeMode="cover"
-                    />
-                    <TouchableOpacity
-                      className="absolute right-2 top-2 h-8 w-8 items-center justify-center rounded-full bg-black/50"
-                      onPress={() => {
-                        setFormData(p => ({
-                          ...p,
-                          media: undefined,
-                          mediaName: undefined,
-                          mediaType: undefined,
-                        }));
-                        setImagePreview(null);
-                      }}
-                    >
-                      <Text className="text-white">X</Text>
-                    </TouchableOpacity>
-                    <Text className="mt-3 text-center text-title-primary text-brand-pressed">{copy.changeImage}</Text>
-                  </View>
-                ) : (
-                  <>
-                    <ImagePlus size={48} color={BRAND} />
-                    <Text className="mt-4 text-title-primary text-brand-pressed">{copy.selectImage}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-
-      case 1:
-        return (
-          <View className="gap-5">
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.gender}</Text>
-              <View className="flex-row gap-3">
-                {(['all', 'male', 'female'] as AdGender[]).map(g => (
-                  <TouchableOpacity
-                    key={g}
-                    className={`flex-1 rounded-xl px-4 py-3 ${formData.gender === g ? 'bg-brand-pressed' : 'bg-slate-100'}`}
-                    onPress={() => setFormData(p => ({ ...p, gender: g }))}
-                  >
-                    <Text className={`text-center font-semibold ${formData.gender === g ? 'text-white' : 'text-slate-700'}`}>
-                      {g === 'all' ? copy.genderAll : g === 'male' ? copy.genderMale : copy.genderFemale}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.targetCountry}</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {AD_COUNTRY_OPTIONS.map(country => (
-                  <TouchableOpacity
-                    key={country.id}
-                    className={`rounded-xl px-4 py-3 ${formData.audienceList === country.id ? 'bg-brand-pressed' : 'bg-slate-100'}`}
-                    activeOpacity={0.85}
-                    onPress={() =>
-                      setFormData(p => ({
-                        ...p,
-                        audienceList: country.id,
-                        location: country.name,
-                      }))
-                    }
-                  >
-                    <Text
-                      className={`font-semibold ${formData.audienceList === country.id ? 'text-white' : 'text-slate-700'}`}
-                    >
-                      {country.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text className="mt-2 text-caption-secondary">{copy.countryCodeHint}</Text>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.displayLocation}</Text>
-              <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
-                <TextInput
-                  className="flex-1 text-body-primary"
-                  placeholder={copy.displayLocationPlaceholder}
-                  placeholderTextColor="#94A5B8"
-                  value={formData.location}
-                  onChangeText={t => setFormData(p => ({ ...p, location: t }))}
-                />
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.displayPosition}</Text>
-              <View className="gap-3">
-                {([
-                  { value: 'post', label: copy.positionPost },
-                  { value: 'sidebar', label: copy.positionSidebar },
-                  { value: 'video', label: copy.positionVideo },
-                  { value: 'story', label: copy.positionStory },
-                  { value: 'timeline', label: copy.positionTimeline },
-                  { value: 'groups', label: copy.positionGroups },
-                  { value: 'pages', label: copy.positionPages },
-                  { value: 'messages', label: copy.positionMessages },
-                ] as { value: AdAppearsType; label: string }[]).map(item => (
-                  <TouchableOpacity
-                    key={item.value}
-                    className={`flex-row items-center rounded-xl px-4 py-4 ${formData.appears === item.value ? 'bg-brand-subtle border border-brand' : 'bg-slate-100 border border-transparent'}`}
-                    onPress={() => setFormData(p => ({ ...p, appears: item.value }))}
-                  >
-                    <View className={`h-5 w-5 rounded-full border-2 ${formData.appears === item.value ? 'border-brand bg-brand-pressed' : 'border-slate-300'}`} />
-                    <Text className="ml-3 text-body-primary">{item.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </View>
-        );
-
-      case 2:
-        return (
-          <View className="gap-5">
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.biddingMethod}</Text>
-              <View className="gap-3">
-                <TouchableOpacity
-                  className={`flex-row items-center rounded-xl px-4 py-4 ${formData.bidding === 'clicks' ? 'bg-brand-subtle border border-brand' : 'bg-slate-100 border border-transparent'}`}
-                  onPress={() => setFormData(p => ({ ...p, bidding: 'clicks' }))}
-                >
-                  <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'clicks' ? 'border-brand' : 'border-slate-300'}`} />
-                  <View className="ml-3">
-                    <Text className="text-body-primary font-semibold">{copy.biddingClicks}</Text>
-                    <Text className="text-caption-secondary">{copy.biddingClicksDesc}</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className={`flex-row items-center rounded-xl px-4 py-4 ${formData.bidding === 'views' ? 'bg-brand-subtle border border-brand' : 'bg-slate-100 border border-transparent'}`}
-                  onPress={() => setFormData(p => ({ ...p, bidding: 'views' }))}
-                >
-                  <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'views' ? 'border-brand' : 'border-slate-300'}`} />
-                  <View className="ml-3">
-                    <Text className="text-body-primary font-semibold">{copy.biddingViews}</Text>
-                    <Text className="text-caption-secondary">{copy.biddingViewsDesc}</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-label-primary text-slate-500">{copy.budget}</Text>
-              <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
-                <DollarSign size={20} color="#64748B" />
-                <TextInput
-                  className="ml-3 flex-1 text-body-primary"
-                  placeholder={copy.budgetPlaceholder}
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="numeric"
-                  value={formData.budget}
-                  onChangeText={t => setFormData(p => ({ ...p, budget: t }))}
-                />
-              </View>
-            </View>
-          </View>
-        );
-
-      case 3:
-        return (
-          <View className="gap-5">
-            <Text className="text-heading">{copy.previewTitle}</Text>
-
-            <View className="rounded-xl bg-white overflow-hidden border border-slate-200">
-              <View className="flex-row items-center p-4">
-                <View className="h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600">
-                  <Text className="text-xs font-bold text-white">
-                    {formData.name?.charAt(0)?.toUpperCase() || 'A'}
-                  </Text>
-                </View>
-                <View className="ml-3 flex-1">
-                  <View className="flex-row items-center">
-                    <Text className="font-semibold text-body-primary">
-                      {formData.name || 'Tên công ty'}
-                    </Text>
-                    <View className="ml-2 rounded-full bg-brand-pressed px-2 py-0.5">
-                      <Text className="text-[10px] font-medium text-white">{language === 'vi' ? 'Quảng cáo' : 'Sponsored'}</Text>
-                    </View>
-                  </View>
-                  <Text className="text-caption-secondary">{formData.website || 'website.com'}</Text>
-                </View>
-              </View>
-
-              {imagePreview ? (
-                <Image
-                  source={{ uri: imagePreview }}
-                  className="h-52 w-full"
-                  resizeMode="cover"
-                />
-              ) : (
-                <View className="h-52 items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
-                  <ImagePlus size={48} color="#94A3B8" />
-                  <Text className="mt-2 text-caption-secondary">{language === 'vi' ? 'Chưa chọn hình' : 'No image selected'}</Text>
-                </View>
-              )}
-
-              <View className="p-4">
-                <Text className="text-xl font-bold leading-tight">
-                  {formData.headline || copy.headline}
-                </Text>
-                <Text className="mt-2 text-body-secondary" numberOfLines={3}>
-                  {formData.description || copy.description}
-                </Text>
-                <TouchableOpacity className="mt-4 items-center rounded-lg bg-brand-pressed py-3">
-                  <Text className="font-bold text-white">{copy.learnMore}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View className="rounded-xl bg-slate-50 p-4">
-              <Text className="mb-3 font-semibold text-body-primary">{copy.campaignInfo}</Text>
-              <View className="gap-2">
-                <View className="flex-row items-center">
-                  <Users size={16} color="#64748B" />
-                  <Text className="ml-2 text-caption-secondary">
-                    {formData.gender === 'all' ? copy.audienceAll : formData.gender === 'male' ? copy.audienceMale : copy.audienceFemale}
-                  </Text>
-                </View>
-                <View className="flex-row items-center">
-                  <DollarSign size={16} color="#64748B" />
-                  <Text className="ml-2 text-caption-secondary">
-                    {copy.budgetLabel} {formData.budget ? `${parseFloat(formData.budget).toLocaleString('vi-VN')} VNĐ` : copy.budgetUnlimited}
-                  </Text>
-                </View>
-                <View className="flex-row items-center">
-                  <Target size={16} color="#64748B" />
-                  <Text className="ml-2 text-caption-secondary">
-                    {formData.bidding === 'clicks' ? copy.paymentClicks : copy.paymentViews}
-                  </Text>
-                </View>
-                <View className="flex-row items-center">
-                  <Globe size={16} color="#64748B" />
-                  <Text className="ml-2 text-caption-secondary">
-                    {formData.appears === 'post' ? copy.positionLabelPost : formData.appears === 'sidebar' ? copy.positionLabelSidebar : formData.appears === 'video' ? copy.positionLabelVideo : formData.appears === 'story' ? copy.positionLabelStory : formData.appears === 'timeline' ? copy.positionLabelTimeline : formData.appears === 'groups' ? copy.positionLabelGroups : formData.appears === 'pages' ? copy.positionLabelPages : copy.positionLabelMessages}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {(!formData.name || !formData.headline) && (
-              <View className="flex-row items-center rounded-xl bg-amber-50 p-4">
-                <Text className="text-lg">!</Text>
-                <View className="ml-3 flex-1">
-                  <Text className="font-medium text-amber-800">{copy.needMoreInfo}</Text>
-                  <Text className="text-caption-secondary text-amber-700">
-                    {copy.needMoreInfoDesc}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </View>
-        );
-
-      default:
-        return null;
-    }
-  };
 
   const selectedCountry = options?.audience.find(
     item => item.value === formData.audienceList,
@@ -756,32 +456,74 @@ function CreateAdScreen() {
   const renderPhtmlStepContent = () => {
     if (step === 0) {
       return (
-        <View>
-          <View className="border-b border-[#e5e7eb] bg-white px-4 py-3">
-            <Text className="text-sm font-semibold text-[#111827]">{language === 'vi' ? 'Ảnh đại diện' : 'Avatar image'}</Text>
-          </View>
-          <View className="bg-white px-4 py-4">
-            <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.companyName || 'Tên công ty'}</Text>
+        <View className="gap-5">
+          <View>
+            <Text className="mb-2 text-sm font-semibold text-slate-700">
+              {copy.companyName}
+            </Text>
             <TextInput
-              className="h-12 border border-[#d7dce4] bg-white px-3 text-sm text-[#111827]"
-              placeholder="Tên công ty"
-              placeholderTextColor="#94a3b8"
+              className="min-h-[56px] rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-900"
+              placeholder={copy.companyNamePlaceholder}
+              placeholderTextColor="#94A3B8"
               value={formData.name}
               onChangeText={name => setFormData(previous => ({ ...previous, name }))}
+              onFocus={event => handleInputFocus(event.target)}
+              returnKeyType="done"
             />
+          </View>
 
-            <Text className="mb-2 mt-4 text-sm font-semibold text-[#374151]">{copy.image || 'Hình ảnh'}</Text>
-            <Text className="mb-2 text-xs text-[#6b7280]">{language === 'vi' ? 'Chọn một hình ảnh cho chiến dịch của bạn' : 'Select an image for your campaign'}</Text>
+          <View>
+            <Text className="mb-2 text-sm font-semibold text-slate-700">
+              {copy.image}
+            </Text>
+            <Text className="mb-3 text-sm leading-5 text-slate-500">
+              {language === 'vi'
+                ? 'Chọn ảnh rõ nét để người xem nhận diện quảng cáo nhanh hơn.'
+                : 'Choose a clear image so people can recognize your ad quickly.'}
+            </Text>
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleSelectImage}
-              className="h-64 items-center justify-center overflow-hidden bg-[#f1f1f1]">
-              {imagePreview ? (
-                <Image source={{ uri: imagePreview }} className="h-full w-full" resizeMode="cover" />
+              className="min-h-[220px] items-center justify-center overflow-hidden rounded-[20px] border-2 border-dashed border-brand-border bg-brand-subtle"
+            >
+              {imagePreview && !mediaPreviewIsVideo ? (
+                <View className="w-full">
+                  <Image
+                    source={{ uri: imagePreview }}
+                    className="h-56 w-full bg-slate-100"
+                    resizeMode="cover"
+                  />
+                  <View className="absolute bottom-3 self-center rounded-full bg-black/65 px-4 py-2">
+                    <Text className="text-sm font-semibold text-white">
+                      {copy.changeImage}
+                    </Text>
+                  </View>
+                </View>
+              ) : imagePreview ? (
+                <View className="h-56 w-full items-center justify-center bg-slate-900">
+                  <View className="h-16 w-16 items-center justify-center rounded-full bg-white/15">
+                    <Video size={30} color="#ffffff" />
+                  </View>
+                  <Text className="mt-3 text-sm font-semibold text-white">
+                    {language === 'vi' ? 'Video đã được chọn' : 'Video selected'}
+                  </Text>
+                  <Text className="mt-1 text-xs text-white/70">
+                    {language === 'vi'
+                      ? 'Nhấn để chọn video khác'
+                      : 'Tap to choose another video'}
+                  </Text>
+                </View>
               ) : (
                 <>
-                  <ImagePlus size={28} color="#9ca3af" />
-                  <Text className="mt-3 text-sm text-[#6b7280]">{copy.selectImage || 'Chọn hình ảnh'}</Text>
+                  <View className="h-16 w-16 items-center justify-center rounded-full bg-white">
+                    <ImagePlus size={30} color={BRAND} />
+                  </View>
+                  <Text className="mt-4 text-base font-bold text-brand">
+                    {copy.selectImage}
+                  </Text>
+                  <Text className="mt-1 px-4 text-center text-xs text-slate-500">
+                    JPG, PNG, GIF hoặc video phù hợp vị trí hiển thị
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -792,167 +534,227 @@ function CreateAdScreen() {
 
     if (step === 1) {
       return (
-        <View>
-          <View className="flex-row items-center border-b border-[#e5e7eb] bg-white px-4 py-3">
-            <Text className="mr-2 text-brand">i</Text>
-            <Text className="text-sm font-semibold text-[#111827]">{language === 'vi' ? 'Thông tin chi tiết' : 'Campaign details'}</Text>
-          </View>
-          <View className="gap-4 bg-white px-4 py-4">
+        <View className="gap-5">
             <View>
-              <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.headline || 'Tiêu đề chiến dịch'}</Text>
+              <Text className="mb-2 text-sm font-semibold text-slate-700">
+                {copy.headline}
+              </Text>
               <TextInput
-                className="h-12 border border-[#d7dce4] px-3 text-sm text-[#111827]"
+                className="min-h-[56px] rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-900"
+                placeholder={copy.headlinePlaceholder}
+                placeholderTextColor="#94A3B8"
                 value={formData.headline}
                 onChangeText={headline => setFormData(previous => ({ ...previous, headline }))}
+                onFocus={event => handleInputFocus(event.target)}
+                returnKeyType="next"
               />
             </View>
             <View>
-              <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.description || 'Mô tả chiến dịch'}</Text>
+              <Text className="mb-2 text-sm font-semibold text-slate-700">
+                {copy.description}
+              </Text>
               <TextInput
-                className="h-28 border border-[#d7dce4] px-3 py-3 text-sm text-[#111827]"
+                className="min-h-[132px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base leading-6 text-slate-900"
+                placeholder={copy.descriptionPlaceholder}
+                placeholderTextColor="#94A3B8"
                 multiline
                 textAlignVertical="top"
                 value={formData.description}
                 onChangeText={description => setFormData(previous => ({ ...previous, description }))}
+                onFocus={event => handleInputFocus(event.target)}
               />
-              <Text className="mt-1 text-xs text-[#9ca3af]">{language === 'vi' ? 'Cho người dùng biết chiến dịch của bạn nói về điều gì' : 'Tell users what your campaign is about'}</Text>
+              <Text className="mt-2 text-xs leading-4 text-slate-500">
+                {language === 'vi'
+                  ? 'Mô tả ngắn gọn lợi ích hoặc thông điệp chính của chiến dịch.'
+                  : 'Briefly describe the main benefit or message of your campaign.'}
+              </Text>
             </View>
             <View>
-              <Text className="mb-2 text-sm font-semibold text-[#374151]">{language === 'vi' ? 'Ngày bắt đầu' : 'Start Date'}</Text>
+              <Text className="mb-2 text-sm font-semibold text-slate-700">
+                {language === 'vi' ? 'Ngày bắt đầu' : 'Start date'}
+              </Text>
               <TouchableOpacity
-                className="h-12 flex-row items-center justify-between border border-[#d7dce4] px-3"
-                onPress={() => setDatePickerField('startDate')}>
-                <Text className={formData.startDate ? 'text-[#111827]' : 'text-[#94a3b8]'}>{formatDisplayDate(formData.startDate)}</Text>
-                <CalendarDays size={18} color="#111827" />
+                className="min-h-[56px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setDatePickerField('startDate');
+                }}
+              >
+                <Text className={formData.startDate ? 'text-base text-slate-900' : 'text-base text-slate-400'}>
+                  {formatDisplayDate(formData.startDate)}
+                </Text>
+                <CalendarDays size={19} color="#64748b" />
               </TouchableOpacity>
-              <Text className="mt-1 text-xs text-[#9ca3af]">{language === 'vi' ? 'Chọn ngày bắt đầu chiến dịch, UTC' : 'Select campaign start date, UTC'}</Text>
             </View>
             <View>
-              <Text className="mb-2 text-sm font-semibold text-[#374151]">{language === 'vi' ? 'Ngày kết thúc' : 'End Date'}</Text>
+              <Text className="mb-2 text-sm font-semibold text-slate-700">
+                {language === 'vi' ? 'Ngày kết thúc' : 'End date'}
+              </Text>
               <TouchableOpacity
-                className="h-12 flex-row items-center justify-between border border-[#d7dce4] px-3"
-                onPress={() => setDatePickerField('endDate')}>
-                <Text className={formData.endDate ? 'text-[#111827]' : 'text-[#94a3b8]'}>{formatDisplayDate(formData.endDate)}</Text>
-                <CalendarDays size={18} color="#111827" />
+                className="min-h-[56px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setDatePickerField('endDate');
+                }}
+              >
+                <Text className={formData.endDate ? 'text-base text-slate-900' : 'text-base text-slate-400'}>
+                  {formatDisplayDate(formData.endDate)}
+                </Text>
+                <CalendarDays size={19} color="#64748b" />
               </TouchableOpacity>
-              <Text className="mt-1 text-xs text-[#9ca3af]">{language === 'vi' ? 'Chọn ngày kết thúc chiến dịch, UTC' : 'Select campaign end date, UTC'}</Text>
             </View>
             <View>
-              <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.website || 'URL trang web'}</Text>
-              <TextInput
-                className="h-12 border border-[#d7dce4] px-3 text-sm text-[#111827]"
-                placeholder="https://example.com"
-                placeholderTextColor="#94a3b8"
-                keyboardType="url"
-                autoCapitalize="none"
-                value={formData.website}
-                onChangeText={website => setFormData(previous => ({ ...previous, website }))}
-              />
-              <Text className="mt-1 text-xs text-[#9ca3af]">{language === 'vi' ? 'Chọn một trang hoặc nhập một liên kết đến trang web của bạn' : 'Select a page or enter a link to your website'}</Text>
+              <Text className="mb-2 text-sm font-semibold text-slate-700">
+                {copy.website}
+              </Text>
+              <View className="min-h-[56px] flex-row items-center rounded-2xl border border-slate-200 bg-slate-50 px-4">
+                <Globe size={19} color="#64748b" />
+                <Text className="ml-3 text-base font-semibold text-slate-500">
+                  {getAdWebsiteProtocol(formData.website)}
+                </Text>
+                <TextInput
+                  className="ml-1 flex-1 text-base text-slate-900"
+                  placeholder={language === 'vi' ? 'tenmien.com' : 'yourdomain.com'}
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="url"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={getAdWebsiteHost(formData.website)}
+                  onChangeText={website =>
+                    setFormData(previous => ({
+                      ...previous,
+                      website: buildAdWebsiteUrl(website),
+                      pageName: '',
+                    }))
+                  }
+                  onFocus={event => handleInputFocus(event.target)}
+                  returnKeyType="done"
+                />
+              </View>
+              <Text className="mt-2 text-xs leading-4 text-slate-500">
+                {getAdWebsiteProtocol(formData.website) === AD_WEBSITE_PREFIX
+                  ? language === 'vi'
+                    ? 'Bạn chỉ cần nhập tên miền, phần https:// đã được thêm sẵn.'
+                    : 'Only enter the domain; https:// is already included.'
+                  : language === 'vi'
+                    ? 'Liên kết cũ đang dùng http://; khi chỉnh sửa, app sẽ chuyển sang https://.'
+                    : 'This legacy link uses http://; editing it will upgrade to https://.'}
+              </Text>
             </View>
             <View>
-              <Text className="mb-2 text-sm font-semibold text-[#374151]">{language === 'vi' ? 'Trang của tôi' : 'My Page'}</Text>
+              <Text className="mb-2 text-sm font-semibold text-slate-700">
+                {language === 'vi' ? 'Hoặc chọn trang của tôi' : 'Or choose my page'}
+              </Text>
               <TouchableOpacity
-                className="h-12 flex-row items-center justify-between border border-[#d7dce4] px-3"
-                onPress={() => setPageSheetOpen(true)}>
-                <Text className={selectedPage ? 'text-[#111827]' : 'text-[#94a3b8]'}>{selectedPage?.title || 'Lựa chọn'}</Text>
+                className="min-h-[56px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4"
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setPageSheetOpen(true);
+                }}
+              >
+                <Text className={selectedPage ? 'flex-1 text-base text-slate-900' : 'flex-1 text-base text-slate-400'} numberOfLines={1}>
+                  {selectedPage?.title || (language === 'vi' ? 'Không chọn trang' : 'No page selected')}
+                </Text>
                 <ChevronDown size={18} color="#64748b" />
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      );
-    }
-
-    if (false && step === 1) {
-      return (
-        <View className="gap-4 bg-white px-4 py-4">
-          <View>
-            <Text className="mb-2 text-sm font-semibold text-[#374151]">Website</Text>
-            <TextInput
-              className="h-12 border border-[#d7dce4] px-3 text-sm text-[#111827]"
-              placeholder="https://example.com"
-              placeholderTextColor="#94a3b8"
-              keyboardType="url"
-              autoCapitalize="none"
-              value={formData.website}
-              onChangeText={website => setFormData(previous => ({ ...previous, website }))}
-            />
-          </View>
-          <View>
-            <Text className="mb-2 text-sm font-semibold text-[#374151]">Tiêu đề</Text>
-            <TextInput
-              className="h-12 border border-[#d7dce4] px-3 text-sm text-[#111827]"
-              placeholder="Tiêu đề quảng cáo"
-              placeholderTextColor="#94a3b8"
-              value={formData.headline}
-              onChangeText={headline => setFormData(previous => ({ ...previous, headline }))}
-            />
-          </View>
-          <View>
-            <Text className="mb-2 text-sm font-semibold text-[#374151]">Mô tả</Text>
-            <TextInput
-              className="h-28 border border-[#d7dce4] px-3 py-3 text-sm text-[#111827]"
-              placeholder="Mô tả quảng cáo"
-              placeholderTextColor="#94a3b8"
-              multiline
-              textAlignVertical="top"
-              value={formData.description}
-              onChangeText={description => setFormData(previous => ({ ...previous, description }))}
-            />
-          </View>
         </View>
       );
     }
 
     return (
-      <View className="gap-5 bg-white px-4 py-4">
-        <View className="-mx-4 -mt-4 flex-row items-center border-b border-[#e5e7eb] bg-white px-4 py-3">
-          <Target size={18} color={APP_BRAND_COLOR} />
-          <Text className="ml-2 text-sm font-semibold text-[#111827]">{copy.step2Title || "Nhắm mục tiêu"}</Text>
-        </View>
+      <View className="gap-5">
         <View>
-          <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.locationLabel || "Địa điểm"}</Text>
+          <Text className="mb-2 text-sm font-semibold text-slate-700">
+            {copy.locationLabel}
+          </Text>
           <TextInput
-            className="h-12 border border-[#d7dce4] px-3 text-sm text-[#111827]"
+            className="min-h-[56px] rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-900"
+            placeholder={copy.displayLocationPlaceholder}
+            placeholderTextColor="#94A3B8"
             value={formData.location}
             onChangeText={location => setFormData(previous => ({ ...previous, location }))}
+            onFocus={event => handleInputFocus(event.target)}
           />
         </View>
         <View>
-          <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.step2Title || "Sự tiếp kiến"}</Text>
+          <Text className="mb-2 text-sm font-semibold text-slate-700">
+            {copy.targetCountry}
+          </Text>
           <TouchableOpacity
-            className="h-12 flex-row items-center justify-between border border-[#d7dce4] px-3"
-            onPress={() => setCountrySheetOpen(true)}>
-            <Text className="text-sm text-[#374151]">{selectedCountry?.label || 'Chọn quốc gia'}</Text>
-            <ChevronDown size={18} color="#64748b" />
-          </TouchableOpacity>
-        </View>
-
-        <View>
-          <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.gender || "Giới tính"}</Text>
-          <TouchableOpacity
-            className="h-12 flex-row items-center justify-between border border-[#d7dce4] px-3"
-            onPress={() => setGenderSheetOpen(true)}>
-            <Text className="text-sm text-[#374151]">{selectedGender?.label || 'Tất cả'}</Text>
-            <ChevronDown size={18} color="#64748b" />
-          </TouchableOpacity>
-        </View>
-
-        <View>
-          <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.displayPosition || "Vị trí hiển thị"}</Text>
-          <TouchableOpacity
-            className="h-12 flex-row items-center justify-between border border-[#d7dce4] px-3"
-            onPress={() => setPlacementSheetOpen(true)}>
-            <Text className="flex-1 text-sm text-[#374151]" numberOfLines={1}>
-              {selectedPlacement?.label || (copy.positionLabelEntire || 'Toàn bộ trang web')} ({language === 'vi' ? 'Định dạng tệp hình ảnh' : 'Image file format'})
+            className="min-h-[56px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4"
+            onPress={() => {
+              Keyboard.dismiss();
+              setCountrySheetOpen(true);
+            }}
+          >
+            <Text className="text-base text-slate-900">
+              {selectedCountry?.label || (language === 'vi' ? 'Chọn quốc gia' : 'Select country')}
             </Text>
             <ChevronDown size={18} color="#64748b" />
           </TouchableOpacity>
         </View>
 
         <View>
-          <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.biddingMethod || "Phương thức đấu thầu"}</Text>
+          <Text className="mb-2 text-sm font-semibold text-slate-700">
+            {copy.gender}
+          </Text>
+          <TouchableOpacity
+            className="min-h-[56px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4"
+            onPress={() => {
+              Keyboard.dismiss();
+              setGenderSheetOpen(true);
+            }}
+          >
+            <Text className="text-base text-slate-900">
+              {selectedGender?.label || copy.genderAll}
+            </Text>
+            <ChevronDown size={18} color="#64748b" />
+          </TouchableOpacity>
+        </View>
+
+        <View>
+          <Text className="mb-2 text-sm font-semibold text-slate-700">
+            {copy.displayPosition}
+          </Text>
+          <TouchableOpacity
+            className="min-h-[56px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4"
+            onPress={() => {
+              Keyboard.dismiss();
+              setPlacementSheetOpen(true);
+            }}
+          >
+            <Text className="flex-1 text-base text-slate-900" numberOfLines={1}>
+              {selectedPlacement?.label || copy.positionLabelEntire}
+            </Text>
+            <ChevronDown size={18} color="#64748b" />
+          </TouchableOpacity>
+          <Text className="mt-2 text-xs leading-4 text-slate-500">
+            {formData.appears === 'video'
+              ? (language === 'vi' ? 'Vị trí này yêu cầu tệp video.' : 'This placement requires a video file.')
+              : (language === 'vi' ? 'Vị trí này yêu cầu tệp hình ảnh.' : 'This placement requires an image file.')}
+          </Text>
+          {mediaPlacementMismatch ? (
+            <TouchableOpacity
+              activeOpacity={0.82}
+              className="mt-3 flex-row items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
+              onPress={handleSelectImage}
+            >
+              <ImagePlus size={20} color="#b45309" />
+              <Text className="ml-3 flex-1 text-sm leading-5 text-amber-800">
+                {language === 'vi'
+                  ? 'Tệp đã chọn chưa phù hợp. Nhấn để chọn lại.'
+                  : 'The selected file is incompatible. Tap to choose again.'}
+              </Text>
+              <ChevronRight size={18} color="#b45309" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <View>
+          <Text className="mb-2 text-sm font-semibold text-slate-700">
+            {copy.biddingMethod}
+          </Text>
           <View className="flex-row gap-2">
             {(['clicks', 'views'] as AdBiddingType[]).map(value => {
               const selected = formData.bidding === value;
@@ -960,12 +762,13 @@ function CreateAdScreen() {
               return (
                 <TouchableOpacity
                   key={value}
-                  className={`flex-1 border px-3 py-3 ${selected ? 'border-brand bg-brand-soft' : 'border-[#d7dce4]'}`}
-                  onPress={() => setFormData(previous => ({ ...previous, bidding: value }))}>
-                  <Text className={`text-sm font-semibold ${selected ? 'text-brand' : 'text-[#374151]'}`}>
-                    {value === 'clicks' ? (copy.biddingClicks || 'Lượt nhấp') : (copy.biddingViews || 'Lượt xem')}
+                  className={`min-h-[82px] flex-1 rounded-2xl border px-4 py-3 ${selected ? 'border-brand bg-brand-soft' : 'border-slate-200 bg-slate-50'}`}
+                  onPress={() => setFormData(previous => ({ ...previous, bidding: value }))}
+                >
+                  <Text className={`text-sm font-bold ${selected ? 'text-brand' : 'text-slate-700'}`}>
+                    {value === 'clicks' ? copy.biddingClicks : copy.biddingViews}
                   </Text>
-                  <Text className="mt-1 text-xs text-[#64748b]">
+                  <Text className="mt-2 text-xs text-slate-500">
                     {Number(price ?? 0).toLocaleString('vi-VN')} {options?.currencySymbol || 'VNSEEA'}
                   </Text>
                 </TouchableOpacity>
@@ -975,93 +778,203 @@ function CreateAdScreen() {
         </View>
 
         <View>
-          <Text className="mb-2 text-sm font-semibold text-[#374151]">{copy.budget || "Ngân sách"}</Text>
-          <TextInput
-            className="h-12 border border-[#d7dce4] px-3 text-sm text-[#111827]"
-            placeholder="0"
-            placeholderTextColor="#94a3b8"
-            keyboardType="numeric"
-            value={formData.budget}
-            onChangeText={budget => setFormData(previous => ({ ...previous, budget }))}
-          />
+          <Text className="mb-2 text-sm font-semibold text-slate-700">
+            {copy.budget}
+          </Text>
+          <View className="min-h-[56px] flex-row items-center rounded-2xl border border-slate-200 bg-slate-50 px-4">
+            <DollarSign size={19} color="#64748b" />
+            <TextInput
+              className="ml-3 flex-1 text-base text-slate-900"
+              placeholder="0"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+              value={formData.budget}
+              onChangeText={budget => setFormData(previous => ({ ...previous, budget }))}
+              onFocus={event => handleInputFocus(event.target)}
+              returnKeyType="done"
+            />
+            <Text className="text-xs font-semibold text-slate-500">
+              {options?.currencySymbol || 'VNSEEA'}
+            </Text>
+          </View>
         </View>
       </View>
     );
   };
 
-  void getStepTitle;
-  void getStepHelper;
-  void renderStepContent;
+  const headerBackgroundColor =
+    Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF';
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+    <View className="flex-1 bg-[#f6f8fc]">
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={headerBackgroundColor}
+        translucent={false}
+      />
+      <SafeAreaFeedHeader safeAreaBackgroundColor={headerBackgroundColor} />
 
-      <ScrollView className="flex-1 bg-[#eef3ff]" showsVerticalScrollIndicator={false}>
-        <View className="mt-3 bg-white">
-          <View className="flex-row items-center border-b border-[#e5e7eb] px-3 py-3">
-            <Megaphone size={18} color={APP_BRAND_COLOR} />
-            <Text className="ml-2 text-sm font-semibold text-[#111827]">{copy.previewTitle || "Xem trước quảng cáo"}</Text>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          ref={formScrollRef}
+          className="flex-1"
+          contentContainerClassName="px-4 pb-8 pt-4"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="flex-row items-center">
+            <View className="h-12 w-12 items-center justify-center rounded-2xl bg-brand-subtle">
+              <Megaphone size={23} color={BRAND} />
+            </View>
+            <View className="ml-3 flex-1">
+              <Text className="text-xl font-bold text-slate-900">
+                {editingAd
+                  ? (language === 'vi' ? 'Sửa quảng cáo' : 'Edit advertisement')
+                  : (language === 'vi' ? 'Tạo quảng cáo' : 'Create advertisement')}
+              </Text>
+              <Text className="mt-1 text-sm text-slate-500">
+                {language === 'vi'
+                  ? 'Hoàn tất từng bước và xem trước trước khi lưu.'
+                  : 'Complete each step and preview before saving.'}
+              </Text>
+            </View>
+            <View className="rounded-full bg-slate-200 px-3 py-1.5">
+              <Text className="text-xs font-bold text-slate-700">{step + 1}/3</Text>
+            </View>
           </View>
-          <View className="px-3 py-3">
-            <View className="flex-row items-center">
-              <View className="h-9 w-9 items-center justify-center rounded-full bg-[#e5e7eb]">
-                <Text className="font-bold text-[#64748b]">{formData.name.charAt(0).toUpperCase() || 'A'}</Text>
+
+          <View className="mt-4 overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+            <View className="flex-row items-center px-4 py-3">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-brand-subtle">
+                <Text className="font-bold text-brand">
+                  {formData.name.charAt(0).toUpperCase() || 'A'}
+                </Text>
               </View>
-              <View className="ml-2 flex-1">
-                <Text className="text-sm font-semibold text-[#374151]">{formData.name || 'Công ty'}</Text>
-                <Text className="text-xs text-[#9ca3af]">{formData.location || 'Địa điểm'}</Text>
+              <View className="ml-3 flex-1">
+                <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
+                  {formData.name || (language === 'vi' ? 'Tên doanh nghiệp' : 'Business name')}
+                </Text>
+                <Text className="mt-0.5 text-xs text-slate-500" numberOfLines={1}>
+                  {getAdWebsiteHost(formData.website) || 'yourdomain.com'}
+                </Text>
+              </View>
+              <View className="rounded-full bg-brand-subtle px-2.5 py-1">
+                <Text className="text-[11px] font-semibold text-brand">
+                  {language === 'vi' ? 'Quảng cáo' : 'Sponsored'}
+                </Text>
               </View>
             </View>
-            <Text className="mt-3 text-sm text-[#64748b]" numberOfLines={2}>{formData.description || (copy.description || 'Mô tả')}</Text>
-            <Text className="mt-3 text-base text-[#64748b]">{formData.headline || (copy.headline || 'Tiêu đề')}</Text>
-            {imagePreview ? (
-              <Image source={{ uri: imagePreview }} className="mt-2 h-36 w-full bg-[#f3f4f6]" resizeMode="cover" />
+
+            {imagePreview && !mediaPreviewIsVideo ? (
+              <Image
+                source={{ uri: imagePreview }}
+                className="h-48 w-full bg-slate-100"
+                resizeMode="cover"
+              />
+            ) : imagePreview ? (
+              <View className="h-48 items-center justify-center bg-slate-900">
+                <Video size={32} color="#ffffff" />
+                <Text className="mt-2 text-sm font-semibold text-white">
+                  {language === 'vi' ? 'Xem trước video' : 'Video preview'}
+                </Text>
+              </View>
             ) : (
-              <View className="mt-2 h-36 items-center justify-center bg-[#f3f4f6]">
-                <ImagePlus size={28} color="#c4c7cc" />
-              </View>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                className="h-44 items-center justify-center bg-slate-100"
+                onPress={handleSelectImage}
+              >
+                <ImagePlus size={32} color="#94a3b8" />
+                <Text className="mt-2 text-sm font-semibold text-slate-500">
+                  {language === 'vi' ? 'Thêm ảnh để xem trước' : 'Add media to preview'}
+                </Text>
+              </TouchableOpacity>
             )}
+
+            <View className="p-4">
+              <Text className="text-lg font-bold leading-6 text-slate-900" numberOfLines={2}>
+                {formData.headline || copy.headline}
+              </Text>
+              <Text className="mt-2 text-sm leading-5 text-slate-600" numberOfLines={3}>
+                {formData.description || copy.descriptionPlaceholder}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        <View className="mt-3 flex-row bg-white px-2 py-3">
-          {[language === 'vi' ? 'Tệp phương tiện' : 'Media', language === 'vi' ? 'Thông tin chi tiết' : 'Details', copy.step2Title || 'Targeting'].map((label, index) => (
+          <View className="mt-4 flex-row rounded-[20px] border border-slate-200 bg-white p-3">
+            {[
+              language === 'vi' ? 'Media' : 'Media',
+              language === 'vi' ? 'Nội dung' : 'Content',
+              language === 'vi' ? 'Mục tiêu' : 'Targeting',
+            ].map((label, index) => (
+              <TouchableOpacity
+                key={label}
+                activeOpacity={0.8}
+                className="flex-1 items-center"
+                onPress={() => index < step && setStep(index)}
+              >
+                <View className={`h-8 w-8 items-center justify-center rounded-full ${index <= step ? 'bg-brand' : 'bg-slate-200'}`}>
+                  {index < step ? (
+                    <Check size={16} color="#ffffff" />
+                  ) : (
+                    <Text className={`text-xs font-bold ${index === step ? 'text-white' : 'text-slate-500'}`}>
+                      {index + 1}
+                    </Text>
+                  )}
+                </View>
+                <Text className={`mt-2 text-xs ${index === step ? 'font-bold text-brand' : 'text-slate-500'}`}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View className="mt-4 rounded-[24px] border border-slate-200 bg-white p-4">
+            <Text className="text-lg font-bold text-slate-900">{getStepTitle()}</Text>
+            <Text className="mt-1 text-sm leading-5 text-slate-500">{getStepHelper()}</Text>
+            <View className="mt-5">{renderPhtmlStepContent()}</View>
+          </View>
+        </ScrollView>
+
+        {!isKeyboardVisible ? (
+          <View className="flex-row items-center gap-3 border-t border-slate-200 bg-white px-4 py-3">
             <TouchableOpacity
-              key={label}
-              className="flex-1 items-center"
-              onPress={() => index < step && setStep(index)}>
-              <View className={`h-6 w-6 items-center justify-center rounded-full ${index <= step ? 'bg-[#1da1f2]' : 'bg-[#e5e7eb]'}`}>
-                <Check size={14} color={index <= step ? '#ffffff' : '#9ca3af'} />
-              </View>
-              <Text className={`mt-1 text-center text-xs ${index === step ? 'font-semibold text-[#1da1f2]' : 'text-[#9ca3af]'}`}>{label}</Text>
+              activeOpacity={0.8}
+              onPress={back}
+              className="min-h-[50px] flex-row items-center justify-center rounded-2xl border border-slate-200 bg-white px-4"
+            >
+              <ArrowLeft size={18} color="#475569" />
+              <Text className="ml-2 text-sm font-semibold text-slate-700">
+                {language === 'vi' ? 'Quay lại' : 'Back'}
+              </Text>
             </TouchableOpacity>
-          ))}
-        </View>
-
-        <View className="mt-3">{renderPhtmlStepContent()}</View>
-      </ScrollView>
-
-      <View className="flex-row items-center justify-between border-t border-[#e5e7eb] bg-white px-5 py-4">
-        <TouchableOpacity onPress={back} className="min-w-[92px] flex-row items-center py-3">
-          <ArrowLeft size={17} color="#64748b" />
-          <Text className="ml-2 text-sm text-[#64748b]">{language === 'vi' ? 'Quay lại' : 'Back'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className="h-11 min-w-[120px] items-center justify-center rounded-md bg-brand px-5"
-          onPress={next}
-          disabled={isCreating || isUpdating}
-        >
-          {isCreating || isUpdating ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text className="text-title-primary text-white">
-              {step === 2 ? (editingAd ? (language === 'vi' ? 'Lưu' : 'Save') : (language === 'vi' ? 'Công bố' : 'Publish')) : (language === 'vi' ? 'Tiếp theo' : 'Next')}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              className="min-h-[50px] flex-1 items-center justify-center rounded-2xl bg-brand px-5"
+              onPress={next}
+              disabled={isCreating || isUpdating}
+            >
+              {isCreating || isUpdating ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text className="text-base font-bold text-white">
+                  {step === 2
+                    ? editingAd
+                      ? language === 'vi' ? 'Lưu thay đổi' : 'Save changes'
+                      : language === 'vi' ? 'Công bố quảng cáo' : 'Publish ad'
+                    : language === 'vi' ? 'Tiếp theo' : 'Next'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
 
       <Modal visible={countrySheetOpen} transparent animationType="slide" onRequestClose={() => setCountrySheetOpen(false)}>
         <View className="flex-1 justify-end bg-black/35">
@@ -1073,7 +986,7 @@ function CreateAdScreen() {
             <Text className="border-b border-[#e5e7eb] px-4 pb-3 text-base font-semibold text-[#111827]">{language === 'vi' ? 'Chọn quốc gia' : 'Select Country'}</Text>
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingBottom: 24 }}
+              contentContainerStyle={MODAL_SCROLL_CONTENT_STYLE}
               nestedScrollEnabled
               showsVerticalScrollIndicator
               persistentScrollbar>
@@ -1105,14 +1018,18 @@ function CreateAdScreen() {
             <Text className="border-b border-[#e5e7eb] px-4 pb-3 text-base font-semibold text-[#111827]">{language === 'vi' ? 'Trang của tôi' : 'My Page'}</Text>
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingBottom: 24 }}
+              contentContainerStyle={MODAL_SCROLL_CONTENT_STYLE}
               nestedScrollEnabled
               showsVerticalScrollIndicator
               persistentScrollbar>
               <TouchableOpacity
                 className="min-h-[48px] flex-row items-center justify-between border-b border-[#f1f5f9] px-4"
                 onPress={() => {
-                  setFormData(previous => ({ ...previous, pageName: '', website: '' }));
+                  setFormData(previous => ({
+                    ...previous,
+                    pageName: '',
+                    website: AD_WEBSITE_PREFIX,
+                  }));
                   setPageSheetOpen(false);
                 }}>
                 <Text className={!formData.pageName ? 'font-semibold text-brand' : 'text-[#374151]'}>{language === 'vi' ? 'Không chọn trang' : 'Do not select page'}</Text>
@@ -1181,7 +1098,7 @@ function CreateAdScreen() {
             <Text className="border-b border-[#e5e7eb] px-4 pb-3 text-base font-semibold text-[#111827]">{copy.displayPosition || 'Vị trí hiển thị'}</Text>
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingBottom: 24 }}
+              contentContainerStyle={MODAL_SCROLL_CONTENT_STYLE}
               nestedScrollEnabled
               showsVerticalScrollIndicator
               persistentScrollbar>

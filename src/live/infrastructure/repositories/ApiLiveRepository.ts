@@ -4,7 +4,11 @@
 import axios from 'axios';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { CONTENT_AUDIENCE_CONTRACT } from '../../../shared-kernel/domain/types/contentAudience';
-import { normalizeApiResponseData } from '../../../shared-kernel/application/api/apiResponse';
+import {
+  ApiBridgeError,
+  isApiSuccessStatus,
+  normalizeApiResponseData,
+} from '../../../shared-kernel/application/api/apiResponse';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -116,6 +120,15 @@ function readBool(raw: RawRecord | undefined | null, ...keys: string[]) {
     if (value === '0' || value === 0 || value === 'false') return false;
   }
   return false;
+}
+
+function isMissingLivePostLookupError(error: unknown) {
+  if (!(error instanceof ApiBridgeError)) return false;
+
+  const message = error.message.trim().toLowerCase().replace(/\s+/g, ' ');
+  return /^(?:post (?:is )?(?:not found|not exists|does not exist|doesn't exist)|no post found)\.?$/.test(
+    message,
+  );
 }
 
 function toUrlEncodedPayload(data: RawRecord) {
@@ -308,6 +321,14 @@ async function fetchLiveReactionSnapshot(postId: number) {
 
 function getLiveState(raw: RawRecord): LiveStreamState {
   if (readBool(raw, 'live_ended')) return 'offline';
+
+  const explicitState = readStateValue(
+    readString(raw, 'stream_state', 'live_state', 'still_live'),
+  );
+  if (explicitState) return explicitState;
+
+  const stillLive = readOptionalBool(raw, 'still_live');
+  if (stillLive !== undefined) return stillLive ? 'live' : 'offline';
 
   const liveTime = readNumber(raw, 'live_time');
   if (liveTime <= 0) return 'stale';
@@ -660,14 +681,34 @@ export function createLiveRepository(): LiveRepository {
     },
 
     async getLivePost(postId: number): Promise<LiveStreamItem | null> {
-      const response = await apiBridge.post<LivePostResponse>(apiRoutes.feed.getPost, {
-
-
-        post_id: postId,
-        fetch: 'post_data',
-      });
+      let response: LivePostResponse;
+      try {
+        response = await apiBridge.post<LivePostResponse>(
+          apiRoutes.feed.getPost,
+          {
+            post_id: postId,
+            fetch: 'post_data',
+          },
+        );
+      } catch (error) {
+        if (isMissingLivePostLookupError(error)) return null;
+        throw error;
+      }
+      const apiStatus = String(response.api_status ?? '').trim();
+      if (apiStatus && !isApiSuccessStatus(apiStatus)) {
+        throw new Error(`Live post lookup failed with status ${apiStatus}.`);
+      }
       const raw = response.post_data;
-      if (!raw || !isUsableLivePost(raw)) return null;
+      if (!raw) return null;
+
+      const postType = readString(raw, 'postType').trim().toLowerCase();
+      const hasStream = readString(raw, 'stream_name', 'stream').length > 0;
+      if (readBool(raw, 'live_ended')) return null;
+      if (postType && postType !== 'live') return null;
+      if (!postType || !hasStream) {
+        throw new Error('Live post lookup returned an incomplete payload.');
+      }
+
       return mapLivePost(raw);
     },
 

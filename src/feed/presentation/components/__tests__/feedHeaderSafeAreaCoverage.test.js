@@ -59,7 +59,7 @@ describe('FeedHeader top safe-area coverage', () => {
       expect(source).toContain(
         "import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader'",
       );
-      expect(source).toContain('<SafeAreaFeedHeader />');
+      expect(source).toContain('<SafeAreaFeedHeader');
       expect(source).not.toContain('<FeedHeader />');
       expect(source).not.toContain(
         "from '../../../feed/presentation/components/FeedHeader'",
@@ -77,9 +77,7 @@ describe('FeedHeader top safe-area coverage', () => {
   });
 
   it('keeps the standalone points screen protected by its own top safe-area', () => {
-    const source = read(
-      'src/wallet/presentation/screens/MyPointsScreen.tsx',
-    );
+    const source = read('src/wallet/presentation/screens/MyPointsScreen.tsx');
 
     expect(source).toContain('<SafeAreaView');
     expect(source).toContain("edges={['top']}");

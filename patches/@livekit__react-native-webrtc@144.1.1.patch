@@ -1,3 +1,15 @@
+diff --git a/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java b/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java
+index bdc9ffc9564995694f199312d9365554b3c54ccd..005fc71b614b0e864615db47d52de7f40a077e0f 100644
+--- a/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java
++++ b/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java
+@@ -301,6 +301,7 @@ public class WebRTCView extends ViewGroup {
+                         WritableMap params = Arguments.createMap();
+                         params.putInt("width", videoWidth);
+                         params.putInt("height", videoHeight);
++                        params.putInt("rotation", rotation);
+
+                         // Send the event through React Native's event system
+                         reactContext.getJSModule(RCTEventEmitter.class)
 diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDeviceModuleObserver.m
 index 8b42cf11a5de39bd0073cc1f50468bed2dcd7c50..eb062574a5291b2e892207e9765bea0099a923ed 100644
 --- a/ios/RCTWebRTC/AudioDeviceModuleObserver.m
@@ -517,3 +529,30 @@ index ce54d8db9fafd129b37d0df643dba7e460e75763..6f8114d23f555afc5cdf487ed5dc67b3
              RCTLogInfo(@"Using audio processing module: %@", NSStringFromClass([audioProcessingModule class]));
              _peerConnectionFactory =
                  [[RTCPeerConnectionFactory alloc] initWithAudioDeviceModuleType:RTCAudioDeviceModuleTypeAudioEngine
+diff --git a/lib/typescript/RTCView.d.ts b/lib/typescript/RTCView.d.ts
+index e316524d7b9ee2e3315c83de5527dad372be4010..83afd18ad11739558adacb47e2d6fd5d8710d9ae 100644
+--- a/lib/typescript/RTCView.d.ts
++++ b/lib/typescript/RTCView.d.ts
+@@ -78,6 +78,7 @@ export interface RTCVideoViewProps extends ViewProps {
+         nativeEvent: {
+             width: number;
+             height: number;
++            rotation?: number;
+         };
+     }) => void;
+ }
+diff --git a/src/RTCView.ts b/src/RTCView.ts
+index ea97a430f15963b23aa78bd66485aaabf85292c5..aa1e202f43d68126ec56bfe741325767cb56ebc7 100644
+--- a/src/RTCView.ts
++++ b/src/RTCView.ts
+@@ -80,7 +80,9 @@ export interface RTCVideoViewProps extends ViewProps {
+    * @param {number} event.nativeEvent.width - The width of the video.
+    * @param {number} event.nativeEvent.height - The height of the video.
+    */
+-  onDimensionsChange?: (event: { nativeEvent: { width: number; height: number } }) => void;
++  onDimensionsChange?: (event: {
++    nativeEvent: { width: number; height: number; rotation?: number };
++  }) => void;
+ }
+
+ export interface RTCIOSPIPOptions {

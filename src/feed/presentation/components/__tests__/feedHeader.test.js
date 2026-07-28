@@ -149,21 +149,23 @@ describe('FeedHeader platform chrome', () => {
     expect(iosFrameSource).toContain('pointerEvents={hidden ?');
   });
 
-  it('keeps iOS and Android feed header chrome separated', () => {
+  it('keeps the Android header and filter in one synchronized collapse frame', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toMatch(
       /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*[\s\S]*?\{feedListElement\}\s*<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FeedHeader \/>/,
     );
     expect(feedScreenSource).toMatch(
-      /:\s*\(\s*<>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_HEADER_BAR_HEIGHT\}\s+top=\{topInset\}\s+translateDistance=\{FEED_HEADER_BAR_HEIGHT\}\s*>/s,
+      /:\s*\(\s*<>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_HEADER_CONTENT_HEIGHT\}\s+top=\{topInset\}\s+translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>/s,
     );
     expect(feedScreenSource).toMatch(
-      /translateDistance=\{FEED_HEADER_BAR_HEIGHT\}\s*>\s*<FeedHeader \/>\s*<\/FeedHeaderCollapseFrame>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_FILTER_BAR_HEIGHT\}\s+top=\{topInset \+ FEED_HEADER_BAR_HEIGHT\}\s+translateDistance=\{FEED_FILTER_BAR_HEIGHT\}/s,
+      /translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>\s*<View style=\{\{ height: FEED_HEADER_CONTENT_HEIGHT \}\}>\s*<FeedHeader \/>\s*<FeedFilterTabs/s,
     );
-    expect(feedScreenSource).toMatch(
-      /translateDistance=\{FEED_FILTER_BAR_HEIGHT\}\s*>\s*<FeedFilterTabs/s,
+    const androidBranch = feedScreenSource.slice(
+      feedScreenSource.indexOf(') : (', feedScreenSource.indexOf('Platform.OS === \'ios\' ? (')),
+      feedScreenSource.indexOf('<ReactionPickerOverlay'),
     );
+    expect(androidBranch.match(/<FeedHeaderCollapseFrame/g)).toHaveLength(1);
     expect(feedScreenSource).not.toContain('styles.staticHeaderContainer');
   });
 

@@ -27,11 +27,16 @@ describe('Profile back behavior while loading', () => {
     expect(source).toContain("'hardwareBackPress'");
   });
 
-  it('keeps the header back control outside the custom edge-swipe activation area', () => {
+  it('uses explicit back controls without a custom profile swipe gesture', () => {
     const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
-    expect(source).toContain('top: -profileHeaderHeight,');
+    expect(source).toContain('onPress={handleProfileBack}');
     expect(source).toContain('hitSlop={PROFILE_HEADER_BUTTON_HIT_SLOP}');
-    expect(source).toContain('profileHeaderHeight,');
+    expect(source).not.toContain('profileSwipeBackGesture');
+    expect(source).not.toContain(
+      'GestureDetector gesture={profileSwipeBackGesture}',
+    );
+    expect(source).not.toContain('profileSwipeBackScreenStyle');
+    expect(source).not.toContain('Swipe to go back');
   });
 });

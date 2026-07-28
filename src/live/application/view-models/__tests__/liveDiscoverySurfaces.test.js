@@ -38,6 +38,8 @@ describe('live discovery surfaces', () => {
     );
 
     expect(shared).toContain('useLiveViewModel({');
+    expect(shared).toContain('autoLoad: !usesSharedLiveStreams');
+    expect(shared).toContain('enabled: isFocused && !usesSharedLiveStreams');
     expect(shared).toContain('HOME_RAIL_REALTIME_REFRESH_MS');
     expect(shared).toContain('goToLive');
     expect(shared).toContain('ROUTES.LIVE_ROOM');
@@ -49,6 +51,17 @@ describe('live discovery surfaces', () => {
     expect(ios.indexOf('liveStreams.map')).toBeLessThan(
       ios.indexOf('stories.map'),
     );
+  });
+
+  it('shares one focused live source across the Home rail and inline feed cards', () => {
+    const feed = read('src/feed/presentation/screens/FeedScreen.tsx');
+
+    expect(feed).toContain('autoLoad: true');
+    expect(feed).toContain('enabled: isFeedTabFocused');
+    expect(feed).toContain('refreshIntervalMs: 10_000');
+    expect(feed).toContain('liveStreams={feedLiveItems}');
+    expect(feed).toContain('onLivePress={handleOpenLive}');
+    expect(feed).not.toContain('runWhenScrollIdle(reloadLive)');
   });
 
   it('refreshes stories while focused and when the app returns to foreground', () => {

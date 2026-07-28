@@ -31,6 +31,10 @@ describe('profile image crop flow', () => {
     expect(source).toContain('CROP_IMAGE_READY_FALLBACK_MS = 1_200');
     expect(source).toContain('const fallbackTimer = setTimeout');
     expect(source).toContain('styles.cropCaptureSurface');
+    expect(source).toContain('StatusBar.currentHeight');
+    expect(source).toContain(
+      'Math.max(insets.top, androidStatusBarHeight, 12)',
+    );
     expect(source).not.toContain("'VnseeaProfileCropImageView'");
     expect(source).not.toContain('usesNativeAndroidPreview');
     expect(source).not.toContain('<Animated.Image');

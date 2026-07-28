@@ -3,7 +3,14 @@ import {
   APP_BRAND_COLOR,
   APP_COLORS,
 } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PROFILE_COVER_ASPECT_RATIO } from '../../../shared-kernel/application/constants/profileImageGeometry';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,13 +30,11 @@ import {
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  FadeInDown,
-} from 'react-native-reanimated';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import Animated, { useSharedValue, FadeInDown } from 'react-native-reanimated';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import {
   ArrowLeft,
@@ -87,12 +92,27 @@ import {
   PhotoViewerModal,
   type PhotoViewerState,
 } from '../../../shared-kernel/presentation/components/PhotoViewerModal';
+import {
+  ImageCropperModal,
+  type CropSourceImage,
+  type CroppedImageAsset,
+  type ImageCropTarget,
+} from '../../../shared-kernel/presentation/components/ImageCropperModal';
+import {
+  PROFILE_IMAGE_PICKER_OPTIONS,
+  prepareProfileImageForCrop,
+  waitForImagePickerDismissal,
+} from '../../../shared-kernel/presentation/utils/profileImagePicker';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { usePageDetailViewModel } from '../../application/view-models/usePageDetailViewModel';
-import type { PageReview, PageUser, PagesItem } from '../../domain/types/pages.types';
+import type {
+  PageReview,
+  PageUser,
+  PagesItem,
+} from '../../domain/types/pages.types';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 // Dedicated page-only share sheet. Distinct from the shared
 // `ShareActionSheet` (which targets a FeedPost) — pages don't
@@ -104,6 +124,10 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import PageShareActionSheet from '../components/PageShareActionSheet';
 import PageDetailMenuActionSheet from '../components/PageDetailMenuActionSheet';
 import { PagePostMenuActionSheet } from '../components/PagePostMenuActionSheet';
+import {
+  PageMediaViewerModal,
+  type PageMediaKind,
+} from '../components/PageMediaViewerModal';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type PageDetailProps = NativeStackScreenProps<
@@ -187,12 +211,19 @@ const PAGE_DETAIL_UI_COPY = {
     createJobBtn: 'Tạo Công Việc',
     offersBtn: 'Lời Đề Nghị',
     editBtn: 'Chỉnh Sửa',
+    changeCoverBtn: 'Thay ảnh bìa',
+    changeAvatarBtn: 'Thay ảnh đại diện',
+    viewCoverBtn: 'Xem ảnh bìa',
+    viewAvatarBtn: 'Xem ảnh đại diện',
+    backBtn: 'Quay lại',
+    moreBtn: 'Tùy chọn trang',
     likeBtn: 'Thích',
     likedBtn: 'Đã thích',
     followBtn: 'Theo dõi',
     followingBtn: 'Đang theo dõi',
     inviteBtn: 'Mời',
     inviteRow: 'Mời bạn bè thích Trang này',
+    inviteHint: 'Mở danh sách bạn bè để gửi lời mời',
     shareBtn: 'Chia sẻ',
     reportBtn: 'Báo cáo',
     cancelBtn: 'Hủy',
@@ -206,12 +237,17 @@ const PAGE_DETAIL_UI_COPY = {
     emptyVideos: 'Trang này chưa có video.',
     emptyMusic: 'Trang này chưa có nhạc.',
     searchPosts: 'Tìm kiếm các bài viết',
+    clearSearchBtn: 'Xóa nội dung tìm kiếm',
+    loadingPosts: 'Đang tải bài viết...',
+    noSearchResults: 'Không tìm thấy bài viết phù hợp.',
+    firstPostBtn: 'Đăng bài đầu tiên',
     infoTitle: 'Thông tin',
     aboutTitle: 'Về',
     suggestedTitle: 'Các trang bạn có thể thích',
     weekDelta: '+0 Tuần này',
     defaultTitle: 'Trang',
     tabPosts: 'Bài viết',
+    filterAll: 'Tất cả',
     tabInfo: 'Thông tin',
     tabPhotos: 'Ảnh',
     tabVideos: 'Video',
@@ -239,12 +275,19 @@ const PAGE_DETAIL_UI_COPY = {
     createJobBtn: 'Create Job',
     offersBtn: 'Offers',
     editBtn: 'Edit',
+    changeCoverBtn: 'Change cover',
+    changeAvatarBtn: 'Change profile picture',
+    viewCoverBtn: 'View cover photo',
+    viewAvatarBtn: 'View profile picture',
+    backBtn: 'Go back',
+    moreBtn: 'Page options',
     likeBtn: 'Like',
     likedBtn: 'Liked',
     followBtn: 'Follow',
     followingBtn: 'Following',
     inviteBtn: 'Invite',
     inviteRow: 'Invite friends to like this Page',
+    inviteHint: 'Open your friend list to send invitations',
     shareBtn: 'Share',
     reportBtn: 'Report',
     cancelBtn: 'Cancel',
@@ -258,12 +301,17 @@ const PAGE_DETAIL_UI_COPY = {
     emptyVideos: 'This page has no videos.',
     emptyMusic: 'This page has no music.',
     searchPosts: 'Search posts',
+    clearSearchBtn: 'Clear search',
+    loadingPosts: 'Loading posts...',
+    noSearchResults: 'No matching posts found.',
+    firstPostBtn: 'Create the first post',
     infoTitle: 'Information',
     aboutTitle: 'About',
     suggestedTitle: 'Pages you may like',
     weekDelta: '+0 this week',
     defaultTitle: 'Page',
     tabPosts: 'Posts',
+    filterAll: 'All',
     tabInfo: 'Info',
     tabPhotos: 'Photos',
     tabVideos: 'Videos',
@@ -285,47 +333,20 @@ const PAGE_DETAIL_UI_COPY = {
   },
 };
 
-interface ScaleButtonProps {
-  children: React.ReactNode;
-  onPress?: () => void;
-  style?: any;
-  disabled?: boolean;
-}
-
-function ScaleButton({
-  children,
-  onPress,
-  style,
-  disabled,
-}: ScaleButtonProps) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!disabled) scale.value = withSpring(0.96, { damping: 15 });
-  };
-
-  const handlePressOut = () => {
-    if (!disabled) scale.value = withSpring(1, { damping: 15 });
-  };
-
-  return (
-    <Animated.View style={[animatedStyle, style]}>
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled}
-      >
-        {children}
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
+// Keep the Page hero geometry identical to the main Profile hero. Explicit
+// React Native styles are used here because negative/arbitrary utility classes
+// were not applied consistently on some Android builds.
+const PAGE_HERO_AVATAR_SIZE = 100;
+const PAGE_HERO_AVATAR_OVERLAP = 50;
+const PAGE_HERO_IDENTITY_TOP_PADDING = 57;
+const PAGE_HERO_AVATAR_ROW_STYLE = {
+  marginTop: -PAGE_HERO_AVATAR_OVERLAP,
+  zIndex: 20,
+  elevation: 3,
+} as const;
+const PAGE_HERO_IDENTITY_STYLE = {
+  paddingTop: PAGE_HERO_IDENTITY_TOP_PADDING,
+} as const;
 
 function formatCount(value?: number) {
   const safeValue = value ?? 0;
@@ -395,52 +416,58 @@ function UserAvatar({ user, size = 48 }: { user: PageUser; size?: number }) {
   );
 }
 
-function ActionButton({
+function HeroActionButton({
   icon,
   label,
-  active,
   onPress,
   disabled,
+  variant = 'secondary',
+  className = 'flex-1',
 }: {
   icon: React.ReactNode;
   label: string;
-  active?: boolean;
   onPress: () => void;
   disabled?: boolean;
+  variant?: 'primary' | 'secondary' | 'active';
+  className?: string;
 }) {
+  const surfaceClass =
+    variant === 'primary'
+      ? 'border-brand bg-brand'
+      : variant === 'active'
+      ? 'border-brand-border bg-brand-subtle'
+      : 'border-slate-200 bg-white';
+  const textClass =
+    variant === 'primary'
+      ? 'text-white'
+      : variant === 'active'
+      ? 'text-brand'
+      : 'text-slate-700';
+
   return (
-    <ScaleButton
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      activeOpacity={0.85}
       onPress={onPress}
       disabled={disabled}
-      style={{ flex: 1 }}
+      className={`${className} min-h-12 flex-row items-center justify-center rounded-2xl border px-3 ${surfaceClass} ${
+        disabled ? 'opacity-60' : ''
+      }`}
     >
-      <View
-        className={`items-center justify-center rounded-2xl py-3 border ${
-          active
-            ? 'bg-brand-subtle border-brand-border'
-            : 'bg-white border-slate-100'
-        }`}
-        style={{ minHeight: 72 }}
-      >
-        {icon}
-        <Text
-          className={`text-[11px] mt-1.5 font-bold ${
-            active ? 'text-brand' : 'text-slate-600'
-          }`}
-          numberOfLines={1}
-        >
-          {label}
-        </Text>
-      </View>
-    </ScaleButton>
+      {icon}
+      <Text className={`ml-2 text-sm font-bold ${textClass}`} numberOfLines={1}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
 function Metric({ value, label }: { value: string; label: string }) {
   return (
     <View className="items-center flex-1">
-      <Text className="text-xl font-bold text-slate-900">{value}</Text>
-      <Text className="text-xs text-slate-500 mt-1 font-medium">{label}</Text>
+      <Text className="text-lg font-extrabold text-slate-900">{value}</Text>
+      <Text className="mt-0.5 text-xs font-medium text-slate-500">{label}</Text>
     </View>
   );
 }
@@ -458,6 +485,8 @@ function PageHero({
   onEditPage,
   onChangeAvatar,
   onChangeCover,
+  onViewAvatar,
+  onViewCover,
   isUploadingAvatar = false,
   isUploadingCover = false,
   onBack,
@@ -476,6 +505,8 @@ function PageHero({
   onEditPage?: () => void;
   onChangeAvatar?: () => void;
   onChangeCover?: () => void;
+  onViewAvatar?: () => void;
+  onViewCover?: () => void;
   isUploadingAvatar?: boolean;
   isUploadingCover?: boolean;
   /** Back + More handlers — placed ON the cover image so they ride
@@ -489,183 +520,410 @@ function PageHero({
   // We honour the safe-area inset for the header buttons so they sit
   // just below the status bar / camera notch, regardless of device.
   const insets = useSafeAreaInsets();
+  const navigationButtonTop = Math.max(12, Math.min(insets.top, 18));
 
   return (
-    <View className="bg-white">
+    <View className="surface-base pb-1">
       {/* Cover Image Container — relative so the floating Back/More
           buttons below can position themselves over the image. They
           ride with the cover as the user scrolls (this is intentional
           per the design brief: "the two buttons should follow the
           cover, not stay pinned at the very top"). */}
-      <View className="h-60 bg-[#F1F5F9] relative">
+      <View
+        className="relative w-full overflow-hidden bg-slate-100"
+        style={{ aspectRatio: PROFILE_COVER_ASPECT_RATIO }}
+      >
         {page.cover ? (
-          <Image
-            source={{ uri: page.cover }}
-            className="h-full w-full"
-            resizeMode="cover"
-          />
+          <TouchableOpacity
+            accessibilityRole="imagebutton"
+            accessibilityLabel={copy.viewCoverBtn}
+            activeOpacity={0.96}
+            className="absolute inset-0"
+            disabled={!onViewCover}
+            onPress={onViewCover}
+          >
+            <Image
+              source={{ uri: page.cover }}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
         ) : (
-          <View className="h-full w-full items-center justify-center">
-            <Flag size={64} color={APP_COLORS.brand.border} />
+          <View className="h-full w-full items-center justify-center bg-brand-subtle">
+            <View className="h-20 w-20 items-center justify-center rounded-full bg-white/80">
+              <Flag size={38} color={APP_BRAND_COLOR} />
+            </View>
           </View>
         )}
 
+        {onBack ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={copy.backBtn || 'Quay lại'}
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            className="absolute left-4 h-9 w-9 items-center justify-center rounded-full bg-white"
+            style={{ top: navigationButtonTop }}
+            onPress={onBack}
+          >
+            <ArrowLeft
+              size={18}
+              color={APP_COLORS.neutral.text}
+              strokeWidth={2.5}
+            />
+          </TouchableOpacity>
+        ) : null}
+
+        {onMore ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={copy.moreBtn || 'Tùy chọn trang'}
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            className="absolute right-4 h-9 w-9 items-center justify-center rounded-full bg-white"
+            style={{ top: navigationButtonTop }}
+            onPress={onMore}
+          >
+            <MoreHorizontal
+              size={19}
+              color={APP_COLORS.neutral.text}
+              strokeWidth={2.5}
+            />
+          </TouchableOpacity>
+        ) : null}
+
+        {isUploadingCover ? (
+          <View className="absolute inset-0 items-center justify-center bg-black/30">
+            <ActivityIndicator size="large" color="#FFFFFF" />
+          </View>
+        ) : null}
+
+        {canManagePage && onChangeCover ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={copy.changeCoverBtn}
+            activeOpacity={0.85}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            className="absolute bottom-3 right-4 min-h-10 max-w-[58%] flex-row items-center justify-center rounded-full bg-[#E4E6EB] px-3.5 py-2"
+            disabled={isUploadingCover}
+            onPress={onChangeCover}
+          >
+            {isUploadingCover ? (
+              <ActivityIndicator size="small" color="#0F172A" />
+            ) : (
+              <Camera size={14} color="#050505" />
+            )}
+            <Text
+              className="ml-1.5 min-w-0 flex-shrink text-[13px] font-bold text-[#050505]"
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.1}
+            >
+              {copy.changeCoverBtn}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Page Content Detail */}
-      <View className="px-4 pb-5">
-        {/* Avatar Container with Overlap */}
-        <View className="-mt-16 mb-4 items-center">
-          <View className="relative">
-            <PageAvatar page={page} size={100} />
-          </View>
-        </View>
-
-        {/* Title and Handle (Inline badge check) */}
-        <Animated.View entering={FadeInDown.delay(50).duration(400)}>
-          <View className="flex-row items-center justify-center flex-wrap">
-            <Text className="mr-2 text-center text-2xl font-bold text-slate-900">
-              {title}
-            </Text>
-            {page.mapPinApproved ? (
-              <BadgeCheck size={22} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
+      <Animated.View
+        entering={FadeInDown.delay(40).duration(400)}
+        className="relative overflow-visible border-y border-[#dddfe2] bg-white px-4 pb-5"
+        style={{ zIndex: 10, elevation: 2 }}
+      >
+        <View
+          className="relative flex-row items-start"
+          style={PAGE_HERO_AVATAR_ROW_STYLE}
+        >
+          <View className="relative z-20">
+            <TouchableOpacity
+              accessibilityRole="imagebutton"
+              accessibilityLabel={copy.viewAvatarBtn}
+              activeOpacity={0.9}
+              className="rounded-full"
+              disabled={!page.avatar || !onViewAvatar}
+              onPress={onViewAvatar}
+            >
+              <PageAvatar page={page} size={PAGE_HERO_AVATAR_SIZE} />
+            </TouchableOpacity>
+            {isUploadingAvatar ? (
+              <View className="absolute inset-0 items-center justify-center rounded-full bg-black/30">
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              </View>
+            ) : null}
+            {canManagePage && onChangeAvatar ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={copy.changeAvatarBtn}
+                activeOpacity={0.82}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                className="absolute bottom-0 right-0 h-[30px] w-[30px] items-center justify-center rounded-full border-2 border-white bg-[#E4E6EB]"
+                disabled={isUploadingAvatar}
+                onPress={onChangeAvatar}
+              >
+                {isUploadingAvatar ? (
+                  <ActivityIndicator size="small" color="#0F172A" />
+                ) : (
+                  <Camera size={14} color="#050505" />
+                )}
+              </TouchableOpacity>
             ) : null}
           </View>
-          {handle ? (
-            <Text className="mt-1 text-center text-sm font-semibold text-slate-400">{handle}</Text>
-          ) : null}
+
+          <Animated.View
+            entering={FadeInDown.delay(50).duration(400)}
+            className="ml-3.5 min-w-0 flex-1 pr-0.5"
+            style={PAGE_HERO_IDENTITY_STYLE}
+          >
+            <View className="flex-row items-center">
+              <Text
+                className="flex-shrink text-[22px] font-extrabold text-[#050505]"
+                numberOfLines={2}
+              >
+                {title}
+              </Text>
+              {page.mapPinApproved ? (
+                <BadgeCheck
+                  size={20}
+                  color={APP_BRAND_COLOR}
+                  fill={APP_BRAND_COLOR}
+                  className="ml-1"
+                />
+              ) : null}
+            </View>
+            {handle ? (
+              <Text
+                className="mt-1 text-sm font-medium text-slate-500"
+                numberOfLines={1}
+              >
+                {handle}
+              </Text>
+            ) : null}
+          </Animated.View>
+        </View>
+
+        <Animated.View entering={FadeInDown.delay(90).duration(400)}>
+          <View className="mt-2.5 flex-row items-center border-y border-slate-100 py-3">
+            <Metric value={formatCount(page.likes)} label={copy.likesLabel} />
+            <View className="h-8 w-px bg-slate-200" />
+            <Metric
+              value={formatCount(page.followersCount)}
+              label={copy.followersLabel}
+            />
+            <View className="h-8 w-px bg-slate-200" />
+            <Metric
+              value={formatCount(page.postCount)}
+              label={copy.postsLabel}
+            />
+          </View>
         </Animated.View>
 
         {canManagePage ? (
           <Animated.View
-            entering={FadeInDown.delay(100).duration(400)}
-            className="mt-4 items-center gap-2"
+            entering={FadeInDown.delay(140).duration(400)}
+            className="mt-4"
           >
-            <ScaleButton onPress={onCreateJob}>
-              <View className="min-h-[34px] flex-row items-center justify-center rounded-lg bg-green-100 px-4">
-                <Briefcase size={16} color="#22C55E" />
-                <Text className="ml-2 text-sm font-bold text-green-600" numberOfLines={1}>
-                  {copy.createJobBtn}
-                </Text>
-              </View>
-            </ScaleButton>
-            <ScaleButton onPress={onOpenOffers}>
-              <View className="min-h-[34px] flex-row items-center justify-center rounded-lg bg-sky-100 px-4">
-                <Gift size={16} color="#0EA5E9" />
-                <Text className="ml-2 text-sm font-bold text-sky-600" numberOfLines={1}>
-                  {copy.offersBtn}
-                </Text>
-              </View>
-            </ScaleButton>
-            <ScaleButton onPress={onEditPage}>
-              <View className="min-h-[34px] flex-row items-center justify-center rounded-lg bg-slate-100 px-4">
-                <Edit3 size={15} color="#475569" />
-                <Text className="ml-2 text-sm font-bold text-slate-700" numberOfLines={1}>
-                  {copy.editBtn}
-                </Text>
-              </View>
-            </ScaleButton>
+            <View className="flex-row gap-2">
+              <HeroActionButton
+                icon={<Edit3 size={18} color={APP_COLORS.brand.onPrimary} />}
+                label={copy.editBtn}
+                variant="primary"
+                onPress={onEditPage || (() => {})}
+              />
+              <HeroActionButton
+                icon={<Share2 size={18} color={APP_COLORS.neutral.textMuted} />}
+                label={copy.shareBtn}
+                onPress={onShare}
+              />
+            </View>
+            <View className="mt-2 flex-row gap-2">
+              <HeroActionButton
+                icon={<Briefcase size={18} color={APP_COLORS.status.success} />}
+                label={copy.createJobBtn}
+                onPress={onCreateJob || (() => {})}
+              />
+              <HeroActionButton
+                icon={<Gift size={18} color={APP_COLORS.status.info} />}
+                label={copy.offersBtn}
+                onPress={onOpenOffers || (() => {})}
+              />
+            </View>
           </Animated.View>
         ) : null}
 
-        <Animated.View entering={FadeInDown.delay(150).duration(400)}>
-          <View className="mt-5 flex-row items-center">
-            <ThumbsUp size={14} color="#64748B" fill="#64748B" />
-            <Text className="ml-1 text-xs font-medium text-slate-500">
-              {formatCount(page.likes)} những người như thế này
-            </Text>
-          </View>
-        </Animated.View>
-
         {!canManagePage ? (
-        <Animated.View entering={FadeInDown.delay(200).duration(400)}>
-          <View className="mt-4 flex-row gap-2">
-            <ActionButton
-              active={page.isLiked}
-              label={page.isLiked ? copy.likedBtn : copy.likeBtn}
-              icon={
-                page.isLiked ? (
-                  <Heart size={20} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
-                ) : (
-                  <Heart size={20} color="#64748B" />
-                )
-              }
-              disabled={isActionLoading}
-              onPress={onLike}
-            />
-            <ActionButton
-              active={page.isFollowing}
-              label={page.isFollowing ? copy.followingBtn : copy.followBtn}
-              icon={
-                page.isFollowing ? (
-                  <Bell size={20} color={APP_BRAND_COLOR} fill={APP_BRAND_COLOR} />
-                ) : (
-                  <Bell size={20} color="#64748B" />
-                )
-              }
-              disabled={isActionLoading}
-              onPress={onFollow}
-            />
-            <ActionButton
-              label={copy.inviteBtn}
-              icon={<UserPlus size={20} color="#64748B" />}
-              onPress={onInvite}
-            />
-            <ActionButton
-              label={copy.shareBtn}
-              icon={<Share2 size={20} color="#64748B" />}
-              onPress={onShare}
-            />
-          </View>
-        </Animated.View>
+          <Animated.View entering={FadeInDown.delay(200).duration(400)}>
+            <View className="mt-4 flex-row gap-2">
+              <HeroActionButton
+                label={page.isLiked ? copy.likedBtn : copy.likeBtn}
+                icon={
+                  page.isLiked ? (
+                    <Heart
+                      size={20}
+                      color={APP_BRAND_COLOR}
+                      fill={APP_BRAND_COLOR}
+                    />
+                  ) : (
+                    <Heart size={20} color={APP_COLORS.neutral.textMuted} />
+                  )
+                }
+                variant={page.isLiked ? 'active' : 'secondary'}
+                disabled={isActionLoading}
+                onPress={onLike}
+              />
+              <HeroActionButton
+                label={page.isFollowing ? copy.followingBtn : copy.followBtn}
+                icon={
+                  page.isFollowing ? (
+                    <Bell
+                      size={20}
+                      color={APP_BRAND_COLOR}
+                      fill={APP_BRAND_COLOR}
+                    />
+                  ) : (
+                    <Bell size={20} color={APP_COLORS.brand.onPrimary} />
+                  )
+                }
+                variant={page.isFollowing ? 'active' : 'primary'}
+                disabled={isActionLoading}
+                onPress={onFollow}
+              />
+            </View>
+            <View className="mt-2 flex-row gap-2">
+              <HeroActionButton
+                label={copy.inviteBtn}
+                icon={
+                  <UserPlus size={20} color={APP_COLORS.neutral.textMuted} />
+                }
+                onPress={onInvite}
+              />
+              <HeroActionButton
+                label={copy.shareBtn}
+                icon={<Share2 size={20} color={APP_COLORS.neutral.textMuted} />}
+                onPress={onShare}
+              />
+            </View>
+          </Animated.View>
         ) : null}
-      </View>
+      </Animated.View>
     </View>
   );
 }
-/**
- * Post-type filter chips for the "posts" tab.
- *
- * Renders a horizontal pill control with three options — "Tất cả"
- * (everything), "Bài viết" (text + photo posts), and "Video" (reels)
- * — each with a small count badge so the user knows how many posts
- * they'll see before tapping. Client-side filter, so changing
- * chips is instant and never hits the network.
- *
- * When there are zero posts in a given bucket we still render the
- * chip but tap is a no-op visually (the count "0" makes the empty
- * outcome obvious). We keep the chip visible to avoid layout
- * shift when the user filters and posts come/go.
- */
-const POST_FILTER_TABS: Array<{
-  id: 'all' | 'text' | 'video';
-  labelKey: 'filterAll' | 'filterText' | 'filterVideo';
-  countKey: 'all' | 'text' | 'video';
-}> = [
-  { id: 'all', labelKey: 'filterAll', countKey: 'all' },
-  { id: 'text', labelKey: 'filterText', countKey: 'text' },
-  { id: 'video', labelKey: 'filterVideo', countKey: 'video' },
-];
-
 function PostSearchBox({
   value,
   placeholder,
+  activeTab,
+  allCount,
+  photoCount,
+  allLabel,
+  photoLabel,
+  postsLabel,
+  clearLabel,
   onChangeText,
+  onChangeTab,
 }: {
   value: string;
   placeholder: string;
+  activeTab: 'all' | 'photos';
+  allCount: number;
+  photoCount: number;
+  allLabel: string;
+  photoLabel: string;
+  postsLabel: string;
+  clearLabel: string;
   onChangeText: (text: string) => void;
+  onChangeTab: (tab: 'all' | 'photos') => void;
 }) {
   return (
-    <View className="mx-4 mt-3 flex-row items-center rounded-2xl border border-slate-100 bg-slate-50 px-3.5 py-1">
-      <Search size={18} color="#94A3B8" />
-      <TextInput
-        style={{ flex: 1, marginLeft: 8, fontSize: 14, color: '#1E293B', paddingVertical: 8 }}
-        value={value}
-        placeholder={placeholder}
-        placeholderTextColor="#94A3B8"
-        onChangeText={onChangeText}
-      />
+    <View className="mb-2 mt-2 border-y border-[#dddfe2] bg-white p-3">
+      <View className="mb-3 flex-row items-center justify-between px-1">
+        <Text className="text-title-primary text-slate-900">{postsLabel}</Text>
+        <View className="rounded-full bg-slate-100 px-2.5 py-1">
+          <Text className="text-xs font-bold text-slate-500">
+            {formatCount(activeTab === 'photos' ? photoCount : allCount)}
+          </Text>
+        </View>
+      </View>
+
+      <View className="input-shell min-h-12 flex-row items-center px-3">
+        <Search size={19} color={APP_COLORS.neutral.iconMuted} />
+        <TextInput
+          className="ml-2 flex-1 py-2 text-sm text-slate-900"
+          value={value}
+          placeholder={placeholder}
+          placeholderTextColor={APP_COLORS.neutral.iconMuted}
+          returnKeyType="search"
+          onChangeText={onChangeText}
+        />
+        {value ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={clearLabel}
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            className="h-8 w-8 items-center justify-center rounded-full bg-slate-100"
+            onPress={() => onChangeText('')}
+          >
+            <X size={16} color={APP_COLORS.neutral.textMuted} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <View className="mt-3 flex-row gap-2">
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityState={{ selected: activeTab === 'all' }}
+          activeOpacity={0.8}
+          className={`min-h-10 flex-1 flex-row items-center justify-center rounded-full border px-3 ${
+            activeTab === 'all'
+              ? 'border-brand bg-brand-subtle'
+              : 'border-slate-200 bg-white'
+          }`}
+          onPress={() => onChangeTab('all')}
+        >
+          <FileText
+            size={16}
+            color={
+              activeTab === 'all'
+                ? APP_BRAND_COLOR
+                : APP_COLORS.neutral.textMuted
+            }
+          />
+          <Text
+            className={`ml-2 text-sm font-bold ${
+              activeTab === 'all' ? 'text-brand' : 'text-slate-600'
+            }`}
+          >
+            {allLabel}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityState={{ selected: activeTab === 'photos' }}
+          activeOpacity={0.8}
+          className={`min-h-10 flex-1 flex-row items-center justify-center rounded-full border px-3 ${
+            activeTab === 'photos'
+              ? 'border-brand bg-brand-subtle'
+              : 'border-slate-200 bg-white'
+          }`}
+          onPress={() => onChangeTab('photos')}
+        >
+          <Camera
+            size={16}
+            color={
+              activeTab === 'photos'
+                ? APP_BRAND_COLOR
+                : APP_COLORS.neutral.textMuted
+            }
+          />
+          <Text
+            className={`ml-2 text-sm font-bold ${
+              activeTab === 'photos' ? 'text-brand' : 'text-slate-600'
+            }`}
+          >
+            {photoLabel}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -685,10 +943,18 @@ const PAGE_CATEGORY_LABELS: Record<string, string> = {
 };
 
 function getPageCategoryLabel(page: PagesItem) {
-  return PAGE_CATEGORY_LABELS[page.pageCategory || ''] || page.pageCategory || '';
+  return (
+    PAGE_CATEGORY_LABELS[page.pageCategory || ''] || page.pageCategory || ''
+  );
 }
 
-function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
+function SectionHeader({
+  icon,
+  title,
+}: {
+  icon: React.ReactNode;
+  title: string;
+}) {
   return (
     <View className="flex-row items-center border-b border-slate-100 bg-white px-4 py-3">
       <View className="mr-2 h-6 w-6 items-center justify-center rounded-full bg-brand">
@@ -699,15 +965,31 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
   );
 }
 
-function InvitePageRow({ label, onPress }: { label: string; onPress: () => void }) {
+function InvitePageRow({
+  label,
+  hint,
+  onPress,
+}: {
+  label: string;
+  hint: string;
+  onPress: () => void;
+}) {
   return (
     <TouchableOpacity
-      className="mt-3 flex-row items-center bg-white px-4 py-3"
-      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="mt-2 min-h-16 flex-row items-center border-y border-[#dddfe2] bg-white px-4 py-3"
+      activeOpacity={0.8}
       onPress={onPress}
     >
-      <UserPlus size={17} color="#EC4899" />
-      <Text className="ml-2 text-sm font-medium text-slate-600">{label}</Text>
+      <View className="icon-chip h-10 w-10 items-center justify-center">
+        <UserPlus size={19} color={APP_BRAND_COLOR} />
+      </View>
+      <View className="ml-3 flex-1">
+        <Text className="text-title-primary text-slate-900">{label}</Text>
+        <Text className="mt-0.5 text-caption-secondary">{hint}</Text>
+      </View>
+      <ChevronRight size={20} color={APP_COLORS.neutral.iconMuted} />
     </TouchableOpacity>
   );
 }
@@ -765,24 +1047,58 @@ function PageInfoSections({
 
   return (
     <View className="mt-3">
-      <SectionHeader icon={<FileText size={14} color="#FFFFFF" />} title={copy.infoTitle} />
+      <SectionHeader
+        icon={<FileText size={14} color="#FFFFFF" />}
+        title={copy.infoTitle}
+      />
       <View className="bg-white">
         <InfoRow
           icon={<ThumbsUp size={18} color="#64748B" fill="#64748B" />}
           label={`${formatCount(page.likes)} những người như thế này`}
-          trailing={<Text className="text-sm font-semibold text-green-600">{copy.weekDelta}</Text>}
+          trailing={
+            <Text className="text-sm font-semibold text-green-600">
+              {copy.weekDelta}
+            </Text>
+          }
         />
-        <InfoRow icon={<FileText size={18} color="#64748B" />} label={`${formatCount(page.postCount)} bài viết`} />
-        <InfoRow icon={<Briefcase size={18} color="#64748B" />} label="Việc làm" onPress={onCreateJob} />
-        <InfoRow icon={<Gift size={18} color="#64748B" />} label="Lời đề nghị" onPress={onOpenOffers} />
-        {categoryLabel ? <InfoRow icon={<Tag size={18} color="#64748B" />} label={categoryLabel} /> : null}
-        {page.address ? <InfoRow icon={<MapPin size={18} color="#64748B" />} label={page.address} /> : null}
+        <InfoRow
+          icon={<FileText size={18} color="#64748B" />}
+          label={`${formatCount(page.postCount)} bài viết`}
+        />
+        <InfoRow
+          icon={<Briefcase size={18} color="#64748B" />}
+          label="Việc làm"
+          onPress={onCreateJob}
+        />
+        <InfoRow
+          icon={<Gift size={18} color="#64748B" />}
+          label="Lời đề nghị"
+          onPress={onOpenOffers}
+        />
+        {categoryLabel ? (
+          <InfoRow
+            icon={<Tag size={18} color="#64748B" />}
+            label={categoryLabel}
+          />
+        ) : null}
+        {page.address ? (
+          <InfoRow
+            icon={<MapPin size={18} color="#64748B" />}
+            label={page.address}
+          />
+        ) : null}
       </View>
 
       <View className="mt-3">
-        <SectionHeader icon={<Flag size={14} color="#FFFFFF" />} title={copy.aboutTitle} />
+        <SectionHeader
+          icon={<Flag size={14} color="#FFFFFF" />}
+          title={copy.aboutTitle}
+        />
         <Text className="bg-white px-4 py-4 text-sm leading-6 text-slate-700">
-          {page.pageDescription || page.pageTitle || page.pageName || copy.defaultTitle}
+          {page.pageDescription ||
+            page.pageTitle ||
+            page.pageName ||
+            copy.defaultTitle}
         </Text>
       </View>
     </View>
@@ -806,23 +1122,44 @@ function SuggestedPagesSection({
 
   return (
     <View className="mt-3 bg-white pb-3">
-      <SectionHeader icon={<Flag size={14} color="#FFFFFF" />} title={copy.suggestedTitle} />
+      <SectionHeader
+        icon={<Flag size={14} color="#FFFFFF" />}
+        title={copy.suggestedTitle}
+      />
       {pages.map(page => {
         const categoryLabel = getPageCategoryLabel(page);
         return (
-          <View key={String(page.pageId || page.id)} className="border-b border-slate-100 pb-3">
-            <TouchableOpacity activeOpacity={0.9} onPress={() => onOpenPage(page)}>
+          <View
+            key={String(page.pageId || page.id)}
+            className="border-b border-slate-100 pb-3"
+          >
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => onOpenPage(page)}
+            >
               <View className="h-28 bg-slate-200">
-                {page.cover ? <Image source={{ uri: page.cover }} className="h-full w-full" resizeMode="cover" /> : null}
+                {page.cover ? (
+                  <Image
+                    source={{ uri: page.cover }}
+                    className="h-full w-full"
+                    resizeMode="cover"
+                  />
+                ) : null}
               </View>
               <View className="flex-row px-4 pt-3">
                 <PageAvatar page={page} size={42} />
                 <View className="ml-3 flex-1">
-                  <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
+                  <Text
+                    className="text-sm font-bold text-slate-900"
+                    numberOfLines={1}
+                  >
                     {page.pageTitle || page.pageName || copy.defaultTitle}
                   </Text>
                   {categoryLabel ? (
-                    <Text className="mt-0.5 text-xs text-slate-500" numberOfLines={1}>
+                    <Text
+                      className="mt-0.5 text-xs text-slate-500"
+                      numberOfLines={1}
+                    >
                       {categoryLabel}
                     </Text>
                   ) : null}
@@ -834,7 +1171,9 @@ function SuggestedPagesSection({
             </TouchableOpacity>
             <View className="mx-4 mt-3 flex-row gap-2">
               <TouchableOpacity
-                className={`flex-1 h-10 flex-row items-center justify-center rounded-lg ${page.isLiked ? 'bg-brand-subtle' : 'bg-brand'}`}
+                className={`flex-1 h-10 flex-row items-center justify-center rounded-lg ${
+                  page.isLiked ? 'bg-brand-subtle' : 'bg-brand'
+                }`}
                 activeOpacity={0.86}
                 onPress={() => onLikePage(page.pageId)}
               >
@@ -843,12 +1182,18 @@ function SuggestedPagesSection({
                   color={page.isLiked ? APP_BRAND_COLOR : '#FFFFFF'}
                   fill={page.isLiked ? APP_BRAND_COLOR : 'transparent'}
                 />
-                <Text className={`ml-1 text-sm font-bold ${page.isLiked ? 'text-brand' : 'text-white'}`}>
+                <Text
+                  className={`ml-1 text-sm font-bold ${
+                    page.isLiked ? 'text-brand' : 'text-white'
+                  }`}
+                >
                   {page.isLiked ? copy.likedBtn : copy.likeBtn}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                className={`flex-1 h-10 flex-row items-center justify-center rounded-lg ${page.isFollowing ? 'bg-brand-subtle' : 'bg-slate-100'}`}
+                className={`flex-1 h-10 flex-row items-center justify-center rounded-lg ${
+                  page.isFollowing ? 'bg-brand-subtle' : 'bg-slate-100'
+                }`}
                 activeOpacity={0.86}
                 onPress={() => onFollowPage(page.pageId)}
               >
@@ -857,7 +1202,11 @@ function SuggestedPagesSection({
                   color={page.isFollowing ? APP_BRAND_COLOR : '#64748B'}
                   fill={page.isFollowing ? APP_BRAND_COLOR : 'transparent'}
                 />
-                <Text className={`ml-1 text-sm font-bold ${page.isFollowing ? 'text-brand' : 'text-slate-600'}`}>
+                <Text
+                  className={`ml-1 text-sm font-bold ${
+                    page.isFollowing ? 'text-brand' : 'text-slate-600'
+                  }`}
+                >
                   {page.isFollowing ? copy.followingBtn : copy.followBtn}
                 </Text>
               </TouchableOpacity>
@@ -891,10 +1240,7 @@ function AboutTab({ page }: { page: PagesItem }) {
         />
       ) : null}
       {page.url ? (
-        <InfoRow
-          icon={<Globe2 size={20} color="#475569" />}
-          label={page.url}
-        />
+        <InfoRow icon={<Globe2 size={20} color="#475569" />} label={page.url} />
       ) : null}
       {!page.pageDescription &&
       !page.pageCategory &&
@@ -919,8 +1265,8 @@ function UserRow({
     user.role === 'owner'
       ? 'Chủ sở hữu'
       : user.role === 'admin'
-        ? 'Quản trị viên'
-        : '';
+      ? 'Quản trị viên'
+      : '';
 
   return (
     <View className="flex-row items-center border-b border-slate-100 bg-white px-4 py-3">
@@ -945,13 +1291,7 @@ function UserRow({
   );
 }
 
-function UsersTab({
-  title,
-  users,
-}: {
-  title: string;
-  users: PageUser[];
-}) {
+function UsersTab({ title, users }: { title: string; users: PageUser[] }) {
   if (users.length === 0) {
     return (
       <View className="px-4 py-5">
@@ -1062,7 +1402,9 @@ function ReviewRow({ review }: { review: PageReview }) {
           <Text className="text-title-primary" numberOfLines={1}>
             {review.user?.name ?? 'Người dùng'}
           </Text>
-          <Text className="text-caption-secondary">{formatTime(review.postedAt)}</Text>
+          <Text className="text-caption-secondary">
+            {formatTime(review.postedAt)}
+          </Text>
         </View>
         <View className="flex-row items-center rounded-full bg-amber-50 px-2 py-1">
           <Star size={14} color="#F59E0B" fill="#F59E0B" />
@@ -1170,7 +1512,13 @@ function PostImageGrid({
   );
 }
 
-function VideoPreview({ post, onOpen }: { post: FeedVideoPost; onOpen: () => void }) {
+function VideoPreview({
+  post,
+  onOpen,
+}: {
+  post: FeedVideoPost;
+  onOpen: () => void;
+}) {
   return (
     <TouchableOpacity
       className="mt-3 h-56 items-center justify-center bg-black"
@@ -1195,10 +1543,7 @@ function PollPreview({ post }: { post: FeedPollPost }) {
   return (
     <View className="mt-3 gap-2">
       {post.options.slice(0, 4).map(option => (
-        <View
-          key={option.id}
-          className="rounded-2xl bg-slate-100 px-4 py-3"
-        >
+        <View key={option.id} className="rounded-2xl bg-slate-100 px-4 py-3">
           <View
             className="absolute bottom-0 left-0 top-0 rounded-2xl bg-brand-soft"
             style={{ width: `${Math.min(100, option.percentageNum)}%` }}
@@ -1336,7 +1681,12 @@ function InviteModal({
   );
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <KeyboardAvoidingView
         className="flex-1 justify-end bg-black/35"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1439,8 +1789,11 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const [postShareVisible, setPostShareVisible] = useState(false);
   const [sharingPost, setSharingPost] = useState<FeedPost | undefined>();
   const [postMenuVisible, setPostMenuVisible] = useState(false);
-  const [selectedPostForMenu, setSelectedPostForMenu] = useState<FeedPost | null>(null);
-  const [editingPost, setEditingPost] = useState<FeedTextPost | FeedVideoPost | FeedPollPost | null>(null);
+  const [selectedPostForMenu, setSelectedPostForMenu] =
+    useState<FeedPost | null>(null);
+  const [editingPost, setEditingPost] = useState<
+    FeedTextPost | FeedVideoPost | FeedPollPost | null
+  >(null);
   const [editPostText, setEditPostText] = useState('');
   const [editPostError, setEditPostError] = useState<string | null>(null);
   const [isSavingEditedPost, setIsSavingEditedPost] = useState(false);
@@ -1449,12 +1802,22 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     x: number;
     y: number;
   } | null>(null);
-  const [activeVideoPostId, setActiveVideoPostId] = useState<string | null>(null);
-  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<string[]>([]);
+  const [activeVideoPostId, setActiveVideoPostId] = useState<string | null>(
+    null,
+  );
+  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<
+    string[]
+  >([]);
   // Photo viewer modal — mirrors Feed / Profile. Opens when the user
   // taps any photo inside a page post so the page is consistent with
   // the global viewer (swipe, progress, reaction, comment).
   const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
+  const [pageCropRequest, setPageCropRequest] = useState<{
+    target: ImageCropTarget;
+    image: CropSourceImage;
+  } | null>(null);
+  const [pageMediaViewer, setPageMediaViewer] =
+    useState<PageMediaKind | null>(null);
   const openingPhotoViewerRef = useRef(false);
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -1466,7 +1829,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     onCommentCountChange: vm.updatePostCommentCount,
   });
   const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
-  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<string | null>(null);
+  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<
+    string | null
+  >(null);
 
   const openReactionsSheet = useCallback((postId: string, _post: FeedPost) => {
     setReactionsSheetPostId(postId);
@@ -1675,19 +2040,22 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       pageName: vm.page.pageTitle || vm.page.pageName,
       isOwner: canManagePage,
     });
-  }, [canManagePage, navigation, vm.page.pageId, vm.page.pageName, vm.page.pageTitle]);
+  }, [
+    canManagePage,
+    navigation,
+    vm.page.pageId,
+    vm.page.pageName,
+    vm.page.pageTitle,
+  ]);
 
   const handleEditPage = useCallback(() => {
     navigation.navigate(ROUTES.EDIT_PAGE, { page: vm.page });
   }, [navigation, vm.page]);
 
-  const handleReportFromMenu = useCallback(
-    async () => {
-      await vm.reportPage('Báo cáo từ ứng dụng');
-      Alert.alert(copy.reportSent, copy.reportSentMsg);
-    },
-    [copy.reportSent, copy.reportSentMsg, vm],
-  );
+  const handleReportFromMenu = useCallback(async () => {
+    await vm.reportPage('Báo cáo từ ứng dụng');
+    Alert.alert(copy.reportSent, copy.reportSentMsg);
+  }, [copy.reportSent, copy.reportSentMsg, vm]);
 
   const handleOpenPageSettings = useCallback(
     (pageId: string) => {
@@ -1719,7 +2087,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     }
 
     setEditingPost(post);
-    setEditPostText(post.caption ?? (post.kind === 'poll' ? post.pollQuestion ?? '' : ''));
+    setEditPostText(
+      post.caption ?? (post.kind === 'poll' ? post.pollQuestion ?? '' : ''),
+    );
     setEditPostError(null);
   }, []);
 
@@ -1771,7 +2141,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       const result = await vm.togglePostComments(post.id);
       Alert.alert(
         result.enabled ? copy.commentsEnabledTitle : copy.commentsDisabledTitle,
-        result.enabled ? copy.commentsEnabledMessage : copy.commentsDisabledMessage,
+        result.enabled
+          ? copy.commentsEnabledMessage
+          : copy.commentsDisabledMessage,
       );
     },
     [
@@ -1821,55 +2193,101 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     ]);
   }, [vm, copy]);
 
-  const handleChangeAvatar = useCallback(async () => {
-    try {
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-      });
-      if (result.didCancel || !result.assets || result.assets.length === 0) {
-        return;
+  const selectPageImageForCrop = useCallback(
+    async (target: ImageCropTarget) => {
+      try {
+        const result = await launchImageLibrary(PROFILE_IMAGE_PICKER_OPTIONS);
+        if (result.didCancel || !result.assets || result.assets.length === 0) {
+          return;
+        }
+
+        const asset = result.assets[0];
+        if (!asset.uri) return;
+
+        await waitForImagePickerDismissal();
+        const preparedAsset = await prepareProfileImageForCrop(asset, target);
+        setPageCropRequest({
+          target,
+          image: {
+            uri: preparedAsset.uri!,
+            width: preparedAsset.width,
+            height: preparedAsset.height,
+            fileName: preparedAsset.fileName,
+            type: preparedAsset.type,
+          },
+        });
+      } catch (err) {
+        Alert.alert(
+          'Lỗi',
+          err instanceof Error
+            ? err.message
+            : 'Không thể mở thư viện ảnh. Vui lòng thử lại.',
+        );
       }
-      const asset = result.assets[0];
-      if (!asset.uri) return;
+    },
+    [],
+  );
 
-      await vm.updatePageAvatar({
-        uri: asset.uri,
-        name: asset.fileName ?? `avatar_${Date.now()}.jpg`,
-        type: asset.type ?? 'image/jpeg',
-      });
-    } catch (err) {
-      Alert.alert(
-        'Lỗi',
-        err instanceof Error ? err.message : 'Không thể cập nhật ảnh đại diện.',
-      );
-    }
-  }, [vm]);
+  const handleChangeAvatar = useCallback(() => {
+    void selectPageImageForCrop('avatar');
+  }, [selectPageImageForCrop]);
 
-  const handleChangeCover = useCallback(async () => {
-    try {
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-      });
-      if (result.didCancel || !result.assets || result.assets.length === 0) {
-        return;
+  const handleChangeCover = useCallback(() => {
+    void selectPageImageForCrop('cover');
+  }, [selectPageImageForCrop]);
+
+  const handleViewAvatar = useCallback(() => {
+    if (!vm.page.avatar) return;
+    setPageMediaViewer('avatar');
+  }, [vm.page.avatar]);
+
+  const handleViewCover = useCallback(() => {
+    if (!vm.page.cover) return;
+    setPageMediaViewer('cover');
+  }, [vm.page.cover]);
+
+  const handleClosePageMediaViewer = useCallback(() => {
+    setPageMediaViewer(null);
+  }, []);
+
+  const handleChangePageMediaFromViewer = useCallback(async () => {
+    const target = pageMediaViewer;
+    if (!target) return;
+
+    setPageMediaViewer(null);
+    await new Promise<void>(resolve =>
+      setTimeout(resolve, Platform.OS === 'ios' ? 240 : 160),
+    );
+    await selectPageImageForCrop(target);
+  }, [pageMediaViewer, selectPageImageForCrop]);
+
+  const handleCroppedPageImage = useCallback(
+    async (asset: CroppedImageAsset) => {
+      const target = pageCropRequest?.target;
+      if (!target) return;
+
+      setPageCropRequest(null);
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+      try {
+        if (target === 'avatar') {
+          await vm.updatePageAvatar(asset);
+        } else {
+          await vm.updatePageCover(asset);
+        }
+      } catch (err) {
+        Alert.alert(
+          'Lỗi',
+          err instanceof Error
+            ? err.message
+            : target === 'avatar'
+              ? 'Không thể cập nhật ảnh đại diện.'
+              : 'Không thể cập nhật ảnh bìa.',
+        );
       }
-      const asset = result.assets[0];
-      if (!asset.uri) return;
-
-      await vm.updatePageCover({
-        uri: asset.uri,
-        name: asset.fileName ?? `cover_${Date.now()}.jpg`,
-        type: asset.type ?? 'image/jpeg',
-      });
-    } catch (err) {
-      Alert.alert(
-        'Lỗi',
-        err instanceof Error ? err.message : 'Không thể cập nhật ảnh bìa.',
-      );
-    }
-  }, [vm]);
+    },
+    [pageCropRequest?.target, vm.updatePageAvatar, vm.updatePageCover],
+  );
 
   const listHeader = (
     <>
@@ -1886,6 +2304,8 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onEditPage={handleEditPage}
         onChangeAvatar={handleChangeAvatar}
         onChangeCover={handleChangeCover}
+        onViewAvatar={handleViewAvatar}
+        onViewCover={handleViewCover}
         isUploadingAvatar={vm.isUploadingAvatar}
         isUploadingCover={vm.isUploadingCover}
         // Pass the Back / More handlers down so the hero can render
@@ -1897,7 +2317,13 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onMore={() => setMenuVisible(true)}
         copy={copy}
       />
-      <InvitePageRow label={copy.inviteRow} onPress={() => setInviteVisible(true)} />
+      {canManagePage ? (
+        <InvitePageRow
+          label={copy.inviteRow}
+          hint={copy.inviteHint}
+          onPress={() => setInviteVisible(true)}
+        />
+      ) : null}
       {isPageOwner ? (
         <ComposerCard
           onPress={handleCreatePost}
@@ -1908,14 +2334,22 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         />
       ) : null}
       {vm.error ? (
-        <View className="mx-4 mt-3 rounded-2xl bg-red-50 px-4 py-3">
+        <View className="mt-2 border-y border-red-100 bg-red-50 px-4 py-3">
           <Text className="text-caption-primary text-red-600">{vm.error}</Text>
         </View>
       ) : null}
       <PostSearchBox
         value={vm.searchQuery}
-        placeholder="Tìm kiếm các bài viết"
+        placeholder={copy.searchPosts}
+        activeTab={vm.activeTab}
+        allCount={vm.postCounts.all}
+        photoCount={vm.postCounts.photos}
+        allLabel={copy.filterAll}
+        photoLabel={copy.tabPhotos}
+        postsLabel={copy.tabPosts}
+        clearLabel={copy.clearSearchBtn}
         onChangeText={vm.setSearchQuery}
+        onChangeTab={vm.setActiveTab}
       />
     </>
   );
@@ -2045,9 +2479,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
 
   const selectedCommentPost = useMemo(
     () =>
-      vm.posts.find(
-        post => post.id === commentVm.selectedCommentPostId,
-      ) as (FeedTextPost | FeedVideoPost | FeedPollPost) | undefined,
+      vm.posts.find(post => post.id === commentVm.selectedCommentPostId) as
+        | (FeedTextPost | FeedVideoPost | FeedPollPost)
+        | undefined,
     [commentVm.selectedCommentPostId, vm.posts],
   );
 
@@ -2065,19 +2499,46 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         ListHeaderComponent={listHeader}
         ListFooterComponent={footer}
         ListEmptyComponent={
-          <View className="px-4 py-10">
+          <View className="py-2">
             {vm.isLoading ? (
-              <ActivityIndicator color={APP_BRAND_COLOR} />
-            ) : (
-              <View className="items-center bg-white px-4 py-12">
-                <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-100">
-                  <Flag size={28} color="#94A3B8" />
-                </View>
-                <Text className="mt-3 text-center text-sm text-slate-500">
-                  {vm.activeTab === 'photos'
-                    ? copy.emptyPhotos
-                    : `${vm.page.pageName || vm.page.pageTitle || copy.defaultTitle} ${copy.emptyPosts}`}
+              <View className="items-center border-y border-[#dddfe2] bg-white px-5 py-12">
+                <ActivityIndicator color={APP_BRAND_COLOR} />
+                <Text className="mt-3 text-caption-secondary">
+                  {copy.loadingPosts}
                 </Text>
+              </View>
+            ) : (
+              <View className="items-center border-y border-[#dddfe2] bg-white px-5 py-10">
+                <View className="icon-chip h-16 w-16 items-center justify-center">
+                  <FileText size={28} color={APP_BRAND_COLOR} />
+                </View>
+                <Text className="mt-4 text-center text-title-primary text-slate-900">
+                  {vm.searchQuery.trim()
+                    ? copy.noSearchResults
+                    : vm.activeTab === 'photos'
+                    ? copy.emptyPhotos
+                    : `${
+                        vm.page.pageName ||
+                        vm.page.pageTitle ||
+                        copy.defaultTitle
+                      } ${copy.emptyPosts}`}
+                </Text>
+                {isPageOwner &&
+                !vm.searchQuery.trim() &&
+                vm.activeTab === 'all' ? (
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={copy.firstPostBtn}
+                    activeOpacity={0.9}
+                    className="btn-primary mt-5 min-h-12 px-5"
+                    onPress={() => handleCreatePost()}
+                  >
+                    <Edit3 size={18} color={APP_COLORS.brand.onPrimary} />
+                    <Text className="ml-2 text-sm font-bold text-white">
+                      {copy.firstPostBtn}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             )}
           </View>
@@ -2148,7 +2609,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
           className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pt-4"
           style={{ paddingBottom: editSheetBottomPadding }}
         >
-          <Text className="text-xl font-bold text-slate-900">{copy.editPostTitle}</Text>
+          <Text className="text-xl font-bold text-slate-900">
+            {copy.editPostTitle}
+          </Text>
           <TextInput
             value={editPostText}
             onChangeText={setEditPostText}
@@ -2171,7 +2634,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
               className="min-h-[46px] flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white"
               activeOpacity={0.78}
             >
-              <Text className="text-base font-bold text-slate-600">{copy.editPostCancel}</Text>
+              <Text className="text-base font-bold text-slate-600">
+                {copy.editPostCancel}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               disabled={isSavingEditedPost}
@@ -2182,10 +2647,14 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
               {isSavingEditedPost ? (
                 <View className="flex-row items-center">
                   <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text className="ml-2 text-base font-bold text-white">{copy.editPostSaving}</Text>
+                  <Text className="ml-2 text-base font-bold text-white">
+                    {copy.editPostSaving}
+                  </Text>
                 </View>
               ) : (
-                <Text className="text-base font-bold text-white">{copy.editPostSave}</Text>
+                <Text className="text-base font-bold text-white">
+                  {copy.editPostSave}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -2208,7 +2677,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       <ReelCommentsSheet
         visible={commentVm.isCommentsOpen}
         comments={commentVm.comments}
-        commentCount={selectedCommentPost?.commentCount ?? commentVm.comments.length}
+        commentCount={
+          selectedCommentPost?.commentCount ?? commentVm.comments.length
+        }
         isLoading={commentVm.isCommentsLoading}
         isLoadingMore={commentVm.isCommentsLoadingMore}
         isSubmitting={commentVm.isSubmittingComment}
@@ -2239,6 +2710,31 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         post={sharingPost}
         onInternalShare={handleInternalSharePost}
         onShared={handlePostShared}
+      />
+      <PageMediaViewerModal
+        visible={pageMediaViewer !== null}
+        uri={
+          pageMediaViewer === 'avatar' ? vm.page.avatar : vm.page.cover
+        }
+        kind={pageMediaViewer ?? 'avatar'}
+        pageTitle={
+          vm.page.pageTitle || vm.page.pageName || copy.defaultTitle
+        }
+        canEdit={canManagePage}
+        isUploading={
+          pageMediaViewer === 'avatar'
+            ? vm.isUploadingAvatar
+            : vm.isUploadingCover
+        }
+        onClose={handleClosePageMediaViewer}
+        onChange={handleChangePageMediaFromViewer}
+      />
+      <ImageCropperModal
+        visible={pageCropRequest !== null}
+        image={pageCropRequest?.image ?? null}
+        target={pageCropRequest?.target ?? 'avatar'}
+        onCancel={() => setPageCropRequest(null)}
+        onComplete={handleCroppedPageImage}
       />
       <PhotoViewerModal
         state={photoViewer}

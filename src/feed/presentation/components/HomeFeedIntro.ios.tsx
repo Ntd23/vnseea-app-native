@@ -134,14 +134,22 @@ function LiveStoryCard({
 function HomeStoriesRail({
   avatarUrl,
   copy,
-}: Pick<HomeFeedIntroProps, 'avatarUrl' | 'copy'>) {
+  liveStreams: sharedLiveStreams,
+  onLivePress,
+}: Pick<
+  HomeFeedIntroProps,
+  'avatarUrl' | 'copy' | 'liveStreams' | 'onLivePress'
+>) {
   const {
     stories,
     liveStreams,
     goToCreateStory,
     goToViewerForGroup,
     goToLive,
-  } = useHomeStoriesRail();
+  } = useHomeStoriesRail({
+    liveStreams: sharedLiveStreams,
+    onLivePress,
+  });
 
   return (
     <View style={[styles.surface, styles.storiesSurface]}>
@@ -237,11 +245,18 @@ export function HomeFeedIntro({
   onPressAvatar,
   avatarUrl,
   userName,
+  liveStreams,
+  onLivePress,
   copy,
 }: HomeFeedIntroProps) {
   return (
     <View>
-      <HomeStoriesRail avatarUrl={avatarUrl} copy={copy} />
+      <HomeStoriesRail
+        avatarUrl={avatarUrl}
+        copy={copy}
+        liveStreams={liveStreams}
+        onLivePress={onLivePress}
+      />
       <ComposerCard
         onPress={onCreatePostPress}
         onPressAction={onCreatePostPressAction}
