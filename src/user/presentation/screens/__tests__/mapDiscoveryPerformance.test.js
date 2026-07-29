@@ -111,6 +111,11 @@ describe('map and place discovery performance contracts', () => {
 
   it('opens submitted search results as a three-level draggable map sheet', () => {
     const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+    const headerStart = source.indexOf(
+      '<View style={styles.searchResultsHeader}>',
+    );
+    const headerEnd = source.indexOf('</GestureDetector>', headerStart);
+    const searchResultsHeader = source.slice(headerStart, headerEnd);
 
     expect(source).toContain(
       "type SearchResultsSheetSnap = 'peek' | 'half' | 'expanded';",
@@ -127,7 +132,11 @@ describe('map and place discovery performance contracts', () => {
     expect(source).toContain('withSpring(');
     expect(source).toContain('runOnJS(commitSearchResultsSheetSnap)');
     expect(source).not.toContain('PanResponder.create');
-    expect(source).toContain("animateSearchResultsSheetTo('half');");
+    expect(source).toContain(
+      "useState<SearchResultsSheetSnap>('peek');",
+    );
+    expect(source).toContain("setSearchResultsSheetSnap('peek');");
+    expect(source).not.toContain("animateSearchResultsSheetTo('half');");
     expect(source).toContain('openSearchResultsSheet();');
     expect(source).toContain(
       "scrollEnabled={searchResultsSheetSnap === 'expanded'}",
@@ -152,6 +161,30 @@ describe('map and place discovery performance contracts', () => {
     );
     expect(source).not.toContain(
       "Alert.alert('Lỗi', 'Không thể lấy thông tin địa điểm.')",
+    );
+    expect(searchResultsHeader).not.toContain('handleCloseSearchResults');
+    expect(source).toContain('isSearchResultsScrollAtTop');
+    expect(source).toContain('gesture.activeOffsetY(6).failOffsetY(-6)');
+    expect(source).toContain(
+      "searchResultsSheetSnap !== 'expanded' ||\n          (Platform.OS !== 'ios' && isSearchResultsScrollAtTop)",
+    );
+    expect(source).toContain(
+      "searchResultsSheetSnap === 'expanded',",
+    );
+    expect(source).toContain(
+      'if (downwardOnly) {\n            targetIndex = Math.max(targetIndex, currentIndex - 1);',
+    );
+    expect(source).toContain(
+      'const SEARCH_RESULTS_IOS_PULL_TO_HALF_THRESHOLD = 36;',
+    );
+    expect(source).toContain(
+      "Platform.OS === 'ios' &&\n                    searchResultsSheetSnap === 'expanded' &&\n                    nextOffset <= -SEARCH_RESULTS_IOS_PULL_TO_HALF_THRESHOLD",
+    );
+    expect(source).toContain(
+      'collapseExpandedSearchResultsFromListPull();',
+    );
+    expect(source).toContain(
+      "alwaysBounceVertical={\n                  Platform.OS === 'ios' &&\n                  searchResultsSheetSnap === 'expanded'\n                }",
     );
   });
 
@@ -189,6 +222,14 @@ describe('map and place discovery performance contracts', () => {
     expect(screenSource).toContain('.getPageDetail({ pageId })');
     expect(sheetSource).toContain("return '--';");
     expect(sheetSource).not.toContain('FALLBACK_AVATAR');
+  });
+
+  it('does not render the result photo strip for VNSEEA pages', () => {
+    const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+
+    expect(source).toContain(
+      "item.kind === 'google' ? (\n                          <SearchResultPhotoStrip",
+    );
   });
 
   it('hydrates Google place details with optional photos and metadata', () => {
