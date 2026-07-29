@@ -86,26 +86,23 @@ describe('Nearby search/detail sheet lifecycle', () => {
     expect(selectSearchResult).toContain('openSearchResultsSheet();');
   });
 
-  it('lets the suggestion-sheet close action clear the submitted search', () => {
+  it('removes the sheet close action while keeping query reset cleanup', () => {
     const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
     const searchPanel = sliceBetween(
       source,
       '      {/* Submitted searches return',
       '      <Modal\n        visible={Boolean(activePageDetail)}',
     );
-    const closeButton = sliceBetween(
-      searchPanel,
-      'styles.searchResultsCloseBtn',
-      '</TouchableOpacity>',
+    const queryReset = sliceBetween(
+      source,
+      '{query.length > 0 ? (',
+      ') : isMapSearchLoading ? (',
     );
 
-    // Implementations may keep the cleanup inline or delegate it to a named
-    // handler, but the close action must clear all committed-search state.
-    const closeHandler =
-      closeButton.includes('setQuery(\'\')') ||
-      closeButton.includes('handleCloseSearchResults') ||
-      closeButton.includes('handleExitSearchMode');
-    expect(closeHandler).toBe(true);
+    expect(searchPanel).not.toContain('styles.searchResultsCloseBtn');
+    expect(searchPanel).not.toContain('handleCloseSearchResults');
+    expect(queryReset).toContain("setQuery('');");
+    expect(queryReset).toContain('setIsSearchResultsVisible(false);');
     expect(source).toContain('setSearchResults([]);');
     expect(source).toContain('clearPlacePredictions();');
   });

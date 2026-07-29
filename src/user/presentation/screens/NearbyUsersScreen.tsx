@@ -270,6 +270,7 @@ const SEARCH_RESULTS_SHEET_SPRING = {
   overshootClamping: true,
 } as const;
 const SEARCH_RESULTS_SHEET_FLING_VELOCITY = 650;
+const SEARCH_RESULTS_IOS_PULL_TO_HALF_THRESHOLD = 36;
 
 type SelectedPoint = {
   id: string;
@@ -2320,12 +2321,15 @@ export default function NearbyUsersScreen() {
   const [searchResultSort, setSearchResultSort] =
     useState<SearchResultSort>('relevance');
   const [searchResultsSheetSnap, setSearchResultsSheetSnap] =
-    useState<SearchResultsSheetSnap>('half');
+    useState<SearchResultsSheetSnap>('peek');
+  const [isSearchResultsScrollAtTop, setIsSearchResultsScrollAtTop] =
+    useState(true);
   const searchResultsSheetTranslateY = useSharedValue(0);
   const searchResultsSheetDragStartTranslateY = useSharedValue(0);
   const searchResultsScrollRef = useRef<FlatList<SuggestionItem>>(null);
   const searchResultsScrollOffsetRef = useRef(0);
-  const searchResultsSheetOpenFrameRef = useRef<number | null>(null);
+  const isSearchResultsScrollAtTopRef = useRef(true);
+  const isSearchResultsPullCollapsingRef = useRef(false);
   // react-native-maps may dispatch the map-level press immediately after a
   // marker press. Keep the marker interaction from clearing the detail sheet
   // that was just opened.
@@ -2457,7 +2461,7 @@ export default function NearbyUsersScreen() {
       searchSheetViewportHeight - expandedTopClearance,
     );
     const peek = Math.min(
-      Math.max(searchSheetViewportHeight * 0.24, 210),
+      Math.max(searchSheetViewportHeight * 0.36, 210),
       expanded - 140,
     );
     const half = Math.min(
@@ -2470,8 +2474,15 @@ export default function NearbyUsersScreen() {
 
   const commitSearchResultsSheetSnap = useCallback(
     (snap: SearchResultsSheetSnap) => {
-      if (snap !== 'expanded' && searchResultsScrollOffsetRef.current > 0) {
+      if (snap === 'expanded') {
+        isSearchResultsPullCollapsingRef.current = false;
+      }
+      if (snap !== 'expanded') {
         searchResultsScrollOffsetRef.current = 0;
+        if (!isSearchResultsScrollAtTopRef.current) {
+          isSearchResultsScrollAtTopRef.current = true;
+          setIsSearchResultsScrollAtTop(true);
+        }
         searchResultsScrollRef.current?.scrollToOffset({
           offset: 0,
           animated: false,
@@ -2483,50 +2494,50 @@ export default function NearbyUsersScreen() {
     [],
   );
 
-  const animateSearchResultsSheetTo = useCallback(
-    (snap: SearchResultsSheetSnap) => {
-      commitSearchResultsSheetSnap(snap);
-      searchResultsSheetTranslateY.value = withSpring(
-        searchResultsSheetHeights.expanded - searchResultsSheetHeights[snap],
-        SEARCH_RESULTS_SHEET_SPRING,
-      );
-    },
-    [
-      commitSearchResultsSheetSnap,
-      searchResultsSheetHeights,
-      searchResultsSheetTranslateY,
-    ],
-  );
-
   const openSearchResultsSheet = useCallback(() => {
     searchResultsScrollOffsetRef.current = 0;
+    isSearchResultsScrollAtTopRef.current = true;
+    isSearchResultsPullCollapsingRef.current = false;
+    setIsSearchResultsScrollAtTop(true);
     searchResultsScrollRef.current?.scrollToOffset({
       offset: 0,
       animated: false,
     });
-    if (searchResultsSheetOpenFrameRef.current !== null) {
-      cancelAnimationFrame(searchResultsSheetOpenFrameRef.current);
-    }
     cancelAnimation(searchResultsSheetTranslateY);
     searchResultsSheetTranslateY.value =
       searchResultsSheetHeights.expanded - searchResultsSheetHeights.peek;
-    setSearchResultsSheetSnap('half');
-    searchResultsSheetOpenFrameRef.current = requestAnimationFrame(() => {
-      searchResultsSheetOpenFrameRef.current = null;
-      animateSearchResultsSheetTo('half');
-    });
+    setSearchResultsSheetSnap('peek');
   }, [
-    animateSearchResultsSheetTo,
     searchResultsSheetHeights.expanded,
     searchResultsSheetHeights.peek,
     searchResultsSheetTranslateY,
   ]);
 
+  const collapseExpandedSearchResultsFromListPull = useCallback(() => {
+    if (
+      Platform.OS !== 'ios' ||
+      searchResultsSheetSnap !== 'expanded' ||
+      isSearchResultsPullCollapsingRef.current
+    ) {
+      return;
+    }
+
+    isSearchResultsPullCollapsingRef.current = true;
+    commitSearchResultsSheetSnap('half');
+    searchResultsSheetTranslateY.value = withSpring(
+      searchResultsSheetHeights.expanded - searchResultsSheetHeights.half,
+      SEARCH_RESULTS_SHEET_SPRING,
+    );
+  }, [
+    commitSearchResultsSheetSnap,
+    searchResultsSheetHeights.expanded,
+    searchResultsSheetHeights.half,
+    searchResultsSheetSnap,
+    searchResultsSheetTranslateY,
+  ]);
+
   useEffect(
     () => () => {
-      if (searchResultsSheetOpenFrameRef.current !== null) {
-        cancelAnimationFrame(searchResultsSheetOpenFrameRef.current);
-      }
       cancelAnimation(searchResultsSheetTranslateY);
     },
     [searchResultsSheetTranslateY],
@@ -2542,10 +2553,15 @@ export default function NearbyUsersScreen() {
       searchResultsSheetSnap,
     );
 
-    const createSheetGesture = (enabled: boolean) =>
-      Gesture.Pan()
-        .enabled(enabled)
-        .activeOffsetY([-6, 6])
+    const createSheetGesture = (enabled: boolean, downwardOnly = false) => {
+      const gesture = Gesture.Pan().enabled(enabled);
+      if (downwardOnly) {
+        gesture.activeOffsetY(6).failOffsetY(-6);
+      } else {
+        gesture.activeOffsetY([-6, 6]);
+      }
+
+      return gesture
         .failOffsetX([-24, 24])
         .onBegin(() => {
           'worklet';
@@ -2584,6 +2600,10 @@ export default function NearbyUsersScreen() {
             targetIndex = Math.min(targetIndex, Math.max(currentIndex - 1, 0));
           }
 
+          if (downwardOnly) {
+            targetIndex = Math.max(targetIndex, currentIndex - 1);
+          }
+
           const targetSnap =
             targetIndex === 0
               ? 'peek'
@@ -2596,13 +2616,19 @@ export default function NearbyUsersScreen() {
           );
           runOnJS(commitSearchResultsSheetSnap)(targetSnap);
         });
+    };
 
     return {
       header: createSheetGesture(true),
-      body: createSheetGesture(searchResultsSheetSnap !== 'expanded'),
+      body: createSheetGesture(
+        searchResultsSheetSnap !== 'expanded' ||
+          (Platform.OS !== 'ios' && isSearchResultsScrollAtTop),
+        searchResultsSheetSnap === 'expanded',
+      ),
     };
   }, [
     commitSearchResultsSheetSnap,
+    isSearchResultsScrollAtTop,
     searchResultsSheetDragStartTranslateY,
     searchResultsSheetHeights,
     searchResultsSheetSnap,
@@ -4662,13 +4688,6 @@ export default function NearbyUsersScreen() {
     clearPlacePredictions();
     Keyboard.dismiss();
   }, [clearPlacePredictions]);
-
-  const handleCloseSearchResults = useCallback(() => {
-    handleExitSearchMode();
-    // Closing the suggestions sheet ends the search session. The detail sheet
-    // can be stacked above it, so clear that selection at the same time.
-    clearSelectedPoint();
-  }, [clearSelectedPoint, handleExitSearchMode]);
 
   const dismissSearchInput = useCallback(() => {
     if (!isSearchFocused) return;
@@ -6966,13 +6985,6 @@ export default function NearbyUsersScreen() {
                       : 'Chưa có kết quả phù hợp'}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={styles.searchResultsCloseBtn}
-                  onPress={handleCloseSearchResults}
-                >
-                  <X size={16} color="#64748B" />
-                </TouchableOpacity>
               </View>
             </View>
           </GestureDetector>
@@ -7029,6 +7041,10 @@ export default function NearbyUsersScreen() {
                 showsVerticalScrollIndicator={true}
                 nestedScrollEnabled
                 scrollEnabled={searchResultsSheetSnap === 'expanded'}
+                alwaysBounceVertical={
+                  Platform.OS === 'ios' &&
+                  searchResultsSheetSnap === 'expanded'
+                }
                 scrollEventThrottle={16}
                 data={displayedSearchResults}
                 keyExtractor={item => `result-card:${item.id}`}
@@ -7038,8 +7054,22 @@ export default function NearbyUsersScreen() {
                 windowSize={5}
                 keyboardShouldPersistTaps="handled"
                 onScroll={event => {
-                  searchResultsScrollOffsetRef.current =
-                    event.nativeEvent.contentOffset.y;
+                  const nextOffset = event.nativeEvent.contentOffset.y;
+                  searchResultsScrollOffsetRef.current = nextOffset;
+                  const nextIsAtTop = nextOffset <= 0.5;
+                  if (
+                    nextIsAtTop !== isSearchResultsScrollAtTopRef.current
+                  ) {
+                    isSearchResultsScrollAtTopRef.current = nextIsAtTop;
+                    setIsSearchResultsScrollAtTop(nextIsAtTop);
+                  }
+                  if (
+                    Platform.OS === 'ios' &&
+                    searchResultsSheetSnap === 'expanded' &&
+                    nextOffset <= -SEARCH_RESULTS_IOS_PULL_TO_HALF_THRESHOLD
+                  ) {
+                    collapseExpandedSearchResultsFromListPull();
+                  }
                 }}
                 ListHeaderComponent={
                   searchMessage && displayedSearchResults.length > 0 ? (
@@ -7391,10 +7421,12 @@ export default function NearbyUsersScreen() {
                           {addressText}
                         </Text>
 
-                        <SearchResultPhotoStrip
-                          itemId={item.id}
-                          photoUrls={photoUrls}
-                        />
+                        {item.kind === 'google' ? (
+                          <SearchResultPhotoStrip
+                            itemId={item.id}
+                            photoUrls={photoUrls}
+                          />
+                        ) : null}
                       </TouchableOpacity>
 
                       <View style={styles.resultCardButtonsRow}>
@@ -8029,14 +8061,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 12,
     fontWeight: '700',
-  },
-  searchResultsCloseBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   searchResultsBody: {
     flex: 1,
