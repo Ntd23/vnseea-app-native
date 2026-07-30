@@ -12,6 +12,7 @@ import {
 import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import type { FeedCopy } from './PostCards';
+import type { ComposerActionId } from './ComposerCard';
 
 const HOME_RAIL_REALTIME_REFRESH_MS = 10_000;
 
@@ -20,7 +21,7 @@ export const HOME_INTRO_FALLBACK_AVATAR =
 
 export type HomeFeedIntroProps = {
   onCreatePostPress: () => void;
-  onCreatePostPressAction?: (action: 'photo' | 'video' | 'product' | 'poll') => void;
+  onCreatePostPressAction?: (action: ComposerActionId) => void;
   onLivePress?: (item: LiveStreamItem) => void;
   onPressAvatar?: () => void;
   avatarUrl?: string;

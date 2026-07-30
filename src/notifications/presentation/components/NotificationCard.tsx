@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
-  FadeInDown,
   SlideOutRight,
 } from 'react-native-reanimated';
 import {
@@ -41,7 +40,6 @@ import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/
 
 interface NotificationCardProps {
   item: NotificationsItem;
-  index: number;
   language: AppLanguage;
   onPress: (item: NotificationsItem) => void;
   onLongPress?: (item: NotificationsItem) => void;
@@ -159,31 +157,29 @@ function getNotificationStyle(type: string): NotificationStyle {
   );
 }
 
-const ENTER_BASE = FadeInDown.duration(280).easing(Easing.out(Easing.cubic));
-
 function formatRelativeTime(
   createdAt: number | undefined,
   language: AppLanguage,
 ): string {
   if (!createdAt) {
-    return language === 'vi' ? 'Vừa xong' : 'Just now';
+    return language === 'vi' ? 'V?a xong' : 'Just now';
   }
   const now = Date.now();
   const diff = Math.max(0, Math.floor((now - createdAt) / 1000));
   if (diff < 60) {
-    return language === 'vi' ? 'Vừa xong' : 'Just now';
+    return language === 'vi' ? 'V?a xong' : 'Just now';
   }
   if (diff < 3600) {
     const m = Math.floor(diff / 60);
-    return language === 'vi' ? `${m} phút trước` : `${m} min ago`;
+    return language === 'vi' ? `${m} ph?t tr??c` : `${m} min ago`;
   }
   if (diff < 86400) {
     const h = Math.floor(diff / 3600);
-    return language === 'vi' ? `${h} giờ trước` : `${h}h ago`;
+    return language === 'vi' ? `${h} gi? tr??c` : `${h}h ago`;
   }
   if (diff < 86400 * 7) {
     const d = Math.floor(diff / 86400);
-    return language === 'vi' ? `${d} ngày trước` : `${d}d ago`;
+    return language === 'vi' ? `${d} ng?y tr??c` : `${d}d ago`;
   }
   try {
     const date = new Date(createdAt);
@@ -191,13 +187,12 @@ function formatRelativeTime(
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     return `${dd}/${mm}`;
   } catch {
-    return language === 'vi' ? 'Vừa xong' : 'Just now';
+    return language === 'vi' ? 'V?a xong' : 'Just now';
   }
 }
 
 function NotificationCard({
   item,
-  index,
   language,
   onPress,
   onLongPress,
@@ -221,12 +216,10 @@ function NotificationCard({
   const isGroupChatInvite = item.type === GROUP_CHAT_INVITE_NOTIFICATION;
   const avatar = item.notifier?.avatarUrl;
   const hasAvatar = Boolean(avatar);
-  const entering = ENTER_BASE.delay(Math.min(index, 12) * 40);
   const isUnread = !item.seen;
 
   return (
     <Animated.View
-      entering={entering}
       exiting={SlideOutRight.duration(220).easing(Easing.in(Easing.cubic))}
     >
       <TouchableOpacity

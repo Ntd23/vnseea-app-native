@@ -31,6 +31,7 @@ import { Pressable } from 'react-native';
 import { useMovieDetailViewModel } from '../../application/view-models/useMovieDetailViewModel';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
+import { CommentMentionText } from '../../../reels/presentation/components/CommentMentionText';
 
 type MovieDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.MOVIE_DETAIL>;
 
@@ -208,7 +209,9 @@ export default function MovieDetailScreen() {
               {comment.userAvatar ? <Image source={{ uri: comment.userAvatar }} className="h-9 w-9 rounded-full" /> : <View className="h-9 w-9 rounded-full bg-[#e5e7eb]" />}
               <View className="ml-3 flex-1">
                 <Text className="text-sm font-semibold text-[#111827]">{comment.userName}</Text>
-                <Text className="mt-1 text-sm text-[#4b5563]">{comment.text}</Text>
+                <Text className="mt-1 text-sm text-[#4b5563]">
+                  <CommentMentionText text={comment.text} />
+                </Text>
               </View>
             </View>
           ))}

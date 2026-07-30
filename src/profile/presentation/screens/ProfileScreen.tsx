@@ -99,6 +99,10 @@ import { useMainTabContentInsets } from '../../../navigation/useMainTabContentIn
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
+import {
+  loadProfileCommercePosts,
+  mergeProfileCommercePosts,
+} from '../../application/services/profileCommercePosts';
 import { setProfileConnectionsSnapshot } from '../../application/cache/profileConnectionsSnapshot';
 import { resolveProfileOwnership } from '../../application/utils/profileOwnership';
 import {
@@ -107,6 +111,7 @@ import {
   shouldShowProfileStorySection,
 } from '../../application/utils/profileStoryAvatarBehavior';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
+import { profilePostsChangedEvents } from '../../../feed/application/events/profilePostsChangedEvents';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import {
@@ -121,13 +126,21 @@ import {
   getFeedVideoPosterCacheKeyForPost,
   publishFeedActiveVideo,
   publishFeedScrollBusy,
+  publishFeedVisibleMediaPostIds,
   publishFeedWarmVideoIds,
   ReactionPickerOverlay,
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
-import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
+import {
+  ComposerCard,
+  type ComposerActionId,
+} from '../../../feed/presentation/components/ComposerCard';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
+import {
+  FeedJobPostCard,
+  FeedProductPostCard,
+} from '../../../feed/presentation/components/FeedCommercePostCards';
 import { LiveStreamPostCard } from '../../../feed/presentation/components/LiveStreamPostCard';
 import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
 import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
@@ -143,7 +156,7 @@ import {
   endedLivePostsStorage,
   LOCAL_LIVE_ENDED_EVENT,
 } from '../../../live/infrastructure/storage/endedLivePostsStorage';
-import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
+import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
@@ -160,8 +173,10 @@ import {
   publishNativeTabScrollIntent,
 } from '../../../navigation/nativeTabScrollPublisher';
 import type {
+  FeedJobPost,
   FeedPollPost,
   FeedPost,
+  FeedProductPost,
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
@@ -172,6 +187,8 @@ import type {
 } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
+import type { ProductItem } from '../../../product/domain/types/product.types';
+import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -194,7 +211,13 @@ import {
 } from '../../../shared-kernel/presentation/utils/profileImagePicker';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
-type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
+type ProfileFeedPost =
+  | FeedTextPost
+  | FeedVideoPost
+  | FeedPollPost
+  | FeedProductPost
+  | FeedJobPost;
+type ProfileEngagementPost = Exclude<ProfileFeedPost, FeedJobPost>;
 type ProfileListItem =
   | { type: 'state' }
   | { type: 'live'; item: LiveStreamItem }
@@ -338,7 +361,11 @@ function getActivityDisplayText(
 function getProfilePostKindLabel(post: ProfileFeedPost, language: AppLanguage) {
   if (post.kind === 'video') return language === 'vi' ? 'video' : 'video';
   if (post.kind === 'poll') return language === 'vi' ? 'bình chọn' : 'poll';
-  if (post.photos.length > 0) return language === 'vi' ? 'ảnh' : 'photo post';
+  if (post.kind === 'product')
+    return language === 'vi' ? 'sản phẩm' : 'product';
+  if (post.kind === 'job') return language === 'vi' ? 'việc làm' : 'job';
+  if (post.kind === 'text' && post.photos.length > 0)
+    return language === 'vi' ? 'ảnh' : 'photo post';
   return language === 'vi' ? 'bài viết' : 'post';
 }
 
@@ -347,14 +374,24 @@ function getProfilePostPreviewText(
   language: AppLanguage,
 ) {
   const caption =
-    post.kind === 'poll' ? post.pollQuestion : cleanProfileValue(post.caption);
+    post.kind === 'poll'
+      ? post.pollQuestion
+      : post.kind === 'product'
+      ? cleanProfileValue(post.product.name)
+      : post.kind === 'job'
+      ? cleanProfileValue(post.job.title)
+      : cleanProfileValue(post.caption);
 
   if (caption) return caption;
   if (post.kind === 'video')
     return language === 'vi' ? 'Video đã đăng' : 'Posted video';
   if (post.kind === 'poll')
     return language === 'vi' ? 'Bình chọn đã đăng' : 'Posted poll';
-  if (post.photos.length > 0) {
+  if (post.kind === 'product')
+    return language === 'vi' ? 'Sản phẩm đã đăng' : 'Posted product';
+  if (post.kind === 'job')
+    return language === 'vi' ? 'Việc làm đã đăng' : 'Posted job';
+  if (post.kind === 'text' && post.photos.length > 0) {
     return language === 'vi'
       ? `${post.photos.length} ảnh đã đăng`
       : `${post.photos.length} posted photos`;
@@ -364,7 +401,19 @@ function getProfilePostPreviewText(
 }
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
-  return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
+  return (
+    post.kind === 'text' ||
+    post.kind === 'video' ||
+    post.kind === 'poll' ||
+    post.kind === 'product' ||
+    post.kind === 'job'
+  );
+}
+
+function isProfileEngagementPost(
+  post: ProfileFeedPost,
+): post is ProfileEngagementPost {
+  return post.kind !== 'job';
 }
 
 function getProfileListItemPost(
@@ -409,6 +458,25 @@ function collectProfilePostMediaUrls(post: ProfileFeedPost) {
 
     if (isRemoteProfileMediaUrl(post.linkPreview?.image)) {
       urls.push(post.linkPreview.image);
+    }
+  }
+
+  if (post.kind === 'product') {
+    post.product.images.slice(0, 4).forEach(image => {
+      if (isRemoteProfileMediaUrl(image.image)) urls.push(image.image);
+    });
+    if (isRemoteProfileMediaUrl(post.product.seller.avatar)) {
+      urls.push(post.product.seller.avatar);
+    }
+  }
+
+  if (post.kind === 'job') {
+    if (isRemoteProfileMediaUrl(post.job.image)) urls.push(post.job.image);
+    if (isRemoteProfileMediaUrl(post.job.page?.cover)) {
+      urls.push(post.job.page.cover);
+    }
+    if (isRemoteProfileMediaUrl(post.job.page?.avatar)) {
+      urls.push(post.job.page.avatar);
     }
   }
 
@@ -1537,6 +1605,46 @@ function ProfileScreen() {
   const feedRepo = useMemo(() => createFeedRepository(), []);
   const pollRepo = useMemo(() => createPollRepository(), []);
   const storiesRepo = useMemo(() => createStoriesRepository(), []);
+  const loadProfilePostsFirstPage = useCallback(
+    async (userId: string | number) => {
+      const [feedResult, commerceResult] = await Promise.allSettled([
+        feedRepo.getUserPosts(String(userId), PROFILE_POST_PAGE_SIZE),
+        loadProfileCommercePosts({
+          userId,
+          includeOwnedPageJobs: isOwnProfile,
+          sellerFallback: postCardCopy.sellerFallback,
+          employerFallback: postCardCopy.employerFallback,
+        }),
+      ]);
+      const feedPosts =
+        feedResult.status === 'fulfilled'
+          ? (feedResult.value ?? []).filter(isProfileFeedPost)
+          : [];
+      const commercePosts =
+        commerceResult.status === 'fulfilled' ? commerceResult.value : [];
+      const pendingPosts = profilePostsChangedEvents
+        .getPendingPosts()
+        .filter(isProfileFeedPost)
+        .filter(post => String(post.publisher.id) === String(userId));
+      const mergedPosts = mergeProfileCommercePosts(
+        [...feedPosts, ...pendingPosts],
+        commercePosts,
+      ).filter(isProfileFeedPost);
+
+      if (feedResult.status === 'rejected' && mergedPosts.length === 0) {
+        throw feedResult.reason;
+      }
+
+      return {
+        posts: mergedPosts,
+        cursor: getOldestProfilePostId(feedPosts),
+        hasMore:
+          feedResult.status === 'fulfilled' &&
+          feedPosts.length >= PROFILE_POST_PAGE_SIZE,
+      };
+    },
+    [feedRepo, isOwnProfile, postCardCopy.employerFallback, postCardCopy.sellerFallback],
+  );
   const refreshProfileContent = useCallback(async () => {
     if (!targetUserId || profileRefreshInFlightRef.current) return;
 
@@ -1549,21 +1657,14 @@ function ProfileScreen() {
           userId: route.params?.userId,
           includeFriends: true,
         }),
-        feedRepo.getUserPosts(targetUserId, PROFILE_POST_PAGE_SIZE),
+        loadProfilePostsFirstPage(targetUserId),
       ]);
-      const refreshedPosts = (response ?? []).filter(
-        (post): post is ProfileFeedPost =>
-          post.kind === 'text' ||
-          post.kind === 'video' ||
-          post.kind === 'poll',
-      );
-      const nextCursor = getOldestProfilePostId(refreshedPosts);
 
       isLoadingMorePostsRef.current = false;
       setIsLoadingMorePosts(false);
-      setPosts(refreshedPosts);
-      setPostsCursor(nextCursor);
-      setHasMorePosts(refreshedPosts.length >= PROFILE_POST_PAGE_SIZE);
+      setPosts(response.posts);
+      setPostsCursor(response.cursor);
+      setHasMorePosts(response.hasMore);
     } catch (caughtError) {
       setPostsError(
         caughtError instanceof Error
@@ -1576,19 +1677,40 @@ function ProfileScreen() {
     }
   }, [
     copy.loadPostsError,
-    feedRepo,
     loadProfile,
+    loadProfilePostsFirstPage,
     route.params?.userId,
     targetUserId,
   ]);
+
+  useEffect(() => {
+    return profilePostsChangedEvents.subscribe(post => {
+      if (!isOwnProfile) return;
+      if (
+        post &&
+        (post.kind === 'product' || post.kind === 'job') &&
+        String(post.publisher.id) === String(targetUserId)
+      ) {
+        setPosts(current =>
+          mergeProfileCommercePosts(current, [post]).filter(isProfileFeedPost),
+        );
+        setPostsError(null);
+      }
+      refreshProfileContent().catch(() => undefined);
+    });
+  }, [isOwnProfile, refreshProfileContent, targetUserId]);
   const updateProfileCommentCount = useCallback(
     (postId: string, delta: number) => {
       setPosts(prev =>
-        prev.map(post =>
-          post.id === postId
-            ? { ...post, commentCount: Math.max(0, post.commentCount + delta) }
-            : post,
-        ),
+        prev.map(post => {
+          if (post.id !== postId || !isProfileEngagementPost(post)) {
+            return post;
+          }
+          return {
+            ...post,
+            commentCount: Math.max(0, post.commentCount + delta),
+          };
+        }),
       );
     },
     [],
@@ -1596,6 +1718,49 @@ function ProfileScreen() {
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: updateProfileCommentCount,
   });
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      'postReactionChanged',
+      (event: {
+        postId: string;
+        myReaction: ReactionType | null;
+        likeCount: number;
+        topReactions?: ReactionType[];
+      }) => {
+        setPosts(current =>
+          current.map(post => {
+            if (String(post.id) !== String(event.postId)) return post;
+            if (!isProfileEngagementPost(post)) return post;
+            if (
+              post.myReaction === event.myReaction &&
+              post.likeCount === event.likeCount &&
+              (!event.topReactions || post.topReactions === event.topReactions)
+            ) {
+              return post;
+            }
+
+            return {
+              ...post,
+              myReaction: event.myReaction,
+              isLiked: event.myReaction !== null,
+              likeCount: Math.max(0, event.likeCount),
+              topReactions:
+                event.topReactions ??
+                updateProfileTopReactions(
+                  post.topReactions,
+                  post.myReaction,
+                  event.myReaction,
+                  Math.max(0, event.likeCount),
+                ),
+            };
+          }),
+        );
+      },
+    );
+
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     const profileUserId = targetUserId ?? currentUserId ?? profile?.id;
@@ -1669,6 +1834,15 @@ function ProfileScreen() {
         publishNativeTabScrollBehavior('onScrollDown');
       };
     }, []),
+  );
+
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        publishFeedVisibleMediaPostIds([]);
+      },
+      [],
+    ),
   );
 
   const setActiveProfileVideoId = useCallback((nextVideoId: string | null) => {
@@ -1962,6 +2136,7 @@ function ProfileScreen() {
         .filter(item => item.isViewable)
         .map(item => String(getProfileListItemPost(item.item)?.id ?? ''))
         .filter(postId => /^[1-9][0-9]*$/.test(postId));
+      publishFeedVisibleMediaPostIds(visiblePostIds);
       scheduleRealtimeVisiblePostIds(visiblePostIds);
       const currentPosts = profilePostsRef.current;
       const nextVisibleLivePostId = pickInlineLivePostId(viewableItems);
@@ -2169,6 +2344,11 @@ function ProfileScreen() {
     onDeleted: postId => {
       setPosts(current => current.filter(post => String(post.id) !== postId));
     },
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        commentVm.refreshComments().catch(() => undefined);
+      }
+    },
   });
 
   useEffect(() => {
@@ -2374,18 +2554,13 @@ function ProfileScreen() {
     isLoadingMorePostsRef.current = false;
     setIsLoadingMorePosts(false);
     setPostsError(null);
-    feedRepo
-      .getUserPosts(targetUserId, PROFILE_POST_PAGE_SIZE)
-      .then(res => {
+    loadProfilePostsFirstPage(targetUserId)
+      .then(result => {
         if (cancelled) return;
-        console.log('[ProfileScreen] Loaded posts count:', res?.length);
-        const filteredPosts = (res ?? []).filter(
-          (p): p is ProfileFeedPost =>
-            p.kind === 'text' || p.kind === 'video' || p.kind === 'poll',
-        );
-        setPosts(filteredPosts);
-        setPostsCursor(getOldestProfilePostId(filteredPosts));
-        setHasMorePosts(filteredPosts.length >= PROFILE_POST_PAGE_SIZE);
+        console.log('[ProfileScreen] Loaded posts count:', result.posts.length);
+        setPosts(result.posts);
+        setPostsCursor(result.cursor);
+        setHasMorePosts(result.hasMore);
       })
       .catch(err => {
         if (cancelled) return;
@@ -2403,7 +2578,7 @@ function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [feedRepo, routeProfileKey, targetUserId]);
+  }, [loadProfilePostsFirstPage, routeProfileKey, targetUserId]);
 
   useEffect(() => {
     if (filteredProfilePosts.length === 0) return;
@@ -2702,6 +2877,7 @@ function ProfileScreen() {
         const timeText = formatPostTime(post.postedAt, postCardCopy);
         const targetText =
           language === 'vi' ? `trên ${postKind}` : `on this ${postKind}`;
+        const engagementPost = isProfileEngagementPost(post) ? post : null;
 
         items.push({
           id: `posted-${post.id}`,
@@ -2715,17 +2891,17 @@ function ProfileScreen() {
           backgroundColor: APP_COLORS.brand.soft,
         });
 
-        if (isOwnProfile && post.myReaction) {
+        if (isOwnProfile && engagementPost?.myReaction) {
           items.push({
             id: `reacted-${post.id}`,
             Icon: Heart,
             title:
               language === 'vi'
                 ? `${actorLabel} đã thả ${postCardCopy.reactionLabel[
-                    post.myReaction
+                    engagementPost.myReaction
                   ].toLowerCase()} ${targetText}`
                 : `${actorLabel} reacted ${
-                    postCardCopy.reactionLabel[post.myReaction]
+                    postCardCopy.reactionLabel[engagementPost.myReaction]
                   } ${targetText}`,
             subtitle: `${preview} · ${timeText}`,
             color: '#E11D48',
@@ -2733,15 +2909,17 @@ function ProfileScreen() {
           });
         }
 
-        if (post.likeCount > 0) {
+        if (engagementPost && engagementPost.likeCount > 0) {
           items.push({
             id: `reactions-${post.id}`,
             Icon: Heart,
             title:
               language === 'vi'
-                ? `${postKind} nhận ${formatCount(post.likeCount)} cảm xúc`
+                ? `${postKind} nhận ${formatCount(
+                    engagementPost.likeCount,
+                  )} cảm xúc`
                 : `${postKind} received ${formatCount(
-                    post.likeCount,
+                    engagementPost.likeCount,
                   )} reactions`,
             subtitle: `${preview} · ${timeText}`,
             color: '#E11D48',
@@ -2749,14 +2927,18 @@ function ProfileScreen() {
           });
         }
 
-        if (post.commentCount > 0) {
+        if (engagementPost && engagementPost.commentCount > 0) {
           items.push({
             id: `comments-${post.id}`,
             Icon: MessageCircle,
             title:
               language === 'vi'
-                ? `${postKind} có ${formatCount(post.commentCount)} bình luận`
-                : `${postKind} has ${formatCount(post.commentCount)} comments`,
+                ? `${postKind} có ${formatCount(
+                    engagementPost.commentCount,
+                  )} bình luận`
+                : `${postKind} has ${formatCount(
+                    engagementPost.commentCount,
+                  )} comments`,
             subtitle: `${preview} · ${timeText}`,
             color: '#7C3AED',
             backgroundColor: '#F3E8FF',
@@ -2806,13 +2988,16 @@ function ProfileScreen() {
 
   const handleSetPostReaction = useCallback(
     async (postId: string, nextReaction: ReactionType) => {
-      let snapshot: ProfileFeedPost | undefined;
+      let snapshot: ProfileEngagementPost | undefined;
       let targetReaction: ReactionType | null = nextReaction;
+      let finalLikeCount = 0;
+      let finalTopReactions: ReactionType[] = [];
       setPickerAnchor(null);
 
       setPosts(prev =>
         prev.map(post => {
           if (post.id !== postId) return post;
+          if (!isProfileEngagementPost(post)) return post;
 
           snapshot = post;
           targetReaction =
@@ -2821,21 +3006,31 @@ function ProfileScreen() {
           const willBeReacted = targetReaction !== null;
           const countDelta = Number(willBeReacted) - Number(wasReacted);
           const nextLikeCount = Math.max(0, post.likeCount + countDelta);
+          const nextTopReactions = updateProfileTopReactions(
+            post.topReactions,
+            post.myReaction,
+            targetReaction,
+            nextLikeCount,
+          );
+          finalLikeCount = nextLikeCount;
+          finalTopReactions = nextTopReactions;
 
           return {
             ...post,
             isLiked: willBeReacted,
             likeCount: nextLikeCount,
             myReaction: targetReaction,
-            topReactions: updateProfileTopReactions(
-              post.topReactions,
-              post.myReaction,
-              targetReaction,
-              nextLikeCount,
-            ),
+            topReactions: nextTopReactions,
           };
         }),
       );
+
+      DeviceEventEmitter.emit('postReactionChanged', {
+        postId,
+        myReaction: targetReaction,
+        likeCount: finalLikeCount,
+        topReactions: finalTopReactions,
+      });
 
       try {
         await feedRepo.setReaction(postId, targetReaction);
@@ -2845,6 +3040,12 @@ function ProfileScreen() {
           setPosts(prev =>
             prev.map(post => (post.id === postId ? original : post)),
           );
+          DeviceEventEmitter.emit('postReactionChanged', {
+            postId,
+            myReaction: original.myReaction,
+            likeCount: original.likeCount,
+            topReactions: original.topReactions,
+          });
         }
         Alert.alert(copy.errorTitle, copy.reactionError);
       }
@@ -2949,7 +3150,6 @@ function ProfileScreen() {
 
   const handleCloseShareModal = useCallback(() => {
     setShareModalVisible(false);
-    setSharingPost(undefined);
   }, []);
 
   const handleInternalSharePost = useCallback(
@@ -2960,6 +3160,26 @@ function ProfileScreen() {
   const handleNavigateToProfile = useCallback(
     (userId: string) => {
       navigateToUserProfile(navigation, userId);
+    },
+    [navigation],
+  );
+
+  const handleProductPress = useCallback(
+    (product: ProductItem) => {
+      navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+        productId: product.id,
+        product,
+      });
+    },
+    [navigation],
+  );
+
+  const handleJobPress = useCallback(
+    (job: JobsItem) => {
+      navigation.navigate(ROUTES.JOB_DETAIL, {
+        jobId: String(job.id),
+        job,
+      });
     },
     [navigation],
   );
@@ -3241,10 +3461,7 @@ function ProfileScreen() {
         PROFILE_POST_PAGE_SIZE,
         postsCursor,
       );
-      const nextPosts = response.filter(
-        (post): post is ProfileFeedPost =>
-          post.kind === 'text' || post.kind === 'video' || post.kind === 'poll',
-      );
+      const nextPosts = response.filter(isProfileFeedPost);
       const nextCursor = getOldestProfilePostId(nextPosts);
 
       setPosts(previous => {
@@ -4074,6 +4291,27 @@ function ProfileScreen() {
 
   const renderProfilePostContent = useCallback(
     (post: ProfileFeedPost) => {
+      if (post.kind === 'product') {
+        return (
+          <FeedProductPostCard
+            post={post}
+            onPress={handleProductPress}
+            onProfilePress={handleNavigateToProfile}
+            onSharePost={handleOpenSharePost}
+          />
+        );
+      }
+
+      if (post.kind === 'job') {
+        return (
+          <FeedJobPostCard
+            post={post}
+            copy={postCardCopy}
+            onPress={handleJobPress}
+          />
+        );
+      }
+
       if (post.kind === 'video') {
         return (
           <View>
@@ -4156,6 +4394,8 @@ function ProfileScreen() {
       handleOpenPicker,
       handleOpenPostMenu,
       handleOpenSharePost,
+      handleProductPress,
+      handleJobPress,
       handlePhotoPress,
       handleSetPostReaction,
       handleVotePoll,
@@ -4871,12 +5111,27 @@ function ProfileScreen() {
         >
           <ComposerCard
             onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
+            onPressAction={(action: ComposerActionId) => {
+              if (action === 'product') {
+                navigation.navigate(ROUTES.CREATE_PRODUCT);
+                return;
+              }
+              if (action === 'job') {
+                navigation.navigate(ROUTES.CREATE_JOB);
+                return;
+              }
+              navigation.navigate(ROUTES.CREATE_POST, {
+                initialAction: action,
+              });
+            }}
             avatarUrl={avatarUrl}
             copy={{
               composerPlaceholder: copy.composerPlaceholder,
               library: language === 'vi' ? 'Ảnh/video' : 'Photo/video',
               tag: language === 'vi' ? 'Gắn thẻ' : 'Tag',
               feeling: language === 'vi' ? 'Cảm xúc' : 'Feeling',
+              product: language === 'vi' ? 'Sản phẩm' : 'Product',
+              job: language === 'vi' ? 'Việc làm' : 'Job',
             }}
           />
         </View>
@@ -5483,6 +5738,7 @@ function ProfileScreen() {
             onReact={handleSetPostReaction}
             onCommentTap={handlePhotoViewerCommentTap}
             onProfilePress={handleNavigateToProfile}
+            onOpenShare={handleOpenSharePost}
             onInternalShare={handleInternalSharePost}
             onFollowChange={handlePhotoViewerFollowChange}
             posts={posts}
@@ -5491,7 +5747,10 @@ function ProfileScreen() {
             visible={commentVm.isCommentsOpen}
             comments={commentVm.comments}
             commentCount={
-              selectedCommentPost?.commentCount ?? commentVm.comments.length
+              selectedCommentPost &&
+              isProfileEngagementPost(selectedCommentPost)
+                ? selectedCommentPost.commentCount
+                : commentVm.comments.length
             }
             isLoading={commentVm.isCommentsLoading}
             isLoadingMore={commentVm.isCommentsLoadingMore}
@@ -5516,10 +5775,11 @@ function ProfileScreen() {
             onRetryFailedComment={commentVm.retryFailedComment}
             onDeleteFailedComment={commentVm.deleteFailedComment}
           />
-          <ShareActionSheet
+          <FeedShareBottomSheet
             visible={shareModalVisible}
             onClose={handleCloseShareModal}
             post={sharingPost}
+            onInternalShare={handleInternalSharePost}
           />
           <Modal
             visible={isActivitiesSheetVisible}
@@ -5589,7 +5849,11 @@ function ProfileScreen() {
                     <Text style={profileMainStyles.activitiesSummaryValue}>
                       {formatCount(
                         posts.reduce(
-                          (total, post) => total + post.likeCount,
+                          (total, post) =>
+                            total +
+                            (isProfileEngagementPost(post)
+                              ? post.likeCount
+                              : 0),
                           0,
                         ),
                       )}
@@ -5602,7 +5866,11 @@ function ProfileScreen() {
                     <Text style={profileMainStyles.activitiesSummaryValue}>
                       {formatCount(
                         posts.reduce(
-                          (total, post) => total + post.commentCount,
+                          (total, post) =>
+                            total +
+                            (isProfileEngagementPost(post)
+                              ? post.commentCount
+                              : 0),
                           0,
                         ),
                       )}

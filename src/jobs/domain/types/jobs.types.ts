@@ -119,6 +119,8 @@ export interface CreateJobPayload {
 export interface CreateJobResponse {
   api_status: number | string;
   data?: JobsItem;
+  job_id?: string | number;
+  post_id?: string | number;
   message?: string;
   errors?: Array<{ error_text?: string }>;
 }

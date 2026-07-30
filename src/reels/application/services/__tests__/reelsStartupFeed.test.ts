@@ -43,6 +43,7 @@ import type { ReelsItem } from '../../../domain/types/reels.types';
 import {
   fetchReelsStartupPage,
   getReelsStartupSnapshot,
+  mergeFeedVideoPostSnapshotIntoReel,
   mergeReelsStartupItems,
   resetReelsStartupMemoryCacheForTests,
 } from '../reelsStartupFeed';
@@ -117,6 +118,56 @@ describe('reels startup feed', () => {
 
     expect(merged.map(item => item.id)).toEqual(['current', 'second', 'new']);
     expect(merged[0].likeCount).toBe(9);
+  });
+
+  it('applies authoritative realtime engagement without dropping reel-only media state', () => {
+    const current = {
+      ...createReel('10', 1),
+      videoUrl: 'https://cdn.example.com/reels-10.mp4',
+      thumbnailUrl: 'https://cdn.example.com/reels-10.jpg',
+      viewCount: 25,
+      isSaved: true,
+      publisher: {
+        ...createReel('10').publisher,
+        isVerified: true,
+        isAdmin: true,
+      },
+    };
+    const snapshot: FeedVideoPost = {
+      ...createFeedVideo('10'),
+      videoUrl: '',
+      thumbnailUrl: undefined,
+      likeCount: 9,
+      commentCount: 4,
+      isLiked: true,
+      myReaction: 'love',
+      viewCount: undefined,
+      isSaved: undefined,
+      publisher: {
+        ...createFeedVideo('10').publisher,
+        name: 'Updated publisher',
+      },
+    };
+
+    const merged = mergeFeedVideoPostSnapshotIntoReel(current, snapshot);
+
+    expect(merged).toMatchObject({
+      id: '10',
+      videoUrl: current.videoUrl,
+      thumbnailUrl: current.thumbnailUrl,
+      likeCount: 9,
+      commentCount: 4,
+      viewCount: 25,
+      isSaved: true,
+      isLiked: true,
+      myReaction: 'love',
+      publisher: {
+        name: 'Updated publisher',
+        isVerified: true,
+        isAdmin: true,
+      },
+    });
+    expect(merged.raw).toBe(snapshot);
   });
 
   it('deduplicates concurrent first-page requests and reuses the warm result', async () => {

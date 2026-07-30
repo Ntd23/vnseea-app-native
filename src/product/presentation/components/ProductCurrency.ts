@@ -67,3 +67,15 @@ export function formatProductPrice(product: ProductItem) {
 
   return formattedPrice;
 }
+
+export function formatProductPoints(product: ProductItem) {
+  const rawPoints = String(product.points ?? '').trim();
+  if (!rawPoints) return null;
+
+  const numericPoints = Number(rawPoints.replace(/[^0-9.-]/g, ''));
+  if (!Number.isFinite(numericPoints) || numericPoints <= 0) return null;
+
+  return `${numericPoints.toLocaleString('vi-VN', {
+    maximumFractionDigits: 2,
+  })} VNSEEA`;
+}

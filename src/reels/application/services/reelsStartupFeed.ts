@@ -67,6 +67,38 @@ export function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
   };
 }
 
+/**
+ * Reconcile the canonical Feed post snapshot into an already-rendered reel.
+ *
+ * The post-detail endpoint and the dedicated Reels endpoint do not always
+ * return exactly the same media/publisher fields, so keep the existing reel
+ * as the base while replacing authoritative engagement data from realtime.
+ */
+export function mergeFeedVideoPostSnapshotIntoReel(
+  current: ReelsItem,
+  post: FeedVideoPost,
+): ReelsItem {
+  if (String(current.id) !== String(post.id)) return current;
+
+  const snapshot = mapFeedVideoPostToReel(post);
+  return {
+    ...current,
+    ...snapshot,
+    videoUrl: snapshot.videoUrl || current.videoUrl,
+    thumbnailUrl: snapshot.thumbnailUrl ?? current.thumbnailUrl,
+    viewCount: post.viewCount ?? current.viewCount,
+    isSaved: post.isSaved ?? current.isSaved,
+    publisher: {
+      ...current.publisher,
+      ...snapshot.publisher,
+      // FeedPublisher does not carry the Reels-only verification/admin flags.
+      isVerified: current.publisher.isVerified,
+      isAdmin: current.publisher.isAdmin,
+    },
+    raw: post,
+  };
+}
+
 export function mergeReelsStartupItems(
   currentItems: ReelsItem[],
   freshItems: ReelsItem[],
@@ -168,4 +200,3 @@ export function resetReelsStartupMemoryCacheForTests() {
   remoteSnapshot = null;
   firstPageRequest = null;
 }
-

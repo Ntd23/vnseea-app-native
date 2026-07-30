@@ -25,9 +25,6 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ImageProps,
-  type ImageStyle,
-  type StyleProp,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
@@ -40,12 +37,10 @@ import Animated, {
 import {
   ArrowUp,
   Bell,
-  Briefcase,
   Building2,
   Globe,
   Heart,
   Lock,
-  MapPin,
   Megaphone,
   Plus,
   Radio,
@@ -119,7 +114,6 @@ import { useFeedCommentsViewModel } from '../../application/view-models/useFeedC
 import { prefetchFeedComments } from '../../application/feedCommentsCache';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import {
@@ -131,6 +125,10 @@ import {
   FeedTouchableCardSurface,
 } from '../components/FeedCardChrome';
 import { PollPostCard } from '../components/PollPostCard';
+import {
+  FeedJobPostCard,
+  FeedProductPostCard,
+} from '../components/FeedCommercePostCards';
 import { FeedHeader } from '../components/FeedHeader';
 import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
 import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
@@ -151,17 +149,17 @@ import {
   HomeVideoPostCard,
   publishFeedActiveVideo,
   publishFeedScrollBusy,
+  publishFeedVisibleMediaPostIds,
   publishFeedWarmVideoIds,
   ReactionPickerOverlay,
   TextPostCard,
-  useFeedScrollBusy,
+  useFeedPostMediaVisible,
 } from '../components/PostCards';
+import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
+import { FeedMediaImage } from '../components/FeedMediaImage';
 import { useEventsOnFeedViewModel, EventPostCard } from '../../../events';
 import {
-  JOB_TYPE_VIETNAMESE,
-  SALARY_DATE_OPTIONS,
   type JobsItem,
-  type JobType,
 } from '../../../jobs/domain/types/jobs.types';
 import { useJobsOnFeedViewModel } from '../../../jobs/application/view-models/useJobsOnFeedViewModel';
 import type { GroupItem } from '../../../community/domain/types/community.types';
@@ -201,21 +199,23 @@ const FEED_NEW_POST_PROBE_INTERVAL_MS = 30000;
 const FEED_NEW_POST_PROBE_LIMIT = 8;
 const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = FEED_IS_ANDROID ? 5.2 : 4.2;
 const FEED_EARLY_LOAD_MIN_DISTANCE = FEED_IS_ANDROID ? 4200 : 3600;
-const INITIAL_IMAGE_PREFETCH_ITEMS = FEED_IS_ANDROID ? 6 : 8;
 const FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS = 4;
-const IMAGE_PREFETCH_LOOKAHEAD = FEED_IS_ANDROID ? 9 : 14;
-const IMAGE_PREFETCH_BEHIND = 2;
-const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 12 : 20;
-const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 3 : 4;
-const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 120 : 90;
+const FEED_IMAGE_PREFETCH_BEHIND_ITEMS = 1;
+const FEED_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 5 : 8;
+const FEED_SCROLLING_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 3 : 5;
+const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 8 : 12;
+const MAX_PENDING_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 24 : 36;
+const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 2 : 3;
+const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 2 : 3;
+const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 80 : 60;
 const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 18 : 14;
-const FEED_VIDEO_WARM_BEHIND_ITEMS = FEED_IS_ANDROID ? 2 : 6;
-const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 4 : 12;
-const FEED_VIDEO_WARM_MAX_COUNT = FEED_IS_ANDROID ? 1 : 3;
-const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT = FEED_IS_ANDROID ? 0 : 1;
-const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = FEED_IS_ANDROID ? 1 : 3;
-const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 5 : 10;
-const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 2 : 4;
+const FEED_VIDEO_WARM_BEHIND_ITEMS = 0;
+const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 0 : 1;
+const FEED_VIDEO_WARM_MAX_COUNT = 1;
+const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT = 0;
+const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = 1;
+const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 4;
+const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 1 : 2;
 const FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 220 : 160;
 const FEED_VIDEO_VISIBLE_PERCENT = 1;
 const FEED_VIDEO_VIEWABLE_PERCENT = 55;
@@ -224,9 +224,9 @@ const FEED_INLINE_LIVE_ACTIVE_DWELL_MS = 140;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
-  ? Math.max(1400, Math.round(FEED_SCREEN_HEIGHT * 1.8))
+  ? Math.max(1800, Math.round(FEED_SCREEN_HEIGHT * 2.2))
   : Math.max(2200, Math.round(FEED_SCREEN_HEIGHT * 2.6));
-const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 10 : 18;
+const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 16 : 18;
 const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = { disabled: true };
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
@@ -373,99 +373,6 @@ function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
   );
 }
 
-type FeedMediaImageProps = {
-  uri: string;
-  className?: string;
-  style?: StyleProp<ImageStyle>;
-  resizeMode?: ImageProps['resizeMode'];
-  deferWhileScrolling?: boolean;
-};
-
-const FEED_MEDIA_PLACEHOLDER_STYLE = { backgroundColor: '#E5E7EB' };
-
-const FeedMediaImageBase = React.memo(function FeedMediaImageBase({
-  uri,
-  className,
-  style,
-  resizeMode = 'cover',
-}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
-  return (
-    <Image
-      source={{ uri }}
-      className={className}
-      style={style}
-      resizeMode={resizeMode}
-      fadeDuration={0}
-      resizeMethod="resize"
-      progressiveRenderingEnabled
-    />
-  );
-});
-
-const DeferredFeedMediaImage = React.memo(function DeferredFeedMediaImage({
-  uri,
-  className,
-  style,
-  resizeMode = 'cover',
-}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
-  const isScrollBusy = useFeedScrollBusy();
-  const [hasLoaded, setHasLoaded] = useState(false);
-
-  useEffect(() => {
-    setHasLoaded(false);
-  }, [uri]);
-
-  if (isScrollBusy && !hasLoaded) {
-    return (
-      <View
-        className={className}
-        style={[style, FEED_MEDIA_PLACEHOLDER_STYLE]}
-      />
-    );
-  }
-
-  return (
-    <Image
-      source={{ uri }}
-      className={className}
-      style={style}
-      resizeMode={resizeMode}
-      fadeDuration={0}
-      resizeMethod="resize"
-      progressiveRenderingEnabled
-      onLoad={() => setHasLoaded(true)}
-    />
-  );
-});
-
-const FeedMediaImage = React.memo(function FeedMediaImage({
-  uri,
-  className,
-  style,
-  resizeMode = 'cover',
-  deferWhileScrolling = false,
-}: FeedMediaImageProps) {
-  if (deferWhileScrolling) {
-    return (
-      <DeferredFeedMediaImage
-        uri={uri}
-        className={className}
-        style={style}
-        resizeMode={resizeMode}
-      />
-    );
-  }
-
-  return (
-    <FeedMediaImageBase
-      uri={uri}
-      className={className}
-      style={style}
-      resizeMode={resizeMode}
-    />
-  );
-});
-
 // â”€â”€ Facebook-style summary row above the action buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Shows stacked reaction badges followed by either the viewer's
 // own reaction label ("Bạn và 14 người khác") OR a generic count when the
@@ -478,6 +385,7 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
   post: FeedAdPost;
   copy: FeedCopy;
 }) {
+  const mediaVisible = useFeedPostMediaVisible(post.id);
   const handlePress = useCallback(() => {
     if (!post.targetUrl) return;
     Linking.openURL(post.targetUrl).catch(() => {
@@ -544,6 +452,7 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
                 uri={post.mediaUrl}
                 className="h-full w-full"
                 resizeMode="cover"
+                enabled={mediaVisible}
               />
             )}
           </TouchableOpacity>
@@ -680,31 +589,6 @@ const FeedLivePostCard = React.memo(
     prev.copy === next.copy,
 );
 
-const FeedProductPostCard = React.memo(function FeedProductPostCard({
-  post,
-  onPress,
-  onProfilePress,
-  onSharePost,
-}: {
-  post: FeedProductPost;
-  onPress: (product: FeedProductPost['product']) => void;
-  onProfilePress: (userId: string) => void;
-  onSharePost: (post: FeedPost) => void;
-}) {
-  const handleShare = useCallback(() => {
-    onSharePost(post);
-  }, [onSharePost, post]);
-
-  return (
-    <ProductPostCard
-      product={post.product}
-      onPress={onPress}
-      onProfilePress={onProfilePress}
-      onShare={handleShare}
-    />
-  );
-});
-
 const FeedEventPostCard = React.memo(
   function FeedEventPostCard({
     post,
@@ -724,6 +608,7 @@ const FeedEventPostCard = React.memo(
     onToggleGoing: (eventId: string | number) => void;
     onEditPress?: (event: FeedEventPost['event']) => void;
   }) {
+    const mediaVisible = useFeedPostMediaVisible(post.id);
     const handleShare = useCallback(() => {
       onSharePost(post);
     }, [onSharePost, post]);
@@ -757,6 +642,7 @@ const FeedEventPostCard = React.memo(
         onInterestedPress={handleInterested}
         onGoingPress={handleGoing}
         onEditPress={handleEdit}
+        loadMedia={mediaVisible}
       />
     );
   },
@@ -769,144 +655,6 @@ const FeedEventPostCard = React.memo(
     prev.onToggleGoing === next.onToggleGoing &&
     prev.copy === next.copy,
 );
-
-function formatSalary(job: JobsItem, copy: FeedCopy) {
-  const minimum = Number(job.minimum) || 0;
-  const maximum = Number(job.maximum) || 0;
-  const currency = job.currency || '';
-  const salaryDate = job.salary_date
-    ? SALARY_DATE_OPTIONS[job.salary_date] || job.salary_date
-    : '';
-
-  if (!minimum && !maximum) return copy.negotiable;
-
-  const formatNumber = (value: number) => value.toLocaleString('vi-VN');
-  const range =
-    minimum && maximum
-      ? `${formatNumber(minimum)} - ${formatNumber(maximum)}`
-      : formatNumber(minimum || maximum);
-
-  return `${range}${currency ? ` ${currency}` : ''}${
-    salaryDate ? ` / ${salaryDate}` : ''
-  }`;
-}
-
-function getJobTypeLabel(jobType: string, copy: FeedCopy) {
-  return (
-    JOB_TYPE_VIETNAMESE[jobType as JobType] || jobType || copy.jobTypeFallback
-  );
-}
-
-const FeedJobPostCard = React.memo(function FeedJobPostCard({
-  post,
-  copy,
-  onPress,
-}: {
-  post: FeedJobPost;
-  copy: FeedCopy;
-  onPress: (job: JobsItem) => void;
-}) {
-  const job = post.job;
-  const avatar = job.page?.avatar || post.publisher.avatarUrl || images.me;
-  const cover = job.image || job.page?.cover;
-  const pageName =
-    job.page?.page_title || post.publisher.name || copy.employerFallback;
-
-  const handlePress = useCallback(() => {
-    onPress(job);
-  }, [job, onPress]);
-
-  return (
-    <FeedTouchableCardSurface activeOpacity={0.9} onPress={handlePress}>
-      <FeedCardContent>
-        <View className="flex-row items-center">
-          <Avatar uri={avatar} size={42} />
-          <View className="ml-3 flex-1">
-            <Text
-              className="text-title-primary text-[#111827]"
-              numberOfLines={1}
-            >
-              {pageName}
-            </Text>
-            <View className="mt-0.5 flex-row items-center">
-              <Text className="text-xs font-semibold text-[#64748b]">
-                {formatPostTime(post.postedAt, copy)}
-              </Text>
-              <Text className="mx-1 text-xs text-[#94a3b8]">{'\u2022'}</Text>
-              <Globe size={12} color="#94a3b8" />
-            </View>
-          </View>
-          <View className="h-9 w-9 items-center justify-center rounded-full bg-brand-soft">
-            <Briefcase size={18} color={APP_BRAND_COLOR} />
-          </View>
-        </View>
-
-        <Text
-          className="mt-4 text-[17px] font-extrabold text-[#111827]"
-          numberOfLines={2}
-        >
-          {job.title || copy.jobFallback}
-        </Text>
-        {!!job.description && (
-          <Text
-            className="mt-2 text-sm leading-5 text-[#475569]"
-            numberOfLines={3}
-          >
-            {job.description}
-          </Text>
-        )}
-
-        <View className="mt-4 flex-row flex-wrap gap-2">
-          {!!job.location && (
-            <View className="flex-row items-center rounded-full bg-[#f1f5f9] px-3 py-2">
-              <MapPin size={14} color="#64748b" />
-              <Text
-                className="ml-1 max-w-[210px] text-xs font-bold text-[#475569]"
-                numberOfLines={1}
-              >
-                {job.location}
-              </Text>
-            </View>
-          )}
-          <View className="flex-row items-center rounded-full bg-brand-soft px-3 py-2">
-            <Briefcase size={14} color={APP_BRAND_COLOR} />
-            <Text className="ml-1 text-xs font-bold text-brand">
-              {getJobTypeLabel(job.job_type, copy)}
-            </Text>
-          </View>
-        </View>
-      </FeedCardContent>
-
-      {!!cover && (
-        <FeedMediaFrame className="h-44 bg-slate-100">
-          <FeedMediaImage
-            uri={cover}
-            className="h-full w-full"
-            resizeMode="cover"
-          />
-        </FeedMediaFrame>
-      )}
-
-      <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
-        <View className="mr-4 flex-1">
-          <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
-            {copy.salary}
-          </Text>
-          <Text
-            className="mt-0.5 text-sm font-bold text-[#111827]"
-            numberOfLines={1}
-          >
-            {formatSalary(job, copy)}
-          </Text>
-        </View>
-
-        <View className="rounded-lg bg-[#e7f0ff] px-4 py-2">
-          <Text className="text-sm font-bold text-brand">{copy.viewJob}</Text>
-        </View>
-      </FeedGlassActionBar>
-    </FeedTouchableCardSurface>
-  );
-});
 
 const GROUP_SKELETONS = [
   'group-skeleton-1',
@@ -1764,6 +1512,7 @@ function FeedScreen() {
   const prefetchedImageUrlsRef = useRef<Set<string>>(new Set());
   const queuedImagePrefetchUrlsRef = useRef<Set<string>>(new Set());
   const pendingImagePrefetchUrlsRef = useRef<string[]>([]);
+  const imagePrefetchInFlightCountRef = useRef(0);
   const imagePrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -2019,6 +1768,9 @@ function FeedScreen() {
     isScrollingRef.current = true;
     setFeedScrollBusy(true);
     publishFeedScrollBusy(true);
+    // Keep the bounded media queue alive during a fling. Visible cards and
+    // the nearest lookahead items stay prioritized, while generated video
+    // posters still wait behind InteractionManager before doing CPU work.
     clearInlineLiveDwellTimer();
     // Store the current video so onViewableItemsChanged can update
     // pendingActiveVideoIdRef while we scroll.
@@ -2209,6 +1961,7 @@ function FeedScreen() {
       publishFeedActiveVideo(null);
       publishFeedWarmVideoIds([]);
       publishFeedScrollBusy(false);
+      publishFeedVisibleMediaPostIds([]);
       publishNativeTabScrollBehavior('onScrollDown');
     };
   }, [clearActiveVideoDwellTimer, clearInlineLiveDwellTimer]);
@@ -2237,6 +1990,7 @@ function FeedScreen() {
       scheduleActiveFeedInlineLivePostId(null, true);
       setActiveFeedVideo(null);
       publishFeedWarmVideoIds([]);
+      publishFeedVisibleMediaPostIds([]);
     } else {
       measureActiveFeedVideoOnScreen(true);
     }
@@ -2271,15 +2025,20 @@ function FeedScreen() {
 
   const goToCreatePost = useCallback(
     (action?: unknown) => {
-      const initialAction = typeof action === 'string' &&
-        (
-          action === 'photo' ||
-          action === 'video' ||
-          action === 'product' ||
-          action === 'poll'
-        )
-        ? action
-        : undefined;
+      if (action === 'product') {
+        (navigation as any).navigate(ROUTES.CREATE_PRODUCT);
+        return;
+      }
+      if (action === 'job') {
+        (navigation as any).navigate(ROUTES.CREATE_JOB);
+        return;
+      }
+
+      const initialAction =
+        typeof action === 'string' &&
+        (action === 'photo' || action === 'video' || action === 'poll')
+          ? action
+          : undefined;
       (navigation as any).navigate(
         ROUTES.CREATE_POST,
         initialAction ? { initialAction } : undefined,
@@ -2695,11 +2454,18 @@ function FeedScreen() {
               videoUrl,
             );
             queuedVideoPosterKeysRef.current.delete(cacheKey);
-            if (getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri) return;
-
-            createCachedVideoPosterThumbnail(videoUrl, cacheKey).catch(
-              () => undefined,
+            const cachedPoster = getCachedVideoPosterThumbnail(
+              videoUrl,
+              cacheKey,
             );
+            if (cachedPoster?.uri) {
+              markFeedMediaLoaded(cachedPoster.uri);
+              return;
+            }
+
+            createCachedVideoPosterThumbnail(videoUrl, cacheKey)
+              .then(thumbnail => markFeedMediaLoaded(thumbnail?.uri))
+              .catch(() => undefined);
           });
 
           if (pendingVideoPosterPostsRef.current.length > 0) {
@@ -2722,7 +2488,9 @@ function FeedScreen() {
         if (prefetchedVideoPosterKeysRef.current.has(cacheKey)) continue;
         if (queuedVideoPosterKeysRef.current.has(cacheKey)) continue;
 
-        if (getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri) {
+        const cachedPoster = getCachedVideoPosterThumbnail(videoUrl, cacheKey);
+        if (cachedPoster?.uri) {
+          markFeedMediaLoaded(cachedPoster.uri);
           prefetchedVideoPosterKeysRef.current.add(cacheKey);
           continue;
         }
@@ -2764,23 +2532,55 @@ function FeedScreen() {
   );
 
   const scheduleImagePrefetchFlush = useCallback(() => {
-    if (imagePrefetchTimerRef.current) return;
+    if (
+      imagePrefetchTimerRef.current ||
+      pendingImagePrefetchUrlsRef.current.length === 0 ||
+      imagePrefetchInFlightCountRef.current >=
+        IMAGE_PREFETCH_MAX_CONCURRENCY
+    ) {
+      return;
+    }
 
     imagePrefetchTimerRef.current = setTimeout(() => {
       imagePrefetchTimerRef.current = null;
+      const availableSlots = Math.max(
+        0,
+        IMAGE_PREFETCH_MAX_CONCURRENCY -
+          imagePrefetchInFlightCountRef.current,
+      );
       const nextUrls = pendingImagePrefetchUrlsRef.current.splice(
         0,
-        IMAGE_PREFETCH_BATCH_SIZE,
+        Math.min(IMAGE_PREFETCH_BATCH_SIZE, availableSlots),
       );
 
       nextUrls.forEach(url => {
         queuedImagePrefetchUrlsRef.current.delete(url);
-        Image.prefetch(url).catch(() => {
-          prefetchedImageUrlsRef.current.delete(url);
-        });
+        imagePrefetchInFlightCountRef.current += 1;
+        Image.prefetch(url)
+          .then(prefetched => {
+            if (prefetched) {
+              markFeedMediaLoaded(url);
+            } else {
+              prefetchedImageUrlsRef.current.delete(url);
+            }
+          })
+          .catch(() => {
+            prefetchedImageUrlsRef.current.delete(url);
+          })
+          .finally(() => {
+            imagePrefetchInFlightCountRef.current = Math.max(
+              0,
+              imagePrefetchInFlightCountRef.current - 1,
+            );
+            scheduleImagePrefetchFlush();
+          });
       });
 
-      if (pendingImagePrefetchUrlsRef.current.length > 0) {
+      if (
+        pendingImagePrefetchUrlsRef.current.length > 0 &&
+        imagePrefetchInFlightCountRef.current <
+          IMAGE_PREFETCH_MAX_CONCURRENCY
+      ) {
         scheduleImagePrefetchFlush();
       }
     }, IMAGE_PREFETCH_BATCH_DELAY_MS);
@@ -2815,7 +2615,24 @@ function FeedScreen() {
       }
 
       if (urlsToPrefetch.length > 0) {
-        pendingImagePrefetchUrlsRef.current.push(...urlsToPrefetch);
+        const prioritizedUrls = new Set(urlsToPrefetch);
+        const previousPending = pendingImagePrefetchUrlsRef.current.filter(
+          url => !prioritizedUrls.has(url),
+        );
+        const nextPending = [...urlsToPrefetch, ...previousPending];
+        const retainedPending = nextPending.slice(
+          0,
+          MAX_PENDING_IMAGE_PREFETCH_URLS,
+        );
+        const retainedUrls = new Set(retainedPending);
+
+        nextPending.forEach(url => {
+          if (retainedUrls.has(url)) return;
+          queuedImagePrefetchUrlsRef.current.delete(url);
+          prefetchedImageUrlsRef.current.delete(url);
+        });
+
+        pendingImagePrefetchUrlsRef.current = retainedPending;
         scheduleImagePrefetchFlush();
       }
     },
@@ -2847,15 +2664,18 @@ function FeedScreen() {
 
       if (furthestVisibleIndex < 0) return;
 
+      const aheadItems = isScrollingRef.current
+        ? FEED_SCROLLING_IMAGE_PREFETCH_AHEAD_ITEMS
+        : FEED_IMAGE_PREFETCH_AHEAD_ITEMS;
       const direction = feedScrollDirectionRef.current;
       const startIndex =
         direction === 'up'
-          ? firstVisibleIndex - IMAGE_PREFETCH_LOOKAHEAD
-          : furthestVisibleIndex - IMAGE_PREFETCH_BEHIND;
+          ? firstVisibleIndex - aheadItems
+          : firstVisibleIndex - FEED_IMAGE_PREFETCH_BEHIND_ITEMS;
       const endIndex =
         direction === 'up'
-          ? firstVisibleIndex + IMAGE_PREFETCH_BEHIND + 1
-          : furthestVisibleIndex + IMAGE_PREFETCH_LOOKAHEAD + 1;
+          ? furthestVisibleIndex + FEED_IMAGE_PREFETCH_BEHIND_ITEMS + 1
+          : furthestVisibleIndex + aheadItems + 1;
 
       prefetchFeedImagesInRange(startIndex, endIndex);
     },
@@ -2891,10 +2711,12 @@ function FeedScreen() {
       const startIndex =
         direction === 'up'
           ? firstVisibleIndex - FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS
-          : furthestVisibleIndex - FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS;
+          : firstVisibleIndex - FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS;
       const endIndex =
         direction === 'up'
-          ? firstVisibleIndex + FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS + 1
+          ? furthestVisibleIndex +
+            FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS +
+            1
           : furthestVisibleIndex + FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS + 1;
 
       prefetchFeedVideoPostersInRange(startIndex, endIndex);
@@ -3045,6 +2867,13 @@ function FeedScreen() {
   const onVisibleFeedItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
       latestVisibleFeedItemsRef.current = viewableItems;
+      publishFeedVisibleMediaPostIds(
+        viewableItems
+          .filter(
+            viewable => viewable?.isViewable && viewable?.item?.type === 'post',
+          )
+          .map(viewable => String(viewable.item.post.id)),
+      );
       const activeLivePostId = activeInlineLivePostIdRef.current;
       if (
         activeLivePostId !== null &&
@@ -3612,11 +3441,6 @@ function FeedScreen() {
     feedListItemIndexByIdRef.current = new Map(
       renderedItems.map((item, index) => [item.id, index]),
     );
-    prefetchFeedImagesInRange(0, INITIAL_IMAGE_PREFETCH_ITEMS);
-    prefetchFeedVideoPostersInRange(
-      0,
-      FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS + 1,
-    );
     prefetchFeedImagesAroundVisibleItems(latestViewableFeedItemsRef.current);
     prefetchFeedVideoPostersAroundVisibleItems(
       latestViewableFeedItemsRef.current,
@@ -3626,28 +3450,12 @@ function FeedScreen() {
         latestViewableFeedItemsRef.current,
       );
     } else {
-      const initialWarmVideoIds: string[] = [];
-      const activeVideoId = activeVideoIdRef.current;
-      for (
-        let index = 0;
-        index < Math.min(renderedItems.length, FEED_VIDEO_WARM_AHEAD_ITEMS + 1);
-        index += 1
-      ) {
-        const item = renderedItems[index];
-        if (item?.type !== 'post' || item.post.kind !== 'video') continue;
-        if (item.post.id === activeVideoId) continue;
-
-        initialWarmVideoIds.push(item.post.id);
-        if (initialWarmVideoIds.length >= FEED_VIDEO_WARM_MAX_COUNT) break;
-      }
-      publishFeedWarmVideoIds(initialWarmVideoIds);
+      publishFeedWarmVideoIds([]);
     }
   }, [
     feedListItems,
     prefetchFeedImagesAroundVisibleItems,
-    prefetchFeedImagesInRange,
     prefetchFeedVideoPostersAroundVisibleItems,
-    prefetchFeedVideoPostersInRange,
     publishWarmFeedVideosAroundVisibleItems,
   ]);
 
@@ -3706,6 +3514,7 @@ function FeedScreen() {
           onOpenPostMenu={handleOpenPostMenu}
           isScreenFocused={isFeedTabFocused}
           keepPreparedVideoMounted={!FEED_IS_ANDROID}
+          deferMediaUntilVisible
         />
       </View>
     ),
@@ -3737,6 +3546,7 @@ function FeedScreen() {
         navigateToProfile={navigateToProfile}
         onOpenPostMenu={handleOpenPostMenu}
         onPostPress={handlePostPress}
+        deferMediaUntilVisible
       />
     ),
     [
@@ -4082,7 +3892,7 @@ function FeedScreen() {
       maintainVisibleContentPosition={
         FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION
       }
-      removeClippedSubviews={FEED_IS_ANDROID}
+      removeClippedSubviews={false}
       decelerationRate="normal"
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled
@@ -4198,6 +4008,7 @@ function FeedScreen() {
           onReact={handleToggleReactionStable}
           onCommentTap={handlePhotoViewerCommentTap}
           onProfilePress={navigateToProfile}
+          onOpenShare={handleOpenSharePost}
           onInternalShare={handleInternalSharePost}
           onShared={prependFeedPost}
           onFollowChange={updateFeedPublisherFollowState}

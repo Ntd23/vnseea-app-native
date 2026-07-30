@@ -33,6 +33,7 @@ import MapView, {
   Marker,
   Polyline,
   PROVIDER_GOOGLE,
+  type Details,
   type LatLng,
   type Region,
   type UserLocationChangeEvent,
@@ -2336,6 +2337,7 @@ export default function NearbyUsersScreen() {
   const lastMapMarkerPressAtRef = useRef(0);
   const itemOffsets = useRef<{ [key: string]: number }>({});
   const isNavigatingRef = useRef(false);
+  const isAutoCenteringRef = useRef(true);
   const lastRoutedOriginRef = useRef<LatLng | null>(null);
   const activeRoutePathRef = useRef<LatLng[]>([]);
   const lastRerouteAtRef = useRef(0);
@@ -2421,6 +2423,10 @@ export default function NearbyUsersScreen() {
     Boolean(persistedCoordinate),
   );
   const [searchMessage, setSearchMessage] = useState('');
+  const setNavigationAutoCentering = useCallback((enabled: boolean) => {
+    isAutoCenteringRef.current = enabled;
+    setIsAutoCentering(enabled);
+  }, []);
   const googleMapId = apiConfig.googleMapsMapId.trim();
   const hasGoogleMapId = googleMapId.length > 0;
 
@@ -3401,7 +3407,7 @@ export default function NearbyUsersScreen() {
     setRouteOptions([]);
     setSelectedRouteId('');
     setIsNavigating(false);
-    setIsAutoCentering(false);
+    setNavigationAutoCentering(false);
     setRouteHeading(null);
     setIsLoadingRoutes(false);
     setIsAutoRerouting(false);
@@ -3426,7 +3432,7 @@ export default function NearbyUsersScreen() {
       },
       { duration: 450 },
     );
-  }, []);
+  }, [setNavigationAutoCentering]);
 
   const clearSelectedPoint = useCallback(() => {
     setSelectedPoint(null);
@@ -3457,7 +3463,14 @@ export default function NearbyUsersScreen() {
   );
 
   useEffect(() => {
-    if (!isNavigating || !shouldShowRoute || !isAutoCentering) return;
+    if (
+      !isNavigating ||
+      !shouldShowRoute ||
+      !isAutoCentering ||
+      !isAutoCenteringRef.current
+    ) {
+      return;
+    }
 
     const location = currentLocationRef.current;
     if (!location) return;
@@ -3546,7 +3559,7 @@ export default function NearbyUsersScreen() {
     if (!location) return;
 
     if (isNavigating) {
-      setIsAutoCentering(true);
+      setNavigationAutoCentering(true);
       const cameraCenter =
         shouldShowRoute && activeRoute.length > 1
           ? navigationCameraCenter(location, activeRoute)
@@ -3596,16 +3609,39 @@ export default function NearbyUsersScreen() {
     deviceHeading,
     isNavigating,
     routeHeading,
+    setNavigationAutoCentering,
     shouldShowRoute,
     userSpeed,
   ]);
 
-  const handleRegionChangeComplete = useCallback((region: Region) => {
-    currentRegionRef.current = region;
-    setMapRegion(region);
-  }, []);
+  const disableNavigationAutoCentering = useCallback(() => {
+    if (isNavigatingRef.current && isAutoCenteringRef.current) {
+      setNavigationAutoCentering(false);
+    }
+  }, [setNavigationAutoCentering]);
+
+  const handleRegionChangeStart = useCallback(
+    (_region: Region, details: Details) => {
+      if (details?.isGesture) {
+        disableNavigationAutoCentering();
+      }
+    },
+    [disableNavigationAutoCentering],
+  );
+
+  const handleRegionChangeComplete = useCallback(
+    (region: Region, details: Details) => {
+      currentRegionRef.current = region;
+      setMapRegion(region);
+      if (details?.isGesture) {
+        disableNavigationAutoCentering();
+      }
+    },
+    [disableNavigationAutoCentering],
+  );
 
   const handleZoomIn = useCallback(() => {
+    disableNavigationAutoCentering();
     const current = currentRegionRef.current;
     mapRef.current?.animateToRegion(
       {
@@ -3615,9 +3651,10 @@ export default function NearbyUsersScreen() {
       },
       260,
     );
-  }, []);
+  }, [disableNavigationAutoCentering]);
 
   const handleZoomOut = useCallback(() => {
+    disableNavigationAutoCentering();
     const current = currentRegionRef.current;
     mapRef.current?.animateToRegion(
       {
@@ -3627,7 +3664,7 @@ export default function NearbyUsersScreen() {
       },
       260,
     );
-  }, []);
+  }, [disableNavigationAutoCentering]);
 
   const resetMapHeading = useCallback(() => {
     const location = currentLocationRef.current;
@@ -3766,6 +3803,7 @@ export default function NearbyUsersScreen() {
       navigating: boolean,
       destinationTitle?: string,
       cameraDurationMs = 650,
+      moveCamera = true,
     ) => {
       const origin = currentLocationRef.current;
       if (!origin) return;
@@ -3784,8 +3822,8 @@ export default function NearbyUsersScreen() {
       setActiveRouteDuration(route.durationSeconds);
       setSelectedRouteId(route.id);
       setIsNavigating(navigating);
-      if (navigating) {
-        setIsAutoCentering(true);
+      if (navigating && moveCamera) {
+        setNavigationAutoCentering(true);
       }
       lastRoutedOriginRef.current = origin;
 
@@ -3800,18 +3838,28 @@ export default function NearbyUsersScreen() {
         };
 
         setRouteHeading(heading);
-        lastNavigationCameraHeadingRef.current = {
-          heading,
-          center: origin,
-          updatedAt: Date.now(),
-        };
-        mapRef.current?.animateCamera(navigationCamera, {
-          duration: cameraDurationMs,
-        });
-        if (cameraDurationMs >= 500) {
-          setTimeout(() => {
-            mapRef.current?.animateCamera(navigationCamera, { duration: 220 });
-          }, 700);
+        if (moveCamera) {
+          lastNavigationCameraHeadingRef.current = {
+            heading,
+            center: origin,
+            updatedAt: Date.now(),
+          };
+          mapRef.current?.animateCamera(navigationCamera, {
+            duration: cameraDurationMs,
+          });
+          if (cameraDurationMs >= 500) {
+            setTimeout(() => {
+              if (
+                !isNavigatingRef.current ||
+                !isAutoCenteringRef.current ||
+                !activeDestinationRef.current ||
+                !isSameCoordinate(activeDestinationRef.current, destination)
+              ) {
+                return;
+              }
+              mapRef.current?.animateCamera(navigationCamera, { duration: 220 });
+            }, 700);
+          }
         }
         if (voiceGuidanceEnabled) {
           const firstInstruction = nextTurnInstruction(
@@ -3836,7 +3884,7 @@ export default function NearbyUsersScreen() {
       }
 
       setRouteHeading(null);
-      if (navigationPath.length > 1) {
+      if (navigationPath.length > 1 && moveCamera) {
         mapRef.current?.fitToCoordinates(navigationPath, {
           animated: true,
           edgePadding: {
@@ -3848,17 +3896,23 @@ export default function NearbyUsersScreen() {
         });
       }
     },
-    [voiceGuidanceEnabled],
+    [setNavigationAutoCentering, voiceGuidanceEnabled],
   );
 
   const selectRouteOption = useCallback(
     (route: RouteOption, navigating = isNavigating) => {
       if (!selectedPoint) return;
+      const moveCamera =
+        !navigating ||
+        !isNavigatingRef.current ||
+        isAutoCenteringRef.current;
       focusRoute(
         route,
         selectedPoint.coordinate,
         navigating,
         selectedPoint.title,
+        650,
+        moveCamera,
       );
     },
     [focusRoute, isNavigating, selectedPoint],
@@ -3979,12 +4033,17 @@ export default function NearbyUsersScreen() {
           }
         }
         setRouteOptions(navigating ? [nextOptions[0]] : nextOptions);
+        const moveCamera =
+          !navigating ||
+          !isNavigatingRef.current ||
+          isAutoCenteringRef.current;
         focusRoute(
           nextOptions[0],
           destination,
           navigating,
           destinationTitle,
           source === 'auto' ? 220 : 650,
+          moveCamera,
         );
         setIsSheetCollapsed(navigating);
       } catch {
@@ -4714,10 +4773,8 @@ export default function NearbyUsersScreen() {
 
   const handleMapPanDrag = useCallback(() => {
     dismissSearchInput();
-    if (isNavigatingRef.current) {
-      setIsAutoCentering(false);
-    }
-  }, [dismissSearchInput]);
+    disableNavigationAutoCentering();
+  }, [disableNavigationAutoCentering, dismissSearchInput]);
 
   const handleUserLocationChange = useCallback(
     (event: UserLocationChangeEvent) => {
@@ -4850,7 +4907,6 @@ export default function NearbyUsersScreen() {
       ) {
         lastRerouteAtRef.current = now;
         offRouteStartedAtRef.current = 0;
-        setIsAutoCentering(true);
         loadRouteOptions(
           latestActiveDestination,
           true,
@@ -5419,6 +5475,7 @@ export default function NearbyUsersScreen() {
         onPress={handleMapPress}
         onUserLocationChange={handleUserLocationChange}
         onPanDrag={handleMapPanDrag}
+        onRegionChangeStart={handleRegionChangeStart}
         onRegionChangeComplete={handleRegionChangeComplete}
         style={StyleSheet.absoluteFill}
       >

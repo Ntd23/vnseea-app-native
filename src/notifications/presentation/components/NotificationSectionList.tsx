@@ -39,7 +39,7 @@ export default function NotificationSectionList({
 
   return (
     <View>
-      {items.map((item, index) => {
+      {items.map(item => {
         const isGroupChatInvite = item.type === GROUP_CHAT_INVITE_NOTIFICATION;
         const isPending =
           isGroupChatInvite && item.groupChatId
@@ -49,7 +49,6 @@ export default function NotificationSectionList({
           <NotificationCard
             key={item.id}
             item={item}
-            index={index}
             language={language}
             onPress={onItemPress}
             onLongPress={isGroupChatInvite ? undefined : onItemLongPress}

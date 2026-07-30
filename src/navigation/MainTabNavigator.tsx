@@ -45,6 +45,7 @@ import {
   useSyncedCartCount,
 } from '../shared-kernel/application/state/cartCountSync';
 import { createProductRepository } from '../product';
+import { MAIN_SURFACE_TAB_TRANSITION_OPTIONS } from './mainSurfaceTransition';
 
 const BRAND_COLOR = APP_BRAND_COLOR;
 const BRAND_LIGHT_BG = APP_COLORS.brand.soft;
@@ -260,7 +261,10 @@ function CustomMainTabNavigator() {
       initialRouteName={ROUTES.FEED}
       tabBar={renderCustomTabBar}
       detachInactiveScreens={false}
-      screenOptions={{ headerShown: false }}
+      screenOptions={{
+        headerShown: false,
+        ...MAIN_SURFACE_TAB_TRANSITION_OPTIONS,
+      }}
     >
       {getCustomTabRoutes(TAB_ROUTES).map(({ name, component }) => (
         <CustomTab.Screen

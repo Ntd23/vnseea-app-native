@@ -148,9 +148,9 @@ export function createJobsRepository(): JobsRepository {
 
     async createJob(payload: CreateJobPayload) {
       try {
-        const response = await apiBridge.multipart<CreateJobResponse>(
-          apiRoutes.jobs.main,
-          {
+        const [metadata, response] = await Promise.all([
+          loadJobsMetadata(),
+          apiBridge.multipart<CreateJobResponse>(apiRoutes.jobs.main, {
             type: 'create',
             job_title: payload.jobTitle,
             description: payload.description,
@@ -191,15 +191,37 @@ export function createJobsRepository(): JobsRepository {
                   thumbnail: payload.thumbnail,
                 }
               : {}),
-          },
-        );
+          }),
+        ]);
 
         if (response.api_status !== 200 && response.api_status !== '200') {
           const errorMsg = (response as any).errors?.[0]?.error_text ?? 'Tạo việc làm thất bại';
           throw new Error(errorMsg);
         }
 
-        return response;
+        const rawData = response.data as unknown;
+        if (!rawData || typeof rawData !== 'object') {
+          return response;
+        }
+
+        const rawRecord = rawData as Record<string, unknown>;
+        const nestedJob =
+          rawRecord.job && typeof rawRecord.job === 'object'
+            ? (rawRecord.job as Record<string, unknown>)
+            : rawRecord;
+
+        return {
+          ...response,
+          data: mapJobItem(
+            {
+              ...nestedJob,
+              id: nestedJob.id ?? nestedJob.job_id ?? response.job_id,
+              post_id:
+                nestedJob.post_id ?? rawRecord.post_id ?? response.post_id,
+            },
+            metadata,
+          ),
+        };
       } catch (error) {
         console.error('[ApiJobsRepository] createJob error:', error);
         throw error;

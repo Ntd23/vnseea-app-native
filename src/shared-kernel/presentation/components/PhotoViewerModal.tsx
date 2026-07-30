@@ -319,6 +319,7 @@ export function PhotoViewerModal({
   onReact,
   onCommentTap,
   onProfilePress,
+  onOpenShare,
   onInternalShare,
   onShared,
   onFollowChange,
@@ -330,6 +331,7 @@ export function PhotoViewerModal({
   onReact: (postId: string, reaction: ReactionType) => void;
   onCommentTap: (postId: string) => void;
   onProfilePress?: (userId: string) => void;
+  onOpenShare?: (post: FeedPost) => void;
   onInternalShare?: (input: SharePostInput) => Promise<FeedPost>;
   onShared?: (post: FeedPost) => void;
   onFollowChange?: (publisherId: string, isFollowing: boolean) => void;
@@ -683,8 +685,12 @@ export function PhotoViewerModal({
     if (transitionLockRef.current) return;
     lockInteractionBriefly();
     setPickerAnchor(null);
+    if (onOpenShare) {
+      onOpenShare(livePost);
+      return;
+    }
     setIsShareSheetVisible(true);
-  }, [livePost, lockInteractionBriefly]);
+  }, [livePost, lockInteractionBriefly, onOpenShare]);
 
   const handlePublisherPress = useCallback(() => {
     const publisherId = livePost?.publisher.id;
@@ -1606,13 +1612,15 @@ export function PhotoViewerModal({
           </Animated.View>
         </GestureDetector>
       </GestureHandlerRootView>
-      <ShareActionSheet
-        visible={isShareSheetVisible}
-        onClose={handleCloseShareSheet}
-        post={livePost}
-        onInternalShare={onInternalShare}
-        onShared={onShared}
-      />
+      {!onOpenShare ? (
+        <ShareActionSheet
+          visible={isShareSheetVisible}
+          onClose={handleCloseShareSheet}
+          post={livePost}
+          onInternalShare={onInternalShare}
+          onShared={onShared}
+        />
+      ) : null}
     </Modal>
   );
 }

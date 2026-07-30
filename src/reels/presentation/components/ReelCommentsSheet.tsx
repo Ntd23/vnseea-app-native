@@ -123,13 +123,13 @@ import {
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { ReelCommentComposerModal } from './ReelCommentComposerModal';
 import { CommentMentionSuggestions } from './CommentMentionSuggestions';
+import { CommentMentionText } from './CommentMentionText';
 import {
   applyCommentMentionSuggestion,
   getActiveCommentMentionToken,
   mergeCommentMention,
   pruneCommentMentions,
   serializeCommentMentions,
-  splitCommentMentionSegments,
 } from '../../application/utils/commentMentions';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
@@ -496,31 +496,6 @@ function splitLeadingReplyMention(text: string, mentionName?: string) {
     mention: matchedName,
     rest: trimmedStart.slice(matchedName.length),
   };
-}
-
-function renderCommentMentionText(
-  text: string,
-  mentions: CommentMention[] | undefined,
-  onPressProfile: (userId: string) => void,
-) {
-  return splitCommentMentionSegments(text, mentions).map((segment, index) =>
-    segment.isMention ? (
-      <Text
-        key={`${segment.text}-${index}`}
-        style={styles.commentMentionText}
-        accessibilityRole={segment.mention?.userId ? 'link' : undefined}
-        onPress={
-          segment.mention?.userId
-            ? () => onPressProfile(segment.mention!.userId)
-            : undefined
-        }
-      >
-        {segment.text}
-      </Text>
-    ) : (
-      segment.text
-    ),
-  );
 }
 
 function formatRelativeTime(timestamp?: number, language: 'vi' | 'en' = 'vi') {
@@ -3799,28 +3774,28 @@ function CommentRow({
               ) : null}
             </View>
             {comment.text ? (
-              <Text style={styles.commentText}>
-                {comment.mentions && comment.mentions.length > 0 ? (
-                  renderCommentMentionText(
-                    comment.text,
-                    comment.mentions,
-                    onPressProfile,
-                  )
-                ) : replyMentionParts ? (
-                  <>
-                    <Text style={styles.commentMentionText}>
-                      {replyMentionParts.mention}
-                    </Text>
-                    {replyMentionParts.rest}
-                  </>
-                ) : (
-                  renderCommentMentionText(
-                    comment.text,
-                    undefined,
-                    onPressProfile,
-                  )
-                )}
-              </Text>
+              comment.mentions && comment.mentions.length > 0 ? (
+                <CommentMentionText
+                  text={comment.text}
+                  mentions={comment.mentions}
+                  style={styles.commentText}
+                  mentionStyle={styles.commentMentionText}
+                  onPressMention={mention => onPressProfile(mention.userId)}
+                />
+              ) : replyMentionParts ? (
+                <Text style={styles.commentText}>
+                  <Text style={styles.commentMentionText}>
+                    {replyMentionParts.mention}
+                  </Text>
+                  {replyMentionParts.rest}
+                </Text>
+              ) : (
+                <CommentMentionText
+                  text={comment.text}
+                  style={styles.commentText}
+                  mentionStyle={styles.commentMentionText}
+                />
+              )
             ) : null}
 
             {/* Comment image — prefer the local pending URI while the

@@ -140,6 +140,11 @@ describe('Reel video playback resilience', () => {
     expect(reelItemSource).toContain('onLoadStart={() => {');
     expect(reelItemSource).toContain('onReadyForDisplay={markVideoDisplayed}');
     expect(reelItemSource).toContain(
+      'const [hasRenderedFirstFrame, setHasRenderedFirstFrame]',
+    );
+    expect(reelItemSource).toContain('renderLoader={renderVideoLoader}');
+    expect(reelItemSource).toContain('setHasRenderedFirstFrame(true)');
+    expect(reelItemSource).toContain(
       'onBuffer={({ isBuffering: nextIsBuffering }) => {',
     );
     expect(reelItemSource).toContain('key={`${item.id}:${playerAttempt}`}');
@@ -165,6 +170,9 @@ describe('Reel video playback resilience', () => {
       'REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS',
     );
     expect(reelsScreenSource).toContain(
+      "Platform.OS === 'android' ? 80 : 60",
+    );
+    expect(reelsScreenSource).toContain(
       'const shouldKeepPlayersMounted =',
     );
     expect(reelsScreenSource).toContain(
@@ -179,9 +187,8 @@ describe('Reel video playback resilience', () => {
     expect(feedScreenSource).toContain('startReelsPreload');
     expect(feedScreenSource).not.toContain('Image.prefetch(item.thumbnailUrl)');
     expect(reelsScreenSource).not.toContain('launchCoverUri');
-    expect(reelItemSource).not.toContain(
-      'item.thumbnailUrl && shouldMount && !isReady',
-    );
+    expect(reelItemSource).toContain('item.thumbnailUrl ? (');
+    expect(reelItemSource).toContain('styles.videoLoadingCover');
     expect(homeVideoSource).toContain('FEED_VIDEO_BLUR_SURFACE_GRACE_MS');
     expect(homeVideoSource).toContain('isBlurSurfaceGraceActive');
   });

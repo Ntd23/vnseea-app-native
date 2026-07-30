@@ -37,7 +37,8 @@ describe('ComposerCard platform layout', () => {
     expect(source).toContain("id: 'photo'");
     expect(source).toContain("id: 'video'");
     expect(source).toContain("id: 'product'");
-    expect(source).toContain("id: 'poll'");
+    expect(source).toContain("id: 'job'");
+    expect(source).not.toContain("id: 'poll'");
   });
 
   it('renders four accessible icon-only Android actions in one balanced row', () => {

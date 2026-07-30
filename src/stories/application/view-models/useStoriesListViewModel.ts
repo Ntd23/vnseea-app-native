@@ -68,12 +68,10 @@ export interface UseStoriesListViewModelOptions {
   initialStories?: StoryItem[];
 }
 
-export function useStoriesListViewModel(options: UseStoriesListViewModelOptions = {}) {
-  const {
-    stories,
-    isLoading,
-    reloadStories,
-  } = useStoriesViewModel();
+export function useStoriesListViewModel(
+  options: UseStoriesListViewModelOptions = {},
+) {
+  const { stories, isLoading, reloadStories } = useStoriesViewModel();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [overrideStories, setOverrideStories] = useState<StoryItem[] | null>(
@@ -90,16 +88,16 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
   const reload = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      await reloadStories({ force: true });
       setOverrideStories(null);
-      await reloadStories();
     } finally {
       setIsRefreshing(false);
     }
   }, [reloadStories]);
 
   const refreshSilently = useCallback(async () => {
-    setOverrideStories(null);
     await reloadStories();
+    setOverrideStories(null);
   }, [reloadStories]);
 
   const sourceStories = useMemo(
@@ -171,16 +169,6 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
     }
     return ordered;
   }, [flatRows, sourceStories]);
-
-  // Auto-trigger an initial refresh whenever the screen mounts so the grid
-  // always opens with fresh data — matches the rail's behaviour.
-  useEffect(() => {
-    if (!overrideStories) {
-      reloadStories().catch(error => {
-        console.warn('[Stories] initial list refresh failed:', error);
-      });
-    }
-  }, [overrideStories, reloadStories]);
 
   return {
     rows: flatRows,

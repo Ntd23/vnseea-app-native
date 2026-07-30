@@ -9,12 +9,17 @@ import type {
   FeedPublisher,
   PostLinkPreview,
 } from '../../domain/types/feed.types';
+import {
+  markFeedMediaLoaded,
+  useFeedMediaLoaded,
+} from '../../application/state/feedMediaLoadState';
 
 type Props = {
   preview: PostLinkPreview;
   publisher?: FeedPublisher;
   caption?: string;
   onPress: () => void;
+  mediaEnabled?: boolean;
 };
 
 function normalizeHandle(value?: string) {
@@ -115,6 +120,7 @@ export function VnseeaPageLinkPreviewCard({
   publisher,
   caption,
   onPress,
+  mediaEnabled = true,
 }: Props) {
   const slug = parseVnseeaPageSlug(preview.url) ?? '';
   const publisherMatchesPage =
@@ -141,6 +147,8 @@ export function VnseeaPageLinkPreviewCard({
     () => (preview.image ? { uri: preview.image } : undefined),
     [preview.image],
   );
+  const retainedLoaded = useFeedMediaLoaded(preview.image || fallbackAvatar);
+  const shouldShowMedia = mediaEnabled || retainedLoaded;
 
   return (
     <TouchableOpacity
@@ -151,17 +159,19 @@ export function VnseeaPageLinkPreviewCard({
       className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white"
     >
       <View className="relative aspect-[16/9] w-full items-center justify-center overflow-hidden bg-brand-subtle">
-        {imageSource ? (
+        {imageSource && shouldShowMedia ? (
           <Image
             source={imageSource}
             className="h-full w-full"
             resizeMode="cover"
+            onLoad={() => markFeedMediaLoaded(preview.image)}
           />
-        ) : fallbackAvatar ? (
+        ) : fallbackAvatar && shouldShowMedia ? (
           <Image
             source={{ uri: fallbackAvatar }}
             className="h-24 w-24 rounded-full border-4 border-white bg-white"
             resizeMode="cover"
+            onLoad={() => markFeedMediaLoaded(fallbackAvatar)}
           />
         ) : (
           <View className="h-20 w-20 items-center justify-center rounded-full bg-white">

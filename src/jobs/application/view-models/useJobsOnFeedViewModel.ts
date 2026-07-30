@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createJobsRepository } from '../../infrastructure/repositories/ApiJobsRepository';
 import type { JobsItem } from '../../domain/types/jobs.types';
+import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 
 const repository = createJobsRepository();
 const FEED_JOBS_LIMIT = 6;
@@ -14,7 +15,9 @@ export function useJobsOnFeedViewModel(
   options: UseJobsOnFeedViewModelOptions = {},
 ) {
   const { autoLoad = true } = options;
-  const [jobs, setJobs] = useState<JobsItem[]>([]);
+  const [jobs, setJobs] = useState<JobsItem[]>(() =>
+    feedCacheStorage.getCachedJobs(),
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +37,7 @@ export function useJobsOnFeedViewModel(
         offset: 0,
       });
       setJobs(result);
+      feedCacheStorage.setCachedJobs(result);
     } catch (caught) {
       setError(
         caught instanceof Error

@@ -16,10 +16,10 @@ describe('Feed and profile list performance contracts', () => {
     'src/feed/application/realtime/useDeferredVisiblePostIds.ts',
   );
 
-  it('keeps rich cards in a bounded render window and clips distant Android views', () => {
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 1.8');
+  it('keeps rich cards in a bounded render window without unsafe Android clipping', () => {
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.2');
     expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.6');
-    expect(feedSource).toContain('removeClippedSubviews={FEED_IS_ANDROID}');
+    expect(feedSource).toContain('removeClippedSubviews={false}');
     expect(feedSource).not.toContain('FEED_SCREEN_HEIGHT * 6');
 
     expect(profileSource).toContain('SCREEN_HEIGHT * 1.8');

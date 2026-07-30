@@ -76,10 +76,10 @@ function BeautifulBellIllustration() {
       <View className="absolute right-[28%] top-[18%] h-3 w-3 rounded-full border border-slate-200 bg-transparent" />
       {/* Small sparkles */}
       <Text className="absolute left-[38%] top-[2%] text-slate-200 text-[10px]">
-        ✦
+        ?
       </Text>
       <Text className="absolute right-[42%] top-[0%] text-slate-200 text-[10px]">
-        ✦
+        ?
       </Text>
 
       {/* Bell body (tilted) */}
@@ -273,11 +273,11 @@ function NotificationsScreen() {
       const success = await acceptGroupChatInvitation(groupChatId);
       if (success) {
         Alert.alert(
-          language === 'vi' ? 'Thành công' : 'Success',
+          language === 'vi' ? 'Th?nh c?ng' : 'Success',
           copy.groupJoined,
         );
       } else {
-        Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.acceptFailed);
+        Alert.alert(language === 'vi' ? 'L?i' : 'Error', copy.acceptFailed);
       }
     },
     [acceptGroupChatInvitation, copy.acceptFailed, copy.groupJoined, language],
@@ -287,7 +287,7 @@ function NotificationsScreen() {
     async (groupChatId: string) => {
       const success = await rejectGroupChatInvitation(groupChatId);
       if (!success) {
-        Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.rejectFailed);
+        Alert.alert(language === 'vi' ? 'L?i' : 'Error', copy.rejectFailed);
       }
     },
     [copy.rejectFailed, language, rejectGroupChatInvitation],
@@ -304,7 +304,7 @@ function NotificationsScreen() {
   );
 
   const renderNotificationItem = useCallback(
-    ({ item, index }: ListRenderItemInfo<NotificationsItem>) => {
+    ({ item }: ListRenderItemInfo<NotificationsItem>) => {
       const isGroupChatInvite = item.type === GROUP_CHAT_INVITE_NOTIFICATION;
       const isPending =
         isGroupChatInvite && item.groupChatId
@@ -314,7 +314,6 @@ function NotificationsScreen() {
       return (
         <NotificationCard
           item={item}
-          index={index}
           language={language}
           onPress={handlePress}
           onLongPress={isGroupChatInvite ? undefined : handleLongPress}
@@ -381,7 +380,7 @@ function NotificationsScreen() {
   ) : !hasMore && visibleNotifications.length > 0 ? (
     <View className="items-center justify-center pt-6 pb-8">
       <Text className="text-[12px] font-semibold text-slate-400 text-center">
-        ✨ {copy.allLoaded}
+        ? {copy.allLoaded}
       </Text>
     </View>
   ) : null;
@@ -568,7 +567,7 @@ function NotificationsScreen() {
           filterFollows: copy.filterFollows,
           filterGroups: copy.filterGroups,
           filterEvents: copy.filterEvents,
-          close: language === 'vi' ? 'Đóng' : 'Close',
+          close: language === 'vi' ? '??ng' : 'Close',
         }}
       />
 

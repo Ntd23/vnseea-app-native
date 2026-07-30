@@ -2,12 +2,7 @@
 // Displays events in Facebook-style card layout.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
-import {
-  Image,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Image, Text, TouchableOpacity, View } from 'react-native';
 import {
   CalendarDays,
   MapPin,
@@ -25,6 +20,10 @@ import {
   FeedGlassActionButton,
   FeedMediaFrame,
 } from '../../../feed/presentation/components/FeedCardChrome';
+import {
+  markFeedMediaLoaded,
+  useFeedMediaLoaded,
+} from '../../../feed/application/state/feedMediaLoadState';
 
 interface EventPostCardProps {
   event: EventsItem;
@@ -34,6 +33,7 @@ interface EventPostCardProps {
   onInterestedPress?: (event: EventsItem) => void;
   onGoingPress?: (event: EventsItem) => void;
   onEditPress?: (event: EventsItem) => void;
+  loadMedia?: boolean;
 }
 
 const BRAND_BLUE = APP_BRAND_COLOR;
@@ -74,6 +74,7 @@ const EventPostCard = React.memo(function EventPostCard({
   onInterestedPress,
   onGoingPress,
   onEditPress,
+  loadMedia = true,
 }: EventPostCardProps) {
   const handlePress = useCallback(() => {
     onPress?.(event);
@@ -104,18 +105,21 @@ const EventPostCard = React.memo(function EventPostCard({
   // Fallbacks for variable WoWonder event field names
   const title = event.event_name || event.name || 'Sự kiện';
   const coverUrl = event.event_cover || event.cover;
+  const retainedMediaLoaded = useFeedMediaLoaded(coverUrl);
+  const shouldShowMedia = loadMedia || retainedMediaLoaded;
   const description = event.event_description || event.description;
   const location = event.event_location || event.location || 'Chưa có địa điểm';
   const dateText = formatEventDate(event.event_start_date || event.start_date);
   const timeText = formatEventTime(event.event_start_time || event.start_time);
-  
+
   // Attendees calculation
   const going = Number(event.going_count || 0);
   const interested = Number(event.interested_count || 0);
-  const attendeesText = going > 0 
-    ? `${going} người tham gia` 
-    : interested > 0 
-      ? `${interested} người quan tâm` 
+  const attendeesText =
+    going > 0
+      ? `${going} người tham gia`
+      : interested > 0
+      ? `${interested} người quan tâm`
       : 'Chưa có người tham gia';
 
   return (
@@ -141,16 +145,27 @@ const EventPostCard = React.memo(function EventPostCard({
             )}
             <View className="ml-3 flex-1">
               <View className="flex-row items-center flex-wrap">
-                <Text className="text-title-primary font-bold text-[#050505] flex-shrink mr-2" numberOfLines={1}>
-                  {event.user_data?.full_name || event.user_data?.name || 'Ban tổ chức'}
+                <Text
+                  className="text-title-primary font-bold text-[#050505] flex-shrink mr-2"
+                  numberOfLines={1}
+                >
+                  {event.user_data?.full_name ||
+                    event.user_data?.name ||
+                    'Ban tổ chức'}
                 </Text>
-                <View className="bg-brand-subtle rounded px-1.5 py-0.5" style={{ flexShrink: 0 }}>
+                <View
+                  className="bg-brand-subtle rounded px-1.5 py-0.5"
+                  style={{ flexShrink: 0 }}
+                >
                   <Text className="text-[10px] font-bold uppercase text-brand">
                     Sự kiện
                   </Text>
                 </View>
               </View>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B] mt-0.5" numberOfLines={1}>
+              <Text
+                className="text-caption-secondary text-[12px] text-[#65676B] mt-0.5"
+                numberOfLines={1}
+              >
                 Công khai
               </Text>
             </View>
@@ -159,9 +174,17 @@ const EventPostCard = React.memo(function EventPostCard({
 
         {/* Event Header Name / Description */}
         <View className="mt-3">
-          <Text className="text-body-primary font-bold text-[16px] text-[#050505]" numberOfLines={2}>{title}</Text>
+          <Text
+            className="text-body-primary font-bold text-[16px] text-[#050505]"
+            numberOfLines={2}
+          >
+            {title}
+          </Text>
           {description ? (
-            <Text className="text-body-primary mt-1 text-[#65676B] text-[13px] leading-relaxed" numberOfLines={3}>
+            <Text
+              className="text-body-primary mt-1 text-[#65676B] text-[13px] leading-relaxed"
+              numberOfLines={3}
+            >
               {description}
             </Text>
           ) : null}
@@ -171,13 +194,14 @@ const EventPostCard = React.memo(function EventPostCard({
       {/* Cover Image */}
       <FeedMediaFrame>
         <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
-          {coverUrl ? (
+          {coverUrl && shouldShowMedia ? (
             <Image
               source={{ uri: coverUrl }}
               className="w-full"
               style={{ aspectRatio: 1.6 }}
               resizeMode="cover"
               fadeDuration={0}
+              onLoad={() => markFeedMediaLoaded(coverUrl)}
             />
           ) : (
             <View
@@ -199,7 +223,7 @@ const EventPostCard = React.memo(function EventPostCard({
               {dateText}
             </Text>
           </View>
-          
+
           <View className="ml-4 flex-1 justify-center">
             {timeText ? (
               <View className="flex-row items-center">
@@ -211,7 +235,10 @@ const EventPostCard = React.memo(function EventPostCard({
             ) : null}
             <View className="flex-row items-center mt-1">
               <MapPin size={14} color={BRAND_BLUE} style={{ flexShrink: 0 }} />
-              <Text className="ml-2 text-[13px] text-[#65676B] flex-shrink font-medium" numberOfLines={1}>
+              <Text
+                className="ml-2 text-[13px] text-[#65676B] flex-shrink font-medium"
+                numberOfLines={1}
+              >
                 {location}
               </Text>
             </View>
@@ -238,18 +265,24 @@ const EventPostCard = React.memo(function EventPostCard({
                 onPress={handleEditPress}
               >
                 <Edit size={18} color={APP_BRAND_COLOR} />
-                <Text className="ml-2 text-[13px] font-semibold text-brand" numberOfLines={1}>
+                <Text
+                  className="ml-2 text-[13px] font-semibold text-brand"
+                  numberOfLines={1}
+                >
                   Sửa
                 </Text>
               </FeedGlassActionButton>
-              
+
               <FeedGlassActionButton
                 className="flex-1 flex-row items-center justify-center py-1.5 px-1"
                 activeOpacity={0.75}
                 onPress={handleSharePress}
               >
                 <Share2 size={18} color="#65676B" />
-                <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
+                <Text
+                  className="ml-2 text-[13px] font-semibold text-[#65676B]"
+                  numberOfLines={1}
+                >
                   Chia sẻ
                 </Text>
               </FeedGlassActionButton>
@@ -261,9 +294,13 @@ const EventPostCard = React.memo(function EventPostCard({
                 activeOpacity={0.75}
                 onPress={handleInterestedPress}
               >
-                <Star size={18} color={event.is_interested ? '#EAB308' : '#65676B'} fill={event.is_interested ? '#EAB308' : 'none'} />
-                <Text 
-                  className="ml-2 text-[13px] font-semibold" 
+                <Star
+                  size={18}
+                  color={event.is_interested ? '#EAB308' : '#65676B'}
+                  fill={event.is_interested ? '#EAB308' : 'none'}
+                />
+                <Text
+                  className="ml-2 text-[13px] font-semibold"
                   style={{ color: event.is_interested ? '#EAB308' : '#65676B' }}
                   numberOfLines={1}
                 >
@@ -276,9 +313,12 @@ const EventPostCard = React.memo(function EventPostCard({
                 activeOpacity={0.75}
                 onPress={handleGoingPress}
               >
-                <CalendarCheck size={18} color={event.is_going ? '#10B981' : '#65676B'} />
-                <Text 
-                  className="ml-2 text-[13px] font-semibold" 
+                <CalendarCheck
+                  size={18}
+                  color={event.is_going ? '#10B981' : '#65676B'}
+                />
+                <Text
+                  className="ml-2 text-[13px] font-semibold"
                   style={{ color: event.is_going ? '#10B981' : '#65676B' }}
                   numberOfLines={1}
                 >
@@ -292,7 +332,10 @@ const EventPostCard = React.memo(function EventPostCard({
                 onPress={handleSharePress}
               >
                 <Share2 size={18} color="#65676B" />
-                <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
+                <Text
+                  className="ml-2 text-[13px] font-semibold text-[#65676B]"
+                  numberOfLines={1}
+                >
                   Chia sẻ
                 </Text>
               </FeedGlassActionButton>
