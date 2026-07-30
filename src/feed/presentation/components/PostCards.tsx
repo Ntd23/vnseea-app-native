@@ -19,10 +19,7 @@ import {
   Text,
   TouchableOpacity,
   View,
-  type ImageProps,
-  type ImageStyle,
   type LayoutChangeEvent,
-  type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
@@ -99,9 +96,7 @@ import {
   FEED_REACTION_TYPES,
 } from './FeedReactionAssets';
 import { SharedPostPreviewCard } from './SharedPostPreviewCard';
-import {
-  getProfileMediaActivityLabel,
-} from '../../application/mappers/profileMediaActivity';
+import { getProfileMediaActivityLabel } from '../../application/mappers/profileMediaActivity';
 import { buildPostActivityContext } from '../../application/composer/postActivityContext';
 import {
   cleanVnseeaPageShareCaption,
@@ -112,6 +107,8 @@ import {
   FEED_VIDEO_SURFACE_MAX_RECOVERY_ATTEMPTS,
   shouldRecoverFeedVideoSurface,
 } from './feedVideoSurfaceRecovery';
+import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
+import { FeedMediaImage } from './FeedMediaImage';
 
 export {
   FEED_CARD_CLASS,
@@ -466,7 +463,7 @@ export type FeedCopy = {
   photo?: string;
   video?: string;
   product?: string;
-  poll?: string;
+  job?: string;
   storiesTitle: string;
   seeAll: string;
   createStory: string;
@@ -587,7 +584,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     photo: 'Hình ảnh',
     video: 'Video',
     product: 'Sản phẩm',
-    poll: 'Thăm dò',
+    job: 'Việc làm',
     storiesTitle: 'Tin tức mới',
     seeAll: 'Xem tất cả',
     createStory: 'Tạo tin',
@@ -706,7 +703,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     photo: 'Photos',
     video: 'Videos',
     product: 'Product',
-    poll: 'Poll',
+    job: 'Job',
     storiesTitle: 'Latest stories',
     seeAll: 'See all',
     createStory: 'Create story',
@@ -837,6 +834,9 @@ type FeedPreparedVideoListener = (
   preparedVideoIds: ReadonlySet<string>,
 ) => void;
 type FeedScrollBusyListener = (isBusy: boolean) => void;
+type FeedVisibleMediaPostIdsListener = (
+  visiblePostIds: ReadonlySet<string>,
+) => void;
 type FeedVideoMutedListener = (isMuted: boolean) => void;
 
 export let feedActiveVideoIdSnapshot: string | null = null;
@@ -848,6 +848,9 @@ const feedPreparedVideoListeners = new Set<FeedPreparedVideoListener>();
 const preparedVideoLru: string[] = [];
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
+export let feedVisibleMediaPostIdsSnapshot = new Set<string>();
+const feedVisibleMediaPostIdsListeners =
+  new Set<FeedVisibleMediaPostIdsListener>();
 export let feedVideoMutedSnapshot = false;
 const feedVideoMutedListeners = new Set<FeedVideoMutedListener>();
 
@@ -974,6 +977,23 @@ export function publishFeedScrollBusy(isBusy: boolean) {
   feedScrollBusyListeners.forEach(listener => listener(isBusy));
 }
 
+export function publishFeedVisibleMediaPostIds(postIds: Iterable<string>) {
+  const nextPostIds = new Set(postIds);
+  if (
+    feedVisibleMediaPostIdsSnapshot.size === nextPostIds.size &&
+    [...nextPostIds].every(postId =>
+      feedVisibleMediaPostIdsSnapshot.has(postId),
+    )
+  ) {
+    return;
+  }
+
+  feedVisibleMediaPostIdsSnapshot = nextPostIds;
+  feedVisibleMediaPostIdsListeners.forEach(listener =>
+    listener(feedVisibleMediaPostIdsSnapshot),
+  );
+}
+
 export function publishFeedVideoMuted(isMuted: boolean) {
   if (feedVideoMutedSnapshot === isMuted) return;
   feedVideoMutedSnapshot = isMuted;
@@ -999,6 +1019,33 @@ export function useFeedScrollBusy() {
   }, []);
 
   return isBusy;
+}
+
+export function useFeedPostMediaVisible(postId: string) {
+  const [isVisible, setIsVisible] = useState(() =>
+    feedVisibleMediaPostIdsSnapshot.has(postId),
+  );
+
+  useEffect(() => {
+    const listener: FeedVisibleMediaPostIdsListener = nextVisiblePostIds => {
+      const nextIsVisible = nextVisiblePostIds.has(postId);
+      setIsVisible(previous =>
+        previous === nextIsVisible ? previous : nextIsVisible,
+      );
+    };
+
+    feedVisibleMediaPostIdsListeners.add(listener);
+    const nextIsVisible = feedVisibleMediaPostIdsSnapshot.has(postId);
+    setIsVisible(previous =>
+      previous === nextIsVisible ? previous : nextIsVisible,
+    );
+
+    return () => {
+      feedVisibleMediaPostIdsListeners.delete(listener);
+    };
+  }, [postId]);
+
+  return isVisible;
 }
 
 function useFeedVideoMuted() {
@@ -1043,99 +1090,6 @@ const Avatar = React.memo(function Avatar({
       className="rounded-full"
       resizeMode="cover"
       fadeDuration={0}
-    />
-  );
-});
-
-type FeedMediaImageProps = {
-  uri: string;
-  className?: string;
-  style?: StyleProp<ImageStyle>;
-  resizeMode?: ImageProps['resizeMode'];
-  deferWhileScrolling?: boolean;
-};
-
-const FEED_MEDIA_PLACEHOLDER_STYLE = { backgroundColor: '#E5E7EB' };
-
-const FeedMediaImageBase = React.memo(function FeedMediaImageBase({
-  uri,
-  className,
-  style,
-  resizeMode = 'cover',
-}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
-  return (
-    <Image
-      source={{ uri }}
-      className={className}
-      style={style}
-      resizeMode={resizeMode}
-      fadeDuration={0}
-      resizeMethod="resize"
-      progressiveRenderingEnabled
-    />
-  );
-});
-
-const DeferredFeedMediaImage = React.memo(function DeferredFeedMediaImage({
-  uri,
-  className,
-  style,
-  resizeMode = 'cover',
-}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
-  const isScrollBusy = useFeedScrollBusy();
-  const [hasLoaded, setHasLoaded] = useState(false);
-
-  useEffect(() => {
-    setHasLoaded(false);
-  }, [uri]);
-
-  if (isScrollBusy && !hasLoaded) {
-    return (
-      <View
-        className={className}
-        style={[style, FEED_MEDIA_PLACEHOLDER_STYLE]}
-      />
-    );
-  }
-
-  return (
-    <Image
-      source={{ uri }}
-      className={className}
-      style={style}
-      resizeMode={resizeMode}
-      fadeDuration={0}
-      resizeMethod="resize"
-      progressiveRenderingEnabled
-      onLoad={() => setHasLoaded(true)}
-    />
-  );
-});
-
-const FeedMediaImage = React.memo(function FeedMediaImage({
-  uri,
-  className,
-  style,
-  resizeMode = 'cover',
-  deferWhileScrolling = false,
-}: FeedMediaImageProps) {
-  if (deferWhileScrolling) {
-    return (
-      <DeferredFeedMediaImage
-        uri={uri}
-        className={className}
-        style={style}
-        resizeMode={resizeMode}
-      />
-    );
-  }
-
-  return (
-    <FeedMediaImageBase
-      uri={uri}
-      className={className}
-      style={style}
-      resizeMode={resizeMode}
     />
   );
 });
@@ -1236,6 +1190,10 @@ function useGeneratedVideoPoster({
   }, [cacheKey, serverThumbnailUrl, videoUrl]);
 
   useEffect(() => {
+    markFeedMediaLoaded(generatedPosterUrl);
+  }, [generatedPosterUrl]);
+
+  useEffect(() => {
     if (
       serverThumbnailUrl ||
       !videoUrl ||
@@ -1250,6 +1208,7 @@ function useGeneratedVideoPoster({
     const task = InteractionManager.runAfterInteractions(() => {
       createCachedVideoPosterThumbnail(videoUrl, cacheKey).then(thumbnail => {
         if (cancelled || !thumbnail?.uri) return;
+        markFeedMediaLoaded(thumbnail.uri);
         setGeneratedPosterUrl(thumbnail.uri);
       });
     });
@@ -1794,6 +1753,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   showIdentityHeader = true,
   keepPreparedVideoMounted = false,
   commentNavigationMode = 'detail',
+  deferMediaUntilVisible = false,
 }: {
   post: FeedVideoPost;
   copy?: FeedCopy;
@@ -1821,9 +1781,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   showIdentityHeader?: boolean;
   keepPreparedVideoMounted?: boolean;
   commentNavigationMode?: 'detail' | 'callback';
+  deferMediaUntilVisible?: boolean;
 }) {
   const language = useAppLanguage();
   const copy = providedCopy ?? FEED_COPY[language];
+  const trackedMediaVisible = useFeedPostMediaVisible(post.id);
+  const mediaVisible = !deferMediaUntilVisible || trackedMediaVisible;
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
   const localActive = useSharedValue(false);
@@ -1854,6 +1817,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const muted = useFeedVideoMuted();
   const isScrollBusy = useFeedScrollBusy();
+  const mediaLoadEnabled = !deferMediaUntilVisible || mediaVisible;
   const videoUrl = post.videoUrl.trim();
   const mediaIdentity = `${post.id}:${videoUrl}`;
   const videoPreviewCacheKey = post.thumbnailUrl || videoUrl || post.id;
@@ -1891,6 +1855,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     serverThumbnailUrl: post.thumbnailUrl,
     enabled:
       isScreenFocused !== false &&
+      mediaLoadEnabled &&
       hasVideoUrl &&
       !hasVideoError &&
       (isActive || isWarm || isPreparedKeptAlive),
@@ -1968,7 +1933,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
     const thumbnailUrl = resolvedThumbnailUrl;
-    if (!thumbnailUrl) return;
+    if (!thumbnailUrl || !mediaLoadEnabled || isScrollBusy) return;
 
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
     if (cachedRatio) {
@@ -1991,7 +1956,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
       },
     );
-  }, [resolvedThumbnailUrl]);
+  }, [isScrollBusy, mediaLoadEnabled, resolvedThumbnailUrl]);
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback(
@@ -2130,6 +2095,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const canMountWarmVideo = !isScrollBusy || shouldKeepPreparedVideoMounted;
   const shouldMountFocusedVideo =
     isScreenFocused !== false &&
+    mediaVisible &&
     canAttemptVideo &&
     (isActive ||
       (canMountWarmVideo && isWarm) ||
@@ -2341,7 +2307,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                     uri={resolvedThumbnailUrl}
                     style={{ width: '100%', height: '100%' }}
                     resizeMode="cover"
-                    deferWhileScrolling={false}
+                    enabled={mediaLoadEnabled}
                   />
                 </View>
               ) : null}
@@ -2467,7 +2433,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                         uri={resolvedThumbnailUrl}
                         style={{ width: '100%', height: '100%' }}
                         resizeMode="cover"
-                        deferWhileScrolling={false}
+                        enabled={mediaLoadEnabled}
                       />
                     </Animated.View>
                   ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
@@ -2550,6 +2516,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             <SharedPostPreviewCard
               model={post.sharedPost}
               mediaSlot={videoMedia}
+              mediaEnabled={mediaLoadEnabled}
               onOpenPost={sourcePostId =>
                 navigation.navigate(ROUTES.POST_DETAIL, {
                   postId: sourcePostId,
@@ -2690,8 +2657,7 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
                     }
 
                     const isEmphasized =
-                      segment.kind === 'feeling' ||
-                      segment.kind === 'location';
+                      segment.kind === 'feeling' || segment.kind === 'location';
                     return (
                       <Text
                         key={`${segment.kind}:${index}`}
@@ -2841,10 +2807,12 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
   preview,
   publisher,
   caption,
+  mediaEnabled = true,
 }: {
   preview: NonNullable<FeedTextPost['linkPreview']>;
   publisher: FeedTextPost['publisher'];
   caption?: string;
+  mediaEnabled?: boolean;
 }) {
   const navigation = useNavigation<any>();
   const isPagePreview = isVnseeaPageLink(preview.url);
@@ -2880,6 +2848,7 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
         publisher={publisher}
         caption={caption}
         onPress={handlePress}
+        mediaEnabled={mediaEnabled}
       />
     );
   }
@@ -2891,16 +2860,16 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
       className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white"
     >
       {preview.image ? (
-        <FeedMediaImage
-          uri={preview.image}
+          <FeedMediaImage
+            uri={preview.image}
           style={{
             width: '100%',
             aspectRatio: 1.91,
             backgroundColor: '#E2E8F0',
-          }}
-          resizeMode="cover"
-          deferWhileScrolling={false}
-        />
+            }}
+            resizeMode="cover"
+            enabled={mediaEnabled}
+          />
       ) : (
         <View className="h-28 items-center justify-center bg-info-soft">
           <View className="h-14 w-14 items-center justify-center rounded-full bg-white">
@@ -2936,16 +2905,19 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
 const SinglePostImage = React.memo(function SinglePostImage({
   uri,
   onPress,
+  enabled = true,
 }: {
   uri: string;
   onPress: () => void;
+  enabled?: boolean;
 }) {
+  const isScrollBusy = useFeedScrollBusy();
   const [aspectRatio, setAspectRatio] = useState(() =>
     getCachedMediaAspectRatio(uri, 0.75, 1.91, 4 / 3),
   );
 
   useEffect(() => {
-    if (!uri) return;
+    if (!uri || !enabled || isScrollBusy) return;
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(uri);
     if (cachedRatio) {
       setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 1.91, 4 / 3));
@@ -2966,7 +2938,7 @@ const SinglePostImage = React.memo(function SinglePostImage({
         console.warn('[SinglePostImage] getSize failed', err);
       },
     );
-  }, [uri]);
+  }, [enabled, isScrollBusy, uri]);
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.95} delayPressIn={0}>
@@ -2978,6 +2950,7 @@ const SinglePostImage = React.memo(function SinglePostImage({
           backgroundColor: '#F1F5F9',
         }}
         resizeMode="cover"
+        enabled={enabled}
       />
     </TouchableOpacity>
   );
@@ -3150,6 +3123,7 @@ function areHomeVideoPostCardPropsEqual(previous: any, next: any) {
     previous.isActive === next.isActive &&
     previous.isScreenFocused === next.isScreenFocused &&
     previous.keepPreparedVideoMounted === next.keepPreparedVideoMounted &&
+    previous.deferMediaUntilVisible === next.deferMediaUntilVisible &&
     areFeedPostBaseRenderFieldsEqual(previousPost, nextPost) &&
     previousPost.videoUrl === nextPost.videoUrl &&
     previousPost.thumbnailUrl === nextPost.thumbnailUrl
@@ -3164,6 +3138,7 @@ function areTextPostCardPropsEqual(previous: any, next: any) {
     areCommonCardPropsEqual(previous, next) &&
     previous.onPhotoPress === next.onPhotoPress &&
     previous.onPostPress === next.onPostPress &&
+    previous.deferMediaUntilVisible === next.deferMediaUntilVisible &&
     areFeedPostBaseRenderFieldsEqual(previousPost, nextPost) &&
     previousPost.audioUrl === nextPost.audioUrl &&
     areScalarArraysEqual(previousPost.photos, nextPost.photos)
@@ -3190,6 +3165,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   onPostPress,
   showIdentityHeader = true,
   commentNavigationMode = 'detail',
+  deferMediaUntilVisible = false,
 }: {
   post: FeedTextPost;
   copy?: FeedCopy;
@@ -3225,9 +3201,12 @@ export const TextPostCard = React.memo(function TextPostCard({
    */
   onPostPress?: (post: FeedPost) => void;
   commentNavigationMode?: 'detail' | 'callback';
+  deferMediaUntilVisible?: boolean;
 }) {
   const language = useAppLanguage();
   const copy = providedCopy ?? FEED_COPY[language];
+  const trackedMediaVisible = useFeedPostMediaVisible(post.id);
+  const mediaEnabled = !deferMediaUntilVisible || trackedMediaVisible;
   const navigation = useNavigation<any>();
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
@@ -3385,6 +3364,7 @@ export const TextPostCard = React.memo(function TextPostCard({
             preview={post.linkPreview}
             publisher={post.publisher}
             caption={post.caption}
+            mediaEnabled={mediaEnabled}
           />
         ) : null}
       </FeedCardContent>
@@ -3394,6 +3374,7 @@ export const TextPostCard = React.memo(function TextPostCard({
             model={post.sharedPost}
             onOpenPost={handleOpenSharedPost}
             onOpenPhoto={handleOpenSharedPhoto}
+            mediaEnabled={mediaEnabled}
           />
         </FeedCardContent>
       ) : totalPhotos === 1 ? (
@@ -3401,6 +3382,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           <SinglePostImage
             uri={post.photos[0]}
             onPress={() => onPhotoPress(post, 0)}
+            enabled={mediaEnabled}
           />
         </FeedMediaFrame>
       ) : totalPhotos > 1 ? (
@@ -3443,6 +3425,7 @@ export const TextPostCard = React.memo(function TextPostCard({
                       backgroundColor: '#F1F5F9',
                     }}
                     resizeMode="cover"
+                    enabled={mediaEnabled}
                   />
                   {/* "+N" overlay on 4th photo when there are more photos */}
                   {isFourthPhotoWithMore && (
@@ -3473,7 +3456,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           })}
         </FeedMediaFrame>
       ) : null}
-      {!post.sharedPost && post.audioUrl ? (
+      {!post.sharedPost && post.audioUrl && mediaEnabled ? (
         <View className="px-3 pb-1">
           <AudioPlayer uri={post.audioUrl} />
         </View>

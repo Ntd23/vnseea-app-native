@@ -48,7 +48,10 @@ import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { FEED_CARD_CLASS } from '../../../feed/presentation/components/FeedCardChrome';
-import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
+import {
+  ComposerCard,
+  type ComposerActionId,
+} from '../../../feed/presentation/components/ComposerCard';
 import {
   FEED_COPY,
   HomeVideoPostCard,
@@ -128,7 +131,7 @@ const GROUP_DETAIL_COPY = {
     actionPhoto: 'Hình ảnh',
     actionVideo: 'Video',
     actionProduct: 'Sản phẩm',
-    actionPoll: 'Thăm dò',
+    actionJob: 'Việc làm',
     postsEmpty: 'Không có bài đăng nào để hiển thị',
     postsSearchEmpty: 'Không tìm thấy bài viết phù hợp.',
     postsSectionTitle: 'Bài viết trong nhóm',
@@ -188,7 +191,7 @@ const GROUP_DETAIL_COPY = {
     actionPhoto: 'Photos',
     actionVideo: 'Videos',
     actionProduct: 'Product',
-    actionPoll: 'Poll',
+    actionJob: 'Job',
     postsEmpty: 'No posts to display',
     postsSearchEmpty: 'No matching posts found.',
     postsSectionTitle: 'Group posts',
@@ -545,7 +548,7 @@ function GroupDetailScreen() {
     [targetGroupId],
   );
   const handleCreatePost = useCallback(
-    async (initialAction?: 'photo' | 'video' | 'product' | 'poll') => {
+    async (initialAction?: ComposerActionId) => {
       if (!targetGroupId) {
         Alert.alert(
           copy.groupContextMissingTitle,
@@ -576,6 +579,15 @@ function GroupDetailScreen() {
             copy.groupContextMissingTitle,
             copy.groupMembershipRequiredMessage,
           );
+          return;
+        }
+
+        if (initialAction === 'product') {
+          navigation.navigate(ROUTES.CREATE_PRODUCT);
+          return;
+        }
+        if (initialAction === 'job') {
+          navigation.navigate(ROUTES.CREATE_JOB);
           return;
         }
 
@@ -745,7 +757,7 @@ function GroupDetailScreen() {
     await handleUpdateGroupMedia(target);
   }, [groupMediaViewer, handleUpdateGroupMedia]);
   const handleComposerAction = useCallback(
-    (action: 'photo' | 'video' | 'product' | 'poll') => {
+    (action: ComposerActionId) => {
       void handleCreatePost(action);
     },
     [handleCreatePost],
@@ -1376,7 +1388,7 @@ function GroupDetailScreen() {
               photo: copy.actionPhoto,
               video: copy.actionVideo,
               product: copy.actionProduct,
-              poll: copy.actionPoll,
+              job: copy.actionJob,
             }}
           />
         ) : null}

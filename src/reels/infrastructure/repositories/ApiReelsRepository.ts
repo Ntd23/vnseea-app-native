@@ -233,24 +233,77 @@ function cleanCommentMentionSource(raw: string): string {
 }
 
 function mapCommentMentions(raw: Record<string, unknown>): CommentMention[] {
-  const records = Array.isArray(raw.mentions)
-    ? raw.mentions
-    : Array.isArray(raw.mentions_users)
-    ? raw.mentions_users
-    : [];
+  const records = [
+    raw.mentions,
+    raw.mention_users,
+    raw.mentions_users,
+    raw.mentioned_users,
+  ].flatMap(source => {
+    if (Array.isArray(source)) {
+      return source.map(value => ({ value, fallbackKey: '' }));
+    }
+    if (!source || typeof source !== 'object') return [];
+
+    const sourceRecord = source as Record<string, unknown>;
+    const isSingleMention = Boolean(
+      readString(
+        sourceRecord,
+        'user_id',
+        'userId',
+        'id',
+        'username',
+        'user_name',
+        'userName',
+      ),
+    );
+    if (isSingleMention) {
+      return [{ value: sourceRecord, fallbackKey: '' }];
+    }
+
+    return Object.entries(sourceRecord).map(([fallbackKey, value]) => ({
+      value,
+      fallbackKey,
+    }));
+  });
   const seen = new Set<string>();
 
   return records
-    .map(value => {
-      if (!value || typeof value !== 'object') return null;
-      const record = value as Record<string, unknown>;
-      const userId = readString(record, 'user_id', 'id');
-      const username = readString(record, 'username').replace(/^@+/, '');
+    .map(({ value, fallbackKey }) => {
+      const primitiveValue =
+        typeof value === 'string' || typeof value === 'number'
+          ? String(value).trim()
+          : '';
+      const record =
+        value && typeof value === 'object'
+          ? (value as Record<string, unknown>)
+          : {};
+      const numericFallbackKey = /^\d+$/.test(fallbackKey) ? fallbackKey : '';
+      const usernameFallback = numericFallbackKey
+        ? primitiveValue
+        : fallbackKey;
+      const userId =
+        readString(record, 'user_id', 'userId', 'id', 'uid') ||
+        numericFallbackKey;
+      const username = (
+        readString(record, 'username', 'user_name', 'userName', 'handle') ||
+        usernameFallback
+      )
+        .trim()
+        .replace(/^@+/, '');
       const displayName =
-        readString(record, 'display_name', 'name', 'full_name') || username;
-      if (!userId || !username || !displayName) return null;
+        readString(
+          record,
+          'display_name',
+          'displayName',
+          'name',
+          'full_name',
+          'fullName',
+        ) ||
+        primitiveValue ||
+        username;
+      if (!username || !displayName) return null;
 
-      const key = `${userId}:${username.toLowerCase()}`;
+      const key = `${userId || 'unknown'}:${username.toLowerCase()}`;
       if (seen.has(key)) return null;
       seen.add(key);
       return { userId, username, displayName };
@@ -405,7 +458,7 @@ function mapComment(raw: Record<string, unknown>): ReelComment {
   const commentId = readString(raw, 'id', 'comment_id');
   const mentions = mapCommentMentions(raw);
   const storedMentionText = cleanCommentMentionSource(
-    readString(raw, 'mention_text'),
+    readString(raw, 'mention_text') || readString(raw, 'mentionText'),
   );
   const displayText = storedMentionText
     ? hydrateCommentMentionText(storedMentionText, mentions)

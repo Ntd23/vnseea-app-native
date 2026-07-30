@@ -58,6 +58,10 @@ describe('FeedShareBottomSheet', () => {
     const destinationIndex = source.indexOf('<FeedShareDestinationCarousel');
 
     expect(source).toContain('KeyboardAvoidingView');
+    expect(source).toContain('<Modal');
+    expect(source).toContain('presentationStyle="overFullScreen"');
+    expect(source).toContain('statusBarTranslucent');
+    expect(source).toContain('navigationBarTranslucent');
     expect(source).toContain("height: '84%'");
     expect(composerIndex).toBeGreaterThan(0);
     expect(recipientIndex).toBeGreaterThan(composerIndex);

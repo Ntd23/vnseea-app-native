@@ -2016,12 +2016,24 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
 
   const handleCreatePost = useCallback((action?: any) => {
     const cleanAction = typeof action === 'string' ? action : undefined;
+
+    if (cleanAction === 'product') {
+      navigation.navigate(ROUTES.CREATE_PRODUCT);
+      return;
+    }
+    if (cleanAction === 'job') {
+      navigation.navigate(ROUTES.CREATE_JOB, {
+        pageId: String(vm.page.pageId),
+        pageName: vm.page.pageTitle || vm.page.pageName,
+      });
+      return;
+    }
+
     navigation.navigate(ROUTES.CREATE_POST, {
       page: vm.page,
       initialAction: cleanAction as
         | 'photo'
         | 'video'
-        | 'product'
         | 'poll'
         | undefined,
     });

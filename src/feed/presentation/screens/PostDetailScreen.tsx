@@ -27,7 +27,6 @@ import {
   KeyboardAvoidingView,
   Linking,
   Platform,
-  Share,
   StyleSheet,
   StatusBar,
   Text,
@@ -71,7 +70,10 @@ import type {
 } from '../../domain/types/feed.types';
 import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
-import type { ReportPostInput } from '../../domain/repositories/FeedRepository';
+import type {
+  ReportPostInput,
+  SharePostInput,
+} from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import PostReactionsSheet from '../components/PostReactionsSheet';
@@ -112,6 +114,7 @@ import {
 import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 import { hiddenPostsStorage } from '../../infrastructure/storage/hiddenPostsStorage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -746,6 +749,7 @@ function PostDetailScreen() {
     adjustCommentCount,
     savePost,
     reportPost,
+    sharePost,
     deletePost,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
@@ -790,6 +794,7 @@ function PostDetailScreen() {
     y: number;
   } | null>(null);
   const [postMenuVisible, setPostMenuVisible] = useState(false);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
   const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
   const photoViewerRef = useRef<PhotoViewerState>(null);
 
@@ -858,21 +863,19 @@ function PostDetailScreen() {
     setPhotoViewer(null);
   }, []);
 
-  const handleShare = useCallback(async () => {
+  const handleOpenShare = useCallback(() => {
     if (!isFeedPostShareable(activePost)) return;
-    try {
-      const url = activePost.shareUrl;
-      await Share.share({
-        message: activePost.caption
-          ? `${activePost.caption}${url ? `\n\n${url}` : ''}`
-          : url ?? 'Chia sẻ bài viết',
-        title: 'Chia sẻ bài viết',
-        url,
-      });
-    } catch {
-      // share is best-effort — silently no-op on cancel
-    }
+    setShareModalVisible(true);
   }, [activePost]);
+
+  const handleCloseShare = useCallback(() => {
+    setShareModalVisible(false);
+  }, []);
+
+  const handleInternalSharePost = useCallback(
+    (input: SharePostInput) => sharePost(input),
+    [sharePost],
+  );
 
   const handleOpenPostMenu = useCallback(
     (selectedPost: FeedPost) => {
@@ -1241,7 +1244,7 @@ function PostDetailScreen() {
           onOpenPicker={handleOpenPicker}
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
-          onShare={handleShare}
+          onShare={handleOpenShare}
           onOpenReactions={handleOpenReactions}
           navigateToProfile={navigateToProfile}
           showIdentityHeader={false}
@@ -1259,7 +1262,7 @@ function PostDetailScreen() {
           onOpenPicker={handleOpenPicker}
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
-          onShare={handleShare}
+          onShare={handleOpenShare}
           onProfilePress={navigateToProfile}
           showIdentityHeader={false}
           language={language}
@@ -1280,7 +1283,7 @@ function PostDetailScreen() {
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
           onOpenReactions={handleOpenReactions}
-          onShare={() => handleShare()}
+          onShare={handleOpenShare}
           onProfilePress={navigateToProfile}
           showIdentityHeader={false}
         />
@@ -1293,7 +1296,7 @@ function PostDetailScreen() {
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
           onPhotoPress={handlePhotoPress}
-          onShare={handleShare}
+          onShare={handleOpenShare}
           onOpenReactions={handleOpenReactions}
           navigateToProfile={navigateToProfile}
           showIdentityHeader={false}
@@ -1400,7 +1403,16 @@ function PostDetailScreen() {
         }}
         onCommentTap={handlePhotoViewerCommentTap}
         onProfilePress={navigateToProfile}
+        onOpenShare={handleOpenShare}
+        onInternalShare={handleInternalSharePost}
         posts={activePost ? [activePost as FeedPost] : []}
+      />
+
+      <FeedShareBottomSheet
+        visible={shareModalVisible}
+        post={activePost as FeedPost}
+        onClose={handleCloseShare}
+        onInternalShare={handleInternalSharePost}
       />
 
       <PostReactionsSheet

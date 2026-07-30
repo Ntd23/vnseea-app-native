@@ -44,7 +44,10 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getEventsCopy } from '../../application/i18n/eventsCopy';
-import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
+import {
+  ComposerCard,
+  type ComposerActionId,
+} from '../../../feed/presentation/components/ComposerCard';
 import {
   FeedFilterTabs,
   type FeedFilterTabKey,
@@ -285,7 +288,16 @@ function EventDetailScreen() {
     }
   }, [copy.error, event.id, isGoing, isInterested, toggleGoing, toggleInterested]);
 
-  const handleCreatePost = useCallback((action?: 'photo' | 'video' | 'product' | 'poll') => {
+  const handleCreatePost = useCallback((action?: ComposerActionId) => {
+    if (action === 'product') {
+      navigation.navigate(ROUTES.CREATE_PRODUCT);
+      return;
+    }
+    if (action === 'job') {
+      navigation.navigate(ROUTES.CREATE_JOB);
+      return;
+    }
+
     navigation.navigate(ROUTES.CREATE_POST, {
       eventId,
       initialAction: action,
@@ -413,7 +425,7 @@ function EventDetailScreen() {
             onPressAction={handleCreatePost}
             avatarUrl={profile?.avatarUrl}
             displayName={profile?.name || (language === 'vi' ? 'Quản trị' : 'Admin')}
-            copy={{ createPostBtn: language === 'vi' ? 'Hôm nay bạn thế nào ?' : "What's on your mind?", photo: 'Photos', video: 'Video', product: 'Product', poll: 'Poll' }}
+            copy={{ createPostBtn: language === 'vi' ? 'Hôm nay bạn thế nào ?' : "What's on your mind?", photo: 'Photos', video: 'Video', product: 'Product', job: language === 'vi' ? 'Việc làm' : 'Job' }}
           />
         </View>
         <FeedFilterTabs activeSource={activeFilter} onChangeSource={setActiveFilter} />

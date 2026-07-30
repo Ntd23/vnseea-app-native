@@ -27,6 +27,8 @@ export interface ProductItem {
   sub_category?: number;
   description: string;
   price: string;
+  /** Optional VNSEEA point price configured by the seller. */
+  points?: string | number;
   currency: string;
   currency_code: string;
   currency_symbol: string;
@@ -96,6 +98,7 @@ export interface CreateProductInput {
   product_category: string;
   product_description: string;
   product_price: string;
+  points?: string;
   product_location: string;
   images: { uri: string; name: string; type: string }[];
   product_type?: number; // 0 = normal, 1 = sell

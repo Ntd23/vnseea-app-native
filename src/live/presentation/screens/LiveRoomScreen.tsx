@@ -55,6 +55,7 @@ import {
   FEED_REACTION_TYPES,
 } from '../../../feed/presentation/components/FeedReactionAssets';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
+import { CommentMentionText } from '../../../reels/presentation/components/CommentMentionText';
 
 type LiveRouteParams = {
   postId: number;
@@ -773,7 +774,12 @@ export default function LiveRoomScreen() {
                           </View>
                         )}
                       </View>
-                      <Text className="text-[11px] text-white/85 mt-0.5">{item.message}</Text>
+                      <Text className="text-[11px] text-white/85 mt-0.5">
+                        <CommentMentionText
+                          text={item.message}
+                          mentionStyle={{ color: '#93C5FD' }}
+                        />
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 )}

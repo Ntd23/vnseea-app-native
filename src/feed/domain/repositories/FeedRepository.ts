@@ -68,6 +68,12 @@ export interface ReportPostInput {
 
 export interface FeedPostsPage<TPost extends FeedPost = FeedPost> {
   posts: TPost[];
+  /**
+   * Extra rows already mapped from the same cursor window. Home keeps these
+   * in its ready queue instead of discarding them and jumping the cursor past
+   * content the user has not seen yet.
+   */
+  prefetchedPosts?: TPost[];
   nextCursor?: string;
   reachedEnd: boolean;
 }

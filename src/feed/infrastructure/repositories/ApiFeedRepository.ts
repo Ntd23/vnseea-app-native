@@ -29,9 +29,7 @@ import {
   WIRE_TO_REACTION,
   type ReactionType,
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
-import type {
-  ReelCaptionSuggestion,
-} from '../../../reels/domain/types/reels.types';
+import type { ReelCaptionSuggestion } from '../../../reels/domain/types/reels.types';
 import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
 import type {
   FeedSource,
@@ -370,7 +368,8 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
     topReactions: extractTopReactions(raw, myReaction),
     privacy,
     privacyContract: privacyResult.contract,
-    isAnonymous: privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
+    isAnonymous:
+      privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
     publisher: presentation.isIdentityRedacted
       ? { id: '', name: '', username: '' }
       : {
@@ -673,7 +672,8 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     topReactions: extractTopReactions(raw, myReaction),
     privacy,
     privacyContract: privacyResult.contract,
-    isAnonymous: privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
+    isAnonymous:
+      privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
     linkPreview: extractLinkPreview(raw),
     publisher: presentation.isIdentityRedacted
       ? { id: '', name: '', username: '' }
@@ -1068,7 +1068,8 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     topReactions: extractTopReactions(raw, myReaction),
     privacy,
     privacyContract: privacyResult.contract,
-    isAnonymous: privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
+    isAnonymous:
+      privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
     linkPreview: extractLinkPreview(raw),
     publisher: presentation.isIdentityRedacted
       ? { id: '', name: '', username: '' }
@@ -1281,6 +1282,10 @@ function setCachedSuggestedIds(viewerId: string, ids: string[]): void {
 }
 
 const FEED_REPOSITORY_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
+// Diagnostic total-count probes fan out several extra API requests and must
+// never compete with the user's first feed page. Enable locally only when
+// explicitly investigating backend inventory.
+const FEED_REPOSITORY_NETWORK_PROBES = false;
 
 type RawFeedPostsPage = {
   posts: Array<Record<string, unknown>>;
@@ -1400,52 +1405,75 @@ async function fetchRecommendedRawFeedPostsWithFallback(
   limit: number,
   afterPostId?: string,
   source: FeedSource = 'all',
+  minimumUsablePosts = 0,
 ): Promise<RawFeedPostsPage> {
+  let page: RawFeedPostsPage;
   try {
-    const page = await fetchRecommendedRawFeedPosts(limit, afterPostId, source);
-    if (page.posts.length >= limit && !page.reachedEnd) {
-      return page;
-    }
-
-    const legacyPage = await fetchRawFeedPosts(limit, afterPostId, source);
-    if (legacyPage.posts.length > 0) {
-      const merged = new Map<string, Record<string, unknown>>();
-      for (const post of [...page.posts, ...legacyPage.posts]) {
-        merged.set(rawPostKey(post), post);
-      }
-      const posts = Array.from(merged.values());
-      const nextCursor = getOldestRawPostId(posts);
-      debugFeedRepository('recommended-feed merged fallback', {
-        afterPostId: afterPostId ?? 'first',
-        recommended: page.posts.length,
-        legacy: legacyPage.posts.length,
-        merged: posts.length,
-        nextCursor: nextCursor ?? '(none)',
-      });
-
-      return {
-        posts,
-        nextCursor,
-        primaryCount: Math.max(page.primaryCount, legacyPage.primaryCount),
-        reachedEnd:
-          page.reachedEnd === true &&
-          legacyPage.posts.length === 0 &&
-          legacyPage.reachedEnd === true,
-        sourceKind: 'legacy',
-      };
-    }
-
-    if (page.posts.length > 0 || page.reachedEnd) {
-      return page;
-    }
+    page = await fetchRecommendedRawFeedPosts(limit, afterPostId, source);
   } catch (err) {
     debugFeedRepository('recommended-feed fallback', {
       afterPostId: afterPostId ?? 'first',
       error: err instanceof Error ? err.message : String(err),
     });
+    return fetchRawFeedPosts(limit, afterPostId, source);
   }
 
-  return fetchRawFeedPosts(limit, afterPostId, source);
+  if (page.posts.length >= limit && !page.reachedEnd) {
+    return page;
+  }
+
+  // A partial recommended page is only sufficient when it contains enough
+  // actually renderable light rows and the backend supplied a cursor that
+  // can continue. Raw rows dominated by videos/stubs must fall through so
+  // the legacy lane can fill the Home page instead of making it look ended.
+  const usableLightPostCount = mapLightRawFeedPosts(page.posts).length;
+  if (
+    afterPostId &&
+    minimumUsablePosts > 0 &&
+    usableLightPostCount >= minimumUsablePosts &&
+    !page.reachedEnd &&
+    page.nextCursor
+  ) {
+    return page;
+  }
+
+  // Keep fallback errors visible to the caller. Retrying the complete fan-out
+  // immediately inside this function would double the wait and can still be
+  // mistaken for an empty feed by higher layers.
+  const legacyPage = await fetchRawFeedPosts(limit, afterPostId, source);
+  if (legacyPage.posts.length > 0) {
+    const merged = new Map<string, Record<string, unknown>>();
+    for (const post of [...page.posts, ...legacyPage.posts]) {
+      merged.set(rawPostKey(post), post);
+    }
+    const posts = Array.from(merged.values());
+    const nextCursor =
+      page.nextCursor ??
+      legacyPage.nextCursor ??
+      getOldestRawPostId(page.posts) ??
+      getOldestRawPostId(legacyPage.posts);
+    debugFeedRepository('recommended-feed merged fallback', {
+      afterPostId: afterPostId ?? 'first',
+      recommended: page.posts.length,
+      legacy: legacyPage.posts.length,
+      merged: posts.length,
+      nextCursor: nextCursor ?? '(none)',
+    });
+
+    return {
+      posts,
+      nextCursor,
+      primaryCount: Math.max(page.primaryCount, legacyPage.primaryCount),
+      reachedEnd: false,
+      sourceKind: 'legacy',
+    };
+  }
+
+  if (page.posts.length > 0 || page.reachedEnd) {
+    return page;
+  }
+
+  return legacyPage;
 }
 
 async function fetchRawFeedPosts(
@@ -1453,10 +1481,13 @@ async function fetchRawFeedPosts(
   afterPostId?: string,
   source: FeedSource = 'all',
 ): Promise<RawFeedPostsPage> {
+  let streamAttemptCount = 0;
+  let streamFailureCount = 0;
   const tryFetch = async (
     payload: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> => {
     const streamTag = String(payload.type ?? 'unknown');
+    streamAttemptCount += 1;
     try {
       const response = await backendApi.post<{
         api_status: number | string;
@@ -1473,6 +1504,7 @@ async function fetchRawFeedPosts(
       });
       return rows;
     } catch (err) {
+      streamFailureCount += 1;
       debugFeedRepository('tryFetch error', {
         stream: streamTag,
         id: payload.id,
@@ -1614,6 +1646,14 @@ async function fetchRawFeedPosts(
       after_post_id: afterPostId,
     });
 
+    if (
+      followedRaw.length === 0 &&
+      streamAttemptCount > 0 &&
+      streamFailureCount === streamAttemptCount
+    ) {
+      throw new Error('Feed transport failed for every requested stream.');
+    }
+
     debugFeedRepository('following stream', {
       afterPostId: afterPostId ?? 'first',
       requestedLimit: limit,
@@ -1627,20 +1667,11 @@ async function fetchRawFeedPosts(
     };
   }
 
-  // The merge logic now caps own posts ONLY from the `ownRaw`
-  // stream (not from followed/discovery), so the cap's whole job is
-  // to keep the viewer's own posts from drowning the page. With
-  // that isolation we can safely fetch a larger window from the
-  // server and let the cap trim it down. `ownRawLimit=20` is the
-  // maximum number of the viewer's own posts we'll *consider* on a
-  // single page — the cap will reduce that to `ownPostsLimit` after
-  // dedupe so the page stays balanced.
-  const ownPostsLimit = sessionUserId
-    ? afterPostId
-      ? Math.max(2, Math.min(4, Math.ceil(limit / 8)))
-      : Math.max(3, Math.min(6, Math.ceil(limit / 5)))
+  // Preserve a complete window from the viewer's own timeline. A shared
+  // cursor cannot safely advance past rows that were deliberately capped.
+  const ownRawLimit = sessionUserId
+    ? Math.min(50, Math.max(20, limit))
     : 0;
-  const ownRawLimit = Math.max(ownPostsLimit, 20);
 
   // ── Diagnostic: log total raw posts available per source ──
   //
@@ -1649,7 +1680,7 @@ async function fetchRawFeedPosts(
   // could in principle see. This answers the "is the feed short
   // because the install is empty, or because the dedupe / classifier
   // is eating things?" question with hard numbers instead of guessing.
-  if (!afterPostId) {
+  if (FEED_REPOSITORY_NETWORK_PROBES && !afterPostId) {
     const probedAuthorIds = (() => {
       const ids = getCachedSuggestedIds(sessionUserId ?? 'guest') ?? [];
       return ids.slice(0, 16);
@@ -1717,6 +1748,9 @@ async function fetchRawFeedPosts(
   //    follows an active author (e.g. the admin) gets the full 20-30
   //    posts from that author instead of just the first 30.
   const followedLimit = Math.max(limit, 45);
+  const firstPageDiscoveryPromise = !afterPostId
+    ? fetchDiscoveryPosts(undefined)
+    : null;
   const [followedRaw, ownRaw, publicRaw] = await Promise.all([
     tryFetch({
       type: 'get_news_feed',
@@ -1727,10 +1761,8 @@ async function fetchRawFeedPosts(
       ? tryFetch({
           type: 'get_user_posts',
           id: sessionUserId,
-          // Fetch up to ownRawLimit so we have a generous raw window
-          // for the cap to trim down. (The merge logic then keeps
-          // only the first ownPostsLimit posts of the viewer's own
-          // and dedupes any duplicates already present in followed.)
+          // Fetch a complete own-post window and dedupe it against followed
+          // posts later without discarding cursor-covered rows.
           limit: ownRawLimit,
           after_post_id: afterPostId,
         })
@@ -1764,57 +1796,32 @@ async function fetchRawFeedPosts(
   let discoveryRaw: Array<Record<string, unknown>> = [];
   const followedRatio = followedRaw.length / Math.max(1, followedLimit);
   const shouldFetchDiscovery = afterPostId ? followedRatio < 0.35 : true;
-  if (shouldFetchDiscovery) {
+  if (firstPageDiscoveryPromise) {
+    discoveryRaw = await firstPageDiscoveryPromise;
+  } else if (shouldFetchDiscovery) {
     discoveryRaw = await fetchDiscoveryPosts(afterPostId);
   }
 
   // Merge + dedupe by post id using a Map (O(1) lookup, no Set→Array churn).
   //
-  // The old loop iterated all three streams together and applied the
-  // `ownCapped` cap whenever a post's owner was the viewer. That
-  // worked fine for normal users (where the viewer's own posts only
-  // appeared in `ownRaw`) but **silently dropped 30 admin posts** on
-  // self-following accounts, because the viewer's own posts also
-  // appear in `followedRaw` (via the follow-graph) and the cap
-  // counted them all together. With `ownPostsLimit=6` we only kept
-  // the first 6 admin posts and dropped the other 30 — even though
-  // those 30 were just as legitimate as the followed-graph feed.
-  //
-  // Fix: cap the `ownRaw` stream ONLY (it's the dedicated slot for
-  // the viewer's own posts), and let posts in `followedRaw` /
-  // `discoveryRaw` pass through unfiltered. Dedupe still runs across
-  // all three streams so the viewer never sees the same post twice.
+  // Keep every fetched source row and dedupe only by id. This preserves the
+  // same own-post inventory that Profile can paginate through.
   const mergedMap = new Map<string, Record<string, unknown>>();
   let pageAdIncluded = false;
   let ownPostsIncluded = 0;
   const dropCounters = {
     adSkipped: 0,
-    ownCapped: 0,
     noId: 0,
     duplicate: 0,
   };
 
-  const pushPost = (
-    post: Record<string, unknown>,
-    isFromOwnStream: boolean,
-  ) => {
+  const pushPost = (post: Record<string, unknown>) => {
     const isAd = looksLikeAd(post);
     if (isAd && pageAdIncluded) {
       dropCounters.adSkipped += 1;
       return;
     }
     const ownerId = readPostOwnerId(post);
-    // Only enforce the cap for posts that came from the dedicated
-    // `ownRaw` stream. Followed + discovery always pass through.
-    if (
-      isFromOwnStream &&
-      sessionUserId &&
-      ownerId === String(sessionUserId) &&
-      ownPostsIncluded >= ownPostsLimit
-    ) {
-      dropCounters.ownCapped += 1;
-      return;
-    }
     const id = String(
       isAd
         ? rawPostKey(post)
@@ -1837,33 +1844,39 @@ async function fetchRawFeedPosts(
     }
   };
 
-  // Phase 1: ownRaw — apply the cap so the viewer's own posts
-  // don't drown the page.
+  // Phase 1: retain the viewer's own cursor window in full.
   for (const post of ownRaw) {
-    pushPost(post, true);
+    pushPost(post);
   }
 
-  // Phase 2: followed + discovery + public — no cap. The viewer's own posts
-  // that already landed in `ownRaw` will be deduped here, but
-  // additional ones are allowed through.
+  // Phase 2: merge followed + discovery + public and dedupe overlaps.
   for (const post of followedRaw) {
-    pushPost(post, false);
+    pushPost(post);
   }
   for (const post of discoveryRaw) {
-    pushPost(post, false);
+    pushPost(post);
   }
   for (const post of publicRaw) {
-    pushPost(post, false);
+    pushPost(post);
   }
 
   const merged = Array.from(mergedMap.values());
+
+  if (
+    merged.length === 0 &&
+    streamAttemptCount > 0 &&
+    streamFailureCount === streamAttemptCount
+  ) {
+    throw new Error('Feed transport failed for every requested stream.');
+  }
 
   debugFeedRepository('raw streams merged', {
     afterPostId: afterPostId ?? 'first',
     requestedLimit: limit,
     followed: followedRaw.length,
     own: ownRaw.length,
-    ownLimit: ownPostsLimit,
+    ownLimit: ownRawLimit,
+    ownIncluded: ownPostsIncluded,
     discovery: discoveryRaw.length,
     public: publicRaw.length,
     rawTotal:
@@ -2125,6 +2138,7 @@ export function createFeedRepository(): FeedRepository {
       let cursor = afterPostId;
       let lastRawCursor: string | undefined;
       let reachedEnd = false;
+      let cursorStalled = false;
       let primaryCount = 0;
       let scannedRawRows = 0;
 
@@ -2137,6 +2151,7 @@ export function createFeedRepository(): FeedRepository {
           rawLimit,
           cursor,
           source,
+          Math.max(1, limit - mappedById.size),
         );
         scannedRawRows += page.posts.length;
         primaryCount += page.primaryCount;
@@ -2152,12 +2167,10 @@ export function createFeedRepository(): FeedRepository {
           nextRawCursor && nextRawCursor !== cursor,
         );
         lastRawCursor = nextRawCursor;
-        reachedEnd =
-          page.reachedEnd === true ||
-          page.posts.length === 0 ||
-          !advancedCursor;
+        reachedEnd = page.reachedEnd === true;
+        cursorStalled = page.posts.length === 0 || !advancedCursor;
 
-        if (reachedEnd || !advancedCursor) {
+        if (reachedEnd || cursorStalled) {
           break;
         }
 
@@ -2166,11 +2179,14 @@ export function createFeedRepository(): FeedRepository {
 
       const mappedPosts = mixAdsIntoPosts(Array.from(mappedById.values()));
       const posts = mappedPosts.slice(0, limit);
+      const prefetchedPosts = mappedPosts.slice(limit);
       const renderedCursor = getOldestFeedPostId(posts);
-      const nextCursor =
-        mappedPosts.length > limit
-          ? renderedCursor
-          : lastRawCursor ?? renderedCursor;
+      // `rawLimit` is intentionally larger than the visible page so one
+      // request can fill Home quickly. Never throw those extra mapped rows
+      // away: the server cursor already advances past the complete raw
+      // window, so discarding them here would permanently skip posts that
+      // Profile can still display.
+      const nextCursor = lastRawCursor ?? renderedCursor;
 
       debugFeedRepository('light posts page', {
         requestedLimit: limit,
@@ -2180,13 +2196,17 @@ export function createFeedRepository(): FeedRepository {
         primaryCount,
         mapped: mappedPosts.length,
         returned: posts.length,
+        prefetched: prefetchedPosts.length,
         renderedCursor: renderedCursor ?? '(none)',
         nextCursor: nextCursor ?? '(none)',
         reachedEnd,
+        cursorStalled,
       });
 
       return {
         posts,
+        prefetchedPosts:
+          prefetchedPosts.length > 0 ? prefetchedPosts : undefined,
         nextCursor,
         reachedEnd: reachedEnd && mappedPosts.length <= limit,
       };
@@ -2443,10 +2463,7 @@ export function createFeedRepository(): FeedRepository {
         next_cursor?: string | number;
         has_more?: boolean;
         message?: string;
-      }>(
-        apiRoutes.feed.taggableUsers,
-        buildTaggableUsersPayload(input),
-      );
+      }>(apiRoutes.feed.taggableUsers, buildTaggableUsersPayload(input));
 
       if (String(response.api_status) !== '200') {
         throw new Error(

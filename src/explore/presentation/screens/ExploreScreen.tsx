@@ -77,6 +77,7 @@ import StatPill from '../components/StatPill';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
+import { CommentMentionText } from '../../../reels/presentation/components/CommentMentionText';
 
 const BRAND = APP_BRAND_COLOR;
 const AVATAR_FALLBACK = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
@@ -129,6 +130,7 @@ function HashtagCommentRow({
   depth = 0,
   onReply,
   onLoadReplies,
+  onPressProfile,
   replies,
   isLoadingReplies,
 }: {
@@ -136,6 +138,7 @@ function HashtagCommentRow({
   depth?: number;
   onReply: (commentId: string, username: string) => void;
   onLoadReplies: (commentId: string) => void;
+  onPressProfile: (userId: string) => void;
   replies?: ReelComment[];
   isLoadingReplies?: boolean;
 }) {
@@ -155,7 +158,11 @@ function HashtagCommentRow({
             </Text>
             {comment.text ? (
               <Text className="mt-1 text-body-primary text-[#111827]">
-                {comment.text}
+                <CommentMentionText
+                  text={comment.text}
+                  mentions={comment.mentions}
+                  onPressMention={mention => onPressProfile(mention.userId)}
+                />
               </Text>
             ) : null}
             {comment.isSending ? (
@@ -214,6 +221,7 @@ function HashtagCommentRow({
               depth={depth + 1}
               onReply={onReply}
               onLoadReplies={onLoadReplies}
+              onPressProfile={onPressProfile}
             />
           ))}
         </View>
@@ -241,6 +249,7 @@ function HashtagCommentsOverlay({
   onLoadReplies,
   onStartReply,
   onCancelReply,
+  onPressProfile,
 }: {
   visible: boolean;
   comments: ReelComment[];
@@ -263,6 +272,7 @@ function HashtagCommentsOverlay({
   onLoadReplies: (commentId: string) => void;
   onStartReply: (commentId: string, username: string) => void;
   onCancelReply: () => void;
+  onPressProfile: (userId: string) => void;
 }) {
   const [draft, setDraft] = useState('');
 
@@ -378,6 +388,7 @@ function HashtagCommentsOverlay({
                 isLoadingReplies={loadingRepliesIds.includes(item.id)}
                 onReply={onStartReply}
                 onLoadReplies={onLoadReplies}
+                onPressProfile={onPressProfile}
               />
             )}
           />
@@ -1275,6 +1286,7 @@ function ExploreScreen() {
               onLoadReplies={commentVm.loadReplies}
               onStartReply={commentVm.startReplyTo}
               onCancelReply={commentVm.cancelReply}
+              onPressProfile={navigateToProfile}
             />
           ) : null}
           {shareSheetVisible && sharingPost ? (

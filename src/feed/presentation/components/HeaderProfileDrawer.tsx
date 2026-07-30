@@ -169,7 +169,6 @@ const DRAWER_COPY = {
     featForums: 'Diễn đàn',
     featReels: 'cuộn phim',
     featExplore: 'Khám phá',
-    featPopularThings: 'Những điều phổ biến',
     settingsLabel: 'Cài đặt',
     subscriptionsLabel: 'Đăng ký',
     adminAreaLabel: 'Khu vực quản trị',
@@ -261,7 +260,6 @@ const DRAWER_COPY = {
     featForums: 'Forums',
     featReels: 'Reels',
     featExplore: 'Explore',
-    featPopularThings: 'Popular things',
     settingsLabel: 'Settings',
     subscriptionsLabel: 'Subscriptions',
     adminAreaLabel: 'Admin Area',
@@ -553,9 +551,6 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
           case 'explore':
             navigation.navigate(ROUTES.SEARCH, { discovery: true });
             return;
-          case 'common':
-            openSettingsPanel('general-common');
-            return;
           case 'settings':
             navigation.navigate(ROUTES.USER_DASHBOARD);
             return;
@@ -841,11 +836,6 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              title={copy.featJobs}
              icon={<Briefcase size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'jobs' })}
-            />
-            <MenuRow
-             title={copy.featPopularThings}
-             icon={<Users size={18} color="#64748b" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'common' })}
             />
             <MenuRow
              title={copy.featFunding}

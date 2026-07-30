@@ -12,7 +12,7 @@ import {
   Image as ImageIcon,
   Video as VideoIcon,
   ShoppingCart,
-  BarChart3,
+  BriefcaseBusiness,
   Smile,
 } from 'lucide-react-native';
 import {
@@ -30,7 +30,7 @@ export type ComposerCopy = {
   feeling: string;
 };
 
-type ComposerActionId = 'photo' | 'video' | 'product' | 'poll';
+export type ComposerActionId = 'photo' | 'video' | 'product' | 'job';
 
 type ComposerAction = {
   id: ComposerActionId;
@@ -104,10 +104,10 @@ export function ComposerCard({
       Icon: ShoppingCart,
     },
     {
-      id: 'poll',
-      label: copy.poll || 'Poll',
+      id: 'job',
+      label: copy.job || 'Job',
       color: '#0d9488',
-      Icon: BarChart3,
+      Icon: BriefcaseBusiness,
     },
   ];
 

@@ -56,6 +56,9 @@ import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { profilePostsChangedEvents } from '../../../feed/application/events/profilePostsChangedEvents';
+import { mapProfileProductPost } from '../../../profile/application/services/profileCommercePosts';
+import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
 import {
@@ -434,6 +437,7 @@ export default function CreateProductScreen() {
     isLoading,
     submitError,
     submitSuccess,
+    createdProductId,
     submitProduct,
     resetForm,
     isEditing,
@@ -709,9 +713,36 @@ export default function CreateProductScreen() {
 
   React.useEffect(() => {
     if (submitSuccess) {
+      if (!isEditing) {
+        profilePostsChangedEvents.emit();
+        if (createdProductId) {
+          createProductRepository()
+            .getProducts({ product_id: createdProductId, limit: 1 })
+            .then(response => {
+              const product = response.products.find(
+                item => String(item.id) === String(createdProductId),
+              );
+              if (!product) return;
+
+              feedCacheStorage.setCachedProducts([
+                product,
+                ...feedCacheStorage
+                  .getCachedProducts()
+                  .filter(item => String(item.id) !== String(product.id)),
+              ]);
+              profilePostsChangedEvents.emit(
+                mapProfileProductPost(
+                  product,
+                  isVi ? 'Người bán' : 'Seller',
+                ),
+              );
+            })
+            .catch(() => undefined);
+        }
+      }
       navigation.replace(ROUTES.MY_PRODUCTS);
     }
-  }, [navigation, submitSuccess]);
+  }, [createdProductId, isEditing, isVi, navigation, submitSuccess]);
 
   // SUCCESS STATE
   if (submitSuccess) {
@@ -832,6 +863,25 @@ export default function CreateProductScreen() {
               keyboardType="numeric"
               value={formData.product_price}
               onChangeText={val => updateFormData('product_price', val)}
+            />
+          </FieldWrapper>
+
+          {/* Giá điểm VNSEEA — tùy chọn */}
+          <FieldWrapper
+            label={
+              isVi
+                ? 'Giá điểm VNSEEA (không bắt buộc)'
+                : 'VNSEEA point price (optional)'
+            }
+            error={errors.points}
+          >
+            <TextInput
+              style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', height: '100%' }}
+              placeholder={isVi ? 'Để trống nếu không áp dụng' : 'Leave blank if not applicable'}
+              placeholderTextColor="#94a3b8"
+              keyboardType="numeric"
+              value={formData.points}
+              onChangeText={val => updateFormData('points', val)}
             />
           </FieldWrapper>
 

@@ -94,6 +94,8 @@ import {
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
+import { useDeferredVisiblePostIds } from '../../../feed/application/realtime/useDeferredVisiblePostIds';
+import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import type {
   FeedPost,
@@ -102,6 +104,7 @@ import type {
 import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import { isReelShareable } from '../../domain/policies/reelPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
+import { mapFeedVideoPostToReel } from '../../application/services/reelsStartupFeed';
 
 const VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 70,
@@ -116,7 +119,7 @@ const REELS_NEW_BUTTON_HEADER_GAP = 50;
 const REELS_HEADER_LAYER_Z = 10030;
 const REELS_COMMENTS_PREVIEW_RATIO = 0.36;
 const REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS =
-  Platform.OS === 'android' ? 220 : 160;
+  Platform.OS === 'android' ? 80 : 60;
 
 // Screen width — used by the swipe-back gesture to compute the dismiss
 // threshold and target translation.
@@ -164,35 +167,6 @@ function isReelNewerThanTop(item: ReelsItem, currentItems: ReelsItem[]) {
   }
 
   return false;
-}
-
-function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
-  return {
-    id: post.id,
-    videoUrl: post.videoUrl,
-    thumbnailUrl: post.thumbnailUrl,
-    caption: post.caption,
-    privacy: post.privacy,
-    privacyContract: post.privacyContract ?? 'legacy_feed',
-    isAnonymous: post.isAnonymous === true,
-    canShare: isFeedPostShareable(post),
-    postedAt: post.postedAt,
-    publisher: {
-      userId: post.publisher.id,
-      username: post.publisher.username,
-      name: post.publisher.name,
-      avatarUrl: post.publisher.avatarUrl,
-      isVerified: false,
-      isFollowing: post.publisher.isFollowing,
-    },
-    likeCount: post.likeCount,
-    commentCount: post.commentCount,
-    viewCount: post.viewCount ?? 0,
-    isLiked: post.isLiked,
-    isSaved: post.isSaved ?? false,
-    myReaction: post.myReaction,
-    raw: post,
-  };
 }
 
 function mapReelToFeedVideoPost(item: ReelsItem): FeedVideoPost {
@@ -305,6 +279,10 @@ export default function ReelsScreen() {
     [], // intentional: only seed once on first mount
   );
   const vm = useReelsViewModel(seededInitial);
+  const {
+    postIds: realtimeVisibleReelIds,
+    schedulePostIds: scheduleRealtimeVisibleReelIds,
+  } = useDeferredVisiblePostIds();
   const openReelComments = vm.openComments;
   const closeReelComments = vm.closeComments;
   const activeIndexRef = useRef(vm.activeIndex);
@@ -370,6 +348,28 @@ export default function ReelsScreen() {
       setIsCommentsPreviewVisible(false);
     }
   }, [vm.isCommentsOpen]);
+
+  useEffect(() => {
+    const activeReelId = vm.items[vm.activeIndex]?.id;
+    scheduleRealtimeVisibleReelIds(activeReelId ? [activeReelId] : []);
+  }, [
+    scheduleRealtimeVisibleReelIds,
+    vm.activeIndex,
+    vm.isCommentsOpen,
+    vm.items,
+  ]);
+
+  usePostRealtimeScope({
+    postIds: realtimeVisibleReelIds,
+    enabled: isPlaybackRouteFocused,
+    onSnapshot: vm.applyRealtimePost,
+    onDeleted: vm.removeRealtimePost,
+    onCommentMutation: change => {
+      if (String(vm.selectedCommentPostId) === change.postId) {
+        vm.refreshComments().catch(() => undefined);
+      }
+    },
+  });
 
   useEffect(() => {
     return () => {
@@ -689,6 +689,12 @@ export default function ReelsScreen() {
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (isCommentsOpenRef.current) return;
+      scheduleRealtimeVisibleReelIds(
+        viewableItems
+          .filter(item => item.isViewable)
+          .map(item => String((item.item as ReelsItem | undefined)?.id ?? ''))
+          .filter(postId => /^[1-9][0-9]*$/.test(postId)),
+      );
       if (viewableItems.length === 0) return;
       const first = viewableItems[0];
       if (first.isViewable !== false && typeof first.index === 'number') {

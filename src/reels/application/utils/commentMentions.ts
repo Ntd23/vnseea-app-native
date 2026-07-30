@@ -15,6 +15,52 @@ export type CommentMentionSegment = {
   isMention?: boolean;
 };
 
+const UNKNOWN_COMMENT_MENTION_PATTERN = /@[\p{L}\p{M}\p{N}_]+/gu;
+const MENTION_TOKEN_CHARACTER_PATTERN = /[\p{L}\p{M}\p{N}_]/u;
+const EMAIL_LOCAL_CHARACTER_PATTERN = /[\p{L}\p{M}\p{N}_.%+-]/u;
+
+function hasMentionStartBoundary(text: string, index: number) {
+  if (index <= 0) return true;
+  return !EMAIL_LOCAL_CHARACTER_PATTERN.test(text.charAt(index - 1));
+}
+
+function hasMentionEndBoundary(text: string, index: number) {
+  if (index >= text.length) return true;
+  return !MENTION_TOKEN_CHARACTER_PATTERN.test(text.charAt(index));
+}
+
+function findNextKnownMentionIndex(
+  text: string,
+  value: string,
+  fromIndex: number,
+) {
+  let index = text.indexOf(value, fromIndex);
+
+  while (index >= 0) {
+    if (
+      hasMentionStartBoundary(text, index) &&
+      hasMentionEndBoundary(text, index + value.length)
+    ) {
+      return index;
+    }
+    index = text.indexOf(value, index + value.length);
+  }
+
+  return -1;
+}
+
+function findNextUnknownMention(text: string, fromIndex: number) {
+  UNKNOWN_COMMENT_MENTION_PATTERN.lastIndex = fromIndex;
+  let match = UNKNOWN_COMMENT_MENTION_PATTERN.exec(text);
+
+  while (match) {
+    if (hasMentionStartBoundary(text, match.index)) return match;
+    match = UNKNOWN_COMMENT_MENTION_PATTERN.exec(text);
+  }
+
+  return null;
+}
+
 export function getActiveCommentMentionToken(
   text = '',
 ): ActiveCommentMentionToken | null {
@@ -150,7 +196,7 @@ export function splitCommentMentionSegments(
     let nearestCandidate: (typeof candidates)[number] | undefined;
 
     candidates.forEach(candidate => {
-      const index = text.indexOf(candidate.value, cursor);
+      const index = findNextKnownMentionIndex(text, candidate.value, cursor);
       if (index < 0) return;
       if (
         nearestIndex < 0 ||
@@ -163,9 +209,7 @@ export function splitCommentMentionSegments(
       }
     });
 
-    const unknownMatch = /@[A-Za-z0-9_]+/g;
-    unknownMatch.lastIndex = cursor;
-    const rawUnknown = unknownMatch.exec(text);
+    const rawUnknown = findNextUnknownMention(text, cursor);
     const unknownIndex = rawUnknown?.index ?? -1;
 
     const useUnknown =

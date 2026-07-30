@@ -9,6 +9,7 @@ import type { RootStackParamList } from './types';
 import MainTabNavigator from './MainTabNavigator';
 import { navigationRef } from './navigationRef';
 import { VNSEEA_NAVIGATION_THEME } from './navigationTheme';
+import { MAIN_SURFACE_STACK_TRANSITION_OPTIONS } from './mainSurfaceTransition';
 import { sessionStorage } from '../shared-kernel/infrastructure/storage/sessionStorage';
 import { flushPendingPushNotificationNavigation } from '../notifications/application/navigation/pushNotificationNavigation';
 
@@ -62,11 +63,14 @@ const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {
   gestureEnabled: false,
 };
 
+const NOTIFICATIONS_OPTIONS: NativeStackNavigationOptions = {
+  ...MAIN_SURFACE_STACK_TRANSITION_OPTIONS,
+  contentStyle: { backgroundColor: '#F4F7FA' },
+};
+
 const MESSAGES_OPTIONS: NativeStackNavigationOptions = {
-  animation: 'fade',
-  animationDuration: 140,
+  ...MAIN_SURFACE_STACK_TRANSITION_OPTIONS,
   contentStyle: { backgroundColor: '#FFFFFF' },
-  gestureEnabled: true,
 };
 
 function AppNavigator() {
@@ -170,6 +174,16 @@ function AppNavigator() {
                 name={name}
                 component={component}
                 options={POST_DETAIL_OPTIONS}
+              />
+            );
+          }
+          if (name === ROUTES.NOTIFICATIONS) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={NOTIFICATIONS_OPTIONS}
               />
             );
           }

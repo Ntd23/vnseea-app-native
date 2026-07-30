@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -773,7 +774,17 @@ export function FeedShareBottomSheet({
   if (!mounted || !post || !canShare) return null;
 
   return (
-    <View className="absolute inset-0 z-[1100] justify-end">
+    <Modal
+      visible={mounted}
+      transparent
+      animationType="none"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      navigationBarTranslucent
+      hardwareAccelerated
+      onRequestClose={handleClose}
+    >
+      <View style={styles.modalRoot} className="justify-end">
       <Animated.View
         pointerEvents={shareVisible ? 'auto' : 'none'}
         style={[backdropStyle, styles.backdrop]}
@@ -933,13 +944,17 @@ export function FeedShareBottomSheet({
           ) : null}
         </Animated.View>
       </KeyboardAvoidingView>
-    </View>
+      </View>
+    </Modal>
   );
 }
 
 export default FeedShareBottomSheet;
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+  },
   backdrop: {
     backgroundColor: 'rgba(0,0,0,0.36)',
   },

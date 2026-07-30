@@ -68,4 +68,43 @@ describe('comment mentions', () => {
       { text: '!' },
     ]);
   });
+
+  it('styles unknown Unicode mentions without requiring backend metadata', () => {
+    expect(
+      splitCommentMentionSegments('Chào @Đặng_Thị_Thu, hẹn gặp @ミカ!'),
+    ).toEqual([
+      { text: 'Chào ' },
+      { text: '@Đặng_Thị_Thu', isMention: true },
+      { text: ', hẹn gặp ' },
+      { text: '@ミカ', isMention: true },
+      { text: '!' },
+    ]);
+  });
+
+  it('does not treat the @ inside an email address as a mention', () => {
+    expect(
+      splitCommentMentionSegments(
+        'Gửi mail tới support@vnseea.vn hoặc tag @vnseea.',
+      ),
+    ).toEqual([
+      { text: 'Gửi mail tới support@vnseea.vn hoặc tag ' },
+      { text: '@vnseea', isMention: true },
+      { text: '.' },
+    ]);
+  });
+
+  it('requires sensible boundaries for known mentions too', () => {
+    expect(
+      splitCommentMentionSegments(
+        'mail@Nguyễn Văn An và @Nguyễn Văn An2, rồi @Nguyễn Văn An.',
+        [mention],
+      ),
+    ).toEqual([
+      { text: 'mail@Nguyễn Văn An và ' },
+      { text: '@Nguyễn', isMention: true },
+      { text: ' Văn An2, rồi ' },
+      { text: '@Nguyễn Văn An', mention, isMention: true },
+      { text: '.' },
+    ]);
+  });
 });

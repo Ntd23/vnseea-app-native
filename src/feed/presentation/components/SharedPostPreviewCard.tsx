@@ -1,12 +1,6 @@
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
-import {
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   BarChart3,
   BriefcaseBusiness,
@@ -19,6 +13,10 @@ import {
 import type { SharedPostPreviewModel } from '../../domain/types/feed.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { buildPostActivityContext } from '../../application/composer/postActivityContext';
+import {
+  markFeedMediaLoaded,
+  useFeedMediaLoaded,
+} from '../../application/state/feedMediaLoadState';
 
 type Props = {
   model: SharedPostPreviewModel;
@@ -28,6 +26,7 @@ type Props = {
   onOpenPhoto?: (index: number) => void;
   forceMediaFallback?: boolean;
   onAssetSettled?: (url: string) => void;
+  mediaEnabled?: boolean;
 };
 
 const privacyLabels: Record<SharedPostPreviewModel['privacy'], string> = {
@@ -53,16 +52,50 @@ function formatSourceTime(timestamp?: number) {
   return `${Math.floor(diff / 86400)} ngày`;
 }
 
+function RetainedSharedPreviewImage({
+  uri,
+  style,
+  resizeMode = 'cover',
+  mediaEnabled,
+  forceMediaFallback,
+  onAssetSettled,
+}: {
+  uri: string;
+  style: React.ComponentProps<typeof Image>['style'];
+  resizeMode?: React.ComponentProps<typeof Image>['resizeMode'];
+  mediaEnabled: boolean;
+  forceMediaFallback?: boolean;
+  onAssetSettled?: (url: string) => void;
+}) {
+  const retainedLoaded = useFeedMediaLoaded(uri);
+  if (forceMediaFallback || (!mediaEnabled && !retainedLoaded)) return null;
+
+  return (
+    <Image
+      source={{ uri }}
+      resizeMode={resizeMode}
+      style={style}
+      onLoad={() => {
+        markFeedMediaLoaded(uri);
+        onAssetSettled?.(uri);
+      }}
+      onError={() => onAssetSettled?.(uri)}
+    />
+  );
+}
+
 function SharedPhotoGrid({
   photos,
   onOpenPhoto,
   forceMediaFallback,
   onAssetSettled,
+  mediaEnabled = true,
 }: {
   photos: string[];
   onOpenPhoto?: (index: number) => void;
   forceMediaFallback?: boolean;
   onAssetSettled?: (url: string) => void;
+  mediaEnabled?: boolean;
 }) {
   if (photos.length === 0) return null;
   const visible = photos.slice(0, 4);
@@ -76,15 +109,13 @@ function SharedPhotoGrid({
           onPress={() => onOpenPhoto?.(index)}
           style={single ? styles.singlePhoto : styles.gridPhoto}
         >
-          {!forceMediaFallback ? (
-            <Image
-              source={{ uri: photo }}
-              resizeMode="cover"
-              style={styles.image}
-              onLoad={() => onAssetSettled?.(photo)}
-              onError={() => onAssetSettled?.(photo)}
-            />
-          ) : null}
+          <RetainedSharedPreviewImage
+            uri={photo}
+            style={styles.image}
+            mediaEnabled={mediaEnabled}
+            forceMediaFallback={forceMediaFallback}
+            onAssetSettled={onAssetSettled}
+          />
           {index === 3 && photos.length > 4 ? (
             <View style={styles.moreOverlay}>
               <Text style={styles.moreText}>+{photos.length - 4}</Text>
@@ -104,6 +135,7 @@ export function SharedPostPreviewCard({
   onOpenPhoto,
   forceMediaFallback = false,
   onAssetSettled,
+  mediaEnabled = true,
 }: Props) {
   const content = model.content;
   const storyMode = mode === 'story';
@@ -129,7 +161,10 @@ export function SharedPostPreviewCard({
           <Image
             source={{ uri: model.publisher.avatarUrl }}
             style={styles.avatar}
-            onLoad={() => onAssetSettled?.(model.publisher.avatarUrl!)}
+            onLoad={() => {
+              markFeedMediaLoaded(model.publisher.avatarUrl);
+              onAssetSettled?.(model.publisher.avatarUrl!);
+            }}
             onError={() => onAssetSettled?.(model.publisher.avatarUrl!)}
           />
         ) : (
@@ -172,7 +207,9 @@ export function SharedPostPreviewCard({
             ) : null}
           </Text>
           <View style={styles.metaRow}>
-            <Text style={styles.metaText}>{formatSourceTime(model.postedAt)}</Text>
+            <Text style={styles.metaText}>
+              {formatSourceTime(model.postedAt)}
+            </Text>
             <Text style={styles.metaDot}> · </Text>
             <Globe2 size={12} color="#64748B" />
             <Text style={styles.metaText}> {privacyLabels[model.privacy]}</Text>
@@ -186,9 +223,7 @@ export function SharedPostPreviewCard({
           onPress={() => onOpenPost?.(model.postId)}
           style={styles.captionWrap}
         >
-          <Text style={styles.caption}>
-            {model.caption}
-          </Text>
+          <Text style={styles.caption}>{model.caption}</Text>
         </Pressable>
       ) : null}
 
@@ -199,6 +234,7 @@ export function SharedPostPreviewCard({
             onOpenPhoto={onOpenPhoto}
             forceMediaFallback={forceMediaFallback}
             onAssetSettled={onAssetSettled}
+            mediaEnabled={mediaEnabled}
           />
           {content.linkPreview ? (
             <Pressable
@@ -206,13 +242,13 @@ export function SharedPostPreviewCard({
               onPress={() => onOpenPost?.(model.postId)}
               style={styles.linkPreview}
             >
-              {content.linkPreview.image && !forceMediaFallback ? (
-                <Image
-                  source={{ uri: content.linkPreview.image }}
+              {content.linkPreview.image ? (
+                <RetainedSharedPreviewImage
+                  uri={content.linkPreview.image}
                   style={styles.linkImage}
-                  resizeMode="cover"
-                  onLoad={() => onAssetSettled?.(content.linkPreview!.image!)}
-                  onError={() => onAssetSettled?.(content.linkPreview!.image!)}
+                  mediaEnabled={mediaEnabled}
+                  forceMediaFallback={forceMediaFallback}
+                  onAssetSettled={onAssetSettled}
                 />
               ) : null}
               <Text style={styles.attachmentTitle} numberOfLines={2}>
@@ -223,28 +259,28 @@ export function SharedPostPreviewCard({
         </>
       ) : null}
 
-      {content.kind === 'video' ? (
-        mediaSlot ?? (
-          <Pressable
-            disabled={!onOpenPost}
-            onPress={() => onOpenPost?.(model.postId)}
-            style={styles.videoFallback}
-          >
-            {content.thumbnailUrl && !forceMediaFallback ? (
-              <Image
-                source={{ uri: content.thumbnailUrl }}
-                style={styles.image}
-                resizeMode="cover"
-                onLoad={() => onAssetSettled?.(content.thumbnailUrl!)}
-                onError={() => onAssetSettled?.(content.thumbnailUrl!)}
-              />
-            ) : null}
-            <View style={styles.playBadge}>
-              <Play size={24} color="#FFFFFF" fill="#FFFFFF" />
-            </View>
-          </Pressable>
-        )
-      ) : null}
+      {content.kind === 'video'
+        ? mediaSlot ?? (
+            <Pressable
+              disabled={!onOpenPost}
+              onPress={() => onOpenPost?.(model.postId)}
+              style={styles.videoFallback}
+            >
+              {content.thumbnailUrl ? (
+                <RetainedSharedPreviewImage
+                  uri={content.thumbnailUrl}
+                  style={styles.image}
+                  mediaEnabled={mediaEnabled}
+                  forceMediaFallback={forceMediaFallback}
+                  onAssetSettled={onAssetSettled}
+                />
+              ) : null}
+              <View style={styles.playBadge}>
+                <Play size={24} color="#FFFFFF" fill="#FFFFFF" />
+              </View>
+            </Pressable>
+          )
+        : null}
 
       {content.kind === 'poll' ? (
         <Pressable
@@ -274,13 +310,13 @@ export function SharedPostPreviewCard({
           onPress={() => onOpenPost?.(model.postId)}
           style={styles.attachment}
         >
-          {content.imageUrl && !forceMediaFallback ? (
-            <Image
-              source={{ uri: content.imageUrl }}
+          {content.imageUrl ? (
+            <RetainedSharedPreviewImage
+              uri={content.imageUrl}
               style={styles.attachmentImage}
-              resizeMode="cover"
-              onLoad={() => onAssetSettled?.(content.imageUrl!)}
-              onError={() => onAssetSettled?.(content.imageUrl!)}
+              mediaEnabled={mediaEnabled}
+              forceMediaFallback={forceMediaFallback}
+              onAssetSettled={onAssetSettled}
             />
           ) : null}
           <View style={styles.attachmentCopy}>

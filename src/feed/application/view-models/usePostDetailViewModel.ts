@@ -7,6 +7,7 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   GetPostByIdResult,
   ReportPostInput,
+  SharePostInput,
 } from '../../domain/repositories/FeedRepository';
 
 const feedRepository = createFeedRepository();
@@ -160,6 +161,11 @@ export function usePostDetailViewModel({
     [],
   );
 
+  const sharePost = useCallback(
+    (input: SharePostInput) => feedRepository.sharePost(input),
+    [],
+  );
+
   const deletePost = useCallback(async (targetPostId: string) => {
     const result = await feedRepository.deletePost(targetPostId);
     if (result.deleted) {
@@ -178,6 +184,7 @@ export function usePostDetailViewModel({
     adjustCommentCount,
     savePost,
     reportPost,
+    sharePost,
     deletePost,
   };
 }

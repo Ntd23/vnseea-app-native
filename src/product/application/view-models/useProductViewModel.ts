@@ -10,6 +10,7 @@ export interface ProductFormData {
   product_category: string;
   product_description: string;
   product_price: string;
+  points: string;
   product_location: string;
   product_type: number;
   currency: string;
@@ -31,6 +32,7 @@ const initialFormData: ProductFormData = {
   product_category: '',
   product_description: '',
   product_price: '',
+  points: '',
   product_location: '',
   product_type: 0,
   currency: 'VND',
@@ -51,6 +53,10 @@ function buildInitialFormData(product?: ProductItem): ProductFormData {
     product_category: product.category ? String(product.category) : '',
     product_description: product.description ?? '',
     product_price: product.price ? String(product.price) : '',
+    points:
+      product.points !== undefined && product.points !== null
+        ? String(product.points)
+        : '',
     product_location: product.location ?? '',
     product_type: Number(product.type ?? 0),
     currency:
@@ -119,6 +125,13 @@ export function useProductViewModel(initialProduct?: ProductItem) {
       errors.product_price = 'Vui lòng nhập giá sản phẩm';
     } else if (isNaN(Number(formData.product_price)) || Number(formData.product_price) <= 0) {
       errors.product_price = 'Giá phải lớn hơn 0';
+    }
+
+    if (
+      formData.points.trim() &&
+      (isNaN(Number(formData.points)) || Number(formData.points) <= 0)
+    ) {
+      errors.points = 'Giá điểm VNSEEA phải lớn hơn 0';
     }
 
     if (!formData.product_category) {
@@ -219,6 +232,7 @@ export function useProductViewModel(initialProduct?: ProductItem) {
         product_category: state.formData.product_category,
         product_description: state.formData.product_description,
         product_price: state.formData.product_price,
+        points: state.formData.points.trim(),
         product_location: state.formData.product_location,
         product_type: state.formData.product_type,
         currency: state.formData.currency,

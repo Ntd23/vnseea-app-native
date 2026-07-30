@@ -30,12 +30,16 @@ import {
   hydrateCommentMentionText,
   serializeCommentMentions,
 } from '../utils/commentMentions';
-import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
+import type {
+  FeedPost,
+  FeedVideoPost,
+} from '../../../feed/domain/types/feed.types';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import {
   fetchReelsStartupPage,
   getReelsStartupSnapshot,
   mapFeedVideoPostToReel,
+  mergeFeedVideoPostSnapshotIntoReel,
   mergeReelsStartupItems,
 } from '../services/reelsStartupFeed';
 
@@ -448,6 +452,18 @@ export function useReelsViewModel(initialVideo?: {
     [filterUnavailable],
   );
 
+  const applyRealtimePost = useCallback((nextPost: FeedPost) => {
+    if (nextPost.kind !== 'video') return;
+
+    setItems(prev => {
+      const nextItems = prev.map(item =>
+        mergeFeedVideoPostSnapshotIntoReel(item, nextPost),
+      );
+      itemsRef.current = nextItems;
+      return nextItems;
+    });
+  }, []);
+
   /**
    * Called by `ReelItem` when its VideoPlayer reports a decode error.
    *
@@ -709,6 +725,78 @@ export function useReelsViewModel(initialVideo?: {
     replyOffsetsRef.current = {};
   }, []);
 
+  const removeRealtimePost = useCallback(
+    (postId: string) => {
+      setItems(prev => {
+        const removedIndex = prev.findIndex(
+          item => String(item.id) === String(postId),
+        );
+        if (removedIndex < 0) return prev;
+
+        const nextItems = prev.filter(
+          item => String(item.id) !== String(postId),
+        );
+        itemsRef.current = nextItems;
+        setActiveIndex(currentIndex => {
+          const nextIndex =
+            removedIndex < currentIndex
+              ? currentIndex - 1
+              : removedIndex === currentIndex
+              ? Math.min(currentIndex, Math.max(0, nextItems.length - 1))
+              : currentIndex;
+          activeIndexRef.current = Math.max(0, nextIndex);
+          return activeIndexRef.current;
+        });
+        return nextItems;
+      });
+
+      if (String(selectedCommentPostId) === String(postId)) {
+        closeComments();
+      }
+    },
+    [closeComments, selectedCommentPostId],
+  );
+
+  const refreshComments = useCallback(async () => {
+    if (!selectedCommentPostId || commentInFlightRef.current) return;
+
+    const postId = selectedCommentPostId;
+    commentInFlightRef.current = true;
+    loadingCommentPostIdRef.current = postId;
+    const requestSeq = ++commentRequestSeqRef.current;
+    try {
+      const freshComments = await repository.getComments(postId, {
+        limit: COMMENT_PAGE_SIZE,
+        offset: 0,
+      });
+      if (commentRequestSeqRef.current !== requestSeq) return;
+
+      setComments(current => {
+        const pendingComments = current.filter(
+          comment =>
+            comment.id.startsWith('temp-') ||
+            comment.isSending === true ||
+            comment.isFailed === true,
+        );
+        const freshIds = new Set(freshComments.map(comment => comment.id));
+        return [
+          ...freshComments,
+          ...pendingComments.filter(comment => !freshIds.has(comment.id)),
+        ];
+      });
+      setHasMoreComments(freshComments.length >= COMMENT_PAGE_SIZE);
+      const lastComment = freshComments[freshComments.length - 1];
+      commentOffsetRef.current = Number(lastComment?.id ?? 0) || 0;
+    } catch {
+      // Realtime comment refresh is best-effort. Keep the visible list intact.
+    } finally {
+      if (commentRequestSeqRef.current === requestSeq) {
+        commentInFlightRef.current = false;
+        loadingCommentPostIdRef.current = null;
+      }
+    }
+  }, [selectedCommentPostId]);
+
   const loadMoreComments = useCallback(async () => {
     if (!selectedCommentPostId) return;
     if (!hasMoreComments) return;
@@ -820,9 +908,22 @@ export function useReelsViewModel(initialVideo?: {
             : {}),
         };
         // Replace the temp comment with the actual one from server
-        setComments(prev =>
-          prev.map(c => (c.id === tempId ? resolvedComment : c)),
-        );
+        setComments(prev => {
+          const next: ReelComment[] = [];
+          let inserted = false;
+          prev.forEach(comment => {
+            if (comment.id === tempId || comment.id === resolvedComment.id) {
+              if (!inserted) {
+                next.push(resolvedComment);
+                inserted = true;
+              }
+              return;
+            }
+            next.push(comment);
+          });
+          if (!inserted) next.push(resolvedComment);
+          return next;
+        });
         return resolvedComment;
       } catch (caught) {
         // Mark as failed in comments list
@@ -1456,6 +1557,8 @@ export function useReelsViewModel(initialVideo?: {
     setInitialVideo,
     peekLatestReels,
     prependReels,
+    applyRealtimePost,
+    removeRealtimePost,
     refresh,
     loadMore,
     retry: loadInitial,
@@ -1465,6 +1568,7 @@ export function useReelsViewModel(initialVideo?: {
     markUnavailable,
     openComments,
     closeComments,
+    refreshComments,
     loadMoreComments,
     submitComment,
     searchCommentMentions,

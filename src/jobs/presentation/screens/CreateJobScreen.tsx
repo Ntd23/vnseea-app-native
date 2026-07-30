@@ -31,9 +31,13 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useCreateJobViewModel } from '../../application/view-models/useCreateJobViewModel';
-import type { JobType } from '../../domain/types/jobs.types';
+import type { JobsItem, JobType } from '../../domain/types/jobs.types';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { profilePostsChangedEvents } from '../../../feed/application/events/profilePostsChangedEvents';
+import { mapProfileJobPost } from '../../../profile/application/services/profileCommercePosts';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 
 type CreateJobNav = NativeStackNavigationProp<RootStackParamList>;
 type CreateJobRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_JOB>;
@@ -44,6 +48,11 @@ type JobQuestionDraft = {
   prompt: string;
   type: 'free_text_question' | 'yes_no_question' | 'multiple_choice_question';
   answers: string;
+};
+
+type SalaryFieldErrors = {
+  minimum?: string;
+  maximum?: string;
 };
 
 function DropdownField({
@@ -94,6 +103,7 @@ function CreateJobScreen() {
   const [category, setCategory] = useState('');
   const [minimumSalary, setMinimumSalary] = useState('');
   const [maximumSalary, setMaximumSalary] = useState('');
+  const [salaryErrors, setSalaryErrors] = useState<SalaryFieldErrors>({});
   const [salaryDate, setSalaryDate] = useState('');
   const [currency, setCurrency] = useState('');
   const [selectedPageId, setSelectedPageId] = useState(initialPageId);
@@ -186,6 +196,39 @@ function CreateJobScreen() {
       Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.errorLocationRequired || 'Vui lòng nhập địa điểm');
       return;
     }
+
+    const nextSalaryErrors: SalaryFieldErrors = {};
+    const minimumText = minimumSalary.trim();
+    const maximumText = maximumSalary.trim();
+    const minimumValue = Number(minimumText);
+    const maximumValue = Number(maximumText);
+
+    if (!minimumText) {
+      nextSalaryErrors.minimum = copy.errorSalaryMinRequired;
+    } else if (!Number.isFinite(minimumValue) || minimumValue <= 0) {
+      nextSalaryErrors.minimum = copy.errorSalaryInvalid;
+    }
+
+    if (!maximumText) {
+      nextSalaryErrors.maximum = copy.errorSalaryMaxRequired;
+    } else if (!Number.isFinite(maximumValue) || maximumValue <= 0) {
+      nextSalaryErrors.maximum = copy.errorSalaryInvalid;
+    }
+
+    if (
+      !nextSalaryErrors.minimum &&
+      !nextSalaryErrors.maximum &&
+      minimumValue > maximumValue
+    ) {
+      nextSalaryErrors.maximum = copy.errorSalaryRange;
+    }
+
+    if (Object.keys(nextSalaryErrors).length > 0) {
+      setSalaryErrors(nextSalaryErrors);
+      return;
+    }
+    setSalaryErrors({});
+
     if (!category) {
       Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.errorSelectCategory || 'Vui lòng chọn danh mục');
       return;
@@ -196,15 +239,15 @@ function CreateJobScreen() {
     }
 
     try {
-      await createJob({
+      const result = await createJob({
         jobTitle: jobTitle.trim(),
         description: description.trim(),
         location: location.trim(),
         jobType,
         category,
         pageId: selectedPageId,
-        minimum: minimumSalary ? Number(minimumSalary) : undefined,
-        maximum: maximumSalary ? Number(maximumSalary) : undefined,
+        minimum: minimumValue,
+        maximum: maximumValue,
         salaryDate: salaryDate || undefined,
         currency: currency || undefined,
         questions: questions
@@ -220,6 +263,72 @@ function CreateJobScreen() {
         thumbnail: thumbnail ?? undefined,
       });
 
+      const createdJob = result.data;
+      const ownerId =
+        createdJob?.page?.user_id ||
+        createdJob?.user_id ||
+        sessionStorage.getSession()?.userId ||
+        '';
+      const optimisticJob: JobsItem = {
+        id:
+          createdJob?.id ||
+          result.job_id ||
+          result.post_id ||
+          `pending-${Date.now()}`,
+        title: createdJob?.title || jobTitle.trim(),
+        description: createdJob?.description || description.trim(),
+        location: createdJob?.location || location.trim(),
+        lat: createdJob?.lat,
+        lng: createdJob?.lng,
+        minimum: createdJob?.minimum ?? minimumValue,
+        maximum: createdJob?.maximum ?? maximumValue,
+        salary_date: createdJob?.salary_date || salaryDate || undefined,
+        salary_date_label: createdJob?.salary_date_label,
+        job_type: createdJob?.job_type || jobType,
+        job_type_label: createdJob?.job_type_label || jobTypeLabels[jobType],
+        category: createdJob?.category || category,
+        category_label:
+          createdJob?.category_label || categoryLabels[category],
+        currency: createdJob?.currency || currency || undefined,
+        currency_symbol: createdJob?.currency_symbol,
+        image: createdJob?.image || previewImage,
+        image_type: createdJob?.image_type || imageType,
+        page_id: createdJob?.page_id || selectedPageId,
+        user_id: createdJob?.user_id || ownerId,
+        time:
+          Number(createdJob?.time) > 0
+            ? Number(createdJob?.time)
+            : Math.floor(Date.now() / 1000),
+        post_id: createdJob?.post_id || result.post_id,
+        apply: createdJob?.apply,
+        apply_count: createdJob?.apply_count,
+        url: createdJob?.url,
+        page:
+          createdJob?.page ||
+          (selectedPage
+            ? {
+                page_id: selectedPage.page_id,
+                page_title: selectedPage.page_title,
+                page_name: selectedPage.page_name,
+                page_description: '',
+                avatar: selectedPage.avatar,
+                cover: selectedPage.cover,
+                user_id: ownerId,
+                is_page_onwer: true,
+              }
+            : undefined),
+      };
+
+      feedCacheStorage.setCachedJobs([
+        optimisticJob,
+        ...feedCacheStorage
+          .getCachedJobs()
+          .filter(job => String(job.id) !== String(optimisticJob.id)),
+      ]);
+      profilePostsChangedEvents.emit(
+        mapProfileJobPost(optimisticJob, copy.company),
+      );
+
       Alert.alert('Thành công', 'Việc làm đã được tạo thành công!', [
         {
           text: 'OK',
@@ -229,14 +338,18 @@ function CreateJobScreen() {
     } catch (err: any) {
       Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', err?.message || (copy.saveError || 'Không thể tạo việc làm. Vui lòng thử lại.'));
     }
-  }, [jobTitle, description, location, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, currency, questions, imageType, thumbnail, createJob, navigation]);
+  }, [jobTitle, description, location, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, currency, questions, imageType, thumbnail, createJob, navigation, copy, language, selectedPage, previewImage, jobTypeLabels, categoryLabels]);
 
   const hasFormData = jobTitle || description || location || category || selectedPageId;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+      <FocusAwareStatusBar
+        barStyle="light-content"
+        backgroundColor={BRAND}
+        translucent={false}
+      />
+      <SafeAreaFeedHeader safeAreaBackgroundColor={BRAND} />
 
       <KeyboardAvoidingView
         className="flex-1"
@@ -276,27 +389,61 @@ function CreateJobScreen() {
           <View className="mb-4">
             <Text className="mb-1.5 text-sm font-bold text-slate-700">{copy.salary || "Mức lương"}</Text>
             <View className="flex-row gap-3">
-              <View className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <View
+                className={`flex-1 rounded-xl border bg-white px-3 py-3 ${
+                  salaryErrors.minimum ? 'border-red-500' : 'border-slate-200'
+                }`}
+              >
                 <TextInput
                   className="p-0 text-slate-900"
                   placeholder={copy.salaryMinPlaceholder || "VND Tối thiểu"}
                   placeholderTextColor="#94A3B8"
                   value={minimumSalary}
-                  onChangeText={setMinimumSalary}
+                  onChangeText={value => {
+                    setMinimumSalary(value);
+                    setSalaryErrors(current => ({
+                      ...current,
+                      minimum: undefined,
+                      maximum:
+                        current.maximum === copy.errorSalaryRange
+                          ? undefined
+                          : current.maximum,
+                    }));
+                  }}
                   keyboardType="numeric"
                 />
               </View>
-              <View className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <View
+                className={`flex-1 rounded-xl border bg-white px-3 py-3 ${
+                  salaryErrors.maximum ? 'border-red-500' : 'border-slate-200'
+                }`}
+              >
                 <TextInput
                   className="p-0 text-slate-900"
                   placeholder={copy.salaryMaxPlaceholder || "VND Tối đa"}
                   placeholderTextColor="#94A3B8"
                   value={maximumSalary}
-                  onChangeText={setMaximumSalary}
+                  onChangeText={value => {
+                    setMaximumSalary(value);
+                    setSalaryErrors(current => ({
+                      ...current,
+                      maximum: undefined,
+                    }));
+                  }}
                   keyboardType="numeric"
                 />
               </View>
             </View>
+            {salaryErrors.minimum || salaryErrors.maximum ? (
+              <View className="mt-1 flex-row gap-3">
+                <Text className="flex-1 text-[11px] font-semibold text-red-500">
+                  {salaryErrors.minimum || ''}
+                </Text>
+                <Text className="flex-1 text-[11px] font-semibold text-red-500">
+                  {salaryErrors.maximum || ''}
+                </Text>
+              </View>
+            ) : null}
             <View className="mt-2 flex-row gap-3">
               <TouchableOpacity className="min-h-[44px] flex-1 flex-row items-center rounded-xl border border-slate-200 bg-white px-3" onPress={() => setShowCurrencyModal(true)}>
                 <Text className="flex-1 text-[14px] text-slate-700" numberOfLines={1}>{currencyLabels[currency] || (language === 'vi' ? 'Tiền tệ' : 'Currency')}</Text>

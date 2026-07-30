@@ -33,6 +33,7 @@ import type {
   ForumSummaryForum,
 } from '../../domain/types/forum.types';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { CommentMentionText } from '../../../reels/presentation/components/CommentMentionText';
 
 type NavigationProp = NativeStackNavigationProp<any>;
 
@@ -245,7 +246,9 @@ function ForumReplyRow({ reply }: { reply: ForumReply }) {
     <View className="border-b border-slate-200 bg-white px-4 py-3">
       <Text className="font-bold text-slate-900">{reply.subject || reply.author}</Text>
       <Text className="mt-1 text-xs text-slate-500">{reply.author} · {reply.time}</Text>
-      <Text className="mt-2 text-sm leading-5 text-slate-700">{reply.message}</Text>
+      <Text className="mt-2 text-sm leading-5 text-slate-700">
+        <CommentMentionText text={reply.message} />
+      </Text>
     </View>
   );
 }

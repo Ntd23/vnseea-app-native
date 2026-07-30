@@ -43,6 +43,7 @@ import {
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 import type { BlogCategoryOption, BlogsItem } from '../../domain/types/blogs.types';
+import { CommentMentionText } from '../../../reels/presentation/components/CommentMentionText';
 
 type BlogDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type BlogDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.BLOG_DETAIL>;
@@ -373,7 +374,9 @@ function BlogDetailScreen() {
               )}
               <View style={{ flex: 1, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 10 }}>
                 <Text style={{ color: '#111827', fontSize: 13, fontWeight: '800' }}>{comment.author.name}</Text>
-                <Text style={{ marginTop: 3, color: '#475569', fontSize: 13, lineHeight: 18 }}>{comment.text}</Text>
+                <Text style={{ marginTop: 3, color: '#475569', fontSize: 13, lineHeight: 18 }}>
+                  <CommentMentionText text={comment.text} />
+                </Text>
               </View>
             </View>
           ))}

@@ -30,19 +30,27 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import type { ProductItem } from '../../domain/types/product.types';
-import { formatProductPrice } from './ProductCurrency';
+import {
+  formatProductPoints,
+  formatProductPrice,
+} from './ProductCurrency';
 import {
   FeedCardContent,
   FeedCardSurface,
   FeedMediaFrame,
 } from '../../../feed/presentation/components/FeedCardChrome';
+import {
+  markFeedMediaLoaded,
+  useFeedMediaLoaded,
+} from '../../../feed/application/state/feedMediaLoadState';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
 import type { FeedPost } from '../../../feed/domain/types/feed.types';
 
 // ── Helpers outside component (avoid recreation on each render) ────
 
 function formatTimeAgo(timestamp: number | string): string {
-  const numTimestamp = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
+  const numTimestamp =
+    typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
   if (isNaN(numTimestamp)) return '';
   const now = Math.floor(Date.now() / 1000);
   const diff = Math.max(0, now - numTimestamp);
@@ -57,12 +65,18 @@ function formatProductDistance(
   distanceKm: number | undefined,
   distanceLimitKm?: number,
 ) {
-  if (distanceKm !== undefined && Number.isFinite(distanceKm) && distanceKm >= 0) {
+  if (
+    distanceKm !== undefined &&
+    Number.isFinite(distanceKm) &&
+    distanceKm >= 0
+  ) {
     if (distanceKm < 0.1) return 'Ngay gần bạn';
-    if (distanceKm < 1) return `Cách bạn ${Math.max(100, Math.round(distanceKm * 1000))} m`;
-    const rounded = distanceKm < 10
-      ? Math.round(distanceKm * 10) / 10
-      : Math.round(distanceKm);
+    if (distanceKm < 1)
+      return `Cách bạn ${Math.max(100, Math.round(distanceKm * 1000))} m`;
+    const rounded =
+      distanceKm < 10
+        ? Math.round(distanceKm * 10) / 10
+        : Math.round(distanceKm);
     return `Cách bạn ${String(rounded).replace('.', ',')} km`;
   }
   return distanceLimitKm === undefined
@@ -74,7 +88,10 @@ function RatingStars({ value, size = 14 }: { value: number; size?: number }) {
   const rounded = Math.round(value);
 
   return (
-    <View className="flex-row items-center gap-0.5" style={{ flexDirection: 'row', alignItems: 'center' }}>
+    <View
+      className="flex-row items-center gap-0.5"
+      style={{ flexDirection: 'row', alignItems: 'center' }}
+    >
       {[1, 2, 3, 4, 5].map(index => (
         <Star
           key={index}
@@ -118,6 +135,7 @@ interface ProductPostCardProps {
   commentNavigationMode?: 'detail' | 'callback';
   onOpenReactions?: (postId: string, post: any) => void;
   post?: any;
+  loadMedia?: boolean;
 }
 
 const ProductPostCard = React.memo(function ProductPostCard({
@@ -143,11 +161,18 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onCommentTap,
   commentNavigationMode = 'detail',
   post,
+  loadMedia = true,
 }: ProductPostCardProps) {
   const navigation = useNavigation<any>();
   const imageUrl = product.images?.[0]?.image;
+  const retainedMediaLoaded = useFeedMediaLoaded(imageUrl);
+  const shouldShowMedia = loadMedia || retainedMediaLoaded;
   const canShowOrderRequest = !product.is_owner && Boolean(onOrderRequest);
-  const distanceLabel = formatProductDistance(product.distance, distanceLimitKm);
+  const distanceLabel = formatProductDistance(
+    product.distance,
+    distanceLimitKm,
+  );
+  const productPointsLabel = formatProductPoints(product);
   const compactLocationLabel = [distanceLabel, product.location]
     .filter(Boolean)
     .join(' • ');
@@ -172,11 +197,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
       onCommentTap?.(postId);
       return;
     }
-    navigateToPostComments(
-      navigation,
-      postId,
-      post as FeedPost | undefined,
-    );
+    navigateToPostComments(navigation, postId, post as FeedPost | undefined);
   }, [commentNavigationMode, navigation, onCommentTap, post, postId]);
 
   const handleContactSeller = useCallback(() => {
@@ -184,20 +205,27 @@ const ProductPostCard = React.memo(function ProductPostCard({
     onContactSeller?.(product);
   }, [onContactSeller, product]);
 
-  const handleOrderRequest = useCallback((event: GestureResponderEvent) => {
-    event.stopPropagation();
-    if (!onOrderRequest || !product.can_add_to_cart || isOrderRequesting) return;
-    onOrderRequest(product);
-  }, [isOrderRequesting, onOrderRequest, product]);
+  const handleOrderRequest = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      if (!onOrderRequest || !product.can_add_to_cart || isOrderRequesting)
+        return;
+      onOrderRequest(product);
+    },
+    [isOrderRequesting, onOrderRequest, product],
+  );
 
   const handleSharePress = useCallback(() => {
     onShare?.(product);
   }, [onShare, product]);
 
-  const handleDeletePress = useCallback((event: GestureResponderEvent) => {
-    event.stopPropagation();
-    onDelete?.(product);
-  }, [onDelete, product]);
+  const handleDeletePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      onDelete?.(product);
+    },
+    [onDelete, product],
+  );
 
   // Compact layout (used inside the horizontal carousel and marketplace grids)
   if (compact) {
@@ -208,12 +236,13 @@ const ProductPostCard = React.memo(function ProductPostCard({
         onPress={handlePress}
       >
         {/* Product Image */}
-        {imageUrl ? (
+        {imageUrl && shouldShowMedia ? (
           <Image
             source={{ uri: imageUrl }}
             className="w-full"
             style={{ aspectRatio: 1.15 }}
             resizeMode="cover"
+            onLoad={() => markFeedMediaLoaded(imageUrl)}
           />
         ) : (
           <View
@@ -245,7 +274,11 @@ const ProductPostCard = React.memo(function ProductPostCard({
         {/* Compact Content */}
         <View
           className="p-3"
-          style={marketplaceFloatingActions ? styles.marketplaceCompactContent : undefined}
+          style={
+            marketplaceFloatingActions
+              ? styles.marketplaceCompactContent
+              : undefined
+          }
         >
           {marketplaceFloatingActions && !product.is_owner ? (
             <View style={styles.marketplaceFloatingActions}>
@@ -253,7 +286,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 style={[
                   styles.marketplaceActionButton,
                   styles.marketplaceMessageButton,
-                  !product.can_contact_seller && styles.marketplaceActionDisabled,
+                  !product.can_contact_seller &&
+                    styles.marketplaceActionDisabled,
                 ]}
                 activeOpacity={0.75}
                 disabled={!product.can_contact_seller}
@@ -271,7 +305,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
                   style={[
                     styles.marketplaceActionButton,
                     styles.marketplaceCartButton,
-                    !product.can_add_to_cart && styles.marketplaceActionDisabled,
+                    !product.can_add_to_cart &&
+                      styles.marketplaceActionDisabled,
                   ]}
                   activeOpacity={0.75}
                   disabled={!product.can_add_to_cart || isOrderRequesting}
@@ -298,7 +333,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
           </Text>
           {compactLocationLabel ? (
             <View className="flex-row items-center mt-1">
-              <MapPin size={10.5} color={distanceLabel ? APP_COLORS.status.info : '#94A3B8'} />
+              <MapPin
+                size={10.5}
+                color={distanceLabel ? APP_COLORS.status.info : '#94A3B8'}
+              />
               <Text
                 className={`ml-1 text-[11px] font-semibold ${
                   distanceLabel ? 'text-info' : 'text-slate-400'
@@ -312,23 +350,46 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
           {/* Price & Action Row */}
           <View className="flex-row items-center justify-between mt-2.5">
-            <Text className="text-[15px] font-extrabold text-brand flex-1 mr-1.5" numberOfLines={1}>
-              {formatProductPrice(product)}
-            </Text>
+            <View className="flex-1 mr-1.5">
+              <Text
+                className="text-[15px] font-extrabold text-brand"
+                numberOfLines={1}
+              >
+                {formatProductPrice(product)}
+              </Text>
+              {marketplaceFloatingActions && productPointsLabel ? (
+                <Text
+                  className="mt-0.5 text-[12px] font-extrabold text-violet-600"
+                  numberOfLines={1}
+                >
+                  {productPointsLabel}
+                </Text>
+              ) : null}
+            </View>
 
             {!product.is_owner && !marketplaceFloatingActions ? (
-              <View className="flex-row items-center gap-1.5" style={{ flexShrink: 0 }}>
+              <View
+                className="flex-row items-center gap-1.5"
+                style={{ flexShrink: 0 }}
+              >
                 {/* Contact Action */}
                 <TouchableOpacity
                   className={`h-8 w-8 items-center justify-center rounded-full ${
-                    product.can_contact_seller ? 'bg-brand-subtle active:bg-brand-soft' : 'bg-slate-50'
+                    product.can_contact_seller
+                      ? 'bg-brand-subtle active:bg-brand-soft'
+                      : 'bg-slate-50'
                   }`}
                   activeOpacity={0.7}
                   disabled={!product.can_contact_seller}
                   onPress={handleContactSeller}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
-                  <MessageCircle size={15} color={product.can_contact_seller ? APP_BRAND_COLOR : "#CBD5E1"} />
+                  <MessageCircle
+                    size={15}
+                    color={
+                      product.can_contact_seller ? APP_BRAND_COLOR : '#CBD5E1'
+                    }
+                  />
                 </TouchableOpacity>
                 {canShowOrderRequest ? (
                   <TouchableOpacity
@@ -387,17 +448,27 @@ const ProductPostCard = React.memo(function ProductPostCard({
             )}
             <View className="ml-3 flex-1">
               <View className="flex-row items-center flex-wrap">
-                <Text className="text-title-primary font-bold text-[#050505] flex-shrink mr-2" numberOfLines={1}>
+                <Text
+                  className="text-title-primary font-bold text-[#050505] flex-shrink mr-2"
+                  numberOfLines={1}
+                >
                   {product.seller?.name || 'Người bán'}
                 </Text>
-                <View className="bg-brand-subtle rounded px-1.5 py-0.5" style={{ flexShrink: 0 }}>
+                <View
+                  className="bg-brand-subtle rounded px-1.5 py-0.5"
+                  style={{ flexShrink: 0 }}
+                >
                   <Text className="text-[10px] font-bold uppercase text-brand">
                     Sản phẩm
                   </Text>
                 </View>
               </View>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B] mt-0.5" numberOfLines={1}>
-                {product.time ? `${formatTimeAgo(product.time)} • ` : ''}Công khai
+              <Text
+                className="text-caption-secondary text-[12px] text-[#65676B] mt-0.5"
+                numberOfLines={1}
+              >
+                {product.time ? `${formatTimeAgo(product.time)} • ` : ''}Công
+                khai
               </Text>
             </View>
           </TouchableOpacity>
@@ -427,13 +498,14 @@ const ProductPostCard = React.memo(function ProductPostCard({
       {/* Product Image */}
       <FeedMediaFrame>
         <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
-          {imageUrl ? (
+          {imageUrl && shouldShowMedia ? (
             <Image
               source={{ uri: imageUrl }}
               className="w-full"
               style={{ aspectRatio: 1.4 }}
               resizeMode="cover"
               fadeDuration={0}
+              onLoad={() => markFeedMediaLoaded(imageUrl)}
             />
           ) : (
             <View
@@ -449,30 +521,61 @@ const ProductPostCard = React.memo(function ProductPostCard({
       {/* Product Footer Actions */}
       <FeedCardContent className="pt-3">
         {/* Divider */}
-        <View className="h-[1px] bg-slate-100 w-full mb-3" style={{ height: 1, backgroundColor: '#f1f5f9', width: '100%', marginBottom: 12 }} />
+        <View
+          className="h-[1px] bg-slate-100 w-full mb-3"
+          style={{
+            height: 1,
+            backgroundColor: '#f1f5f9',
+            width: '100%',
+            marginBottom: 12,
+          }}
+        />
 
         {/* Rating Stars & Reviews */}
-        <View className="flex-row items-center mb-1.5" style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+        <View
+          className="flex-row items-center mb-1.5"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 6,
+          }}
+        >
           <RatingStars value={Number(product.rating || 0)} size={15} />
-          <Text className="ml-2 text-[13px] font-semibold text-slate-500" style={{ color: '#64748B' }}>
+          <Text
+            className="ml-2 text-[13px] font-semibold text-slate-500"
+            style={{ color: '#64748B' }}
+          >
             {Number(product.reviews_count || 0)} Nhận xét
           </Text>
         </View>
 
         {/* Location */}
         {compactLocationLabel ? (
-          <Text className="text-[13px] text-slate-500 font-semibold leading-5 mb-2.5" numberOfLines={1} style={{ color: distanceLabel ? APP_COLORS.status.info : '#64748B', marginBottom: 10 }}>
+          <Text
+            className="text-[13px] text-slate-500 font-semibold leading-5 mb-2.5"
+            numberOfLines={1}
+            style={{
+              color: distanceLabel ? APP_COLORS.status.info : '#64748B',
+              marginBottom: 10,
+            }}
+          >
             {compactLocationLabel}
           </Text>
         ) : null}
 
         {/* Product Title */}
-        <Text className="text-body-primary font-bold text-[18px] text-[#050505] leading-7" numberOfLines={2}>
+        <Text
+          className="text-body-primary font-bold text-[18px] text-[#050505] leading-7"
+          numberOfLines={2}
+        >
           {product.name}
         </Text>
 
         {/* Price in green */}
-        <Text className="mt-1.5 text-[18px] font-bold text-green-600" style={{ color: '#16a34a', marginTop: 6 }}>
+        <Text
+          className="mt-1.5 text-[18px] font-bold text-green-600"
+          style={{ color: '#16a34a', marginTop: 6 }}
+        >
           {formatProductPrice(product)}
         </Text>
 
@@ -506,25 +609,53 @@ const ProductPostCard = React.memo(function ProductPostCard({
           >
             <Info size={12} color="#FFFFFF" strokeWidth={3} />
           </View>
-          <Text className="text-sm font-bold text-slate-800" style={{ color: '#1E293B' }}>
+          <Text
+            className="text-sm font-bold text-slate-800"
+            style={{ color: '#1E293B' }}
+          >
             Thêm thông tin
           </Text>
         </TouchableOpacity>
 
         {/* Raw price line with info icon */}
-        <View className="flex-row items-center mt-3.5" style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
+        <View
+          className="flex-row items-center mt-3.5"
+          style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}
+        >
           <Info size={14} color="#64748B" style={{ marginRight: 6 }} />
-          <Text className="text-[13px] text-slate-500 font-semibold" style={{ color: '#64748B' }}>
+          <Text
+            className="text-[13px] text-slate-500 font-semibold"
+            style={{ color: '#64748B' }}
+          >
             {formatProductPrice(product)}
           </Text>
         </View>
 
         {/* Social interactions footer */}
         {postId ? (
-          <View className="border-t border-slate-100 mt-4 pt-3.5" style={{ borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 16, paddingTop: 14 }}>
+          <View
+            className="border-t border-slate-100 mt-4 pt-3.5"
+            style={{
+              borderTopWidth: 1,
+              borderTopColor: '#f1f5f9',
+              marginTop: 16,
+              paddingTop: 14,
+            }}
+          >
             {/* Likes and comments count row */}
-            <View className="flex-row items-center justify-between pb-3" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
-              <View className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View
+              className="flex-row items-center justify-between pb-3"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingBottom: 12,
+              }}
+            >
+              <View
+                className="flex-row items-center"
+                style={{ flexDirection: 'row', alignItems: 'center' }}
+              >
                 <View
                   className="h-4.5 w-4.5 rounded-full items-center justify-center mr-1.5"
                   style={{
@@ -539,27 +670,61 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 >
                   <Heart size={10} color="#FFFFFF" fill="#FFFFFF" />
                 </View>
-                <Text className="text-[13px] text-slate-500 font-bold" style={{ color: '#64748B' }}>
+                <Text
+                  className="text-[13px] text-slate-500 font-bold"
+                  style={{ color: '#64748B' }}
+                >
                   {likeCount || 0}
                 </Text>
               </View>
-              <View className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text className="text-[13px] text-slate-500 font-bold" style={{ color: '#64748B' }}>
+              <View
+                className="flex-row items-center"
+                style={{ flexDirection: 'row', alignItems: 'center' }}
+              >
+                <Text
+                  className="text-[13px] text-slate-500 font-bold"
+                  style={{ color: '#64748B' }}
+                >
                   {commentCount || 0} bình luận
                 </Text>
               </View>
             </View>
 
             {/* Social Buttons */}
-            <View className="flex-row items-center justify-between border-t border-slate-100 pt-1" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 4 }}>
+            <View
+              className="flex-row items-center justify-between border-t border-slate-100 pt-1"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderTopWidth: 1,
+                borderTopColor: '#f1f5f9',
+                paddingTop: 4,
+              }}
+            >
               <TouchableOpacity
                 onPress={() => onReact?.(postId, 'like')}
                 activeOpacity={0.7}
                 className="flex-row items-center justify-center flex-1 py-2.5"
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 1,
+                  paddingVertical: 10,
+                }}
               >
-                <ThumbsUp size={18} color={myReaction ? APP_BRAND_COLOR : '#64748B'} strokeWidth={2.4} />
-                <Text className={`ml-2 text-[13px] font-bold ${myReaction ? 'text-brand' : 'text-[#64748B]'}`} style={{ marginLeft: 8 }}>
+                <ThumbsUp
+                  size={18}
+                  color={myReaction ? APP_BRAND_COLOR : '#64748B'}
+                  strokeWidth={2.4}
+                />
+                <Text
+                  className={`ml-2 text-[13px] font-bold ${
+                    myReaction ? 'text-brand' : 'text-[#64748B]'
+                  }`}
+                  style={{ marginLeft: 8 }}
+                >
                   Thích
                 </Text>
               </TouchableOpacity>
@@ -568,10 +733,19 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 onPress={handleCommentPress}
                 activeOpacity={0.7}
                 className="flex-row items-center justify-center flex-1 py-2.5"
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 1,
+                  paddingVertical: 10,
+                }}
               >
                 <MessageSquare size={18} color="#64748B" strokeWidth={2.4} />
-                <Text className="ml-2 text-[13px] font-bold text-slate-500" style={{ color: '#64748B', marginLeft: 8 }}>
+                <Text
+                  className="ml-2 text-[13px] font-bold text-slate-500"
+                  style={{ color: '#64748B', marginLeft: 8 }}
+                >
                   Bình luận
                 </Text>
               </TouchableOpacity>
@@ -580,10 +754,19 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 onPress={handleSharePress}
                 activeOpacity={0.7}
                 className="flex-row items-center justify-center flex-1 py-2.5"
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 1,
+                  paddingVertical: 10,
+                }}
               >
                 <Share2 size={18} color="#64748B" strokeWidth={2.4} />
-                <Text className="ml-2 text-[13px] font-bold text-slate-500" style={{ color: '#64748B', marginLeft: 8 }}>
+                <Text
+                  className="ml-2 text-[13px] font-bold text-slate-500"
+                  style={{ color: '#64748B', marginLeft: 8 }}
+                >
                   Chia sẻ
                 </Text>
               </TouchableOpacity>

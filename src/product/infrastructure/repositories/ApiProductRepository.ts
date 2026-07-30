@@ -41,10 +41,25 @@ function normalizeProductDistance(product: ProductsResponse['products'][number])
   const normalizedDistance =
     distanceKm ??
     (distanceMeters === undefined ? undefined : distanceMeters / 1000);
+  const rawPoints =
+    record.points ??
+    record.product_points ??
+    record.point_price ??
+    record.points_price;
+  const normalizedPoints =
+    rawPoints === undefined || rawPoints === null || rawPoints === ''
+      ? undefined
+      : String(rawPoints);
 
-  return normalizedDistance === undefined
+  return normalizedDistance === undefined && normalizedPoints === undefined
     ? product
-    : { ...product, distance: normalizedDistance };
+    : {
+        ...product,
+        ...(normalizedDistance === undefined
+          ? {}
+          : { distance: normalizedDistance }),
+        ...(normalizedPoints === undefined ? {} : { points: normalizedPoints }),
+      };
 }
 
 async function getCartProducts() {
@@ -104,6 +119,11 @@ function buildProductFormData(input: CreateProductInput) {
   if (input.currency) {
     formData.currency = input.currency;
   }
+  if (input.points !== undefined) {
+    formData.points = input.points;
+    // Some deployments expose the same existing field under this alias.
+    formData.product_points = input.points;
+  }
   if (input.lat) {
     formData.lat = input.lat;
   }
@@ -150,7 +170,11 @@ export function createProductRepository(): ProductRepository {
         api_status: number;
         products: ProductsResponse['products'];
       }>(apiRoutes.products.get, {});
-      return { products: Array.isArray(response.products) ? response.products : [] };
+      return {
+        products: Array.isArray(response.products)
+          ? response.products.map(normalizeProductDistance)
+          : [],
+      };
     },
 
     async addToCart(productId, qty = 1) {

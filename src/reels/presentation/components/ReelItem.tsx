@@ -8,8 +8,8 @@
 //   • The VideoPlayer is paused (and muted) whenever `isActive` is false.
 //     This lets us keep neighbors preloaded without burning battery or
 //     emitting audio from off-screen items.
-//   • Before native video is ready we keep a clean black player surface.
-//     Thumbnail posters are intentionally not flashed during startup.
+//   • Before native video renders its first frame we keep a thumbnail/loading
+//     cover above the native surface so fast swipes never expose a black row.
 //
 // Layout (TikTok-style):
 //   ┌──────────────────────────────────┐
@@ -35,6 +35,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   Animated as RNAnimated,
   Dimensions,
   Easing,
@@ -215,6 +216,7 @@ function ReelItemBase({
     !item.isAnonymous && !isOwnVideo && !item.publisher.isFollowing;
   const [userPaused, setUserPaused] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [hasRenderedFirstFrame, setHasRenderedFirstFrame] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [playerAttempt, setPlayerAttempt] = useState(0);
@@ -356,11 +358,13 @@ function ReelItemBase({
 
   const markVideoDisplayed = useCallback(() => {
     videoRetryCountRef.current = 0;
+    setHasRenderedFirstFrame(true);
     markVideoReady();
   }, [markVideoReady]);
 
   const handleVideoError = useCallback(() => {
     setIsReady(false);
+    setHasRenderedFirstFrame(false);
     setIsBuffering(false);
 
     if (
@@ -484,6 +488,7 @@ function ReelItemBase({
     videoRetryCountRef.current = 0;
     setPlayerAttempt(0);
     setIsReady(false);
+    setHasRenderedFirstFrame(false);
     setIsBuffering(false);
     setHasError(false);
     durationRef.current = 0;
@@ -497,6 +502,7 @@ function ReelItemBase({
     videoRetryCountRef.current = 0;
     setPlayerAttempt(0);
     setIsReady(false);
+    setHasRenderedFirstFrame(false);
     setIsBuffering(false);
     setHasError(false);
     isSeekingRef.current = false;
@@ -713,6 +719,26 @@ function ReelItemBase({
   const videoFitMode = getReelVideoFitMode(videoNaturalAspectRatio);
   const videoResizeMode = videoFitMode === 'blurContain' ? 'contain' : 'cover';
   const usesBlurContainVideo = videoFitMode === 'blurContain';
+  const renderVideoLoader = useCallback(
+    () => (
+      <View style={styles.videoLoadingCover}>
+        {item.thumbnailUrl ? (
+          <Image
+            source={{ uri: item.thumbnailUrl }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+        ) : null}
+        <View style={styles.videoLoadingScrim} />
+        {isCurrent ? (
+          <View style={styles.videoLoadingIndicator}>
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          </View>
+        ) : null}
+      </View>
+    ),
+    [isCurrent, item.thumbnailUrl],
+  );
 
   // Each reel needs a unique SVG gradient ID — if two SVGs share the same
   // id the wrong gradient can bleed across items.
@@ -722,10 +748,9 @@ function ReelItemBase({
     <Animated.View style={[styles.reelRoot, { height }]}>
       <Animated.View style={[styles.mediaStage, mediaStageAnimatedStyle]}>
 
-      {/* Landscape reels keep a blurred backdrop only after the native
-          player has resolved the video's real aspect ratio. Before that we
-          show the black player surface instead of flashing a poster image. */}
-      {item.thumbnailUrl && isReady && usesBlurContainVideo ? (
+      {/* Landscape reels keep a blurred backdrop after the first native
+          frame. Until then VideoPlayer's loader keeps the thumbnail visible. */}
+      {item.thumbnailUrl && hasRenderedFirstFrame && usesBlurContainVideo ? (
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, mediaBackdropAnimatedStyle]}
@@ -762,8 +787,10 @@ function ReelItemBase({
           playWhenInactive={false}
           progressUpdateInterval={250}
           useTextureView={Platform.OS === 'android'}
+          renderLoader={renderVideoLoader}
           onLoadStart={() => {
             setIsReady(false);
+            setHasRenderedFirstFrame(false);
             setIsBuffering(true);
           }}
           onReadyForDisplay={markVideoDisplayed}
@@ -790,6 +817,7 @@ function ReelItemBase({
             if (!isSeekingRef.current && data?.currentTime !== undefined) {
               const nextTime = data.currentTime;
               if (nextTime > 0.25) {
+                setHasRenderedFirstFrame(true);
                 clearEndSuppression();
                 videoRetryCountRef.current = 0;
                 setIsBuffering(false);
@@ -850,7 +878,10 @@ function ReelItemBase({
       ) : null}
 
       {/* ── Buffering dot — tiny indicator near top while decoding ───── */}
-      {shouldMount && isActive && (!isReady || isBuffering) && !hasError ? (
+      {shouldMount &&
+      isActive &&
+      (!hasRenderedFirstFrame || isBuffering) &&
+      !hasError ? (
         <View pointerEvents="none" style={styles.bufferContainer}>
           <View style={styles.bufferDot} />
         </View>
@@ -1249,6 +1280,32 @@ const styles = StyleSheet.create({
     position: 'absolute',
     overflow: 'hidden',
     backgroundColor: '#000',
+  },
+  videoLoadingCover: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: '#141414',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoLoadingScrim: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  videoLoadingIndicator: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bottomGradient: {
     position: 'absolute',
