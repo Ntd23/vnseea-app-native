@@ -92,8 +92,6 @@ if ($f == 'update_data') {
             $data['count_num'] = $count;
         }
     }
-    $send_messages_to_phones = Wo_MessagesPushNotifier();
-
     $payment_data           = $db->objectBuilder()->where('user_id',$wo['user']['user_id'])->where('method_name', 'coinpayments')->orderBy('id','DESC')->getOne(T_PENDING_PAYMENTS);
     $coinpayments_txn_id = '';
     if (!empty($payment_data)) {

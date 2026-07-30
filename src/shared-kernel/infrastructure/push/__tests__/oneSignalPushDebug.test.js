@@ -20,6 +20,12 @@ describe('OneSignal iOS push debug instrumentation', () => {
     expect(source).toContain("logPushDebug('push_sync_request'");
     expect(source).toContain("logPushDebug('push_sync_success'");
     expect(source).toContain("logPushDebug('push_sync_error'");
+    expect(source).toContain(
+      'syncCurrentSubscription({ forceRegistration: true })',
+    );
+    expect(source).toContain(
+      '{ forceSync: options.forceRegistration }',
+    );
     expect(source).toContain('getTokenAsync');
     expect(source).toContain('getOptedInAsync');
     expect(source).toContain('getPermissionAsync');

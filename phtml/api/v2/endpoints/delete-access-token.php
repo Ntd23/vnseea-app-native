@@ -60,36 +60,38 @@ $response_data       = array(
 );
 $access_token        = Wo_Secure($_GET['access_token']);
 $user_id             = $wo['user']['user_id'];
+$installation_id     = !empty($_POST['installation_id']) ? (string)$_POST['installation_id'] : '';
+$device_secret       = !empty($_POST['device_secret']) ? (string)$_POST['device_secret'] : '';
 Wo_VnseeaLogoutDebugLog('logout_request', array(
     'user_id' => $user_id,
     'access_token_masked' => Wo_VnseeaLogoutMaskValue($access_token)
 ));
+$push_release_ok = true;
+if (!empty($installation_id) && !empty($device_secret)) {
+    $release_result = VNSEEA_ReleasePushInstallation($installation_id, $device_secret);
+    $push_release_ok = !empty($release_result['ok']);
+} else {
+    // Transitional behavior for clients that have not adopted installation
+    // ownership yet. New clients never clear another device's registry rows.
+    mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `android_m_device_id` = '' , `ios_m_device_id` = '' , `android_n_device_id` = '' , `ios_n_device_id` = '' WHERE `user_id` = '{$user_id}'");
+}
+
 $remove_access_token = mysqli_query($sqlConnect, "DELETE FROM " . T_APP_SESSIONS . " WHERE `session_id` = '{$access_token}'");
 if ($remove_access_token) {
     Wo_VnseeaLogoutDebugLog('logout_access_token_deleted', array(
         'user_id' => $user_id,
         'access_token_masked' => Wo_VnseeaLogoutMaskValue($access_token)
     ));
-    //$update = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `device_id` = '' WHERE `user_id` = '{$user_id}'");
-    $update  = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `android_m_device_id` = '' , `ios_m_device_id` = '' , `android_n_device_id` = '' , `ios_n_device_id` = '' WHERE `user_id` = '{$user_id}'");
-    if ($update) {
-        Wo_VnseeaLogoutDebugLog('logout_device_ids_cleared', array(
-            'user_id' => $user_id,
-            'android_m_device_id_cleared' => 1,
-            'ios_m_device_id_cleared' => 1,
-            'android_n_device_id_cleared' => 1,
-            'ios_n_device_id_cleared' => 1
-        ));
-        cache($user_id, 'users', 'delete');
-        $response_data = array(
-            'api_status' => 200
-        );
-    } else {
-        Wo_VnseeaLogoutDebugLog('logout_device_ids_clear_error', array(
-            'user_id' => $user_id,
-            'db_error' => mysqli_error($sqlConnect)
-        ));
-    }
+    Wo_VnseeaLogoutDebugLog('logout_push_installation_release', array(
+        'user_id' => $user_id,
+        'installation_present' => !empty($installation_id) ? 1 : 0,
+        'released' => $push_release_ok ? 1 : 0
+    ));
+    cache($user_id, 'users', 'delete');
+    $response_data = array(
+        'api_status' => 200,
+        'push_release_pending' => $push_release_ok ? 0 : 1
+    );
 } else {
     Wo_VnseeaLogoutDebugLog('logout_access_token_delete_error', array(
         'user_id' => $user_id,

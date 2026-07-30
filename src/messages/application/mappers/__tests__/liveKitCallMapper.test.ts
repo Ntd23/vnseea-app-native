@@ -1,5 +1,6 @@
 // Description: Verifies LiveKit call API response mappers for the Messages context.
 import {
+  mapCallDeliveryState,
   mapIncomingLiveKitCall,
   mapLiveKitCheckResponse,
   mapLiveKitCreateResponse,
@@ -7,6 +8,17 @@ import {
 } from '../liveKitCallMapper';
 
 describe('liveKitCallMapper', () => {
+  it('does not show a delivery failure for transitional responses without diagnostics', () => {
+    expect(mapCallDeliveryState(undefined)).toEqual({
+      state: 'accepted',
+      channels: {
+        realtime: 'unavailable',
+        onesignal: 'unavailable',
+        voip: 'unavailable',
+      },
+    });
+  });
+
   it('maps outgoing call creation responses', () => {
     expect(
       mapLiveKitCreateResponse({
@@ -21,6 +33,14 @@ describe('liveKitCallMapper', () => {
           name: 'Receiver',
           avatar: 'https://cdn.vnseea.vn/avatar.jpg',
         },
+        delivery: {
+          state: 'failed',
+          channels: {
+            realtime: 'failed',
+            onesignal: 'unavailable',
+            voip: 'failed',
+          },
+        },
       }),
     ).toEqual({
       callId: '88',
@@ -34,6 +54,14 @@ describe('liveKitCallMapper', () => {
         name: 'Receiver',
         avatar: 'https://cdn.vnseea.vn/avatar.jpg',
         username: '',
+      },
+      delivery: {
+        state: 'failed',
+        channels: {
+          realtime: 'failed',
+          onesignal: 'unavailable',
+          voip: 'failed',
+        },
       },
     });
   });

@@ -3,6 +3,20 @@ export type LiveKitCallType = 'audio' | 'video';
 
 export type LiveKitCallDirection = 'incoming' | 'outgoing';
 
+export type CallDeliveryChannelState =
+  | 'accepted'
+  | 'failed'
+  | 'unavailable';
+
+export type CallDeliveryState = {
+  state: 'accepted' | 'partial' | 'failed';
+  channels: {
+    realtime: CallDeliveryChannelState;
+    onesignal: CallDeliveryChannelState;
+    voip: CallDeliveryChannelState;
+  };
+};
+
 export type LiveKitCallStatus =
   | 'calling'
   | 'answered'
@@ -55,6 +69,7 @@ export type LiveKitCallCreateResult = {
   status: LiveKitCallStatus;
   busy: boolean;
   peer?: LiveKitCallPeer;
+  delivery: CallDeliveryState;
 };
 
 export type LiveKitCallCheckResult = {

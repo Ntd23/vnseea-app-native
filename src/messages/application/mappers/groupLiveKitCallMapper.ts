@@ -10,6 +10,7 @@ import type {
   GroupLiveKitSyncResult,
   IncomingGroupLiveKitCall,
 } from '../../domain/types/groupCall.types';
+import { mapCallDeliveryState } from './liveKitCallMapper';
 
 type RawRecord = Record<string, unknown>;
 
@@ -110,6 +111,7 @@ export function mapGroupLiveKitCreateResponse(
     call: mapCall(raw.call),
     group: mapGroup(raw.group),
     isExisting: resolveBoolean(raw.is_existing),
+    delivery: mapCallDeliveryState(raw.delivery),
   };
 }
 

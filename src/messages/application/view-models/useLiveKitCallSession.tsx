@@ -100,6 +100,7 @@ type LiveKitCallSession = {
   isMinimized: boolean;
   hasMediaPermissions: boolean | null;
   mediaErrorText: string;
+  deliveryWarningText: string;
   startedAt: number;
   elapsedSeconds: number;
   localVideoStreamUrl: string;
@@ -1412,6 +1413,7 @@ function buildInitialSession(
     isMinimized: false,
     hasMediaPermissions: null,
     mediaErrorText: '',
+    deliveryWarningText: '',
     startedAt: 0,
     elapsedSeconds: 0,
     localVideoStreamUrl: '',
@@ -1908,10 +1910,14 @@ export function LiveKitCallSessionProvider({
         return current;
       }
 
-      const hasChanged = Object.entries(patch).some(
+      const normalizedPatch =
+        patch.hasRemoteParticipant === true
+          ? { ...patch, deliveryWarningText: '' }
+          : patch;
+      const hasChanged = Object.entries(normalizedPatch).some(
         ([key, value]) => current[key as keyof LiveKitCallSession] !== value,
       );
-      const next = hasChanged ? { ...current, ...patch } : current;
+      const next = hasChanged ? { ...current, ...normalizedPatch } : current;
       sessionRef.current = next;
       return next;
     });
@@ -3216,6 +3222,10 @@ export function LiveKitCallSessionProvider({
           throw new Error('Không tạo được cuộc gọi.');
         }
 
+        const deliveryWarningText =
+          created.delivery.state === 'failed'
+            ? 'Không thể gửi thông báo cuộc gọi tới thiết bị của người nhận. Cuộc gọi vẫn đang chờ.'
+            : '';
         const nextUuid = createNativeCallUuid(nextCallId, params.callType);
         setSession(currentSession => {
           const next: LiveKitCallSession | null = currentSession
@@ -3225,6 +3235,7 @@ export function LiveKitCallSessionProvider({
                 nativeCallUuid: nextUuid,
                 peer: params.peer ?? created.peer,
                 phase: 'ringing',
+                deliveryWarningText,
               }
             : currentSession;
           sessionRef.current = next;

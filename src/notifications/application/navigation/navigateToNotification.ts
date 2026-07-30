@@ -86,6 +86,38 @@ function toGroupChatRouteItem(
   };
 }
 
+function toMessageThreadRouteItem(
+  item: NotificationsItem,
+  conversationType: 'user' | 'page' | 'group',
+  conversationId: string,
+): ChatItem {
+  const isGroup = conversationType === 'group';
+  const isPage = conversationType === 'page';
+  const name = isGroup
+    ? item.groupName || 'Nhóm chat'
+    : isPage
+    ? item.pageName || 'Trang'
+    : item.notifier?.name || item.text || 'Người dùng';
+
+  return {
+    id: `${conversationType}:${conversationId}`,
+    chatId: isGroup || isPage ? conversationId : undefined,
+    hasConversationRecord: false,
+    chatType: conversationType,
+    participantId: isGroup ? undefined : conversationId,
+    groupId: isGroup ? conversationId : undefined,
+    userId: conversationId,
+    username: item.notifier?.username || '',
+    name,
+    avatar: isGroup || isPage ? '' : item.notifier?.avatarUrl || '',
+    lastMessage: item.text || '',
+    lastMessageTime: item.createdAt || Date.now() / 1_000,
+    unreadCount: 1,
+    isOnline: false,
+    isVerified: Boolean(item.notifier?.verified),
+  };
+}
+
 async function openExternalNotificationUrl(
   url: string,
   navigation: NotificationNavigator,
@@ -112,6 +144,15 @@ export async function navigateToNotification(
     case 'groupChat':
       navigation.navigate(ROUTES.CHAT, {
         chat: toGroupChatRouteItem(item, destination.groupChatId),
+      });
+      return;
+    case 'messageThread':
+      navigation.navigate(ROUTES.CHAT, {
+        chat: toMessageThreadRouteItem(
+          item,
+          destination.conversationType,
+          destination.conversationId,
+        ),
       });
       return;
     case 'funding':

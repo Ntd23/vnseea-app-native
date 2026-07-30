@@ -183,7 +183,6 @@ if (!empty($_POST['recipient_id']) && is_numeric($_POST['recipient_id']) && $_PO
                 }
                 array_push($json_success_data, $message);
             }
-            $send_messages_to_phones = Wo_MessagesPushNotifier();
             $typing = 0;
 			$check_typing = Wo_IsTyping($recipient_id);
 			if ($check_typing) {

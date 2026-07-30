@@ -278,6 +278,8 @@ if (!function_exists('VNSEEA_MarketRequestOrder')) {
         foreach ($post_commit as $event) {
             Wo_CreateUserChat($event['seller_id'], $buyer_id);
             VNSEEA_PublishRealtimeMessageChange($event['message_id']);
+            VNSEEA_EnqueueMessagePush($event['message_id']);
+            VNSEEA_EnqueueNotificationPush($event['notification_id']);
             Wo_PublishRealtimeNotification(
                 $event['seller_id'],
                 $event['notification_id'],

@@ -1,12 +1,41 @@
 // Description: Verifies LiveKit group call response mapping for the Messages context.
 import {
   mapAddedGroupLiveKitMembers,
+  mapGroupLiveKitCreateResponse,
   mapGroupLiveKitCandidates,
   mapGroupLiveKitJoinPayload,
   mapIncomingGroupLiveKitCall,
 } from '../groupLiveKitCallMapper';
 
 describe('groupLiveKitCallMapper', () => {
+  it('maps group call delivery diagnostics for the caller', () => {
+    expect(
+      mapGroupLiveKitCreateResponse({
+        call: { id: '12', group_id: '7', status: 'active' },
+        group: { id: '7', name: 'Design' },
+        is_existing: 0,
+        delivery: {
+          state: 'partial',
+          channels: {
+            realtime: 'accepted',
+            onesignal: 'failed',
+            voip: 'unavailable',
+          },
+        },
+      }),
+    ).toMatchObject({
+      isExisting: false,
+      delivery: {
+        state: 'partial',
+        channels: {
+          realtime: 'accepted',
+          onesignal: 'failed',
+          voip: 'unavailable',
+        },
+      },
+    });
+  });
+
   it('maps a group call join payload without exposing backend secrets', () => {
     const payload = mapGroupLiveKitJoinPayload({
       call: {

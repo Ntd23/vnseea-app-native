@@ -98,6 +98,7 @@ type GroupLiveKitCallSession = {
   participants: GroupLiveKitParticipant[];
   error: string;
   mediaErrorText: string;
+  deliveryWarningText: string;
   isMinimized: boolean;
   hasMediaPermissions: boolean | null;
   hasCameraPermission: boolean;
@@ -586,6 +587,7 @@ function buildInitialSession(
     participants: [],
     error: '',
     mediaErrorText: '',
+    deliveryWarningText: '',
     isMinimized: false,
     hasMediaPermissions: null,
     hasCameraPermission: false,
@@ -832,17 +834,25 @@ export function GroupLiveKitCallSessionProvider({
           current.participants,
           participants,
         );
+        const hasRemoteParticipant = reconciledParticipants.some(
+          participant => !participant.isLocal,
+        );
+        const nextDeliveryWarningText = hasRemoteParticipant
+          ? ''
+          : current.deliveryWarningText;
         if (
           areGroupParticipantListsEqual(
             current.participants,
             reconciledParticipants,
-          )
+          ) &&
+          nextDeliveryWarningText === current.deliveryWarningText
         ) {
           return current;
         }
         const next = {
           ...current,
           participants: reconciledParticipants,
+          deliveryWarningText: nextDeliveryWarningText,
         };
         sessionRef.current = next;
         logGroupCallDebug('group_participant_media_state_changed', {
@@ -1255,10 +1265,15 @@ export function GroupLiveKitCallSessionProvider({
           groupId: params.groupId,
         });
         const callUuid = createNativeGroupCallUuid(created.call.id);
+        const deliveryWarningText =
+          !created.isExisting && created.delivery.state === 'failed'
+            ? 'Không thể gửi thông báo cuộc gọi tới thiết bị của thành viên. Cuộc gọi vẫn đang chờ.'
+            : '';
         patchSession({
           callId: created.call.id,
           group: created.group,
           nativeCallUuid: callUuid,
+          deliveryWarningText,
         });
         await startNativeOutgoingGroupCall({
           callUuid,

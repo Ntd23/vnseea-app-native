@@ -280,18 +280,20 @@ function Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status,
     );
 
     foreach ($recipient_ids as $recipient_id) {
-        $recipient = Wo_UserData($recipient_id);
-        $sent = false;
-        if (!empty($recipient) && is_array($recipient)) {
-            $sent = Wo_ApiLiveKitSendVoipPush($recipient, $notification_data, $display_name, $call_type);
-        }
+        $voip_state = VNSEEA_SendImmediateVoipEvent(
+            $recipient_id,
+            $notification_data,
+            $display_name,
+            $call_type,
+            'direct'
+        );
         Wo_ApiLiveKitDebugLog('close_voip_push', array(
             'call_id' => $call_id,
             'call_type' => $call_type,
             'status' => $final_status,
             'actor_id' => $actor_id,
             'recipient_id' => $recipient_id,
-            'sent' => $sent ? 1 : 0
+            'state' => $voip_state
         ));
     }
 }

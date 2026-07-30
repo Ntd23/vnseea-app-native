@@ -81,12 +81,30 @@ object MessagePushNotification {
     }
 
     val notificationId = conversationNotificationId(type, targetId)
-    val openIntent = Intent(context, MainActivity::class.java).apply {
-      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-      putExtra("vnseea_open_message_thread", true)
-      putExtra(MessageQuickReplyActions.EXTRA_CONVERSATION_TYPE, type)
-      putExtra(MessageQuickReplyActions.EXTRA_TARGET_ID, targetId)
-    }
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+          flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+          putExtra(MessageQuickReplyActions.EXTRA_OPEN_MESSAGE_THREAD, true)
+          putExtra(MessageQuickReplyActions.EXTRA_CONVERSATION_TYPE, type)
+          putExtra(MessageQuickReplyActions.EXTRA_TARGET_ID, targetId)
+          putExtra(
+            MessageQuickReplyActions.EXTRA_MESSAGE_ID,
+            data.optString("message_id"),
+          )
+          putExtra(
+            MessageQuickReplyActions.EXTRA_MESSAGE_TYPE,
+            data.optString("message_type"),
+          )
+          putExtra(
+            MessageQuickReplyActions.EXTRA_RECIPIENT_ID,
+            data.optString("recipient_id"),
+          )
+          putExtra(MessageQuickReplyActions.EXTRA_SENDER_NAME, senderName)
+          putExtra(
+            MessageQuickReplyActions.EXTRA_SENDER_AVATAR,
+            data.optString("sender_avatar"),
+          )
+          putExtra(MessageQuickReplyActions.EXTRA_MESSAGE_PREVIEW, preview)
+        }
     val contentPendingIntent = PendingIntent.getActivity(
       context,
       notificationId,
