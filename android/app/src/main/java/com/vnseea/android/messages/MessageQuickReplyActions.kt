@@ -6,8 +6,13 @@ object MessageQuickReplyActions {
   const val TASK_NAME = "VnseeaMessageQuickReply"
 
   const val EXTRA_REMOTE_INPUT = "vnseea.quick_reply_text"
+  const val EXTRA_OPEN_MESSAGE_THREAD = "vnseea_open_message_thread"
   const val EXTRA_CONVERSATION_TYPE = "conversationType"
   const val EXTRA_TARGET_ID = "targetId"
+  const val EXTRA_MESSAGE_ID = "messageId"
+  const val EXTRA_MESSAGE_TYPE = "messageType"
+  const val EXTRA_RECIPIENT_ID = "recipientId"
+  const val EXTRA_SENDER_AVATAR = "senderAvatar"
   const val EXTRA_SENDER_NAME = "senderName"
   const val EXTRA_MESSAGE_PREVIEW = "messagePreview"
   const val EXTRA_NOTIFICATION_ID = "notificationId"

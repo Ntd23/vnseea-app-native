@@ -21,11 +21,15 @@ if (!empty($_POST['id']) && is_numeric($_POST['id']) && $_POST['id'] > 0) {
 				$message['to_id'] = Wo_Secure($_POST['recipient_id']);
 			}
 			$message['from_id'] = $wo['user']['id'];
-			$message['forward'] = 1;
-			$id = $db->insert(T_MESSAGES,$message);
-			if (!empty($id)) {
-
-				$message = GetMessageById($id);
+				$message['forward'] = 1;
+				$id = $db->insert(T_MESSAGES,$message);
+				if (!empty($id)) {
+					if (empty($message['group_id'])) {
+						Wo_CreateUserChat($message['to_id'], $message['from_id'], !empty($message['page_id']) ? $message['page_id'] : 0);
+					}
+					VNSEEA_PublishRealtimeMessageChange($id);
+					VNSEEA_EnqueueMessagePush($id);
+					$message = GetMessageById($id);
 				$message['text'] = Wo_Markup($message['or_text']);
 	        	$message['time_text'] = Wo_Time_Elapsed_String($message['time']);
 	            $message_po           = 'left';

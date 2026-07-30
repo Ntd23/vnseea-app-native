@@ -980,6 +980,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                                                   'new'      => $new,
                                                                   'old'      => $old,
                                                                   'offset'   => $offset));
+            Wo_UpdateGChatLastSeen($group_id);
             $not_include_status = false;
             $not_include_array = array();
             if (!empty($_POST['not_include'])) {
@@ -1075,7 +1076,6 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 }
                 array_push($group_messages, $message);
             }
-            $send_messages_to_phones = Wo_MessagesPushNotifier();
             $group_tab['messages'] = $group_messages;
             foreach ($group_tab['messages'] as $m_id => $value) {
                 foreach ($non_allowed as $key => $value) {

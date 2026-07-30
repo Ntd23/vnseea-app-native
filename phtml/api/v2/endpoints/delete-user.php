@@ -22,6 +22,7 @@ if (empty($error_code)) {
     } else {
         $delete = Wo_DeleteUser($wo['user']['user_id']);
         if ($delete) {
+            VNSEEA_DeactivateUserPushInstallations($wo['user']['user_id']);
             $response_data = array(
                 'api_status' => 200,
                 'message' => 'account_deleted'

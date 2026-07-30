@@ -161,6 +161,9 @@ export const apiRoutes = {
     delete: 'notifications', // v2 API - type=delete
     markSeen: 'notifications', // v2 API - type=mark_seen
   },
+  push: {
+    devices: 'push-devices',
+  },
   wallet: {
     overview: 'wallet-overview',
     affiliates: 'settings-affiliates',

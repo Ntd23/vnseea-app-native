@@ -122,54 +122,26 @@ if (!function_exists('Wo_SendCanonicalLiveKitCallPush')) {
             )
         );
 
-        $ios_device_ids = array_values(array_unique(array_filter(array(
-            !empty($recipient['ios_m_device_id']) ? $recipient['ios_m_device_id'] : '',
-            !empty($recipient['ios_n_device_id']) ? $recipient['ios_n_device_id'] : ''
-        ))));
-        $android_device_ids = array_values(array_unique(array_filter(array(
-            !empty($recipient['android_m_device_id']) ? $recipient['android_m_device_id'] : '',
-            !empty($recipient['android_n_device_id']) ? $recipient['android_n_device_id'] : ''
-        ))));
-
-        $ios_sent = false;
-        if (!empty($ios_device_ids) && intval($wo['config']['ios_push_messages']) === 1) {
-            $ios_sent = (bool) Wo_SendPushNotification(array(
-                'send_to' => $ios_device_ids,
-                'notification' => $notification
-            ), 'ios_messenger');
-        }
-
-        $caller_name = $caller_data['name'] !== '' ? $caller_data['name'] : 'VNSEEA';
-        $voip_sent = false;
-        if (function_exists('Wo_ApiSendApnsVoipPush')) {
-            $voip_sent = (bool) Wo_ApiSendApnsVoipPush($recipient, $notification_data, $caller_name, $call_type, 'direct');
-        }
-
-        $android_sent = false;
-        if (!empty($android_device_ids) && intval($wo['config']['android_push_messages']) === 1) {
-            $android_sent = (bool) Wo_SendPushNotification(array(
-                'send_to' => $android_device_ids,
-                'notification' => $notification
-            ), 'android_messenger');
-        }
-
+        $push_channels = VNSEEA_SendImmediateCallPush(
+            (int)$recipient['user_id'],
+            $notification_data,
+            $notification['notification_title'],
+            $call_type,
+            'direct',
+            true
+        );
         if (function_exists('Wo_VnseeaCallDebugLog')) {
-            Wo_VnseeaCallDebugLog('call_push_dispatch', array(
+            Wo_VnseeaCallDebugLog('call_push_dispatch_v2', array(
                 'source' => $source,
                 'call_id' => $call_id,
                 'call_type' => $call_type,
                 'from_id' => $caller_data['id'],
                 'to_id' => !empty($recipient['user_id']) ? $recipient['user_id'] : 0,
-                'ios_device_count' => count($ios_device_ids),
-                'android_device_count' => count($android_device_ids),
-                'voip_token_present' => !empty($recipient['ios_voip_token']) ? 1 : 0,
-                'ios_sent' => $ios_sent ? 1 : 0,
-                'voip_sent' => $voip_sent ? 1 : 0,
-                'android_sent' => $android_sent ? 1 : 0
+                'onesignal' => $push_channels['onesignal'],
+                'voip' => $push_channels['voip']
             ));
         }
-
-        return $ios_sent || $voip_sent || $android_sent;
+        return $push_channels;
     }
 }
 
@@ -179,7 +151,7 @@ if (!function_exists('Wo_PublishCanonicalLiveKitIncomingCall')) {
         global $wo;
         $secret = Wo_CanonicalLiveKitActionSecret();
         if ($secret === '') {
-            return false;
+            return null;
         }
 
         $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
@@ -190,7 +162,7 @@ if (!function_exists('Wo_PublishCanonicalLiveKitIncomingCall')) {
             $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
         }
         if ($endpoint === '') {
-            return false;
+            return null;
         }
 
         $caller_data = Wo_CanonicalLiveKitUser($caller);
@@ -304,7 +276,7 @@ if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
             'provider' => 'livekit',
             'status' => 'calling'
         ));
-        Wo_SendCanonicalLiveKitCallPush(
+        $push_channels = Wo_SendCanonicalLiveKitCallPush(
             $recipient,
             $caller,
             $call_id,
@@ -312,7 +284,7 @@ if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
             $room_name,
             $source
         );
-        Wo_PublishCanonicalLiveKitIncomingCall(
+        $realtime_sent = Wo_PublishCanonicalLiveKitIncomingCall(
             $call_id,
             $call_type,
             $caller,
@@ -328,7 +300,8 @@ if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
             'call_status' => 'calling',
             'id' => (string) $call_id,
             'room_name' => $room_name,
-            'peer' => Wo_CanonicalLiveKitUser($recipient)
+            'peer' => Wo_CanonicalLiveKitUser($recipient),
+            'delivery' => VNSEEA_BuildCallDeliveryState($realtime_sent, $push_channels)
         );
     }
 }

@@ -5,7 +5,14 @@ import {
   identifyPushUser,
   logoutPushUser,
 } from '../../../shared-kernel/infrastructure/push/oneSignalPush';
+import {
+  completeCurrentPushInstallationRelease,
+  retryPendingPushDeviceWork,
+  stageCurrentPushInstallationRelease,
+  syncPushDevicesAfterAuthentication,
+} from '../../../shared-kernel/infrastructure/push/pushDeviceRegistration';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { flushPendingPushNotificationNavigation } from '../../../notifications/application/navigation/pushNotificationNavigation';
 import {
   connectLiveKitCallRealtime,
   disconnectLiveKitCallRealtime,
@@ -22,6 +29,7 @@ import type {
 } from '../../domain/types/auth.types';
 
 const AUTH_DEBUG_PREFIX = '[VNSEEA_AUTH_DEBUG]';
+const LOGOUT_BACKEND_TIMEOUT_MS = 5_000;
 
 type AuthResponse = {
   api_status: number | string;
@@ -32,6 +40,7 @@ type AuthResponse = {
   message?: string;
   user_data?: Record<string, unknown>;
   status?: string;
+  push_release_pending?: boolean | number | string;
 };
 
 type CurrentUserResponse = {
@@ -71,8 +80,8 @@ function logAuthDebug(event: string, data: Record<string, unknown> = {}) {
 
 function clearLocalAuthState() {
   disconnectLiveKitCallRealtime();
-  logoutPushUser();
   sessionStorage.clearSession();
+  logoutPushUser();
 }
 
 function mapAuthResponse(response: AuthResponse): AuthResult {
@@ -91,6 +100,10 @@ function mapAuthResponse(response: AuthResponse): AuthResult {
 
     sessionStorage.setSession(session);
     identifyPushUser(session.userId);
+    syncPushDevicesAfterAuthentication().catch(error => {
+      console.warn('[Auth] Could not sync push installation', error);
+    });
+    flushPendingPushNotificationNavigation();
     connectLiveKitCallRealtime();
 
     // Save user profile data
@@ -200,35 +213,68 @@ export function createAuthRepository(): AuthRepository {
     async logout() {
       const activeSession = sessionStorage.getSession();
       const hadAccessToken = Boolean(activeSession?.accessToken);
+      const pendingRelease = hadAccessToken
+        ? stageCurrentPushInstallationRelease()
+        : null;
 
       logAuthDebug('auth_logout_start', {
         hadAccessToken,
         userId: activeSession?.userId ?? '',
       });
 
-      try {
-        if (hadAccessToken) {
-          await apiBridge.post(apiRoutes.auth.logout);
-          logAuthDebug('auth_logout_backend_success', {
-            userId: activeSession?.userId ?? '',
+      clearLocalAuthState();
+      logAuthDebug('auth_logout_local_cleanup_done', {
+        hadAccessToken,
+        userId: activeSession?.userId ?? '',
+      });
+
+      if (hadAccessToken && activeSession?.accessToken) {
+        apiBridge
+          .post<AuthResponse>(
+            apiRoutes.auth.logout,
+            {
+              ...(pendingRelease
+                ? {
+                    installation_id: pendingRelease.installationId,
+                    device_secret: pendingRelease.deviceSecret,
+                  }
+                : {}),
+            },
+            {
+              params: { access_token: activeSession.accessToken },
+              timeout: LOGOUT_BACKEND_TIMEOUT_MS,
+            },
+          )
+          .then(logoutResponse => {
+            const pushReleasePending =
+              logoutResponse.push_release_pending === true ||
+              logoutResponse.push_release_pending === 1 ||
+              logoutResponse.push_release_pending === '1';
+            if (pendingRelease && !pushReleasePending) {
+              completeCurrentPushInstallationRelease(pendingRelease);
+            }
+            logAuthDebug('auth_logout_backend_success', {
+              userId: activeSession?.userId ?? '',
+            });
+          })
+          .catch(error => {
+            logAuthDebug('auth_logout_backend_error', {
+              userId: activeSession?.userId ?? '',
+              error: authDebugError(error),
+            });
+            console.warn(
+              '[Auth] Backend logout failed; release will retry in background',
+              error,
+            );
+          })
+          .finally(() => {
+            retryPendingPushDeviceWork().catch(() => undefined);
           });
-        } else {
-          logAuthDebug('auth_logout_backend_skipped', {
-            reason: 'missing_access_token',
-          });
-        }
-      } catch (error) {
-        logAuthDebug('auth_logout_backend_error', {
-          userId: activeSession?.userId ?? '',
-          error: authDebugError(error),
+      } else {
+        logAuthDebug('auth_logout_backend_skipped', {
+          reason: 'missing_access_token',
         });
-        console.warn('[Auth] Backend logout failed; continuing local cleanup', error);
-      } finally {
-        clearLocalAuthState();
-        logAuthDebug('auth_logout_local_cleanup_done', {
-          hadAccessToken,
-          userId: activeSession?.userId ?? '',
-        });
+        retryPendingPushDeviceWork().catch(() => undefined);
       }
     },
 

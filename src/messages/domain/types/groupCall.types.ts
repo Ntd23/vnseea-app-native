@@ -1,5 +1,8 @@
 // Description: Defines LiveKit group call domain types owned by the Messages context.
-import type { LiveKitCallDirection } from './call.types';
+import type {
+  CallDeliveryState,
+  LiveKitCallDirection,
+} from './call.types';
 
 export type GroupLiveKitCallType = 'video';
 
@@ -44,6 +47,7 @@ export type GroupLiveKitCreateResult = {
   call: GroupLiveKitCallSummary;
   group: GroupLiveKitGroup;
   isExisting: boolean;
+  delivery: CallDeliveryState;
 };
 
 export type GroupLiveKitJoinPayload = {

@@ -15,6 +15,10 @@ function getSnapshot() {
   return counts;
 }
 
+export function getUnreadBadgeCountsSnapshot() {
+  return getSnapshot();
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => {

@@ -60,6 +60,8 @@ export interface NotificationsItem {
   orderId?: string;
   orderMode?: 'purchased' | 'seller';
   groupChatId?: string; // ID của nhóm chat khi có lời mời tham gia
+  messageConversationType?: 'user' | 'page' | 'group';
+  messageConversationId?: string;
   seen: boolean;
   seenAt?: number;
   createdAt: number;

@@ -13,6 +13,7 @@ function loadServiceForPlatform(os) {
   jest.resetModules();
 
   let foregroundHandler = null;
+  let voipRegisterHandler = null;
   let voipNotificationHandler = null;
   const callKeepHandlers = {};
   const oneSignalAddEventListener = jest.fn((eventName, handler) => {
@@ -26,6 +27,9 @@ function loadServiceForPlatform(os) {
   };
   const voipPushDefault = {
     addEventListener: jest.fn((eventName, handler) => {
+      if (eventName === 'register') {
+        voipRegisterHandler = handler;
+      }
       if (eventName === 'notification') {
         voipNotificationHandler = handler;
       }
@@ -82,6 +86,14 @@ function loadServiceForPlatform(os) {
       post: jest.fn().mockResolvedValue({}),
     },
   }));
+  const cachePushToken = jest.fn().mockResolvedValue(undefined);
+  jest.doMock(
+    '../../../../shared-kernel/infrastructure/push/pushDeviceRegistration',
+    () => ({
+      cachePushToken,
+      currentApnsEnvironment: () => 'sandbox',
+    }),
+  );
 
   const service = require('../nativeCallService');
   return {
@@ -89,7 +101,9 @@ function loadServiceForPlatform(os) {
     callKeepDefault,
     rtcAudioSession,
     voipPushDefault,
+    cachePushToken,
     getForegroundHandler: () => foregroundHandler,
+    getVoipRegisterHandler: () => voipRegisterHandler,
     getVoipNotificationHandler: () => voipNotificationHandler,
     getCallKeepHandler: eventName => callKeepHandlers[eventName],
   };
@@ -126,6 +140,21 @@ describe('native call service foreground incoming push handling', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
     expect(onIncoming).not.toHaveBeenCalled();
     expect(callKeepDefault.displayIncomingCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches a sandbox PushKit token even before an authenticated session exists', async () => {
+    const { service, cachePushToken, getVoipRegisterHandler } =
+      loadServiceForPlatform('ios');
+
+    await service.configureNativeCallService();
+    getVoipRegisterHandler()('pushkit-token');
+    await Promise.resolve();
+
+    expect(cachePushToken).toHaveBeenCalledWith({
+      provider: 'apns_voip',
+      token: 'pushkit-token',
+      apnsEnvironment: 'sandbox',
+    });
   });
 
   it('keeps the custom incoming modal callback for Android foreground call pushes', async () => {

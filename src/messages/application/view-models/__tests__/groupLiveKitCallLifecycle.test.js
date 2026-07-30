@@ -8,6 +8,23 @@ function read(relativePath) {
 }
 
 describe('LiveKit group call video-only lifecycle', () => {
+  it('warns only a new-call host when delivery fails and clears after a remote joins', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const screen = read(
+      'src/messages/presentation/screens/GroupCallRoomScreen.tsx',
+    );
+
+    expect(source).toContain(
+      "!created.isExisting && created.delivery.state === 'failed'",
+    );
+    expect(source).toContain('deliveryWarningText');
+    expect(source).toContain('hasRemoteParticipant');
+    expect(screen).toContain('session?.deliveryWarningText');
+    expect(source).not.toContain('retryCallDelivery');
+  });
+
   it('exposes a video-only group call contract', () => {
     const types = read('src/messages/domain/types/groupCall.types.ts');
     const repository = read(

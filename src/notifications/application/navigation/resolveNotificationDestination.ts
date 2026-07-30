@@ -11,6 +11,11 @@ export { GROUP_CHAT_INVITE_NOTIFICATION } from '../../domain/types/notifications
 export type NotificationDestination =
   | { kind: 'profile'; userId: string }
   | { kind: 'groupChat'; groupChatId: string }
+  | {
+      kind: 'messageThread';
+      conversationType: 'user' | 'page' | 'group';
+      conversationId: string;
+    }
   | { kind: 'funding'; fundId: string }
   | { kind: 'product'; productId: string; fallbackUrl?: string }
   | { kind: 'job'; jobId: string }
@@ -99,6 +104,13 @@ export function resolveNotificationDestination(
   }
 
   if (MESSAGE_NOTIFICATION_TYPES.has(type)) {
+    if (item.messageConversationType && item.messageConversationId) {
+      return {
+        kind: 'messageThread',
+        conversationType: item.messageConversationType,
+        conversationId: item.messageConversationId,
+      };
+    }
     return { kind: 'messages' };
   }
 

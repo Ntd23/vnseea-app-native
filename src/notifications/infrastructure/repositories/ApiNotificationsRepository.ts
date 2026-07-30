@@ -37,6 +37,12 @@ const NOTIFICATION_CENTER_CHAT_TYPES = new Set([
   'declined_group_chat_request',
 ]);
 const HIDDEN_NOTIFICATION_CENTER_TYPES = new Set(['visited_profile']);
+const MESSAGE_NOTIFICATION_TYPES = new Set([
+  'message',
+  'chat',
+  'chat_message',
+  'new_message',
+]);
 
 const PAGE_NOTIFICATION_TYPES = new Set([
   'liked_page',
@@ -167,7 +173,7 @@ export function mapNotificationRecord(
     normalizeUrl(ajaxUrl),
     normalizeUrl(fullLink),
   ].filter(Boolean);
-  const notifierId = readString(notifierRaw, 'user_id', 'id');
+  const notifierId = readString(notifierRaw, 'user_id', 'sender_id', 'id');
   const notifierName = readString(
     notifierRaw,
     'name',
@@ -249,6 +255,33 @@ export function mapNotificationRecord(
     (GROUP_NOTIFICATION_TYPES.has(notificationType)
       ? timelineSlug || readLastPathSegment(normalizedUrl)
       : '');
+  const rawMessageConversationType = readString(
+    raw,
+    'conversation_type',
+  ).toLowerCase();
+  const messageConversationType = MESSAGE_NOTIFICATION_TYPES.has(
+    notificationType,
+  )
+    ? rawMessageConversationType === 'group' ||
+      rawMessageConversationType === 'page' ||
+      rawMessageConversationType === 'user'
+      ? rawMessageConversationType
+      : groupId
+      ? 'group'
+      : pageId
+      ? 'page'
+      : readTargetString(raw, 'user_id', 'sender_id')
+      ? 'user'
+      : undefined
+    : undefined;
+  const messageConversationId =
+    messageConversationType === 'group'
+      ? groupId
+      : messageConversationType === 'page'
+      ? pageId
+      : messageConversationType === 'user'
+      ? readTargetString(raw, 'user_id', 'sender_id')
+      : '';
   const eventId =
     readTargetString(raw, 'event_id', 'eventId') ||
     readTargetString(eventRaw, 'event_id', 'id');
@@ -296,6 +329,8 @@ export function mapNotificationRecord(
     orderId,
     orderMode,
     groupChatId: readTargetString(raw, 'group_chat_id', 'groupChatId'),
+    messageConversationType,
+    messageConversationId: messageConversationId || undefined,
     seen: readBool(raw, 'seen'),
     seenAt: readNumber(raw, 'seen_at', 'seenAt'),
     createdAt: readNumber(raw, 'time', 'created_at', 'posted_at') ?? 0,

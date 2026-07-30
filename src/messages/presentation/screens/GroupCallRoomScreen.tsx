@@ -598,6 +598,12 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
     }),
     [controlsHeight, isChromeVisible],
   );
+  const deliveryWarningStyle = useMemo(
+    () => ({
+      top: isChromeVisible ? headerHeight + 8 : 12,
+    }),
+    [headerHeight, isChromeVisible],
+  );
 
   const toggleChrome = useCallback(() => {
     const nextVisible = !isChromeVisibleRef.current;
@@ -732,6 +738,14 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
             style={mediaErrorStyle}
           >
             {session.mediaErrorText}
+          </Text>
+        ) : null}
+        {session?.deliveryWarningText ? (
+          <Text
+            className="absolute left-0 right-0 z-20 px-6 text-center text-sm text-amber-200"
+            style={deliveryWarningStyle}
+          >
+            {session.deliveryWarningText}
           </Text>
         ) : null}
 

@@ -233,6 +233,11 @@ function WaitingRoom({
             {publicStatusText}
           </Text>
         ) : null}
+        {session?.deliveryWarningText ? (
+          <Text className="mt-4 text-center text-sm text-amber-200">
+            {session.deliveryWarningText}
+          </Text>
+        ) : null}
         {canShowSpinner ? (
           <ActivityIndicator className="mt-8" color={APP_BRAND_COLOR} size="large" />
         ) : null}
@@ -327,6 +332,11 @@ function AudioRoom({
           <Text style={styles.callDuration} className="mt-4 text-white">
             {formatCallDuration(session?.elapsedSeconds ?? 0)}
           </Text>
+          {session?.deliveryWarningText ? (
+            <Text className="mt-4 max-w-[320px] text-center text-sm text-amber-200">
+              {session.deliveryWarningText}
+            </Text>
+          ) : null}
           {session?.isRemoteMicrophoneMuted ? (
             <View className="mt-4 flex-row items-center rounded-full bg-slate-950/60 px-3 py-2">
               <MicOff size={16} color="#cbd5e1" />
@@ -373,6 +383,11 @@ function VideoRoom({ peerName }: { peerName: string }) {
           {session?.mediaErrorText ? (
             <Text className="mt-2 text-center text-sm text-red-300">
               {session.mediaErrorText}
+            </Text>
+          ) : null}
+          {session?.deliveryWarningText ? (
+            <Text className="mt-3 text-center text-sm text-amber-200">
+              {session.deliveryWarningText}
             </Text>
           ) : null}
         </View>

@@ -2,8 +2,10 @@
 import { NativeModules, Platform } from 'react-native';
 import MD5 from 'crypto-js/md5';
 import { OneSignal } from 'react-native-onesignal';
-import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
-import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import {
+  cachePushToken,
+  currentApnsEnvironment,
+} from '../../../shared-kernel/infrastructure/push/pushDeviceRegistration';
 import type {
   IncomingLiveKitCall,
   LiveKitCallPeer,
@@ -242,13 +244,18 @@ function readPushLiveKitCall(payload: unknown): IncomingLiveKitCall | null {
 
 function syncVoipToken(token: string) {
   if (!token) return;
-  apiBridge
-    .post(apiRoutes.messages.livekit, {
-      type: 'register_voip_token',
-      token,
+  cachePushToken({
+    provider: 'apns_voip',
+    token,
+    apnsEnvironment: currentApnsEnvironment(),
+  })
+    .then(() => {
+      logNativeCallDebug('voip_token_cached', {
+        environment: currentApnsEnvironment(),
+      });
     })
     .catch(error => {
-      console.warn('[LiveKitCall] Could not sync VoIP token', error);
+      console.warn('[LiveKitCall] Could not cache VoIP token', error);
     });
 }
 

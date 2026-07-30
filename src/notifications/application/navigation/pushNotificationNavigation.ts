@@ -1,19 +1,29 @@
 // Description: Routes OneSignal notification clicks after root navigation is ready.
 
+import { AppState } from 'react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigationRef } from '../../../navigation/navigationRef';
+import {
+  getUnreadBadgeCountsSnapshot,
+  setUnreadBadgeCounts,
+} from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import {
   pushNotificationOpenEvents,
   type PushNotificationOpenPayload,
 } from '../../../shared-kernel/infrastructure/push/pushNotificationOpenEvents';
-import { mapNotificationRecord } from '../../infrastructure/repositories/ApiNotificationsRepository';
+import {
+  createNotificationsRepository,
+  mapNotificationRecord,
+} from '../../infrastructure/repositories/ApiNotificationsRepository';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
 import { navigateToNotification } from './navigateToNotification';
+import { pushNavigationStorage } from './pushNavigationStorage';
 
 let initialized = false;
 let pendingPayload: PushNotificationOpenPayload | null = null;
 let navigationInFlight: Promise<void> | null = null;
+let readReceiptInFlight: Promise<void> | null = null;
 let lastHandledKey = '';
 const MESSAGE_PUSH_KINDS = new Set([
   'message',
@@ -84,6 +94,78 @@ function payloadKey(payload: PushNotificationOpenPayload) {
   ].join(':');
 }
 
+function backendNotificationId(payload: PushNotificationOpenPayload) {
+  const root = payload.additionalData;
+  const nested = asRecord(root.notification_data ?? root.data);
+  return readString({ ...nested, ...root }, 'notification_id', 'notif_id');
+}
+
+function pushRecipientUserId(payload: PushNotificationOpenPayload) {
+  const root = payload.additionalData;
+  const nested = asRecord(root.notification_data ?? root.data);
+  return readString(
+    { ...nested, ...root },
+    'recipient_id',
+    'recipient_user_id',
+  );
+}
+
+function scopePayloadToCurrentUser(
+  payload: PushNotificationOpenPayload,
+): PushNotificationOpenPayload | null {
+  if (pushRecipientUserId(payload)) return payload;
+  const currentUserId = sessionStorage.getSession()?.userId?.trim();
+  if (!currentUserId) return null;
+  return {
+    ...payload,
+    additionalData: {
+      ...payload.additionalData,
+      recipient_id: currentUserId,
+    },
+  };
+}
+
+export function flushPendingPushNotificationReadReceipts() {
+  const session = sessionStorage.getSession();
+  const recipientUserId = session?.userId?.trim();
+  if (
+    readReceiptInFlight ||
+    !session?.accessToken ||
+    !recipientUserId
+  ) {
+    return readReceiptInFlight;
+  }
+  const notificationIds =
+    pushNavigationStorage.getReadReceipts(recipientUserId);
+  if (notificationIds.length === 0) return null;
+
+  const repository = createNotificationsRepository();
+  readReceiptInFlight = (async () => {
+    for (const notificationId of notificationIds) {
+      try {
+        await repository.markAsSeen(notificationId);
+        pushNavigationStorage.completeReadReceipt(
+          notificationId,
+          recipientUserId,
+        );
+        const current = getUnreadBadgeCountsSnapshot();
+        setUnreadBadgeCounts({
+          notificationCount: Math.max(0, current.notificationCount - 1),
+        });
+      } catch (error) {
+        console.warn(
+          '[PushNotificationNavigation] mark seen failed',
+          error,
+        );
+      }
+    }
+  })().finally(() => {
+    readReceiptInFlight = null;
+  });
+
+  return readReceiptInFlight;
+}
+
 function navigateToFeedFallback() {
   if (!navigationRef.isReady()) return;
   navigationRef.navigate(ROUTES.MAIN_TABS, {
@@ -92,16 +174,31 @@ function navigateToFeedFallback() {
 }
 
 export function flushPendingPushNotificationNavigation() {
+  flushPendingPushNotificationReadReceipts();
   if (navigationInFlight || !pendingPayload) return navigationInFlight;
-  if (!sessionStorage.getAccessToken() || !navigationRef.isReady()) {
+  const session = sessionStorage.getSession();
+  const currentUserId = session?.userId?.trim();
+  if (!session?.accessToken || !currentUserId || !navigationRef.isReady()) {
     return null;
   }
 
   const payload = pendingPayload;
+  const recipientUserId = pushRecipientUserId(payload);
+  if (!recipientUserId) {
+    pendingPayload = null;
+    pushNavigationStorage.clearOpen(payload.notificationId);
+    return null;
+  }
+  if (recipientUserId !== currentUserId) {
+    return null;
+  }
   const key = payloadKey(payload);
   pendingPayload = null;
 
-  if (key && key === lastHandledKey) return null;
+  if (key && key === lastHandledKey) {
+    pushNavigationStorage.clearOpen(payload.notificationId);
+    return null;
+  }
 
   navigationInFlight = navigateToNotification(
     mapPushNotificationOpenPayload(payload),
@@ -109,6 +206,15 @@ export function flushPendingPushNotificationNavigation() {
   )
     .then(() => {
       lastHandledKey = key;
+      pushNavigationStorage.clearOpen(payload.notificationId);
+      const notificationId = backendNotificationId(payload);
+      if (notificationId) {
+        pushNavigationStorage.addReadReceipt(
+          notificationId,
+          recipientUserId,
+        );
+        flushPendingPushNotificationReadReceipts();
+      }
     })
     .catch(error => {
       console.warn('[PushNotificationNavigation] navigation failed', error);
@@ -123,15 +229,26 @@ export function flushPendingPushNotificationNavigation() {
 }
 
 function handlePushNotificationOpen(payload: PushNotificationOpenPayload) {
-  const key = payloadKey(payload);
+  const scopedPayload = scopePayloadToCurrentUser(payload);
+  if (!scopedPayload) return;
+  const key = payloadKey(scopedPayload);
   if (key && key === lastHandledKey) return;
 
-  pendingPayload = payload;
+  pendingPayload = scopedPayload;
+  pushNavigationStorage.saveOpen(scopedPayload);
   flushPendingPushNotificationNavigation();
 }
 
 export function initializePushNotificationNavigation() {
   if (initialized) return;
   initialized = true;
+  pendingPayload = pushNavigationStorage.getOpen();
   pushNotificationOpenEvents.subscribe(handlePushNotificationOpen);
+  AppState.addEventListener('change', state => {
+    if (state === 'active') {
+      flushPendingPushNotificationNavigation();
+      flushPendingPushNotificationReadReceipts();
+    }
+  });
+  flushPendingPushNotificationNavigation();
 }

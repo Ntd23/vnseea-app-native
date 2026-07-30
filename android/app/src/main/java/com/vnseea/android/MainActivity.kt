@@ -5,9 +5,11 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import com.facebook.react.ReactActivity
+import com.facebook.react.ReactApplication
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.vnseea.android.messages.MessagePushOpenStore
 
 class MainActivity : ReactActivity() {
 
@@ -19,6 +21,7 @@ class MainActivity : ReactActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    captureMessagePushOpen(intent)
     preferHighestRefreshRate()
   }
 
@@ -36,6 +39,7 @@ class MainActivity : ReactActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
+    captureMessagePushOpen(intent)
   }
 
   /**
@@ -44,6 +48,13 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+
+  private fun captureMessagePushOpen(intent: Intent?) {
+    if (!MessagePushOpenStore.capture(this, intent)) return
+    val reactContext =
+      (application as? ReactApplication)?.reactHost?.currentReactContext
+    MessagePushOpenStore.notifyReactContext(reactContext)
+  }
 
   private fun preferHighestRefreshRate() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {

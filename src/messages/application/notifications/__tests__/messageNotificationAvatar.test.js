@@ -70,4 +70,30 @@ describe('Android message notification avatars', () => {
     expect(backendSource).toContain("'push_kind' => 'message'");
     expect(backendSource).toContain("'message_id' => (string) $message_id");
   });
+
+  it('persists native message taps and forwards them to push navigation', () => {
+    const notificationSource = read(
+      'android/app/src/main/java/com/vnseea/android/messages/MessagePushNotification.kt',
+    );
+    const activitySource = read(
+      'android/app/src/main/java/com/vnseea/android/MainActivity.kt',
+    );
+    const moduleSource = read(
+      'android/app/src/main/java/com/vnseea/android/messages/MessageNotificationIdentityModule.kt',
+    );
+    const appSource = read('App.tsx');
+
+    expect(notificationSource).toContain(
+      'MessageQuickReplyActions.EXTRA_OPEN_MESSAGE_THREAD',
+    );
+    expect(notificationSource).toContain(
+      'MessageQuickReplyActions.EXTRA_MESSAGE_ID',
+    );
+    expect(notificationSource).toContain(
+      'MessageQuickReplyActions.EXTRA_RECIPIENT_ID',
+    );
+    expect(activitySource).toContain('MessagePushOpenStore.capture');
+    expect(moduleSource).toContain('consumePendingMessageOpen');
+    expect(appSource).toContain('initializeAndroidMessagePushOpen');
+  });
 });

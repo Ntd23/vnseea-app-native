@@ -81,6 +81,33 @@ describe('ApiNotificationsRepository notification mapping', () => {
     expect(shouldExcludeFromNotificationCenter(chatItem.type)).toBe(false);
   });
 
+  it('maps a message push to its exact conversation target', () => {
+    const direct = mapNotificationRecord({
+      id: 'message:41',
+      type: 'message',
+      conversation_type: 'user',
+      user_id: 17,
+      sender_id: 17,
+      sender_name: 'Người gửi',
+    });
+    const group = mapNotificationRecord({
+      id: 'message:42',
+      type: 'message',
+      conversation_type: 'group',
+      group_id: 73,
+    });
+
+    expect(direct).toMatchObject({
+      messageConversationType: 'user',
+      messageConversationId: '17',
+      notifierId: '17',
+    });
+    expect(group).toMatchObject({
+      messageConversationType: 'group',
+      messageConversationId: '73',
+    });
+  });
+
   it('maps pending group-chat requests to a dedicated internal type', () => {
     const item = mapGroupChatRequestRecord({
       group_id: 91,

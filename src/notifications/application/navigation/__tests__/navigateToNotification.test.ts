@@ -62,4 +62,28 @@ describe('navigateToNotification', () => {
       postId: '42',
     });
   });
+
+  it('opens a message push in the exact conversation', async () => {
+    const navigation = { navigate: jest.fn() };
+
+    await navigateToNotification(
+      notification({
+        type: 'message',
+        messageConversationType: 'user',
+        messageConversationId: '7',
+      }),
+      navigation,
+    );
+
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      ROUTES.CHAT,
+      expect.objectContaining({
+        chat: expect.objectContaining({
+          chatType: 'user',
+          participantId: '7',
+          userId: '7',
+        }),
+      }),
+    );
+  });
 });

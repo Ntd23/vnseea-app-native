@@ -44,7 +44,7 @@ function resetNavigationToLogin() {
     return;
   }
 
-  navigationRef.reset({
+  navigationRef.resetRoot({
     index: 0,
     routes: [{ name: ROUTES.LOGIN }],
   });

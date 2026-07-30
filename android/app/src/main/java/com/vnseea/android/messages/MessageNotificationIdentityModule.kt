@@ -4,6 +4,7 @@ package com.vnseea.android.messages
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.Promise
 
 class MessageNotificationIdentityModule(
   private val appContext: ReactApplicationContext,
@@ -18,5 +19,10 @@ class MessageNotificationIdentityModule(
   @ReactMethod
   fun clearCurrentUser() {
     MessageNotificationIdentityStore.clear(appContext)
+  }
+
+  @ReactMethod
+  fun consumePendingMessageOpen(promise: Promise) {
+    promise.resolve(MessagePushOpenStore.consume(appContext))
   }
 }
