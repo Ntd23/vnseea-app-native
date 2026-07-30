@@ -52,6 +52,15 @@ describe('comment mentions', () => {
     );
   });
 
+  it('restores an @ when a legacy response strips the mention anchor', () => {
+    expect(hydrateCommentMentionText('nguyenvanan', [mention])).toBe(
+      `@${mention.displayName}`,
+    );
+    expect(
+      hydrateCommentMentionText(`Hello ${mention.displayName}`, [mention]),
+    ).toBe(`Hello @${mention.displayName}`);
+  });
+
   it('removes metadata when the user deletes the selected display mention', () => {
     expect(pruneCommentMentions('Không còn tag', [mention])).toEqual([]);
     expect(pruneCommentMentions('Vẫn còn @Nguyễn Văn An', [mention])).toEqual([

@@ -59,8 +59,8 @@ describe('shared post preview mapping', () => {
     );
 
     expect(post.kind).toBe('text');
-    expect(post.caption).toBe('Ghi chu cua nguoi chia se');
     if (post.kind !== 'text') throw new Error('Expected text outer post');
+    expect(post.caption).toBe('Ghi chu cua nguoi chia se');
     expect(post.photos).toEqual([]);
     expect(post.sharedPostId).toBe('100');
     expect(post.sharedPost).toMatchObject({
@@ -128,6 +128,77 @@ describe('shared post preview mapping', () => {
       title: 'May anh',
       subtitle: '2.000.000 d',
       imageUrl: 'https://cdn.vnseea.test/product.jpg',
+    });
+  });
+
+  it('maps a product post returned by get-post-data without collapsing it to text', () => {
+    const mapped = mapFeedPost(
+      rawPost({
+        id: '700',
+        product_id: '17',
+        product: {
+          id: '17',
+          post_id: '700',
+          name: 'May anh',
+          description: 'May anh chuyen nghiep',
+          price: '2000000',
+          price_format: '2.000.000',
+          currency_code: 'VND',
+          images: [{ id: '1', product_id: '17', image: 'upload/photos/product.jpg' }],
+          seller: publisher,
+        },
+      }),
+    );
+
+    expect(mapped).toMatchObject({
+      kind: 'product',
+      id: '700',
+      product: {
+        id: 17,
+        post_id: 700,
+        name: 'May anh',
+        price_format: '2.000.000',
+      },
+    });
+    if (mapped.kind !== 'product') throw new Error('Expected product post');
+    expect(mapped.product.images[0]?.image).toBe(
+      'https://demo.vnseea.vn/upload/photos/product.jpg',
+    );
+  });
+
+  it('maps a job post returned by get-post-data without collapsing it to text', () => {
+    const mapped = mapFeedPost(
+      rawPost({
+        id: '701',
+        job_id: '31',
+        job: {
+          id: '31',
+          post_id: '701',
+          title: 'Frontend Developer',
+          description: 'React Native',
+          location: 'Ho Chi Minh City',
+          image: 'upload/photos/job.jpg',
+          page: {
+            page_id: '9',
+            page_title: 'VNSEEA',
+            page_name: 'vnseea',
+            user_id: '10',
+            avatar: 'upload/photos/page.jpg',
+          },
+        },
+      }),
+    );
+
+    expect(mapped).toMatchObject({
+      kind: 'job',
+      id: '701',
+      job: {
+        id: '31',
+        post_id: '701',
+        title: 'Frontend Developer',
+        location: 'Ho Chi Minh City',
+      },
+      publisher: { name: 'VNSEEA' },
     });
   });
 

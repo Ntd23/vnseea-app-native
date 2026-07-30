@@ -167,6 +167,8 @@ export interface MessagesRepository {
 
   createLabel(name: string, color: string): Promise<void>;
 
+  updateLabel(labelId: string, name: string, color: string): Promise<void>;
+
   deleteLabel(labelId: string): Promise<void>;
 
   listTargetLabels(userId: string): Promise<MessageLabel[]>;

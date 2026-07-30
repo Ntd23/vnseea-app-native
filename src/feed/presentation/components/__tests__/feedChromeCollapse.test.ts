@@ -4,6 +4,7 @@ import {
   FEED_CHROME_SHOW_SCROLL_DELTA,
   FEED_CHROME_SHOW_TOP_Y,
   createFeedChromeCollapseState,
+  createFeedChromeCollapseStateAtScrollY,
   getNextFeedChromeCollapseState,
   resetFeedChromeScrollIntent,
 } from '../feedChromeCollapse';
@@ -61,6 +62,26 @@ describe('feed chrome scroll-collapse intent', () => {
 
     expect(state.hidden).toBe(false);
     expect(state.lastY).toBe(FEED_CHROME_SHOW_TOP_Y - 1);
+  });
+
+  it('rehydrates a hidden state when Home regains focus at a deep offset', () => {
+    const state = createFeedChromeCollapseStateAtScrollY(
+      FEED_CHROME_HIDE_MIN_Y + FEED_CHROME_HIDE_SCROLL_DELTA + 1,
+    );
+
+    expect(state.hidden).toBe(true);
+    expect(state.lastY).toBe(
+      FEED_CHROME_HIDE_MIN_Y + FEED_CHROME_HIDE_SCROLL_DELTA + 1,
+    );
+    expect(state.downwardDelta).toBe(0);
+    expect(state.upwardDelta).toBe(0);
+  });
+
+  it('normalizes invalid offsets while restoring Home chrome', () => {
+    expect(createFeedChromeCollapseStateAtScrollY(Number.NaN)).toEqual(
+      createFeedChromeCollapseState(),
+    );
+    expect(createFeedChromeCollapseStateAtScrollY(-20).lastY).toBe(0);
   });
 
   it('ignores negative pull-to-refresh bounce and can reset drag intent', () => {

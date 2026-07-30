@@ -212,4 +212,51 @@ describe('ApiNotificationsRepository notification mapping', () => {
     });
     expect(result.unreadCount).toBe(1);
   });
+
+  it('uses count-only fetch keys for the global unread badge', async () => {
+    mockedApiPost.mockResolvedValue({
+      api_status: 200,
+      new_notifications_count: 5,
+      count_new_messages: 3,
+      new_group_chat_requests_count: 2,
+    });
+
+    const result = await createNotificationsRepository().getUnreadCounts();
+
+    expect(mockedApiPost).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        fetch:
+          'count_notifications,count_new_messages,count_group_chat_requests',
+      }),
+    );
+    expect(mockedApiPost.mock.calls[0][1].fetch.split(',')).not.toContain(
+      'notifications',
+    );
+    expect(result).toEqual({ notificationCount: 7, messageCount: 3 });
+  });
+
+  it('falls back to the full payload while an older backend is rolling out', async () => {
+    mockedApiPost
+      .mockResolvedValueOnce({ api_status: 200, count_new_messages: 1 })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        notifications: [
+          { id: 1, type: 'following', seen: 0 },
+          { id: 2, type: 'visited_profile', seen: 0 },
+        ],
+        count_new_messages: 1,
+        group_chat_requests: [],
+      });
+
+    const result = await createNotificationsRepository().getUnreadCounts();
+
+    expect(mockedApiPost).toHaveBeenCalledTimes(2);
+    expect(mockedApiPost.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        fetch: 'notifications,count_new_messages,group_chat_requests',
+      }),
+    );
+    expect(result).toEqual({ notificationCount: 1, messageCount: 1 });
+  });
 });

@@ -35,12 +35,15 @@ const socketModule = require('socket.io-client-v4') as {
 const createSocket: SocketFactory =
   socketModule.io ?? socketModule.default ?? socketModule;
 const repository = createFeedRepository();
-const POLL_INTERVAL_MS = 15_000;
+const POLL_BASE_INTERVAL_MS = 30_000;
+const POLL_MAX_INTERVAL_MS = 120_000;
+const POLL_JITTER_RATIO = 0.15;
 
 let socket: SocketLike | null = null;
 let connecting = false;
 let accessToken = '';
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let pollAttempt = 0;
 let appState: AppStateStatus = AppState.currentState;
 
 function nuxtApiUrl(path: string) {
@@ -87,26 +90,40 @@ function normalizeChange(payload: unknown): PostChangedEvent | null {
   };
 }
 
-function stopPolling() {
-  if (pollTimer) clearInterval(pollTimer);
+function stopPolling(resetBackoff = false) {
+  if (pollTimer) clearTimeout(pollTimer);
   pollTimer = null;
+  if (resetBackoff) pollAttempt = 0;
 }
 
-function updatePolling() {
+function getNextPollDelay() {
+  const backoffDelay = Math.min(
+    POLL_BASE_INTERVAL_MS * 2 ** pollAttempt,
+    POLL_MAX_INTERVAL_MS,
+  );
+  const jitter = backoffDelay * POLL_JITTER_RATIO * (Math.random() * 2 - 1);
+  return Math.max(POLL_BASE_INTERVAL_MS, Math.round(backoffDelay + jitter));
+}
+
+function updatePolling({ resetBackoff = false } = {}) {
   const shouldPoll =
     appState === 'active' &&
     !socket?.connected &&
     coordinator.getWatchedPostIds().length > 0;
   if (!shouldPoll) {
-    stopPolling();
+    stopPolling(resetBackoff);
     return;
   }
-  if (!pollTimer) {
-    pollTimer = setInterval(() => {
-      coordinator.refreshWatchedPosts();
-      void ensureConnected();
-    }, POLL_INTERVAL_MS);
-  }
+  if (resetBackoff) stopPolling(true);
+  if (pollTimer) return;
+
+  pollTimer = setTimeout(() => {
+    pollTimer = null;
+    coordinator.refreshWatchedPosts();
+    pollAttempt += 1;
+    updatePolling();
+    void ensureConnected();
+  }, getNextPollDelay());
 }
 
 const coordinator = createPostRealtimeCoordinator<FeedPost>({
@@ -131,11 +148,11 @@ const coordinator = createPostRealtimeCoordinator<FeedPost>({
 function bindSocket(nextSocket: SocketLike) {
   nextSocket.on('connect', () => {
     coordinator.setConnected(true);
-    stopPolling();
+    stopPolling(true);
   });
   nextSocket.on('disconnect', () => {
     coordinator.setConnected(false);
-    updatePolling();
+    updatePolling({ resetBackoff: true });
   });
   nextSocket.on('connect_error', () => {
     if (socket === nextSocket) {
@@ -185,7 +202,7 @@ async function ensureConnected() {
 
 AppState.addEventListener('change', nextState => {
   appState = nextState;
-  updatePolling();
+  updatePolling({ resetBackoff: true });
   if (nextState === 'active' && coordinator.getWatchedPostIds().length > 0) {
     void ensureConnected();
   }
@@ -195,10 +212,10 @@ export const postRealtimeRuntime = {
   watchPosts(postIds: Array<string | number>) {
     const release = coordinator.watchPosts(postIds);
     void ensureConnected();
-    updatePolling();
+    updatePolling({ resetBackoff: true });
     return () => {
       release();
-      updatePolling();
+      updatePolling({ resetBackoff: true });
     };
   },
   subscribe(listener: (event: PostRealtimeEvent<FeedPost>) => void) {

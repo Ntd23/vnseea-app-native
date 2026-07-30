@@ -1,7 +1,6 @@
 // Description: Offer API Repository
 // Port từ: client/src/offers/infrastructure/repositories/
 
-import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type { OffersRepository } from '../../domain/repositories/OffersRepository';
 import type { OfferItem } from '../../domain/types/offers.types';
@@ -42,9 +41,15 @@ export function createOffersRepository(): OffersRepository {
 
 function mapOfferItem(raw: Record<string, unknown>): OfferItem {
   const page = asRecord(raw.page);
+  const product = asRecord(raw.product);
 
   return {
     id: Number(raw.id ?? 0),
+    productId: positiveNumber(
+      raw.product_id ?? raw.productId ?? product?.product_id ?? product?.id,
+    ),
+    postId: positiveNumber(raw.post_id ?? raw.postId),
+    url: String(raw.url ?? ''),
     page_id: Number(raw.page_id ?? 0),
     user_id: Number(raw.user_id ?? 0),
     discount_type: (raw.discount_type as any) || 'discount_percent',
@@ -76,4 +81,9 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object'
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }

@@ -35,7 +35,9 @@ const NOOP = (): void => {
 
 function resolveInitialStoryOverride(stories?: StoryItem[]) {
   if (!stories || stories.length === 0) return null;
-  const activeStories = filterActiveStories(stories);
+  const activeStories = filterActiveStories(stories).filter(
+    story => !story.isAd,
+  );
   return activeStories.length > 0 ? activeStories : null;
 }
 
@@ -101,7 +103,10 @@ export function useStoriesListViewModel(
   }, [reloadStories]);
 
   const sourceStories = useMemo(
-    () => filterActiveStories(overrideStories ?? stories),
+    () =>
+      filterActiveStories(overrideStories ?? stories).filter(
+        story => !story.isAd,
+      ),
     [overrideStories, stories],
   );
 

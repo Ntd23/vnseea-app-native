@@ -1,5 +1,5 @@
-// Description: Polls unread notification counts without mixing message badges into notifications.
-import { useCallback, useEffect, useMemo } from 'react';
+// Description: Shares one unread-badge scheduler across every mounted badge consumer.
+import { useEffect } from 'react';
 import { AppState } from 'react-native';
 import {
   setUnreadBadgeCounts,
@@ -8,72 +8,51 @@ import {
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
 import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
+import { createNotificationBadgeSync } from './notificationBadgeSync';
 
-const POLL_INTERVAL_MS = 30000;
+let notificationsRepository: ReturnType<
+  typeof createNotificationsRepository
+> | null = null;
+let messagesRepository: ReturnType<typeof createMessagesRepository> | null = null;
+
+const notificationBadgeSync = createNotificationBadgeSync({
+  fetchNotificationCounts: () => {
+    notificationsRepository ??= createNotificationsRepository();
+    return notificationsRepository.getUnreadCounts();
+  },
+  fetchUnreadChatCount: async () => {
+    messagesRepository ??= createMessagesRepository();
+    const unreadChats = await messagesRepository.getUnreadChats();
+    return unreadChats.reduce(
+      (total, chat) => total + chat.unreadCount,
+      0,
+    );
+  },
+  updateCounts: setUnreadBadgeCounts,
+  subscribeToAppActive: listener => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') listener();
+    });
+    return () => subscription.remove();
+  },
+  subscribeToForegroundPush: listener =>
+    foregroundPushEvents.subscribe(listener),
+  warn: error => {
+    console.warn('[useNotificationBadgeViewModel] refresh failed', error);
+  },
+});
 
 export function useNotificationBadgeViewModel() {
-  const repository = useMemo(() => createNotificationsRepository(), []);
-  const messagesRepository = useMemo(() => createMessagesRepository(), []);
   const { notificationCount, messageCount } = useUnreadBadgeCounts();
 
-  const refresh = useCallback(async () => {
-    try {
-      const [counts, unreadChats] = await Promise.all([
-        repository.getUnreadCounts(),
-        messagesRepository.getUnreadChats().catch(() => []),
-      ]);
-      const chatUnreadCount = unreadChats.reduce(
-        (total, chat) => total + chat.unreadCount,
-        0,
-      );
-      setUnreadBadgeCounts({
-        notificationCount: counts.notificationCount,
-        messageCount: Math.max(counts.messageCount, chatUnreadCount),
-      });
-    } catch (error) {
-      console.warn('[useNotificationBadgeViewModel] refresh failed', error);
-    }
-  }, [messagesRepository, repository]);
-
   useEffect(() => {
-    refresh().catch(() => undefined);
-
-    const interval = setInterval(() => {
-      refresh().catch(() => undefined);
-    }, POLL_INTERVAL_MS);
-    const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') {
-        refresh().catch(() => undefined);
-      }
-    });
-
-    return () => {
-      clearInterval(interval);
-      subscription.remove();
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const unsubscribe = foregroundPushEvents.subscribe(() => {
-      refresh().catch(() => undefined);
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimer = setTimeout(() => {
-        refresh().catch(() => undefined);
-      }, 800);
-    });
-
-    return () => {
-      unsubscribe();
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, [refresh]);
+    return notificationBadgeSync.subscribe();
+  }, []);
 
   return {
     notificationCount,
     messageCount,
     totalUnreadCount: notificationCount,
-    refresh,
+    refresh: notificationBadgeSync.refresh,
   };
 }

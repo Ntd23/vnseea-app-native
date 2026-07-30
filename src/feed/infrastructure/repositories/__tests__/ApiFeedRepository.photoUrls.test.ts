@@ -79,4 +79,39 @@ describe('ApiFeedRepository photo URL mapping', () => {
 
     expect((posts[0] as FeedTextPost).photos).toEqual([originalUrl]);
   });
+
+  it('retains extensionless signed album image URLs', async () => {
+    const signedUrl =
+      'https://cdn.vnseea.vn/media/photo?id=album-42&signature=test-token';
+
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: '200',
+      data: [
+        {
+          id: '124',
+          post_id: '124',
+          user_id: 'viewer-1',
+          postText: 'Signed album image',
+          postPrivacy: '0',
+          time: '1781712000',
+          postLikes: '0',
+          post_comments: '0',
+          publisher: {
+            user_id: 'viewer-1',
+            name: 'Viewer',
+            username: 'viewer',
+          },
+          photo_multi: [{ image: signedUrl }],
+        },
+      ],
+    });
+
+    const posts = await createFeedRepository().getUserPosts(
+      'viewer-1',
+      20,
+      '999',
+    );
+
+    expect((posts[0] as FeedTextPost).photos).toEqual([signedUrl]);
+  });
 });

@@ -101,4 +101,24 @@ describe('ApiReelsRepository comment mention mapping', () => {
       ],
     });
   });
+
+  it('prefers legacy Orginaltext when rendered HTML lost the mention marker', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: 200,
+      data: [
+        {
+          id: 'comment-3',
+          text: 'giangthangc32',
+          Orginaltext: '@giangthangc32',
+          publisher,
+        },
+      ],
+    });
+
+    const comments = await createReelsRepository().getComments('post-1');
+
+    expect(comments[0]).toMatchObject({
+      text: '@giangthangc32',
+    });
+  });
 });

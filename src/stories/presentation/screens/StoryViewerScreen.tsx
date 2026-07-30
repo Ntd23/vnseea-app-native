@@ -50,6 +50,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -107,6 +108,15 @@ import { calculateSharedPostStoryAvailableHeight } from '../../application/shari
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import type { StoryReplyMessageReference } from '../../../messages/domain/types/messages.types';
 import { filterActiveStories } from '../../domain/policies/storyExpiration';
+import { useStoriesViewModel } from '../../application/view-models/useStoriesViewModel';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  dedupeStoryAds,
+  getStoryAdRotationId,
+  injectStoryAdAfterIndex,
+  selectNextStoryAd,
+} from '../../application/services/storyAdPlayback';
+import { storyAdRotationStorage } from '../../infrastructure/storage/storyAdRotationStorage';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = NativeStackScreenProps<RootStackParamList, 'StoryViewer'>;
@@ -151,44 +161,70 @@ function StoryViewerScreen({ route }: Props) {
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const storySafeAreaInsets = useSafeAreaInsets();
   const storyHeaderSafeTop = Math.max(storySafeAreaInsets.top, 8);
+  const storyInventoryVm = useStoriesViewModel();
+  const storyAdOwnerId = sessionStorage.getSession()?.userId;
 
   // Support BOTH: new API (stories array passed directly) AND old API
   // (stories list + initialUserIndex). This keeps backwards compat while
   // migrating to the cleaner "pass filtered stories" pattern.
-  const rawPassedStories = Array.isArray(route.params?.stories)
-    ? route.params.stories
-    : undefined;
-  const passedStories = useMemo(
+  const activePassedStories = useMemo(
     () =>
-      rawPassedStories
-        ? filterActiveStories(rawPassedStories)
-        : undefined,
-    [rawPassedStories],
+      filterActiveStories(
+        Array.isArray(route.params?.stories) ? route.params.stories : [],
+      ),
+    [route.params?.stories],
+  );
+  const passedStories = useMemo(
+    () => activePassedStories.filter(story => !story.isAd),
+    [activePassedStories],
+  );
+  const storyAdCandidates = useMemo(
+    () =>
+      dedupeStoryAds([
+        ...activePassedStories.filter(story => story.isAd),
+        ...storyInventoryVm.storyAds,
+      ]),
+    [activePassedStories, storyInventoryVm.storyAds],
+  );
+  const selectedStoryAd = useMemo(
+    () =>
+      selectNextStoryAd(
+        storyAdCandidates,
+        storyAdRotationStorage.getViewedAdIds(storyAdOwnerId),
+      ),
+    [storyAdCandidates, storyAdOwnerId],
   );
 
-  const [stories, setStories] = useState<StoryItem[]>(passedStories ?? []);
-
-  const userIndexRef = useRef<number>(0);
-
-  // If we got an explicit index from the caller, use it (but clamp to bounds).
-  if (route.params?.initialUserIndex !== undefined) {
-    const clamped = Math.max(
-      0,
-      Math.min(
-        route.params.initialUserIndex,
-        stories.length - 1
-      )
-    );
-    userIndexRef.current = clamped;
-  } else if (passedStories && passedStories.length > 0) {
-    userIndexRef.current = 0;
-  }
+  const initialUserIndex = Math.max(
+    0,
+    Math.min(route.params?.initialUserIndex ?? 0, passedStories.length - 1),
+  );
+  const initialPlaybackStories = useMemo(
+    () =>
+      injectStoryAdAfterIndex(
+        passedStories,
+        selectedStoryAd,
+        initialUserIndex,
+      ),
+    [initialUserIndex, passedStories, selectedStoryAd],
+  );
+  const [stories, setStories] = useState<StoryItem[]>(initialPlaybackStories);
+  const selectedStoryAdRef = useRef<StoryItem | null>(selectedStoryAd);
+  const userIndexRef = useRef<number>(initialUserIndex);
 
   const [userIndex, setUserIndex] = useState(userIndexRef.current);
 
+  useEffect(() => {
+    if (selectedStoryAdRef.current || !selectedStoryAd) return;
+    selectedStoryAdRef.current = selectedStoryAd;
+    setStories(current =>
+      injectStoryAdAfterIndex(current, selectedStoryAd, userIndex),
+    );
+  }, [selectedStoryAd, userIndex]);
+
   // Debug log for testing
   useEffect(() => {
-    if (passedStories && passedStories.length > 0) {
+    if (passedStories.length > 0) {
       console.log(
         '[StoryViewer] Raw passed:',
         passedStories.length,
@@ -280,6 +316,28 @@ function StoryViewerScreen({ route }: Props) {
     readySharedPostSegmentKey,
     segmentPlaybackKey,
     videoDurationMs,
+  ]);
+  const locallyViewedStoryAdIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (
+      !isStoryViewerFocused ||
+      !isSegmentProgressReady ||
+      !currentStory?.isAd
+    ) {
+      return;
+    }
+
+    const adId = getStoryAdRotationId(currentStory);
+    if (!adId || locallyViewedStoryAdIdsRef.current.has(adId)) return;
+
+    locallyViewedStoryAdIdsRef.current.add(adId);
+    storyAdRotationStorage.markViewed(adId, storyAdOwnerId);
+  }, [
+    currentStory,
+    isSegmentProgressReady,
+    isStoryViewerFocused,
+    storyAdOwnerId,
   ]);
 
   // ── Progress animation ──────────────────────────────────────────────
@@ -619,8 +677,20 @@ function StoryViewerScreen({ route }: Props) {
     navigation.navigate(ROUTES.POST_DETAIL, { postId: sharedPostId });
   }, [navigation, sharedPostId]);
 
+  const handleOpenAd = useCallback(() => {
+    const targetUrl = currentStory?.adTargetUrl?.trim();
+    if (!targetUrl) return;
+    pauseForNavigationRef.current = true;
+    setIsPaused(true);
+    Linking.openURL(targetUrl).catch(() => {
+      Alert.alert('Không thể mở quảng cáo', 'Vui lòng thử lại sau.');
+      pauseForNavigationRef.current = false;
+      setIsPaused(false);
+    });
+  }, [currentStory?.adTargetUrl]);
+
   const openReplyComposer = useCallback(() => {
-    if (!currentStory || currentStory.isOwner) return;
+    if (!currentStory || currentStory.isOwner || currentStory.isAd) return;
     setIsReplyComposerOpen(true);
     setIsPaused(false);
     requestAnimationFrame(() => replyInputRef.current?.focus());
@@ -639,7 +709,8 @@ function StoryViewerScreen({ route }: Props) {
       isSendingReply ||
       !currentStory ||
       !currentSegment ||
-      currentStory.isOwner
+      currentStory.isOwner ||
+      currentStory.isAd
     ) {
       return;
     }
@@ -793,7 +864,11 @@ function StoryViewerScreen({ route }: Props) {
           const passedReplyThreshold =
             event.translationY < -REPLY_SWIPE_THRESHOLD ||
             event.velocityY < REPLY_SWIPE_VELOCITY;
-          if (passedReplyThreshold && !currentStory?.isOwner) {
+          if (
+            passedReplyThreshold &&
+            !currentStory?.isOwner &&
+            !currentStory?.isAd
+          ) {
             swipeTranslateY.value = withSpring(0);
             swipeProgress.value = withSpring(0);
             runOnJS(openReplyComposer)();
@@ -870,6 +945,7 @@ function StoryViewerScreen({ route }: Props) {
         }),
     [
       closeReplyComposer,
+      currentStory?.isAd,
       currentStory?.isOwner,
       dismissThreshold,
       handleDismiss,
@@ -1031,7 +1107,7 @@ function StoryViewerScreen({ route }: Props) {
               <TouchableOpacity
                 activeOpacity={0.78}
                 onPress={handleOpenPublisherProfile}
-                disabled={!currentStory.publisher.userId}
+                disabled={!currentStory.publisher.userId || currentStory.isAd}
                 style={styles.publisherButton}
               >
                 <View style={styles.avatarContainer}>
@@ -1054,6 +1130,9 @@ function StoryViewerScreen({ route }: Props) {
                 <View style={styles.headerText}>
                   <Text style={styles.headerName} numberOfLines={1}>
                     {currentStory.publisher.name}{' '}
+                    {currentStory.isAd ? (
+                      <Text style={styles.headerTime}>· Quảng cáo</Text>
+                    ) : null}{' '}
                     <Text style={styles.headerTime}>
                       {formatRelativeTime(currentSegment.postedAt ?? currentStory.postedAt)}
                     </Text>
@@ -1096,6 +1175,27 @@ function StoryViewerScreen({ route }: Props) {
               >
                 <ExternalLink size={17} color="#0F172A" />
                 <Text style={styles.sharedPostCtaText}>Xem bài viết</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {currentStory.isAd && currentStory.adTargetUrl ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.sharedPostCtaWrap,
+                { bottom: Math.max(storySafeAreaInsets.bottom, 12) + 82 },
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.86}
+                onPress={handleOpenAd}
+                style={styles.adCta}
+                accessibilityRole="button"
+                accessibilityLabel="Tìm hiểu thêm về quảng cáo"
+              >
+                <ExternalLink size={17} color="#FFFFFF" />
+                <Text style={styles.adCtaText}>Tìm hiểu thêm</Text>
               </TouchableOpacity>
             </View>
           ) : null}
@@ -1189,7 +1289,7 @@ function StoryViewerScreen({ route }: Props) {
               </View>
             ) : (
               <View style={styles.bottomBarContainer}>
-                {!currentStory.isOwner ? (
+                {!currentStory.isOwner && !currentStory.isAd ? (
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={openReplyComposer}
@@ -1200,7 +1300,7 @@ function StoryViewerScreen({ route }: Props) {
                     </Text>
                   </TouchableOpacity>
                 ) : null}
-                <View style={styles.inputRow}>
+                {!currentStory.isAd ? <View style={styles.inputRow}>
                   <Animated.View
                     style={[
                       styles.quickReactions,
@@ -1231,7 +1331,7 @@ function StoryViewerScreen({ route }: Props) {
                       );
                     })}
                   </Animated.View>
-                </View>
+                </View> : null}
               </View>
             )}
           </KeyboardAvoidingView>
@@ -1377,6 +1477,26 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontSize: 14,
     fontWeight: '800',
+    marginLeft: 8,
+  },
+  adCta: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 23,
+    paddingHorizontal: 20,
+    backgroundColor: APP_BRAND_COLOR,
+    shadowColor: APP_BRAND_COLOR,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.32,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  adCtaText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
     marginLeft: 8,
   },
 

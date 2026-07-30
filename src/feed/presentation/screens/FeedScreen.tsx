@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   AppState,
   DeviceEventEmitter,
   Dimensions,
@@ -114,6 +115,7 @@ import { useFeedCommentsViewModel } from '../../application/view-models/useFeedC
 import { prefetchFeedComments } from '../../application/feedCommentsCache';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { canAdAppearInHomeFeed } from '../../../advertising/application/services/adPlacement';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import {
@@ -137,6 +139,7 @@ import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
 import { FeedFilterTabs } from '../components/FeedFilterTabs';
 import {
   createFeedChromeCollapseState,
+  createFeedChromeCollapseStateAtScrollY,
   getNextFeedChromeCollapseState,
   resetFeedChromeScrollIntent,
   type FeedChromeCollapseState,
@@ -186,6 +189,7 @@ import {
   pickFeedVideoAutoplayCandidate,
   pickFeedViewableVideoId,
 } from './feedVideoAutoplay';
+import { reuseStableItemsById } from './feedListItemStability';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import {
   createCachedVideoPosterThumbnail,
@@ -201,14 +205,15 @@ const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = FEED_IS_ANDROID ? 5.2 : 4.2;
 const FEED_EARLY_LOAD_MIN_DISTANCE = FEED_IS_ANDROID ? 4200 : 3600;
 const FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS = 4;
 const FEED_IMAGE_PREFETCH_BEHIND_ITEMS = 1;
-const FEED_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 5 : 8;
-const FEED_SCROLLING_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 3 : 5;
-const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 8 : 12;
-const MAX_PENDING_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 24 : 36;
-const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 2 : 3;
-const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 2 : 3;
-const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 80 : 60;
-const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 28 : 22;
+const FEED_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 3 : 8;
+const FEED_SCROLLING_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 6;
+const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 8 : 14;
+const MAX_PENDING_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 16 : 36;
+const MAX_REMEMBERED_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 128 : 220;
+const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 1 : 3;
+const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 1 : 3;
+const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 100 : 60;
+const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 18 : 14;
 const FEED_VIDEO_WARM_BEHIND_ITEMS = 0;
 const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 0 : 1;
 const FEED_VIDEO_WARM_MAX_COUNT = 1;
@@ -217,19 +222,36 @@ const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = 1;
 const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 4;
 const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 1 : 2;
 const FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 220 : 160;
+const MAX_REMEMBERED_VIDEO_POSTER_KEYS = FEED_IS_ANDROID ? 64 : 120;
 const FEED_VIDEO_VISIBLE_PERCENT = 1;
 const FEED_VIDEO_VIEWABLE_PERCENT = 55;
 const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
 const FEED_INLINE_LIVE_ACTIVE_DWELL_MS = 140;
+const FEED_MEDIA_MOUNT_BEHIND_ITEMS = 1;
+// Image.prefetch already warms a larger runway. Native-mounting three photo
+// cards ahead on Android caused their decode/aspect-ratio work to arrive as a
+// visible three-card hitch, so keep only the nearest card mounted ahead.
+const FEED_MEDIA_MOUNT_AHEAD_ITEMS = FEED_IS_ANDROID ? 1 : 3;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
-  ? Math.max(2600, Math.round(FEED_SCREEN_HEIGHT * 3.2))
+  ? Math.max(1800, Math.round(FEED_SCREEN_HEIGHT * 2))
   : Math.max(2800, Math.round(FEED_SCREEN_HEIGHT * 3.4));
-const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 24 : 28;
-const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = { disabled: true };
+const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28;
+const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = {
+  disabled: false,
+  // Preserve the item currently under the user's finger when delayed live,
+  // page, group, or funding rows are inserted above the viewport.
+  autoscrollToTopThreshold: 96,
+};
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
+};
+const FEED_LOAD_MORE_FOOTER_STYLE = {
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  minHeight: 96,
+  paddingHorizontal: 24,
 };
 const FEED_HEADER_BAR_HEIGHT = 68;
 const FEED_FILTER_BAR_HEIGHT = 66;
@@ -244,6 +266,21 @@ const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['left', 'right'] : ['left', 'right', 'bottom'];
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type FeedScrollDirection = 'up' | 'down' | 'none';
+
+function rememberBoundedFeedCacheKey(
+  keys: Set<string>,
+  key: string,
+  limit: number,
+) {
+  keys.delete(key);
+  keys.add(key);
+
+  while (keys.size > limit) {
+    const oldestKey = keys.values().next().value as string | undefined;
+    if (!oldestKey) break;
+    keys.delete(oldestKey);
+  }
+}
 
 function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
   const payload = {
@@ -260,6 +297,10 @@ function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
 }
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
+
+function canPostAppearOnHomeFeed(post: FeedPost) {
+  return post.kind !== 'ad' || canAdAppearInHomeFeed(post.appears);
+}
 
 function canPostAppearInFeedSource(
   post: FeedPost,
@@ -988,12 +1029,16 @@ const SuggestedPagesCarousel = React.memo(
     prev.onFollowPage === next.onFollowPage,
 );
 
-function PostSkeleton() {
+function PostSkeleton({ animated = true }: { animated?: boolean }) {
   // Pulse animation: opacity oscillates every 1.5s.
-  const opacity = useSharedValue(0.4);
+  const opacity = useSharedValue(animated ? 0.4 : 0.58);
   useEffect(() => {
+    if (!animated) {
+      opacity.value = 0.58;
+      return;
+    }
     opacity.value = withRepeat(withTiming(0.8, { duration: 750 }), -1, true);
-  }, [opacity]);
+  }, [animated, opacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -1051,6 +1096,43 @@ type FeedListItem =
       isLoading: boolean;
       currencySymbol: string;
     };
+
+function areFeedListItemsRenderEquivalent(
+  previous: FeedListItem,
+  next: FeedListItem,
+): boolean {
+  if (previous.type !== next.type) return false;
+
+  switch (previous.type) {
+    case 'intro':
+      return true;
+    case 'post':
+      return next.type === 'post' && previous.post === next.post;
+    case 'live':
+      return next.type === 'live' && previous.item === next.item;
+    case 'groups-carousel':
+      return (
+        next.type === 'groups-carousel' &&
+        previous.groups === next.groups &&
+        previous.isLoading === next.isLoading
+      );
+    case 'pages-carousel':
+      return (
+        next.type === 'pages-carousel' &&
+        previous.pages === next.pages &&
+        previous.isLoading === next.isLoading
+      );
+    case 'funding-carousel':
+      return (
+        next.type === 'funding-carousel' &&
+        previous.campaigns === next.campaigns &&
+        previous.isLoading === next.isLoading &&
+        previous.currencySymbol === next.currencySymbol
+      );
+  }
+
+  return false;
+}
 
 function isRemoteFeedImageUrl(url?: string): url is string {
   return typeof url === 'string' && /^https?:\/\//i.test(url);
@@ -1200,6 +1282,14 @@ function FeedScreen() {
   const route = useRoute<RouteProp<MainTabParamList, typeof ROUTES.FEED>>();
   const language = useAppLanguage();
   const copy = FEED_COPY[language];
+  const feedLoadErrorMessage =
+    language === 'vi'
+      ? 'Không tải được bảng tin. Vui lòng kiểm tra kết nối và thử lại.'
+      : 'Could not load the feed. Check your connection and try again.';
+  const feedLoadMoreMessage =
+    language === 'vi'
+      ? 'Đang tải thêm bài viết…'
+      : 'Loading more posts…';
   const vm = useFeedViewModel();
   const feedSafeAreaInsets = useSafeAreaInsets();
   const { bottomContentPadding, scrollIndicatorBottomInset } =
@@ -1210,7 +1300,10 @@ function FeedScreen() {
   const isFeedTabFocused = useIsFocused();
   const userVm = useCurrentUserViewModel();
   const currentUserId = userVm.user?.userId;
-  const feedPosts = vm.posts;
+  const feedPosts = useMemo(
+    () => vm.posts.filter(canPostAppearOnHomeFeed),
+    [vm.posts],
+  );
   const hasFeedContent = feedPosts.length > 0;
   const prependFeedPost = vm.prependPost;
   const toggleFeedReaction = vm.toggleReaction;
@@ -1280,6 +1373,7 @@ function FeedScreen() {
       const nextPosts = posts
         .filter(post => {
           if (!post?.id) return false;
+          if (!canPostAppearOnHomeFeed(post)) return false;
           if (hiddenPostsStorage.isHidden(String(post.id), currentUserId)) {
             return false;
           }
@@ -1316,6 +1410,7 @@ function FeedScreen() {
     pendingNewPostsRef.current = pendingNewPostsRef.current.filter(
       post =>
         post?.id &&
+        canPostAppearOnHomeFeed(post) &&
         !visibleIds.has(post.id) &&
         !hiddenPostsStorage.isHidden(String(post.id), currentUserId) &&
         isPostNewerThanFeedTop(post, feedPosts),
@@ -1352,6 +1447,7 @@ function FeedScreen() {
     const pendingPosts = pendingNewPostsRef.current.filter(
       post =>
         post?.id &&
+        canPostAppearOnHomeFeed(post) &&
         !visibleIds.has(post.id) &&
         !hiddenPostsStorage.isHidden(String(post.id), currentUserId),
     );
@@ -1508,6 +1604,7 @@ function FeedScreen() {
   const latestVisibleFeedItemsRef = useRef<any[]>([]);
   const latestViewableFeedItemsRef = useRef<any[]>([]);
   const feedListItemsRef = useRef<FeedListItem[]>([]);
+  const stableFeedListItemsRef = useRef<FeedListItem[]>([]);
   const feedListItemIndexByIdRef = useRef<Map<string, number>>(new Map());
   const prefetchedImageUrlsRef = useRef<Set<string>>(new Set());
   const queuedImagePrefetchUrlsRef = useRef<Set<string>>(new Set());
@@ -1844,6 +1941,11 @@ function FeedScreen() {
 
   const handleFeedScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // FlashList can emit a layout/restoration scroll event while this tab
+      // is covered by another screen. Those stale offsets must not reopen or
+      // collapse Home chrome during the navigation transition.
+      if (!isFeedTabFocusedRef.current) return;
+
       const { contentOffset, contentSize, layoutMeasurement } =
         event.nativeEvent;
       const previousY = feedScrollYRef.current;
@@ -1968,6 +2070,14 @@ function FeedScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      isFeedTabFocusedRef.current = true;
+
+      const restoredScrollY = Math.max(0, feedScrollYRef.current);
+      const restoredChromeState =
+        createFeedChromeCollapseStateAtScrollY(restoredScrollY);
+      feedChromeCollapseStateRef.current = restoredChromeState;
+      setIsFeedChromeHidden(restoredChromeState.hidden);
+
       if (FEED_IS_ANDROID) {
         // Restore Home chrome immediately on focus instead of waiting for the
         // declarative StatusBar commit from the next render frame.
@@ -1977,6 +2087,7 @@ function FeedScreen() {
       }
 
       return () => {
+        isFeedTabFocusedRef.current = false;
         publishNativeTabScrollBehavior('onScrollDown');
       };
     }, []),
@@ -2110,7 +2221,10 @@ function FeedScreen() {
       .filter(product => product && product.id)
       .map((product, index) => ({
         kind: 'product' as const,
-        id: `product-${product.id || index}`,
+        id:
+          Number(product.post_id) > 0
+            ? String(product.post_id)
+            : `product-${product.id || index}`,
         product,
         postedAt: product.time ? parseInt(String(product.time), 10) : undefined,
         publisher: {
@@ -2124,6 +2238,10 @@ function FeedScreen() {
         isLiked: false,
         myReaction: null,
         topReactions: [],
+        permissions: {
+          canDelete: Boolean(Number(product.post_id) > 0 && product.is_owner),
+          canShare: Number(product.post_id) > 0,
+        },
       }));
   }, [copy.sellerFallback, productsVm.products]);
 
@@ -2299,10 +2417,12 @@ function FeedScreen() {
     return jobsVm.jobs.map((job, index) => {
       const timestamp = Number(job.time) > 0 ? Number(job.time) : now - index;
       const pageName = job.page?.page_title || copy.employerFallback;
+      const sharePostId = String(job.post_id || '').trim();
+      const canShare = Number(sharePostId) > 0;
 
       return {
         kind: 'job' as const,
-        id: `job-${job.id || job.post_id || index}`,
+        id: canShare ? sharePostId : `job-${job.id || index}`,
         job,
         postedAt: timestamp,
         publisher: {
@@ -2310,6 +2430,10 @@ function FeedScreen() {
           name: pageName,
           username: job.page?.page_name || '',
           avatarUrl: job.page?.avatar || job.image,
+        },
+        permissions: {
+          canDelete: false,
+          canShare,
         },
       };
     });
@@ -2491,11 +2615,19 @@ function FeedScreen() {
         const cachedPoster = getCachedVideoPosterThumbnail(videoUrl, cacheKey);
         if (cachedPoster?.uri) {
           markFeedMediaLoaded(cachedPoster.uri);
-          prefetchedVideoPosterKeysRef.current.add(cacheKey);
+          rememberBoundedFeedCacheKey(
+            prefetchedVideoPosterKeysRef.current,
+            cacheKey,
+            MAX_REMEMBERED_VIDEO_POSTER_KEYS,
+          );
           continue;
         }
 
-        prefetchedVideoPosterKeysRef.current.add(cacheKey);
+        rememberBoundedFeedCacheKey(
+          prefetchedVideoPosterKeysRef.current,
+          cacheKey,
+          MAX_REMEMBERED_VIDEO_POSTER_KEYS,
+        );
         queuedVideoPosterKeysRef.current.add(cacheKey);
         pendingVideoPosterPostsRef.current.push(post);
         queuedAny = true;
@@ -2605,7 +2737,11 @@ function FeedScreen() {
           if (prefetchedImageUrlsRef.current.has(url)) continue;
           if (queuedImagePrefetchUrlsRef.current.has(url)) continue;
 
-          prefetchedImageUrlsRef.current.add(url);
+          rememberBoundedFeedCacheKey(
+            prefetchedImageUrlsRef.current,
+            url,
+            MAX_REMEMBERED_IMAGE_PREFETCH_URLS,
+          );
           queuedImagePrefetchUrlsRef.current.add(url);
           urlsToPrefetch.push(url);
           if (urlsToPrefetch.length >= MAX_IMAGE_PREFETCH_URLS) break;
@@ -2867,13 +3003,49 @@ function FeedScreen() {
   const onVisibleFeedItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
       latestVisibleFeedItemsRef.current = viewableItems;
-      publishFeedVisibleMediaPostIds(
-        viewableItems
-          .filter(
-            viewable => viewable?.isViewable && viewable?.item?.type === 'post',
-          )
-          .map(viewable => String(viewable.item.post.id)),
-      );
+      const mediaEligiblePostIds = new Set<string>();
+      let firstVisibleIndex = Number.POSITIVE_INFINITY;
+      let furthestVisibleIndex = -1;
+      viewableItems.forEach(viewable => {
+        if (!viewable?.isViewable) return;
+        const itemId = viewable.item?.id;
+        const index =
+          typeof viewable.index === 'number'
+            ? viewable.index
+            : typeof itemId === 'string'
+            ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+            : -1;
+        if (index >= 0) {
+          firstVisibleIndex = Math.min(firstVisibleIndex, index);
+          furthestVisibleIndex = Math.max(furthestVisibleIndex, index);
+        }
+        if (viewable.item?.type === 'post') {
+          mediaEligiblePostIds.add(String(viewable.item.post.id));
+        }
+      });
+
+      if (furthestVisibleIndex >= 0) {
+        const items = feedListItemsRef.current;
+        const startIndex = Math.max(
+          0,
+          firstVisibleIndex - FEED_MEDIA_MOUNT_BEHIND_ITEMS,
+        );
+        const endIndex = Math.min(
+          items.length,
+          furthestVisibleIndex + FEED_MEDIA_MOUNT_AHEAD_ITEMS + 1,
+        );
+        for (let index = startIndex; index < endIndex; index += 1) {
+          const item = items[index];
+          // Start photo albums shortly before they enter the viewport. Videos
+          // remain strictly viewable-gated so a fling cannot warm several
+          // native players at once.
+          if (item?.type === 'post' && item.post.kind === 'text') {
+            mediaEligiblePostIds.add(String(item.post.id));
+          }
+        }
+      }
+
+      publishFeedVisibleMediaPostIds(mediaEligiblePostIds);
       const activeLivePostId = activeInlineLivePostIdRef.current;
       if (
         activeLivePostId !== null &&
@@ -3194,20 +3366,50 @@ function FeedScreen() {
   }, [handleFeedTabReselect, navigation]);
 
   const ListFooterComponent = useMemo(() => {
-    if (isFeedAllLoaded || feedPosts.length === 0) return null;
+    if (vm.error && hasFeedContent) {
+      return (
+        <View className="items-center px-6 py-8">
+          <Text className="text-center text-sm font-semibold text-[#64748b]">
+            {feedLoadErrorMessage}
+          </Text>
+          <TouchableOpacity
+            className="mt-3 rounded-full bg-red-50 px-5 py-2.5"
+            activeOpacity={0.8}
+            onPress={loadMorePosts}
+          >
+            <Text className="font-bold text-brand">{copy.commentRetry}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
 
-    // Keep a lightweight visual runway at the tail even while the next page
-    // is being prefetched invisibly. A fast fling now lands on placeholders
-    // instead of an empty white viewport while real cards are committed.
-    const placeholderCount = isFeedLoadingMore ? 4 : 2;
+    if (isFeedAllLoaded || !hasFeedContent) return null;
+
+    // Keep a small constant-height tail so momentum geometry does not jump,
+    // but never expose several fake full-size posts. The old four-card footer
+    // let users scroll deep into skeletons while one slow page was pending.
     return (
-      <View pointerEvents="none" style={{ paddingTop: 4, paddingBottom: 16 }}>
-        {Array.from({ length: placeholderCount }, (_, index) => (
-          <PostSkeleton key={`feed-tail-skeleton-${index}`} />
-        ))}
+      <View pointerEvents="none" style={FEED_LOAD_MORE_FOOTER_STYLE}>
+        {isFeedLoadingMore ? (
+          <>
+            <ActivityIndicator color={APP_BRAND_COLOR} size="small" />
+            <Text className="mt-2 text-center text-sm font-semibold text-[#64748b]">
+              {feedLoadMoreMessage}
+            </Text>
+          </>
+        ) : null}
       </View>
     );
-  }, [feedPosts.length, isFeedAllLoaded, isFeedLoadingMore]);
+  }, [
+    copy.commentRetry,
+    feedLoadErrorMessage,
+    feedLoadMoreMessage,
+    hasFeedContent,
+    isFeedAllLoaded,
+    isFeedLoadingMore,
+    loadMorePosts,
+    vm.error,
+  ]);
 
   // â”€â”€ Photo viewer state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Set when the user taps a photo in a text post. Cleared by the modal's
@@ -3419,7 +3621,13 @@ function FeedScreen() {
       });
     }
 
-    return items;
+    const stableItems = reuseStableItemsById(
+      stableFeedListItemsRef.current,
+      items,
+      areFeedListItemsRenderEquivalent,
+    );
+    stableFeedListItemsRef.current = stableItems;
+    return stableItems;
   }, [
     feedLiveItems,
     mergedPosts,
@@ -3658,9 +3866,14 @@ function FeedScreen() {
 
   const renderJobPost = useCallback(
     ({ item }: { item: FeedJobPost }) => (
-      <FeedJobPostCard post={item} copy={copy} onPress={handleJobPress} />
+      <FeedJobPostCard
+        post={item}
+        copy={copy}
+        onPress={handleJobPress}
+        onSharePost={handleOpenSharePost}
+      />
     ),
-    [copy, handleJobPress],
+    [copy, handleJobPress, handleOpenSharePost],
   );
 
   const renderGroupsCarousel = useCallback(
@@ -3869,15 +4082,41 @@ function FeedScreen() {
   );
 
   const feedListEmptyComponent = useMemo(
-    () =>
-      vm.isLoading ? (
-        <View>
-          {[1, 2, 3].map(i => (
-            <PostSkeleton key={i} />
-          ))}
+    () => {
+      if (vm.isLoading) {
+        return (
+          <View>
+            {[1, 2, 3].map(i => (
+              <PostSkeleton key={i} />
+            ))}
+          </View>
+        );
+      }
+
+      if (!vm.error) return null;
+
+      return (
+        <View className="items-center px-8 py-16">
+          <Text className="text-center text-base font-semibold text-[#475569]">
+            {feedLoadErrorMessage}
+          </Text>
+          <TouchableOpacity
+            className="mt-4 rounded-full bg-red-50 px-6 py-3"
+            activeOpacity={0.8}
+            onPress={handleRefresh}
+          >
+            <Text className="font-bold text-brand">{copy.commentRetry}</Text>
+          </TouchableOpacity>
         </View>
-      ) : null,
-    [vm.isLoading],
+      );
+    },
+    [
+      copy.commentRetry,
+      feedLoadErrorMessage,
+      handleRefresh,
+      vm.error,
+      vm.isLoading,
+    ],
   );
 
   const feedListElement = (
@@ -3909,7 +4148,7 @@ function FeedScreen() {
       onMomentumScrollBegin={handleMomentumScrollBegin}
       onMomentumScrollEnd={handleMomentumScrollEnd}
       onEndReached={handleLoadMore}
-      onEndReachedThreshold={2}
+      onEndReachedThreshold={1.4}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={feedListContentStyle}
       scrollIndicatorInsets={feedScrollIndicatorInsets}

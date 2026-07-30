@@ -1263,8 +1263,6 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
 
   // Don't render the row at all if nobody has reacted AND there are no
   // comments â€” keeps simple posts visually quiet, FB-style.
-  if (likeCount <= 0 && commentCount <= 0) return null;
-
   const othersCount = myReaction ? Math.max(0, likeCount - 1) : likeCount;
   const summaryLeft = (() => {
     if (myReaction && othersCount > 0) {
@@ -1288,6 +1286,8 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
       onOpenReactions(postId, post);
     }
   }, [onOpenReactions, postId, post]);
+
+  if (likeCount <= 0 && commentCount <= 0) return null;
 
   return (
     <View className="mb-4 flex-row items-center justify-between">
@@ -1933,19 +1933,23 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
     const thumbnailUrl = resolvedThumbnailUrl;
-    if (!thumbnailUrl || !mediaLoadEnabled || isScrollBusy) return;
+    if (!thumbnailUrl || !mediaLoadEnabled) return undefined;
 
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
     if (cachedRatio) {
       setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9));
-      return;
+      return undefined;
     }
 
+    let cancelled = false;
     Image.getSize(
       thumbnailUrl,
       (width, height) => {
-        if (width > 0 && height > 0) {
+        if (!cancelled && width > 0 && height > 0) {
           cacheMediaAspectRatio(thumbnailUrl, width, height);
+          if (thumbnailUrl !== videoPreviewCacheKey) {
+            cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
+          }
           // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
           setAspectRatio(
             clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
@@ -1953,10 +1957,19 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         }
       },
       err => {
-        console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
+        if (!cancelled) {
+          console.warn(
+            '[HomeVideoPostCard] getSize failed for thumbnail:',
+            err,
+          );
+        }
       },
     );
-  }, [isScrollBusy, mediaLoadEnabled, resolvedThumbnailUrl]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mediaLoadEnabled, resolvedThumbnailUrl, videoPreviewCacheKey]);
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback(
@@ -2911,34 +2924,41 @@ const SinglePostImage = React.memo(function SinglePostImage({
   onPress: () => void;
   enabled?: boolean;
 }) {
-  const isScrollBusy = useFeedScrollBusy();
   const [aspectRatio, setAspectRatio] = useState(() =>
     getCachedMediaAspectRatio(uri, 0.75, 1.91, 4 / 3),
   );
 
   useEffect(() => {
-    if (!uri || !enabled || isScrollBusy) return;
+    if (!uri || !enabled) return undefined;
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(uri);
     if (cachedRatio) {
       setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 1.91, 4 / 3));
-      return;
+      return undefined;
     }
 
+    let cancelled = false;
+    // Resolve geometry as soon as media loading is enabled. Deferring this
+    // until interactions finish makes the row resize after a fling settles.
     Image.getSize(
       uri,
       (width, height) => {
-        if (width > 0 && height > 0) {
-          // Clamp aspect ratio to resemble Facebook:
-          // Facebook caps portrait to 4:5 (0.8) and landscape to 1.91:1
-          cacheMediaAspectRatio(uri, width, height);
-          setAspectRatio(clampAspectRatio(width / height, 0.75, 1.91, 4 / 3));
-        }
+        if (cancelled || width <= 0 || height <= 0) return;
+        // Clamp aspect ratio to resemble Facebook:
+        // Facebook caps portrait to 4:5 (0.8) and landscape to 1.91:1.
+        cacheMediaAspectRatio(uri, width, height);
+        setAspectRatio(clampAspectRatio(width / height, 0.75, 1.91, 4 / 3));
       },
       err => {
-        console.warn('[SinglePostImage] getSize failed', err);
+        if (!cancelled) {
+          console.warn('[SinglePostImage] getSize failed', err);
+        }
       },
     );
-  }, [enabled, isScrollBusy, uri]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, uri]);
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.95} delayPressIn={0}>
@@ -3410,7 +3430,7 @@ export const TextPostCard = React.memo(function TextPostCard({
 
             return (
               <TouchableOpacity
-                key={url}
+                key={`${post.id}-photo-${index}-${url}`}
                 onPress={() => onPhotoPress(post, index)}
                 activeOpacity={0.95}
                 delayPressIn={0}

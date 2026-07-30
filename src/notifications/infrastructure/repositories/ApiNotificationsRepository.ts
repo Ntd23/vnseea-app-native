@@ -402,8 +402,10 @@ function toCount(value: unknown): number {
 function mapUnreadCounts(
   response: NotificationsResponse,
 ): NotificationsUnreadCounts {
+  const hasNotificationItems =
+    Array.isArray(response.notifications) || Array.isArray(response.data);
   const rawItems = response.notifications ?? response.data ?? [];
-  const visibleUnreadCount = Array.isArray(rawItems)
+  const visibleUnreadCount = hasNotificationItems && Array.isArray(rawItems)
     ? rawItems
         .map(item => mapNotificationRecord(item as NotificationRecord))
         .filter(
@@ -439,6 +441,24 @@ function fetchNotificationsResponse(offset?: string | number | null) {
     apiRoutes.notifications.list,
     payload,
   );
+}
+
+function fetchUnreadCountsResponse() {
+  return apiBridge.post<NotificationsResponse>(
+    apiRoutes.notifications.list,
+    {
+      fetch:
+        'count_notifications,count_new_messages,count_group_chat_requests',
+      include_all_notifications: '1',
+    },
+  );
+}
+
+function hasOwnCountField(
+  response: NotificationsResponse,
+  field: keyof NotificationsResponse,
+) {
+  return Object.prototype.hasOwnProperty.call(response, field);
 }
 
 export function createNotificationsRepository(): NotificationsRepository {
@@ -488,7 +508,14 @@ export function createNotificationsRepository(): NotificationsRepository {
 
     async getUnreadCounts() {
       try {
-        const response = await fetchNotificationsResponse();
+        let response = await fetchUnreadCountsResponse();
+        const supportsCountOnly =
+          (hasOwnCountField(response, 'new_notifications_count') ||
+            hasOwnCountField(response, 'count_notifications')) &&
+          hasOwnCountField(response, 'new_group_chat_requests_count');
+        if (!supportsCountOnly) {
+          response = await fetchNotificationsResponse();
+        }
         return mapUnreadCounts(response);
       } catch (error) {
         console.warn(

@@ -43,10 +43,11 @@ describe('Profile commerce posts', () => {
     expect(createJob).toContain('profilePostsChangedEvents.emit(');
   });
 
-  it('keeps commerce posts when the regular profile feed request fails', () => {
-    expect(profile).toContain('await Promise.allSettled([');
-    expect(profile).toContain("feedResult.status === 'rejected'");
-    expect(profile).toContain('mergedPosts.length === 0');
+  it('loads commerce posts after the regular profile feed can render', () => {
+    expect(profile).toContain('loadProfileCommerceForUser');
+    expect(profile).toContain('.then(commercePosts =>');
+    expect(profile).toContain('mergeProfileCommercePosts(current, commercePosts)');
+    expect(profile).not.toContain("feedResult.status === 'rejected'");
   });
 
   it('keeps job posts out of reaction-only calculations', () => {

@@ -61,6 +61,38 @@ describe('post realtime coordinator', () => {
     releaseFirst();
   });
 
+  it('defaults to eight watched posts to bound HTTP fallback fan-out', () => {
+    const watch = jest.fn();
+    const coordinator = createPostRealtimeCoordinator({
+      fetchPost: jest.fn(),
+      watch,
+      unwatch: jest.fn(),
+    });
+
+    coordinator.watchPosts(Array.from({ length: 12 }, (_, index) => index + 1));
+
+    expect(coordinator.getWatchedPostIds()).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+    ]);
+    expect(watch).toHaveBeenCalledWith([
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+    ]);
+  });
+
   it('debounces mutations and refetches once more when dirty during a fetch', async () => {
     let resolveFirst: ((value: { id: string; revision: number }) => void) | undefined;
     const fetchPost = jest

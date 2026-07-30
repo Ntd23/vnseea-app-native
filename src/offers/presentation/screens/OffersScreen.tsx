@@ -1,39 +1,30 @@
 // Description: Renders VNSEEA offers list with real API data and beautiful card layout.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Linking,
   RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity as Pressable,
   View,
 } from 'react-native';
-import {
-  ArrowLeft,
-  Tag,
-  Ticket,
-} from 'lucide-react-native';
+import { ArrowLeft, ChevronRight, Tag, Ticket } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { useOffersViewModel } from '../../application/view-models/useOffersViewModel';
-import type { OfferItem, DiscountType, DISCOUNT_TYPE_LABELS } from '../../domain/types/offers.types';
+import type { OfferItem } from '../../domain/types/offers.types';
+import { resolveOfferNavigationDestination } from '../../application/navigation/offerNavigation';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type OffersNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = APP_BRAND_COLOR;
-
-const DISCOUNT_LABELS: Record<DiscountType, string> = {
-  discount_percent: 'Giảm %',
-  discount_amount: 'Giảm tiền',
-  buy_get_discount: 'Mua X tặng Y',
-  spend_get_off: 'Chi tiêu được giảm',
-  free_shipping: 'Miễn phí ship',
-};
 
 function formatDiscount(offer: OfferItem): string {
   if (offer.discount_percent > 0) {
@@ -48,7 +39,11 @@ function formatDiscount(offer: OfferItem): string {
   if (offer.discount_type === 'buy_get_discount') {
     return `Mua ${offer.buy} tặng ${offer.get_price}`;
   }
-  if (offer.discount_type === 'spend_get_off' && offer.spend > 0 && offer.amount_off > 0) {
+  if (
+    offer.discount_type === 'spend_get_off' &&
+    offer.spend > 0 &&
+    offer.amount_off > 0
+  ) {
     return `Chi ${offer.spend.toLocaleString()}đ giảm ${offer.amount_off}đ`;
   }
   return 'Ưu đãi';
@@ -98,7 +93,9 @@ function OfferCard({ offer, onPress }: OfferCardProps) {
             className="absolute left-0 top-0 rounded-br-xl px-2 py-1"
             style={{ backgroundColor: isPercent ? '#ef4444' : '#22c55e' }}
           >
-            <Text className="text-[10px] font-bold text-white">{discountText}</Text>
+            <Text className="text-[10px] font-bold text-white">
+              {discountText}
+            </Text>
           </View>
         </View>
 
@@ -133,6 +130,13 @@ function OfferCard({ offer, onPress }: OfferCardProps) {
               </View>
             </View>
           )}
+
+          <View className="mt-2 flex-row items-center justify-end">
+            <Text className="mr-1 text-[12px] font-semibold text-brand">
+              Xem sản phẩm
+            </Text>
+            <ChevronRight size={15} color={BRAND} strokeWidth={2.5} />
+          </View>
         </View>
       </View>
     </Pressable>
@@ -162,7 +166,13 @@ function EmptyState({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+function ErrorState({
+  error,
+  onRetry,
+}: {
+  error: string;
+  onRetry: () => void;
+}) {
   return (
     <View className="flex-1 items-center justify-center px-8 py-20">
       <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-red-50">
@@ -171,7 +181,9 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
       <Text className="text-[18px] font-semibold text-slate-700">
         Đã xảy ra lỗi
       </Text>
-      <Text className="mt-2 text-center text-[13px] text-slate-500">{error}</Text>
+      <Text className="mt-2 text-center text-[13px] text-slate-500">
+        {error}
+      </Text>
       <Pressable
         className="mt-6 rounded-full bg-brand px-8 py-3"
         activeOpacity={0.8}
@@ -187,7 +199,9 @@ function LoadingState() {
   return (
     <View className="flex-1 items-center justify-center py-20">
       <ActivityIndicator size="large" color={BRAND} />
-      <Text className="mt-4 text-[13px] text-slate-500">Đang tải ưu đãi...</Text>
+      <Text className="mt-4 text-[13px] text-slate-500">
+        Đang tải ưu đãi...
+      </Text>
     </View>
   );
 }
@@ -196,10 +210,31 @@ function OffersScreen() {
   const navigation = useNavigation<OffersNav>();
   const { offers, isLoading, error, reload } = useOffersViewModel();
 
-  const handleOfferPress = (offer: OfferItem) => {
-    // TODO: Navigate to offer detail if needed
-    console.log('Offer pressed:', offer.id);
-  };
+  const handleOfferPress = useCallback(
+    (offer: OfferItem) => {
+      const destination = resolveOfferNavigationDestination(offer);
+      if (destination.kind === 'product') {
+        navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+          productId: destination.productId,
+        });
+        return;
+      }
+      if (destination.kind === 'post') {
+        navigation.navigate(ROUTES.POST_DETAIL, {
+          postId: destination.postId,
+        });
+        return;
+      }
+      if (destination.kind === 'external') {
+        Linking.openURL(destination.url).catch(() => {
+          navigation.navigate(ROUTES.MARKETPLACE);
+        });
+        return;
+      }
+      navigation.navigate(ROUTES.MARKETPLACE);
+    },
+    [navigation],
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-[#f1f4fb]" edges={['top']}>

@@ -18,6 +18,9 @@ export const DISCOUNT_TYPE_LABELS: Record<DiscountType, string> = {
 
 export interface OfferItem {
   id: number;
+  productId?: number;
+  postId?: number;
+  url?: string;
   page_id: number;
   user_id: number;
   discount_type: DiscountType;

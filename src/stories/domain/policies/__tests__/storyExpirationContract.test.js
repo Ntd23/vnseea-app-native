@@ -28,7 +28,8 @@ describe('story expiration integration', () => {
     expect(railViewModel).toContain('getStoryActiveUntil');
     expect(railViewModel).not.toContain('threeDaysAgo');
     expect(listViewModel).toContain('filterActiveStories');
-    expect(viewer).toContain('filterActiveStories(rawPassedStories)');
+    expect(viewer).toContain('filterActiveStories(');
+    expect(viewer).toContain('route.params?.stories');
     expect(profilePolicy).toContain('filterActiveStories(stories, nowSeconds)');
   });
 });

@@ -30,6 +30,74 @@ import type {
 const repository = createProfileRepository();
 const storiesRepository = createStoriesRepository();
 const PROFILE_MEDIA_UPLOAD_TIMEOUT_MS = 60_000;
+const PROFILE_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type ProfileCacheEntry = {
+  data: ProfileData;
+  expiresAt: number;
+};
+
+const profileDataCache = new Map<string, ProfileCacheEntry>();
+
+function profileCacheKey(userId: string) {
+  const viewerId = sessionStorage.getSession()?.userId ?? 'guest';
+  return `${viewerId}:${String(userId)}`;
+}
+
+function getCachedProfileData(userId?: string) {
+  if (!userId) return null;
+
+  const key = profileCacheKey(userId);
+  const entry = profileDataCache.get(key);
+  if (!entry) return null;
+
+  if (entry.expiresAt <= Date.now()) {
+    profileDataCache.delete(key);
+    return null;
+  }
+
+  return entry.data;
+}
+
+function setCachedProfileData(userId: string | undefined, data: ProfileData) {
+  if (!userId || !data.profile) return;
+
+  profileDataCache.set(profileCacheKey(userId), {
+    data,
+    expiresAt: Date.now() + PROFILE_DATA_CACHE_TTL_MS,
+  });
+}
+
+function buildCachedSessionProfileData(userId?: string): ProfileData | null {
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  if (!sessionUserId || (userId && String(userId) !== String(sessionUserId))) {
+    return null;
+  }
+
+  const cached = sessionStorage.getUserProfile();
+  return {
+    profile: {
+      id: String(sessionUserId),
+      name: cached?.name,
+      username: cached?.username,
+      avatarUrl: cached?.avatarUrl,
+    },
+    followers: [],
+    following: [],
+    likedPages: [],
+    joinedGroups: [],
+    family: [],
+  };
+}
+
+function getInitialProfileData(userId?: string) {
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  const requestedUserId = userId || sessionUserId;
+  return (
+    getCachedProfileData(requestedUserId) ??
+    buildCachedSessionProfileData(requestedUserId)
+  );
+}
 
 function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -101,8 +169,10 @@ async function uploadCanonicalProfileMedia(
   });
 }
 
-export function useProfileViewModel() {
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+export function useProfileViewModel(initialUserId?: string) {
+  const [profileData, setProfileData] = useState<ProfileData | null>(() =>
+    getInitialProfileData(initialUserId),
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,7 +187,7 @@ export function useProfileViewModel() {
             return previous;
           }
 
-          return {
+          const next = {
             ...previous,
             profile: {
               ...previous.profile,
@@ -129,24 +199,88 @@ export function useProfileViewModel() {
                 : {
                     coverUrl: media.url,
                     coverPostId: media.postId,
-                  }),
+              }),
             },
           };
+
+          setCachedProfileData(userId, next);
+          return next;
         });
       }),
     [],
   );
 
+  useEffect(() => {
+    const seeded = getInitialProfileData(initialUserId);
+
+    setProfileData(previous => {
+      if (
+        seeded?.profile &&
+        previous?.profile &&
+        String(previous.profile.id) === String(seeded.profile?.id)
+      ) {
+        return previous;
+      }
+
+      if (seeded?.profile) return seeded;
+
+      // Clear a previous user's profile immediately when navigating to a
+      // different public profile without a cached snapshot. This prevents a
+      // slow/error response from briefly rendering the previous person.
+      if (
+        initialUserId &&
+        previous?.profile &&
+        String(previous.profile.id) !== String(initialUserId)
+      ) {
+        return null;
+      }
+
+      return previous;
+    });
+  }, [initialUserId]);
+
   const loadProfile = useCallback(async (input?: ProfileLoadInput) => {
     setIsLoading(true);
     setError(null);
 
+    const requestedUserId =
+      input?.userId ?? sessionStorage.getSession()?.userId ?? undefined;
+    const cached = getCachedProfileData(requestedUserId);
+    if (cached) {
+      setProfileData(previous => previous ?? cached);
+    }
+
     try {
       const result = await repository.loadProfile(input);
-      setProfileData(result);
+      const cachedWithConnections = getCachedProfileData(requestedUserId);
+      const nextResult = result
+        ? {
+            ...result,
+            followers:
+              input?.includeFriends === false && result.profile
+                ? cachedWithConnections?.profile &&
+                  String(cachedWithConnections.profile.id) ===
+                    String(result.profile.id)
+                  ? cachedWithConnections.followers
+                  : result.followers
+                : result.followers,
+            following:
+              input?.includeFriends === false && result.profile
+                ? cachedWithConnections?.profile &&
+                  String(cachedWithConnections.profile.id) ===
+                    String(result.profile.id)
+                  ? cachedWithConnections.following
+                  : result.following
+                : result.following,
+          }
+        : result;
+      setProfileData(nextResult);
+      if (nextResult) {
+        setCachedProfileData(requestedUserId, nextResult);
+      }
 
       const currentUserId = sessionStorage.getSession()?.userId;
-      const loadedProfile = result?.profile;
+      const loadedProfile = nextResult?.profile;
       if (
         currentUserId &&
         loadedProfile &&
@@ -159,7 +293,7 @@ export function useProfileViewModel() {
         });
       }
 
-      return result;
+      return nextResult;
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
       throw caughtError;
@@ -167,6 +301,32 @@ export function useProfileViewModel() {
       setIsLoading(false);
     }
   }, []);
+
+  const loadConnections = useCallback(
+    async (userId: string, limit = 3) => {
+      const result = await repository.loadConnections(userId, limit);
+
+      setProfileData(previous => {
+        if (
+          !previous?.profile ||
+          String(previous.profile.id) !== String(userId)
+        ) {
+          return previous;
+        }
+
+        const next = {
+          ...previous,
+          followers: result.followers,
+          following: result.following,
+        };
+        setCachedProfileData(userId, next);
+        return next;
+      });
+
+      return result;
+    },
+    [],
+  );
 
   const toggleFollow = useCallback(async (userId: string) => {
     const nextState = await repository.toggleFollow(userId);
@@ -290,6 +450,7 @@ export function useProfileViewModel() {
     isLoading,
     error,
     loadProfile,
+    loadConnections,
     toggleFollow,
     pokeUser,
     updateAvatar,

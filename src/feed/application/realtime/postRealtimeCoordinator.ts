@@ -48,7 +48,7 @@ export function createPostRealtimeCoordinator<TPost>(
 ) {
   const debounceMs = options.debounceMs ?? 150;
   const maxConcurrent = options.maxConcurrent ?? 3;
-  const maxWatched = options.maxWatched ?? 50;
+  const maxWatched = options.maxWatched ?? 8;
   const refs = new Map<string, number>();
   const fetchStates = new Map<string, FetchState>();
   const listeners = new Set<(event: PostRealtimeEvent<TPost>) => void>();

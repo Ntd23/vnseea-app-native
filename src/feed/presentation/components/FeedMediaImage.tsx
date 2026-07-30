@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Image,
   View,
@@ -9,8 +15,8 @@ import {
 } from 'react-native';
 import {
   markFeedMediaLoaded,
-  markFeedMediaRequested,
-  useFeedMediaRetained,
+  releaseFeedMedia,
+  useFeedMediaLoaded,
 } from '../../application/state/feedMediaLoadState';
 
 type FeedMediaImageProps = {
@@ -22,11 +28,13 @@ type FeedMediaImageProps = {
 };
 
 const FEED_MEDIA_PLACEHOLDER_STYLE = { backgroundColor: '#E5E7EB' };
+const FEED_MEDIA_RETRY_DELAY_MS = 220;
 
 /**
- * A viewport-gated image that becomes sticky after its first request.
- * FlashList may recycle or clip the native view, but scrolling must never
- * turn an image that already started loading back into a placeholder.
+ * A viewport-gated image that is retained briefly after it loads.
+ * In-flight requests may be cancelled when their row leaves the viewport;
+ * completed images survive short FlashList recycle loops without becoming
+ * globally sticky for the rest of the feed session.
  */
 export const FeedMediaImage = React.memo(function FeedMediaImage({
   uri,
@@ -35,18 +43,37 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
   resizeMode = 'cover',
   enabled = true,
 }: FeedMediaImageProps) {
-  const retained = useFeedMediaRetained(uri);
-  const shouldMountImage = enabled || retained;
+  const loaded = useFeedMediaLoaded(uri);
+  const shouldMountImage = enabled || loaded;
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const source = useMemo<ImageURISource>(
-    () => ({ uri, cache: 'force-cache' }),
-    [uri],
+    () => ({
+      uri,
+      cache: retryAttempt > 0 ? 'reload' : 'force-cache',
+    }),
+    [retryAttempt, uri],
   );
 
   useEffect(() => {
-    if (shouldMountImage) {
-      markFeedMediaRequested(uri);
-    }
-  }, [shouldMountImage, uri]);
+    setRetryAttempt(0);
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [uri]);
+
+  const handleLoadError = useCallback(() => {
+    releaseFeedMedia(uri);
+    if (!enabled || retryAttempt >= 1 || retryTimerRef.current) return;
+
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      setRetryAttempt(current => Math.min(1, current + 1));
+    }, FEED_MEDIA_RETRY_DELAY_MS);
+  }, [enabled, retryAttempt, uri]);
 
   if (!shouldMountImage) {
     return (
@@ -59,6 +86,7 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
 
   return (
     <Image
+      key={`${uri}:${retryAttempt}`}
       source={source}
       className={className}
       style={style}
@@ -66,8 +94,8 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
       fadeDuration={0}
       resizeMethod="resize"
       progressiveRenderingEnabled
-      onLoadStart={() => markFeedMediaRequested(uri)}
       onLoad={() => markFeedMediaLoaded(uri)}
+      onError={handleLoadError}
     />
   );
 });

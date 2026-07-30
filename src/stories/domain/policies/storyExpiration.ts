@@ -29,6 +29,8 @@ export function isStoryActiveWithin24Hours(
 }
 
 export function getStoryActiveUntil(story: StoryItem) {
+  if (story.isAd) return Number.POSITIVE_INFINITY;
+
   const ageLimit = story.postedAt + STORY_MAX_AGE_SECONDS;
   let activeUntil = story.expiresAt > 0
     ? Math.min(ageLimit, story.expiresAt)
@@ -54,6 +56,11 @@ export function filterActiveStories(
   const activeStories: StoryItem[] = [];
 
   for (const story of stories) {
+    if (story.isAd) {
+      if (story.media.length > 0) activeStories.push(story);
+      continue;
+    }
+
     if (!isStoryActiveWithin24Hours(story, nowSeconds)) continue;
 
     const activeMedia = story.media.filter(segment =>

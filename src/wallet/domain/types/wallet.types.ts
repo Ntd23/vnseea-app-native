@@ -93,6 +93,7 @@ export interface CurrentUser {
 
 export interface WalletOverview {
   balance: number;
+  walletBalance: number;
   withdrawableBalance: number;
   currency: string;
   currencySymbol: string;

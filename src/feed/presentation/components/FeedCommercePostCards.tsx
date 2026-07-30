@@ -1,8 +1,13 @@
 // Description: Shared Home Feed cards for product and job posts.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo } from 'react';
-import { Image, Text, View } from 'react-native';
-import { Briefcase, Globe, MapPin } from 'lucide-react-native';
+import {
+  Image,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from 'react-native';
+import { Briefcase, Globe, MapPin, Share2 } from 'lucide-react-native';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import {
   JOB_TYPE_VIETNAMESE,
@@ -22,6 +27,7 @@ import {
 } from './PostCards';
 import {
   FeedCardContent,
+  FeedGlassActionButton,
   FeedGlassActionBar,
   FeedMediaFrame,
   FeedTouchableCardSurface,
@@ -68,7 +74,7 @@ export const FeedProductPostCard = React.memo(function FeedProductPostCard({
       product={post.product}
       onPress={onPress}
       onProfilePress={onProfilePress}
-      onShare={handleShare}
+      onShare={post.permissions?.canShare ? handleShare : undefined}
       loadMedia={mediaVisible}
     />
   );
@@ -105,10 +111,12 @@ export const FeedJobPostCard = React.memo(function FeedJobPostCard({
   post,
   copy,
   onPress,
+  onSharePost,
 }: {
   post: FeedJobPost;
   copy: FeedCopy;
   onPress: (job: JobsItem) => void;
+  onSharePost: (post: FeedPost) => void;
 }) {
   const mediaVisible = useFeedPostMediaVisible(post.id);
   const job = post.job;
@@ -120,6 +128,14 @@ export const FeedJobPostCard = React.memo(function FeedJobPostCard({
   const handlePress = useCallback(() => {
     onPress(job);
   }, [job, onPress]);
+  const handleSharePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      onSharePost(post);
+    },
+    [onSharePost, post],
+  );
+  const canShare = post.permissions?.canShare === true;
 
   return (
     <FeedTouchableCardSurface activeOpacity={0.9} onPress={handlePress}>
@@ -206,8 +222,25 @@ export const FeedJobPostCard = React.memo(function FeedJobPostCard({
           </Text>
         </View>
 
-        <View className="rounded-lg bg-[#e7f0ff] px-4 py-2">
-          <Text className="text-sm font-bold text-brand">{copy.viewJob}</Text>
+        <View className="flex-row items-center">
+          {canShare ? (
+            <FeedGlassActionButton
+              accessibilityRole="button"
+              accessibilityLabel={copy.share}
+              activeOpacity={0.8}
+              className="mr-2 rounded-lg border border-[#dbe3ef] bg-white px-3 py-2"
+              onPress={handleSharePress}
+            >
+              <Share2 size={16} color="#64748B" strokeWidth={2.2} />
+              <Text className="ml-1.5 text-sm font-bold text-[#475569]">
+                {copy.share}
+              </Text>
+            </FeedGlassActionButton>
+          ) : null}
+
+          <View className="rounded-lg bg-[#e7f0ff] px-4 py-2">
+            <Text className="text-sm font-bold text-brand">{copy.viewJob}</Text>
+          </View>
         </View>
       </FeedGlassActionBar>
     </FeedTouchableCardSurface>

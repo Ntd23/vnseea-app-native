@@ -8,6 +8,9 @@ export type DiscountType =
 
 export interface Offer {
   id: number;
+  productId?: number;
+  postId?: number;
+  url?: string;
   pageId: number;
   userId: number;
   discountType: DiscountType;

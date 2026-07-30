@@ -152,6 +152,7 @@ import {
   hiddenPostsStorage,
   LOCAL_POST_HIDDEN_EVENT,
 } from '../../../feed/infrastructure/storage/hiddenPostsStorage';
+import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 import {
   endedLivePostsStorage,
   LOCAL_LIVE_ENDED_EVENT,
@@ -273,6 +274,7 @@ const PROFILE_SCROLL_DIRECTION_THRESHOLD = 6;
 const PROFILE_HEADER_HEIGHT = 48;
 const PROFILE_SHEET_OPEN_DURATION_MS = 120;
 const PROFILE_SHEET_CLOSE_DURATION_MS = 90;
+const PROFILE_SHELL_DEADLINE_MS = 1_800;
 const COUNTRY_NAME_BY_ID = new Map(
   COUNTRY_OPTIONS.map(country => [country.id, country.name]),
 );
@@ -408,6 +410,17 @@ function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
     post.kind === 'product' ||
     post.kind === 'job'
   );
+}
+
+function getCachedProfilePosts(userId?: string | number) {
+  if (!userId) return [];
+
+  const targetId = String(userId);
+  return feedCacheStorage
+    .getCachedPosts()
+    .filter(isProfileFeedPost)
+    .filter(post => String(post.publisher?.id ?? '') === targetId)
+    .slice(0, PROFILE_POST_PAGE_SIZE);
 }
 
 function isProfileEngagementPost(
@@ -1427,11 +1440,13 @@ function ProfileScreen() {
     followers,
     following,
     loadProfile,
+    loadConnections,
+    error: profileError,
     toggleFollow,
     pokeUser,
     updateAvatar,
     updateCover,
-  } = useProfileViewModel();
+  } = useProfileViewModel(route.params?.userId);
 
   const session = sessionStorage.getSession();
   const currentUserId = session?.userId;
@@ -1439,13 +1454,36 @@ function ProfileScreen() {
   const routeProfileKey = route.params?.userId
     ? String(route.params.userId)
     : 'self';
+  const [isDeferredProfileContentEnabled, setDeferredProfileContentEnabled] =
+    useState(false);
+  const [profileLoadDeadlineReached, setProfileLoadDeadlineReached] =
+    useState(false);
+  useEffect(() => {
+    setDeferredProfileContentEnabled(false);
+    const task = InteractionManager.runAfterInteractions(() => {
+      setDeferredProfileContentEnabled(true);
+    });
+
+    return () => task.cancel();
+  }, [routeProfileKey]);
+  useEffect(() => {
+    setProfileLoadDeadlineReached(false);
+    const timeout = setTimeout(() => {
+      setProfileLoadDeadlineReached(true);
+    }, PROFILE_SHELL_DEADLINE_MS);
+
+    return () => clearTimeout(timeout);
+  }, [routeProfileKey]);
   const isOwnProfile = resolveProfileOwnership({
     currentUserId,
     routeUserId: route.params?.userId,
     loadedProfileId: profile?.id,
   });
   const profileLiveVm = useLiveViewModel({
-    enabled: Boolean(targetUserId) && isProfileFocused,
+    enabled:
+      Boolean(targetUserId) &&
+      isProfileFocused &&
+      isDeferredProfileContentEnabled,
     userId: targetUserId ? String(targetUserId) : undefined,
     refreshIntervalMs: 10_000,
   });
@@ -1475,7 +1513,11 @@ function ProfileScreen() {
     'unfollow' | 'block' | null
   >(null);
 
-  const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
+  const cachedProfilePosts = useMemo(
+    () => getCachedProfilePosts(targetUserId),
+    [targetUserId],
+  );
+  const [posts, setPosts] = useState<ProfileFeedPost[]>(cachedProfilePosts);
   const {
     postIds: realtimeVisiblePostIds,
     schedulePostIds: scheduleRealtimeVisiblePostIds,
@@ -1484,7 +1526,7 @@ function ProfileScreen() {
   const profilePostIndexByIdRef = useRef<Map<string, number>>(new Map());
   const [initialPostsSettledKey, setInitialPostsSettledKey] = useState<
     string | null
-  >(null);
+  >(cachedProfilePosts.length > 0 ? routeProfileKey : null);
   const [isProfileRefreshing, setIsProfileRefreshing] = useState(false);
   const profileRefreshInFlightRef = useRef(false);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
@@ -1607,43 +1649,41 @@ function ProfileScreen() {
   const storiesRepo = useMemo(() => createStoriesRepository(), []);
   const loadProfilePostsFirstPage = useCallback(
     async (userId: string | number) => {
-      const [feedResult, commerceResult] = await Promise.allSettled([
-        feedRepo.getUserPosts(String(userId), PROFILE_POST_PAGE_SIZE),
-        loadProfileCommercePosts({
-          userId,
-          includeOwnedPageJobs: isOwnProfile,
-          sellerFallback: postCardCopy.sellerFallback,
-          employerFallback: postCardCopy.employerFallback,
-        }),
-      ]);
-      const feedPosts =
-        feedResult.status === 'fulfilled'
-          ? (feedResult.value ?? []).filter(isProfileFeedPost)
-          : [];
-      const commercePosts =
-        commerceResult.status === 'fulfilled' ? commerceResult.value : [];
+      const feedPosts = (await feedRepo.getUserPosts(
+        String(userId),
+        PROFILE_POST_PAGE_SIZE,
+      )).filter(isProfileFeedPost);
       const pendingPosts = profilePostsChangedEvents
         .getPendingPosts()
         .filter(isProfileFeedPost)
         .filter(post => String(post.publisher.id) === String(userId));
       const mergedPosts = mergeProfileCommercePosts(
         [...feedPosts, ...pendingPosts],
-        commercePosts,
+        [],
       ).filter(isProfileFeedPost);
-
-      if (feedResult.status === 'rejected' && mergedPosts.length === 0) {
-        throw feedResult.reason;
-      }
 
       return {
         posts: mergedPosts,
         cursor: getOldestProfilePostId(feedPosts),
-        hasMore:
-          feedResult.status === 'fulfilled' &&
-          feedPosts.length >= PROFILE_POST_PAGE_SIZE,
+        hasMore: feedPosts.length >= PROFILE_POST_PAGE_SIZE,
       };
     },
-    [feedRepo, isOwnProfile, postCardCopy.employerFallback, postCardCopy.sellerFallback],
+    [feedRepo],
+  );
+  const loadProfileCommerceForUser = useCallback(
+    (userId: string | number, options: { force?: boolean } = {}) =>
+      loadProfileCommercePosts({
+        userId,
+        includeOwnedPageJobs: isOwnProfile,
+        sellerFallback: postCardCopy.sellerFallback,
+        employerFallback: postCardCopy.employerFallback,
+        force: options.force,
+      }),
+    [
+      isOwnProfile,
+      postCardCopy.employerFallback,
+      postCardCopy.sellerFallback,
+    ],
   );
   const refreshProfileContent = useCallback(async () => {
     if (!targetUserId || profileRefreshInFlightRef.current) return;
@@ -1655,7 +1695,7 @@ function ProfileScreen() {
       const [, response] = await Promise.all([
         loadProfile({
           userId: route.params?.userId,
-          includeFriends: true,
+          includeFriends: false,
         }),
         loadProfilePostsFirstPage(targetUserId),
       ]);
@@ -1665,6 +1705,17 @@ function ProfileScreen() {
       setPosts(response.posts);
       setPostsCursor(response.cursor);
       setHasMorePosts(response.hasMore);
+
+      void loadProfileCommerceForUser(targetUserId, { force: true })
+        .then(commercePosts => {
+          setPosts(current =>
+            mergeProfileCommercePosts(current, commercePosts).filter(
+              isProfileFeedPost,
+            ),
+          );
+        })
+        .catch(() => undefined);
+      void loadConnections(String(targetUserId), 3).catch(() => undefined);
     } catch (caughtError) {
       setPostsError(
         caughtError instanceof Error
@@ -1678,6 +1729,8 @@ function ProfileScreen() {
   }, [
     copy.loadPostsError,
     loadProfile,
+    loadConnections,
+    loadProfileCommerceForUser,
     loadProfilePostsFirstPage,
     route.params?.userId,
     targetUserId,
@@ -2440,12 +2493,15 @@ function ProfileScreen() {
 
     // Reset user-scoped state so the previous user's posts/stories
     // don't bleed into the new user's profile view.
-    setPosts([]);
+    const cachedPosts = getCachedProfilePosts(targetUserId);
+    setPosts(cachedPosts);
     setPersonalDetailsExpanded(false);
     setPostsCursor(undefined);
     setHasMorePosts(false);
     setPostsError(null);
-    setInitialPostsSettledKey(null);
+    setInitialPostsSettledKey(
+      cachedPosts.length > 0 ? routeProfileKey : null,
+    );
     setUserStory(null);
     setAllStories([]);
     setIsStoryLoading(false);
@@ -2481,16 +2537,24 @@ function ProfileScreen() {
 
     loadProfile({
       userId: route.params?.userId,
-      includeFriends: true,
-    }).catch(() => undefined);
+      includeFriends: false,
+    })
+      .then(() =>
+        targetUserId
+          ? loadConnections(String(targetUserId), 3)
+          : undefined,
+      )
+      .catch(() => undefined);
   }, [
     route.params?.userId,
     routeProfileKey,
     clearProfileInlineLiveDwellTimer,
     clearProfileVideoDwellTimer,
+    loadConnections,
     loadProfile,
     scheduleActiveProfileInlineLivePostId,
     setActiveProfileVideoId,
+    targetUserId,
   ]);
 
   useFocusEffect(
@@ -2548,12 +2612,16 @@ function ProfileScreen() {
 
     let cancelled = false;
     const requestProfileKey = routeProfileKey;
-    setPosts([]);
+    const cachedPosts = getCachedProfilePosts(targetUserId);
+    setPosts(cachedPosts);
     setPostsCursor(undefined);
     setHasMorePosts(false);
     isLoadingMorePostsRef.current = false;
     setIsLoadingMorePosts(false);
     setPostsError(null);
+    setInitialPostsSettledKey(
+      cachedPosts.length > 0 ? requestProfileKey : null,
+    );
     loadProfilePostsFirstPage(targetUserId)
       .then(result => {
         if (cancelled) return;
@@ -2561,6 +2629,17 @@ function ProfileScreen() {
         setPosts(result.posts);
         setPostsCursor(result.cursor);
         setHasMorePosts(result.hasMore);
+
+        void loadProfileCommerceForUser(targetUserId)
+          .then(commercePosts => {
+            if (cancelled) return;
+            setPosts(current =>
+              mergeProfileCommercePosts(current, commercePosts).filter(
+                isProfileFeedPost,
+              ),
+            );
+          })
+          .catch(() => undefined);
       })
       .catch(err => {
         if (cancelled) return;
@@ -2578,7 +2657,12 @@ function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [loadProfilePostsFirstPage, routeProfileKey, targetUserId]);
+  }, [
+    loadProfileCommerceForUser,
+    loadProfilePostsFirstPage,
+    routeProfileKey,
+    targetUserId,
+  ]);
 
   useEffect(() => {
     if (filteredProfilePosts.length === 0) return;
@@ -2611,6 +2695,13 @@ function ProfileScreen() {
 
   // Load User Active Story
   useEffect(() => {
+    if (!isDeferredProfileContentEnabled) {
+      setUserStory(null);
+      setAllStories([]);
+      setIsStoryLoading(false);
+      return;
+    }
+
     if (!targetUserId) {
       setUserStory(null);
       setAllStories([]);
@@ -2670,7 +2761,12 @@ function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, storiesRepo, targetUserId]);
+  }, [
+    isDeferredProfileContentEnabled,
+    isOwnProfile,
+    storiesRepo,
+    targetUserId,
+  ]);
 
   const displayName = profile?.name ?? profile?.username ?? '';
   const username = profile?.username ? `@${profile.username}` : '';
@@ -2685,6 +2781,14 @@ function ProfileScreen() {
   const profileFollowerPreview = useMemo(
     () => followers.filter(follower => follower.id).slice(0, 3),
     [followers],
+  );
+  const profileFollowersCount = Math.max(
+    Number(profile?.followersCount ?? 0),
+    followers.length,
+  );
+  const profileFollowingCount = Math.max(
+    Number(profile?.followingCount ?? 0),
+    following.length,
   );
   const profilePersonalDetailGroups = useMemo(() => {
     const primary: Array<{
@@ -2834,16 +2938,16 @@ function ProfileScreen() {
       : actorName;
     const items: ProfileActivityItem[] = [];
 
-    if (following.length > 0) {
+    if (profileFollowingCount > 0) {
       items.push({
         id: 'following-summary',
         Icon: UserCheck,
         title:
           language === 'vi'
             ? `${actorLabel} đang theo dõi ${formatCount(
-                following.length,
+                profileFollowingCount,
               )} người`
-            : `${actorLabel} follows ${formatCount(following.length)} people`,
+            : `${actorLabel} follows ${formatCount(profileFollowingCount)} people`,
         subtitle:
           language === 'vi' ? 'Hoạt động kết nối' : 'Connection activity',
         color: APP_BRAND_COLOR,
@@ -2851,16 +2955,16 @@ function ProfileScreen() {
       });
     }
 
-    if (followers.length > 0) {
+    if (profileFollowersCount > 0) {
       items.push({
         id: 'followers-summary',
         Icon: Users,
         title:
           language === 'vi'
-            ? `${formatCount(followers.length)} người đang theo dõi ${
+            ? `${formatCount(profileFollowersCount)} người đang theo dõi ${
                 isOwnProfile ? 'bạn' : actorName
               }`
-            : `${formatCount(followers.length)} followers`,
+            : `${formatCount(profileFollowersCount)} followers`,
         subtitle:
           language === 'vi' ? 'Tương tác cộng đồng' : 'Community activity',
         color: '#0F766E',
@@ -2968,8 +3072,8 @@ function ProfileScreen() {
   }, [
     copy.userFallback,
     displayName,
-    followers.length,
-    following.length,
+    profileFollowersCount,
+    profileFollowingCount,
     isOwnProfile,
     language,
     postCardCopy,
@@ -3200,8 +3304,8 @@ function ProfileScreen() {
         displayName: displayName || copy.userFallback,
         avatarUrl,
         initialTab,
-        followersCount: followers.length,
-        followingCount: following.length,
+        followersCount: profileFollowersCount,
+        followingCount: profileFollowingCount,
       });
     },
     [
@@ -3211,6 +3315,8 @@ function ProfileScreen() {
       followers,
       following,
       navigation,
+      profileFollowersCount,
+      profileFollowingCount,
       targetUserId,
     ],
   );
@@ -3993,8 +4099,8 @@ function ProfileScreen() {
       username: profile?.username,
       avatarUrl,
       phoneNumber: profile?.phoneNumber,
-      followersCount: followers.length,
-      followingCount: following.length,
+      followersCount: profileFollowersCount,
+      followingCount: profileFollowingCount,
       followedByCurrentUser: Boolean(profile?.followedByCurrentUser),
       followsCurrentUser: Boolean(profile?.followsCurrentUser),
       blocked: Boolean(profile?.blocked),
@@ -4004,8 +4110,8 @@ function ProfileScreen() {
   }, [
     avatarUrl,
     displayName,
-    followers.length,
-    following.length,
+    profileFollowersCount,
+    profileFollowingCount,
     navigation,
     profile?.blocked,
     profile?.followedByCurrentUser,
@@ -4308,6 +4414,7 @@ function ProfileScreen() {
             post={post}
             copy={postCardCopy}
             onPress={handleJobPress}
+            onSharePost={handleOpenSharePost}
           />
         );
       }
@@ -4638,8 +4745,8 @@ function ProfileScreen() {
               style={profileMainStyles.profileStatsLinkText}
             >
               {language === 'vi'
-                ? `${formatCount(followers.length)} người theo dõi`
-                : `${formatCount(followers.length)} followers`}
+                ? `${formatCount(profileFollowersCount)} người theo dõi`
+                : `${formatCount(profileFollowersCount)} followers`}
             </Text>
             {' · '}
             <Text
@@ -4648,8 +4755,8 @@ function ProfileScreen() {
               style={profileMainStyles.profileStatsLinkText}
             >
               {language === 'vi'
-                ? `${formatCount(following.length)} đang theo dõi`
-                : `${formatCount(following.length)} following`}
+                ? `${formatCount(profileFollowingCount)} đang theo dõi`
+                : `${formatCount(profileFollowingCount)} following`}
             </Text>
           </Text>
         </View>
@@ -5171,7 +5278,9 @@ function ProfileScreen() {
 
   const profilePostsEmptyComponent = useMemo(
     () =>
-      postsError ? (
+      initialPostsSettledKey !== routeProfileKey && posts.length === 0 ? (
+        <PostSkeletonCard />
+      ) : postsError ? (
         <View style={profilePostStyles.stateCard}>
           <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
             {copy.loadPostsError}: {postsError}
@@ -5185,8 +5294,10 @@ function ProfileScreen() {
     [
       copy.loadPostsError,
       copy.noPosts,
+      initialPostsSettledKey,
       posts.length,
       postsError,
+      routeProfileKey,
     ],
   );
 
@@ -5366,7 +5477,9 @@ function ProfileScreen() {
     (!expectedProfileUserId ||
       String(profile?.id) === String(expectedProfileUserId));
   const isInitialProfileContentReady =
-    hasCurrentProfile && initialPostsSettledKey === routeProfileKey;
+    hasCurrentProfile ||
+    Boolean(profileError) ||
+    profileLoadDeadlineReached;
 
   if (!isInitialProfileContentReady) {
     return <FullProfileSkeleton onBack={handleProfileBack} />;

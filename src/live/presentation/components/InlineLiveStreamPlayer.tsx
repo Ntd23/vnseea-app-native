@@ -6,7 +6,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Image,
   StyleSheet,
@@ -39,12 +38,13 @@ export const InlineLiveStreamPlayer = React.memo(
       item,
       shouldPlay,
     );
+    const [connectionReady, setConnectionReady] = useState(false);
     const [videoReady, setVideoReady] = useState(false);
     const [retryCount, setRetryCount] = useState(0);
-    const [hasTimedOut, setHasTimedOut] = useState(false);
     const playbackKey = `${item.postId}:${item.streamName}`;
     const activeAttemptRef = useRef(retryCount);
     const activePlaybackKeyRef = useRef(playbackKey);
+    const connectionReadyRef = useRef(false);
     const hasEndedRef = useRef(hasEnded);
     const mountedRef = useRef(true);
     const retryCountRef = useRef(0);
@@ -58,9 +58,10 @@ export const InlineLiveStreamPlayer = React.memo(
     shouldPlayRef.current = shouldPlay;
 
     useEffect(() => {
+      connectionReadyRef.current = false;
+      setConnectionReady(false);
       videoReadyRef.current = false;
       setVideoReady(false);
-      setHasTimedOut(false);
       posterOpacity.stopAnimation();
       posterOpacity.setValue(1);
     }, [posterOpacity, session?.roomName, session?.token, shouldPlay]);
@@ -68,9 +69,10 @@ export const InlineLiveStreamPlayer = React.memo(
     useEffect(() => {
       retryCountRef.current = 0;
       activeAttemptRef.current = 0;
+      connectionReadyRef.current = false;
+      setConnectionReady(false);
       videoReadyRef.current = false;
       setRetryCount(0);
-      setHasTimedOut(false);
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
@@ -100,7 +102,6 @@ export const InlineLiveStreamPlayer = React.memo(
           return;
         }
         if (retryCountRef.current >= INLINE_LIVE_MAX_RETRIES) {
-          setHasTimedOut(true);
           return;
         }
 
@@ -118,7 +119,6 @@ export const InlineLiveStreamPlayer = React.memo(
           retryCountRef.current = nextRetryCount;
           activeAttemptRef.current = nextRetryCount;
           setRetryCount(nextRetryCount);
-          setHasTimedOut(false);
           videoReadyRef.current = false;
           setVideoReady(false);
           retry();
@@ -139,20 +139,20 @@ export const InlineLiveStreamPlayer = React.memo(
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-      setHasTimedOut(false);
       videoReadyRef.current = true;
       setVideoReady(true);
-      Animated.timing(posterOpacity, {
-        duration: 180,
-        toValue: 0,
-        useNativeDriver: true,
-      }).start();
+      if (connectionReadyRef.current) {
+        Animated.timing(posterOpacity, {
+          duration: 180,
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      }
     }, [playbackKey, posterOpacity, retryCount]);
 
     const handleConnectionStateChange = useCallback(
       (state: 'connected' | 'disconnected' | 'error') => {
         if (
-          state === 'connected' ||
           activePlaybackKeyRef.current !== playbackKey ||
           activeAttemptRef.current !== retryCount ||
           !shouldPlayRef.current
@@ -160,11 +160,25 @@ export const InlineLiveStreamPlayer = React.memo(
           return;
         }
 
+        if (state === 'connected') {
+          connectionReadyRef.current = true;
+          setConnectionReady(true);
+          if (videoReadyRef.current) {
+            Animated.timing(posterOpacity, {
+              duration: 180,
+              toValue: 0,
+              useNativeDriver: true,
+            }).start();
+          }
+          return;
+        }
+
+        connectionReadyRef.current = false;
+        setConnectionReady(false);
         posterOpacity.stopAnimation();
         posterOpacity.setValue(1);
         videoReadyRef.current = false;
         setVideoReady(false);
-        setHasTimedOut(false);
         requestRetry(undefined, true);
       },
       [playbackKey, posterOpacity, requestRetry, retryCount],
@@ -176,8 +190,6 @@ export const InlineLiveStreamPlayer = React.memo(
       if (error) {
         if (retryCountRef.current < INLINE_LIVE_MAX_RETRIES) {
           requestRetry();
-        } else {
-          setHasTimedOut(true);
         }
         return undefined;
       }
@@ -185,8 +197,6 @@ export const InlineLiveStreamPlayer = React.memo(
       const timeout = setTimeout(() => {
         if (retryCountRef.current < INLINE_LIVE_MAX_RETRIES) {
           requestRetry(0);
-        } else {
-          setHasTimedOut(true);
         }
       }, session
         ? INLINE_LIVE_VIDEO_READY_TIMEOUT_MS
@@ -203,8 +213,11 @@ export const InlineLiveStreamPlayer = React.memo(
       videoReady,
     ]);
     const posterVisibilityStyle = useMemo(
-      () => ({ opacity: shouldPlay && videoReady ? posterOpacity : 1 }),
-      [posterOpacity, shouldPlay, videoReady],
+      () => ({
+        opacity:
+          shouldPlay && connectionReady && videoReady ? posterOpacity : 1,
+      }),
+      [connectionReady, posterOpacity, shouldPlay, videoReady],
     );
 
     return (
@@ -228,7 +241,7 @@ export const InlineLiveStreamPlayer = React.memo(
 
         <Animated.View
           style={[styles.poster, posterVisibilityStyle]}
-          pointerEvents={videoReady ? 'none' : 'auto'}
+          pointerEvents={connectionReady && videoReady ? 'none' : 'auto'}
         >
           {item.thumbnailUrl ? (
             <Image
@@ -239,11 +252,6 @@ export const InlineLiveStreamPlayer = React.memo(
           ) : (
             <View style={styles.posterFallback} />
           )}
-          {shouldPlay && !videoReady && !hasTimedOut && !hasEnded ? (
-            <View style={styles.loadingBadge}>
-              <ActivityIndicator color="#ffffff" size="small" />
-            </View>
-          ) : null}
         </Animated.View>
       </View>
     );
@@ -262,19 +270,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: '#020617',
     overflow: 'hidden',
-  },
-  loadingBadge: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(2, 6, 23, 0.48)',
-    borderRadius: 999,
-    height: 42,
-    justifyContent: 'center',
-    left: '50%',
-    marginLeft: -21,
-    marginTop: -21,
-    position: 'absolute',
-    top: '50%',
-    width: 42,
   },
   poster: {
     ...StyleSheet.absoluteFill,

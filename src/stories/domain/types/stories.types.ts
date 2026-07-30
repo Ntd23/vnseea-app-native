@@ -88,6 +88,11 @@ export interface StoryItem {
   /** Total reaction count across all types. */
   reactionCount: number;
   audience?: ContentAudience;
+  /** True when this is a sponsored story supplied by the ad delivery layer. */
+  isAd?: boolean;
+  adId?: string;
+  adTargetUrl?: string;
+  adAppears?: string;
 }
 
 /**

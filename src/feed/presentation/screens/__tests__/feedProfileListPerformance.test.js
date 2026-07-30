@@ -9,6 +9,9 @@ function read(relativePath) {
 
 describe('Feed and profile list performance contracts', () => {
   const feedSource = read('src/feed/presentation/screens/FeedScreen.tsx');
+  const feedViewModelSource = read(
+    'src/feed/application/view-models/useFeedViewModel.ts',
+  );
   const profileSource = read(
     'src/profile/presentation/screens/ProfileScreen.tsx',
   );
@@ -17,12 +20,15 @@ describe('Feed and profile list performance contracts', () => {
   );
 
   it('keeps rich cards in a bounded render window without unsafe Android clipping', () => {
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.2');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2');
     expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.4');
     expect(feedSource).toContain(
-      'const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 28 : 22',
+      'const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28',
     );
-    expect(feedSource).toContain('onEndReachedThreshold={2}');
+    expect(feedSource).toContain(
+      'const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 18 : 14',
+    );
+    expect(feedSource).toContain('onEndReachedThreshold={1.4}');
     expect(feedSource).toContain('removeClippedSubviews={false}');
     expect(feedSource).not.toContain('FEED_SCREEN_HEIGHT * 6');
 
@@ -46,6 +52,7 @@ describe('Feed and profile list performance contracts', () => {
     expect(deferredVisibleIdsSource).toContain(
       'DEFAULT_VISIBLE_POST_SETTLE_MS = 180',
     );
+    expect(deferredVisibleIdsSource).toContain('MAX_VISIBLE_POST_IDS = 8');
     expect(deferredVisibleIdsSource).toContain(
       'clearTimeout(settleTimerRef.current)',
     );
@@ -68,7 +75,30 @@ describe('Feed and profile list performance contracts', () => {
       'const profilePostsEmptyComponent = useMemo(',
     );
     expect(profileSource).toContain(
-      'stickyHeaderIndices={PROFILE_POST_STICKY_HEADER_INDICES}',
+      'PROFILE_POST_MAINTAIN_VISIBLE_CONTENT_POSITION',
     );
+  });
+
+  it('commits one ready page per fling update and keeps the tail runway stable', () => {
+    expect(feedViewModelSource).not.toContain('SCROLL_REVEAL_BATCH_SIZE');
+    expect(feedViewModelSource).toContain('policy.revealBatchSize,');
+
+    const footerStart = feedSource.indexOf(
+      'const ListFooterComponent = useMemo',
+    );
+    const footerEnd = feedSource.indexOf(
+      '// â”€â”€ Photo viewer state',
+      footerStart,
+    );
+    const footerSource = feedSource.slice(footerStart, footerEnd);
+
+    expect(footerSource).toContain('FEED_LOAD_MORE_FOOTER_STYLE');
+    expect(footerSource).toContain('isFeedLoadingMore ?');
+    expect(footerSource).toContain('<ActivityIndicator');
+    expect(footerSource).not.toContain('<PostSkeleton');
+    expect(footerSource).toContain('hasFeedContent,');
+    expect(footerSource).toContain('isFeedAllLoaded,');
+    expect(footerSource).toContain('isFeedLoadingMore,');
+    expect(footerSource).toContain('vm.error,');
   });
 });
