@@ -1263,12 +1263,14 @@ const suggestedUsersCache = new Map<
   string,
   { ids: string[]; expiresAt: number }
 >();
+const suggestedAuthorOffsets = new Map<string, number>();
 
 function getCachedSuggestedIds(viewerId: string): string[] | null {
   const entry = suggestedUsersCache.get(viewerId);
   if (!entry) return null;
   if (entry.expiresAt < Date.now()) {
     suggestedUsersCache.delete(viewerId);
+    suggestedAuthorOffsets.delete(viewerId);
     return null;
   }
   return entry.ids;
@@ -1279,6 +1281,23 @@ function setCachedSuggestedIds(viewerId: string, ids: string[]): void {
     ids,
     expiresAt: Date.now() + SUGGESTED_CACHE_TTL_MS,
   });
+  suggestedAuthorOffsets.set(viewerId, 0);
+}
+
+function takeNextSuggestedAuthorIds(
+  viewerId: string,
+  ids: string[],
+  limit: number,
+): string[] {
+  if (ids.length <= limit) return ids;
+
+  const start = suggestedAuthorOffsets.get(viewerId) ?? 0;
+  const picked = Array.from(
+    { length: Math.min(limit, ids.length) },
+    (_, index) => ids[(start + index) % ids.length],
+  );
+  suggestedAuthorOffsets.set(viewerId, (start + picked.length) % ids.length);
+  return picked;
 }
 
 const FEED_REPOSITORY_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
@@ -1344,6 +1363,32 @@ function getOldestRawPostId(
     .filter(id => Number.isFinite(id) && id > 0);
   if (ids.length === 0) return undefined;
   return String(Math.min(...ids));
+}
+
+function getSafestNextRawCursor(
+  afterPostId: string | undefined,
+  candidates: Array<string | undefined>,
+): string | undefined {
+  const current = Number(afterPostId);
+  const numericCandidates = candidates
+    .map(value => Number(value))
+    .filter(
+      value =>
+        Number.isFinite(value) &&
+        value > 0 &&
+        (!Number.isFinite(current) || value < current),
+    );
+
+  if (numericCandidates.length > 0) {
+    // Multiple client-side streams share one cursor. Continue from the least
+    // advanced stream so slower sources are re-read/deduped instead of being
+    // skipped permanently.
+    return String(Math.max(...numericCandidates));
+  }
+
+  return candidates.find(
+    value => Boolean(value) && value !== afterPostId,
+  );
 }
 
 function getOldestFeedPostId(posts: FeedPost[]): string | undefined {
@@ -1422,18 +1467,23 @@ async function fetchRecommendedRawFeedPostsWithFallback(
     return page;
   }
 
-  // A partial recommended page is only sufficient when it contains enough
-  // actually renderable light rows and the backend supplied a cursor that
-  // can continue. Raw rows dominated by videos/stubs must fall through so
-  // the legacy lane can fill the Home page instead of making it look ended.
+  // Once pagination has started, an advancing cursor is more reliable than
+  // `reached_end`. Sparse recommendation windows can contain only media or
+  // non-renderable rows while older usable posts still exist. Let the bounded
+  // scanner move through those windows instead of paying for the legacy
+  // fan-out or stopping the feed early.
   const usableLightPostCount = mapLightRawFeedPosts(page.posts).length;
-  if (
-    afterPostId &&
-    minimumUsablePosts > 0 &&
-    usableLightPostCount >= minimumUsablePosts &&
-    !page.reachedEnd &&
-    page.nextCursor
-  ) {
+  const hasAdvancingCursor = Boolean(
+    afterPostId && page.nextCursor && page.nextCursor !== afterPostId,
+  );
+  if (hasAdvancingCursor) {
+    debugFeedRepository('recommended-feed cursor continuation', {
+      afterPostId,
+      nextCursor: page.nextCursor ?? '(none)',
+      usableLightPostCount,
+      minimumUsablePosts,
+      reachedEnd: page.reachedEnd === true,
+    });
     return page;
   }
 
@@ -1447,11 +1497,12 @@ async function fetchRecommendedRawFeedPostsWithFallback(
       merged.set(rawPostKey(post), post);
     }
     const posts = Array.from(merged.values());
-    const nextCursor =
-      page.nextCursor ??
-      legacyPage.nextCursor ??
-      getOldestRawPostId(page.posts) ??
-      getOldestRawPostId(legacyPage.posts);
+    const nextCursor = getSafestNextRawCursor(afterPostId, [
+      page.nextCursor,
+      legacyPage.nextCursor,
+      getOldestRawPostId(page.posts),
+      getOldestRawPostId(legacyPage.posts),
+    ]);
     debugFeedRepository('recommended-feed merged fallback', {
       afterPostId: afterPostId ?? 'first',
       recommended: page.posts.length,
@@ -1582,9 +1633,11 @@ async function fetchRawFeedPosts(
       ]);
 
       const userIds = new Set<string>();
-      collectUserIds(sugRes.suggestions).forEach(id => userIds.add(id));
+      // Relationship authors come first so a large suggestion response cannot
+      // push followed/follower accounts out of the first discovery window.
       collectUserIds(friendsRes.data?.following).forEach(id => userIds.add(id));
       collectUserIds(friendsRes.data?.followers).forEach(id => userIds.add(id));
+      collectUserIds(sugRes.suggestions).forEach(id => userIds.add(id));
       collectUserIds(nearbyRes.nearby_users).forEach(id => userIds.add(id));
       if (sessionUserIdLocal) userIds.delete(sessionUserIdLocal);
 
@@ -1596,10 +1649,9 @@ async function fetchRawFeedPosts(
       return [];
     }
 
-    // Shuffle the list of IDs and select up to 20 random authors on each page fetch
-    // to ensure variety and cover all followers/followings over time.
-    const shuffledIds = [...ids].sort(() => Math.random() - 0.5);
-    const pickedIds = shuffledIds.slice(0, 20);
+    // Rotate through the complete cached author pool. Random selection could
+    // repeatedly choose the same accounts and never expose some followers.
+    const pickedIds = takeNextSuggestedAuthorIds(cacheKey, ids, 20);
     const perUserLimit = 10;
 
     const perUser = await Promise.all(
@@ -1895,7 +1947,11 @@ async function fetchRawFeedPosts(
   const followedCursor = getOldestRawPostId(followedRaw);
   const discoveryCursor = getOldestRawPostId(discoveryRaw);
   const ownCursor = getOldestRawPostId(ownRaw);
-  const nextCursor = followedCursor ?? discoveryCursor ?? ownCursor;
+  const nextCursor = getSafestNextRawCursor(afterPostId, [
+    followedCursor,
+    discoveryCursor,
+    ownCursor,
+  ]);
   const primaryCount = followedRaw.length;
 
   return {
@@ -2141,6 +2197,8 @@ export function createFeedRepository(): FeedRepository {
       let cursorStalled = false;
       let primaryCount = 0;
       let scannedRawRows = 0;
+      const visitedRawCursors = new Set<string>();
+      if (cursor) visitedRawCursors.add(cursor);
 
       for (
         let scan = 0;
@@ -2164,16 +2222,20 @@ export function createFeedRepository(): FeedRepository {
 
         const nextRawCursor = page.nextCursor ?? getOldestRawPostId(page.posts);
         const advancedCursor = Boolean(
-          nextRawCursor && nextRawCursor !== cursor,
+          nextRawCursor &&
+            nextRawCursor !== cursor &&
+            !visitedRawCursors.has(nextRawCursor),
         );
-        lastRawCursor = nextRawCursor;
-        reachedEnd = page.reachedEnd === true;
-        cursorStalled = page.posts.length === 0 || !advancedCursor;
+        cursorStalled = !advancedCursor;
 
-        if (reachedEnd || cursorStalled) {
+        if (cursorStalled) {
+          reachedEnd = page.reachedEnd === true || page.posts.length === 0;
           break;
         }
 
+        lastRawCursor = nextRawCursor;
+        reachedEnd = false;
+        visitedRawCursors.add(nextRawCursor as string);
         cursor = nextRawCursor;
       }
 
@@ -2186,7 +2248,9 @@ export function createFeedRepository(): FeedRepository {
       // away: the server cursor already advances past the complete raw
       // window, so discarding them here would permanently skip posts that
       // Profile can still display.
-      const nextCursor = lastRawCursor ?? renderedCursor;
+      const nextCursor = reachedEnd
+        ? undefined
+        : lastRawCursor ?? renderedCursor;
 
       debugFeedRepository('light posts page', {
         requestedLimit: limit,
@@ -2208,7 +2272,7 @@ export function createFeedRepository(): FeedRepository {
         prefetchedPosts:
           prefetchedPosts.length > 0 ? prefetchedPosts : undefined,
         nextCursor,
-        reachedEnd: reachedEnd && mappedPosts.length <= limit,
+        reachedEnd,
       };
     },
 

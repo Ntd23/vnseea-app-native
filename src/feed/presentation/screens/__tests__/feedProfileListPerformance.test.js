@@ -17,8 +17,12 @@ describe('Feed and profile list performance contracts', () => {
   );
 
   it('keeps rich cards in a bounded render window without unsafe Android clipping', () => {
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.2');
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.6');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.2');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.4');
+    expect(feedSource).toContain(
+      'const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 28 : 22',
+    );
+    expect(feedSource).toContain('onEndReachedThreshold={2}');
     expect(feedSource).toContain('removeClippedSubviews={false}');
     expect(feedSource).not.toContain('FEED_SCREEN_HEIGHT * 6');
 

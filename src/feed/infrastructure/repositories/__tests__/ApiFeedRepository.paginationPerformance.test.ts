@@ -124,4 +124,37 @@ describe('ApiFeedRepository pagination performance', () => {
     expect(page.nextCursor).toBe('66');
     expect(backendApi.post).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps scanning sparse pages while the cursor advances despite a false reached-end flag', async () => {
+    (backendApi.post as jest.Mock)
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [rawTextPost(99), rawTextPost(98)],
+        next_cursor: '90',
+        reached_end: true,
+      })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [
+          rawTextPost(89),
+          rawTextPost(88),
+          rawTextPost(87),
+          rawTextPost(86),
+        ],
+        next_cursor: '80',
+        reached_end: false,
+      });
+
+    const page = await createFeedRepository().getLightPostsPage(
+      6,
+      '100',
+      'all',
+      2,
+    );
+
+    expect(page.posts).toHaveLength(6);
+    expect(page.nextCursor).toBe('80');
+    expect(page.reachedEnd).toBe(false);
+    expect(backendApi.post).toHaveBeenCalledTimes(2);
+  });
 });

@@ -345,7 +345,7 @@ const MESSAGE_COPY: Record<
 
     createGroupChat: 'Tạo nhóm chat',
 
-    openLabels: 'Gắn nhãn khách hàng',
+    openLabels: 'Gắn thẻ khách hàng',
 
     retry: 'Thử lại',
 
@@ -433,17 +433,17 @@ const MESSAGE_COPY: Record<
 
     mePrefix: 'Bạn',
 
-    broadcastLabel: 'Nhãn',
+    broadcastLabel: 'Thẻ',
 
-    selectLabelPlaceholder: 'Chọn nhãn',
+    selectLabelPlaceholder: 'Chọn thẻ',
 
-    noLabelsYet: 'Chưa có nhãn nào',
+    noLabelsYet: 'Chưa có thẻ nào',
 
     sendTo: 'Gửi tới',
 
     selectAll: 'Chọn tất cả',
 
-    selectLabelToLoadRecipients: 'Chọn nhãn để tải người nhận',
+    selectLabelToLoadRecipients: 'Chọn thẻ để tải người nhận',
 
     noRecipientsSelected: 'Chưa chọn người nhận',
 
@@ -459,13 +459,13 @@ const MESSAGE_COPY: Record<
 
     sendMessageButton: 'Gửi tin nhắn',
 
-    createLabelBtn: 'Tạo nhãn',
+    createLabelBtn: 'Tạo thẻ',
 
-    createNewLabelTitle: 'Tạo nhãn mới',
+    createNewLabelTitle: 'Tạo thẻ mới',
 
-    labelNameTitle: 'Tên nhãn',
+    labelNameTitle: 'Tên thẻ',
 
-    labelNamePlaceholder: 'Nhập tên nhãn...',
+    labelNamePlaceholder: 'Nhập tên thẻ...',
 
     labelColorTitle: 'Màu sắc',
 
@@ -487,15 +487,15 @@ const MESSAGE_COPY: Record<
 
     createButton: 'Tạo',
 
-    manageLabels: 'Quản lý nhãn',
+    manageLabels: 'Quản lý thẻ',
 
-    assignLabels: 'Gán nhãn',
+    assignLabels: 'Gán thẻ',
 
-    yourLabelList: 'Danh sách nhãn của bạn',
+    yourLabelList: 'Danh sách thẻ của bạn',
 
-    manageYourLabels: 'Quản lý nhãn của bạn',
+    manageYourLabels: 'Quản lý thẻ của bạn',
 
-    manageTip: 'Dùng nút Gán / Gỡ để áp dụng nhãn cho người liên hệ hiện tại.',
+    manageTip: 'Dùng nút Gán / Gỡ để áp dụng thẻ cho người liên hệ hiện tại.',
 
     attach: 'Gán',
 

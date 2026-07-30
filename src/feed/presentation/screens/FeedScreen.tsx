@@ -208,7 +208,7 @@ const MAX_PENDING_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 24 : 36;
 const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 2 : 3;
 const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 2 : 3;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 80 : 60;
-const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 18 : 14;
+const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 28 : 22;
 const FEED_VIDEO_WARM_BEHIND_ITEMS = 0;
 const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 0 : 1;
 const FEED_VIDEO_WARM_MAX_COUNT = 1;
@@ -224,9 +224,9 @@ const FEED_INLINE_LIVE_ACTIVE_DWELL_MS = 140;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
-  ? Math.max(1800, Math.round(FEED_SCREEN_HEIGHT * 2.2))
-  : Math.max(2200, Math.round(FEED_SCREEN_HEIGHT * 2.6));
-const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 16 : 18;
+  ? Math.max(2600, Math.round(FEED_SCREEN_HEIGHT * 3.2))
+  : Math.max(2800, Math.round(FEED_SCREEN_HEIGHT * 3.4));
+const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 24 : 28;
 const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = { disabled: true };
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
@@ -3194,16 +3194,20 @@ function FeedScreen() {
   }, [handleFeedTabReselect, navigation]);
 
   const ListFooterComponent = useMemo(() => {
-    if (isFeedLoadingMore && !isFeedAllLoaded) {
-      return (
-        <View pointerEvents="none" style={{ paddingTop: 4, paddingBottom: 16 }}>
-          <PostSkeleton />
-          <PostSkeleton />
-        </View>
-      );
-    }
-    return null;
-  }, [isFeedAllLoaded, isFeedLoadingMore]);
+    if (isFeedAllLoaded || feedPosts.length === 0) return null;
+
+    // Keep a lightweight visual runway at the tail even while the next page
+    // is being prefetched invisibly. A fast fling now lands on placeholders
+    // instead of an empty white viewport while real cards are committed.
+    const placeholderCount = isFeedLoadingMore ? 4 : 2;
+    return (
+      <View pointerEvents="none" style={{ paddingTop: 4, paddingBottom: 16 }}>
+        {Array.from({ length: placeholderCount }, (_, index) => (
+          <PostSkeleton key={`feed-tail-skeleton-${index}`} />
+        ))}
+      </View>
+    );
+  }, [feedPosts.length, isFeedAllLoaded, isFeedLoadingMore]);
 
   // â”€â”€ Photo viewer state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Set when the user taps a photo in a text post. Cleared by the modal's
@@ -3905,7 +3909,7 @@ function FeedScreen() {
       onMomentumScrollBegin={handleMomentumScrollBegin}
       onMomentumScrollEnd={handleMomentumScrollEnd}
       onEndReached={handleLoadMore}
-      onEndReachedThreshold={1.4}
+      onEndReachedThreshold={2}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={feedListContentStyle}
       scrollIndicatorInsets={feedScrollIndicatorInsets}

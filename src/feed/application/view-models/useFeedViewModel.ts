@@ -1125,13 +1125,19 @@ export function useFeedViewModel() {
         });
 
         if (newPosts.length === 0) {
-          emptyPageStrikeRef.current += 1;
-          if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
-            hasReachedNetworkEndRef.current = true;
+          if (advancedCursor) {
+            // A cursor that still moves means this was only a sparse raw
+            // window. Keep walking in the background without counting it as
+            // evidence that Home has exhausted all eligible posts.
+            emptyPageStrikeRef.current = 0;
+            refillDelayAfterRequest = PREFETCH_REFILL_DELAY_MS;
           } else {
-            refillDelayAfterRequest = advancedCursor
-              ? PREFETCH_REFILL_DELAY_MS
-              : EMPTY_PAGE_RETRY_DELAY_MS;
+            emptyPageStrikeRef.current += 1;
+            if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+              hasReachedNetworkEndRef.current = true;
+            } else {
+              refillDelayAfterRequest = EMPTY_PAGE_RETRY_DELAY_MS;
+            }
           }
         } else {
           emptyPageStrikeRef.current = 0;
@@ -1761,15 +1767,19 @@ export function useFeedViewModel() {
       });
 
       if (newPosts.length === 0) {
-        emptyPageStrikeRef.current += 1;
-        if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
-          hasReachedNetworkEndRef.current = true;
-          setIsAllLoaded(true);
-        } else {
-          // A sparse page, a stalled cursor, or a transient backend empty is
-          // not enough evidence to terminate Home. The background refill
-          // retries and only commits end-of-feed after consecutive strikes.
+        if (advancedCursor) {
+          emptyPageStrikeRef.current = 0;
           prefetchNextPage();
+        } else {
+          emptyPageStrikeRef.current += 1;
+          if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+            hasReachedNetworkEndRef.current = true;
+            setIsAllLoaded(true);
+          } else {
+            // A stalled cursor or transient empty response is retried before
+            // Home commits an end-of-feed verdict.
+            prefetchNextPage();
+          }
         }
       } else {
         emptyPageStrikeRef.current = 0;

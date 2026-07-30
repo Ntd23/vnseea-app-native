@@ -60,8 +60,8 @@ describe('message labels native-stack screen', () => {
 
   it('renders assign and manage tabs with an actionable detach label state', () => {
     expect(screen).toContain("type ScreenMode = 'assign' | 'manage';");
-    expect(screen).toContain("manageTab: 'Quản lý nhãn'");
-    expect(screen).toContain("detach: 'Gỡ nhãn'");
+    expect(screen).toContain("manageTab: 'Quản lý thẻ'");
+    expect(screen).toContain("detach: 'Gỡ thẻ'");
     expect(screen).toContain(
       "route.params.mode === 'assign' ? 'assign' : 'manage'",
     );
@@ -70,6 +70,20 @@ describe('message labels native-stack screen', () => {
       'attached ? copy.detach : copy.attach',
     );
     expect(screen).not.toContain("attached: 'Đã gắn'");
+  });
+
+  it('uses thẻ terminology for customer labels across message screens', () => {
+    expect(messages).toContain("openLabels: 'Gắn thẻ khách hàng'");
+    expect(messages).toContain("broadcastLabel: 'Thẻ'");
+    expect(messages).toContain("createNewLabelTitle: 'Tạo thẻ mới'");
+    expect(screen).toContain("title: 'Thẻ khách hàng'");
+    expect(screen).toContain("create: 'Tạo thẻ'");
+
+    const customerLabelCopy = `${messages}\n${screen}`
+      .replaceAll('nhãn dán', '')
+      .replaceAll('Nhãn dán', '');
+
+    expect(customerLabelCopy).not.toMatch(/nhãn/i);
   });
 
   it('keeps deletion in the manage list and pins the create form below it', () => {
