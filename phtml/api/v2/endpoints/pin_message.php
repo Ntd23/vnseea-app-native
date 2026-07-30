@@ -75,6 +75,7 @@ try {
     if (empty($event_id)) throw new Exception('could not create message pin event');
     $db->commit();
     if ($chat_type === 'user') Wo_CreateUserChat($other_user_id, $current_user_id);
+    VNSEEA_EnqueueMessagePush($event_id);
     VNSEEA_PublishRealtimeMessageChange($event_id);
     $response_data = array('api_status' => 200, 'message' => 'message pinned', 'event_message_id' => (string)$event_id, 'pinned_by_user_id' => (string)$current_user_id, 'can_unpin' => true);
 } catch (Exception $exception) {

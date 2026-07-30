@@ -8,14 +8,16 @@ import {
   type PushSubscriptionChangedState,
   type UserChangedState,
 } from 'react-native-onesignal';
-import { apiRoutes } from '../../application/constants/route-registry';
-import { apiBridge } from '../api/apiBridge';
 import { apiConfig } from '../config/env';
 import { syncMessageNotificationIdentity } from '../notifications/messageNotificationIdentity';
 import { sessionStorage } from '../storage/sessionStorage';
 import { foregroundPushEvents } from './foregroundPushEvents';
 import { pushPermissionPromptStorage } from './pushPermissionPromptStorage';
 import { pushNotificationOpenEvents } from './pushNotificationOpenEvents';
+import {
+  cachePushToken,
+  deactivatePushProvider,
+} from './pushDeviceRegistration';
 
 const PUSH_DEBUG_PREFIX = '[VNSEEA_PUSH_DEBUG]';
 const MESSAGE_PUSH_KINDS = new Set([
@@ -32,6 +34,10 @@ let initialized = false;
 let lastSyncedKey = '';
 let syncInFlight: Promise<void> | null = null;
 let firstLaunchPermissionRequest: Promise<boolean> | null = null;
+
+type PushSubscriptionSyncOptions = {
+  forceRegistration?: boolean;
+};
 
 function maskPushIdentifier(value?: string | null) {
   if (!value) {
@@ -82,22 +88,6 @@ function isPushConfigured() {
   return apiConfig.oneSignalAppId.trim().length > 0;
 }
 
-function buildDevicePayload(pushId: string) {
-  if (Platform.OS === 'ios') {
-    return {
-      fetch: 'count_new_messages',
-      ios_n_device_id: pushId,
-      ios_m_device_id: pushId,
-    };
-  }
-
-  return {
-    fetch: 'count_new_messages',
-    android_n_device_id: pushId,
-    android_m_device_id: pushId,
-  };
-}
-
 async function readCurrentPushState(stage: string) {
   const [pushId, pushToken, optedIn, permissionGranted] = await Promise.all([
     OneSignal.User.pushSubscription.getIdAsync(),
@@ -117,10 +107,13 @@ async function readCurrentPushState(stage: string) {
     permissionGranted,
   });
 
-  return pushId;
+  return { pushId, optedIn };
 }
 
-async function syncPushSubscription(pushId?: string | null) {
+async function syncPushSubscription(
+  pushId?: string | null,
+  options: PushSubscriptionSyncOptions = {},
+) {
   const userId = sessionStorage.getSession()?.userId;
   if (!userId) {
     logPushDebug('push_sync_skipped', {
@@ -138,7 +131,7 @@ async function syncPushSubscription(pushId?: string | null) {
   }
 
   const syncKey = `${Platform.OS}:${userId}:${pushId}`;
-  if (lastSyncedKey === syncKey) {
+  if (!options.forceRegistration && lastSyncedKey === syncKey) {
     logPushDebug('push_sync_skipped', {
       reason: 'already_synced',
       userId,
@@ -152,7 +145,7 @@ async function syncPushSubscription(pushId?: string | null) {
       pushId: maskPushIdentifier(pushId),
     });
     await syncInFlight;
-    if (lastSyncedKey === syncKey) {
+    if (!options.forceRegistration && lastSyncedKey === syncKey) {
       logPushDebug('push_sync_skipped', {
         reason: 'synced_by_existing_request',
         userId,
@@ -165,14 +158,20 @@ async function syncPushSubscription(pushId?: string | null) {
   logPushDebug('push_sync_request', {
     userId,
     pushId: maskPushIdentifier(pushId),
+    forceRegistration: Boolean(options.forceRegistration),
     targetFields:
       Platform.OS === 'ios'
         ? ['ios_n_device_id', 'ios_m_device_id']
         : ['android_n_device_id', 'android_m_device_id'],
   });
 
-  syncInFlight = apiBridge
-    .post(apiRoutes.feed.generalData, buildDevicePayload(pushId))
+  syncInFlight = cachePushToken(
+    {
+      provider: 'onesignal',
+      token: pushId,
+    },
+    { forceSync: options.forceRegistration },
+  )
     .then(() => {
       lastSyncedKey = syncKey;
       logPushDebug('push_sync_success', {
@@ -195,11 +194,18 @@ async function syncPushSubscription(pushId?: string | null) {
   await syncInFlight;
 }
 
-async function syncCurrentSubscription() {
+async function syncCurrentSubscription(
+  options: PushSubscriptionSyncOptions = {},
+) {
   if (!initialized || !isPushConfigured()) return;
 
-  const pushId = await readCurrentPushState('sync_current');
-  await syncPushSubscription(pushId);
+  const { pushId, optedIn } = await readCurrentPushState('sync_current');
+  if (!optedIn) {
+    await deactivatePushProvider('onesignal');
+    return;
+  }
+  if (!pushId) return;
+  await syncPushSubscription(pushId, options);
 }
 
 function handleSubscriptionChange(event: PushSubscriptionChangedState) {
@@ -211,7 +217,11 @@ function handleSubscriptionChange(event: PushSubscriptionChangedState) {
     previousOptedIn: event.previous.optedIn,
     currentOptedIn: event.current.optedIn,
   });
-  syncPushSubscription(event.current.id).catch(error => {
+  const operation =
+    event.current.optedIn && event.current.id
+      ? syncPushSubscription(event.current.id)
+      : deactivatePushProvider('onesignal');
+  operation.catch(error => {
     logPushDebug('push_sync_error', {
       source: 'subscription_change',
       error: pushDebugError(error),
@@ -231,6 +241,14 @@ function handlePermissionChange(permissionGranted: boolean) {
   logPushDebug('push_permission_changed', {
     permissionGranted,
   });
+  if (!permissionGranted) {
+    deactivatePushProvider('onesignal').catch(error => {
+      logPushDebug('push_sync_error', {
+        source: 'permission_revoked',
+        error: pushDebugError(error),
+      });
+    });
+  }
 }
 
 async function optInPushIfAlreadyAuthorized(source: string) {
@@ -486,7 +504,7 @@ export function initializePushNotifications() {
   }
 
   optInPushIfAlreadyAuthorized('initialize')
-    .then(() => syncCurrentSubscription())
+    .then(() => syncCurrentSubscription({ forceRegistration: true }))
     .catch(error => {
       logPushDebug('push_sync_error', {
         source: 'initialize_current_subscription',
@@ -572,7 +590,7 @@ export function identifyPushUser(userId: string) {
     source: 'identify',
   });
   optInPushIfAlreadyAuthorized('identify')
-    .then(() => syncCurrentSubscription())
+    .then(() => syncCurrentSubscription({ forceRegistration: true }))
     .catch(error => {
       logPushDebug('push_sync_error', {
         source: 'identify_current_subscription',

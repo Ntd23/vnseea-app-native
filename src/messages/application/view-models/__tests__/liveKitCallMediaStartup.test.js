@@ -8,6 +8,21 @@ function read(relativePath) {
 }
 
 describe('LiveKit call media startup resilience', () => {
+  it('warns the caller when every delivery channel fails and clears on join', () => {
+    const source = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+    const screen = read(
+      'src/messages/presentation/screens/CallRoomScreen.tsx',
+    );
+
+    expect(source).toContain("created.delivery.state === 'failed'");
+    expect(source).toContain('deliveryWarningText');
+    expect(source).toContain('hasRemoteParticipant: true');
+    expect(screen).toContain('session?.deliveryWarningText');
+    expect(source).not.toContain('retryCallDelivery');
+  });
+
   it('keeps echo cancellation enabled for direct voice, direct video, and group video rooms', () => {
     const routingSource = read(
       'src/messages/application/livekit/callAudioRouting.ts',

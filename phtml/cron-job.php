@@ -132,6 +132,7 @@ if (!empty($expired_stories)) {
 // ********** Stories **********
 
 // ********** Notifications **********
+VNSEEA_ProcessPushDeliveryQueue(200);
 if ($wo["config"]["last_notification_delete_run"] <= time() - 60 * 60 * 24) {
     mysqli_multi_query($sqlConnect, " DELETE FROM " . T_NOTIFICATION . " WHERE `time` < " . (time() - 60 * 60 * 24 * 5) . " AND `seen` <> 0");
     mysqli_query($sqlConnect, "UPDATE " . T_CONFIG . " SET `value` = '" . time() . "' WHERE `name` = 'last_notification_delete_run'");

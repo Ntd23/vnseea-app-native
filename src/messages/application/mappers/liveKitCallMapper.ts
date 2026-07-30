@@ -1,5 +1,7 @@
 // Description: Maps WoWonder LiveKit call API responses into Messages call domain types.
 import type {
+  CallDeliveryChannelState,
+  CallDeliveryState,
   IncomingLiveKitCall,
   LiveKitCallCheckResult,
   LiveKitCallCreateResult,
@@ -39,6 +41,31 @@ function resolveBoolean(value: unknown) {
 
 function resolveExplicitFalse(value: unknown) {
   return value === false || value === 0 || value === '0' || value === 'false';
+}
+
+function normalizeDeliveryChannel(
+  value: unknown,
+): CallDeliveryChannelState {
+  return value === 'accepted' || value === 'failed' ? value : 'unavailable';
+}
+
+export function mapCallDeliveryState(value: unknown): CallDeliveryState {
+  const raw = asRecord(value);
+  const channels = asRecord(raw.channels);
+  const state =
+    raw.state === 'accepted' ||
+    raw.state === 'partial' ||
+    raw.state === 'failed'
+      ? raw.state
+      : 'accepted';
+  return {
+    state,
+    channels: {
+      realtime: normalizeDeliveryChannel(channels.realtime),
+      onesignal: normalizeDeliveryChannel(channels.onesignal),
+      voip: normalizeDeliveryChannel(channels.voip),
+    },
+  };
 }
 
 export function normalizeLiveKitCallType(value: unknown): LiveKitCallType {
@@ -105,6 +132,7 @@ export function mapLiveKitCreateResponse(
     status: normalizeLiveKitCallStatus(raw.call_status ?? raw.status),
     busy: resolveBoolean(raw.busy),
     peer: raw.peer ? mapLiveKitPeer(raw.peer) : undefined,
+    delivery: mapCallDeliveryState(raw.delivery),
   };
 }
 

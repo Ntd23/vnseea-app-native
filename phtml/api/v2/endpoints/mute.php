@@ -1,5 +1,7 @@
 <?php
 if (!empty($_POST['chat_id']) && is_numeric($_POST['chat_id']) && $_POST['chat_id'] > 0 && !empty($_POST['type']) && in_array($_POST['type'], array('user','page','group'))) {
+	$chat_id = (int)$_POST['chat_id'];
+	$chat_type = (string)$_POST['type'];
 	if (!empty($_POST['notify']) || !empty($_POST['call_chat']) || !empty($_POST['archive']) || !empty($_POST['pin'])) {
 		$update_data = array();
 		if (!empty($_POST['notify']) && in_array($_POST['notify'], array('yes','no'))) {
@@ -26,11 +28,13 @@ if (!empty($_POST['chat_id']) && is_numeric($_POST['chat_id']) && $_POST['chat_i
 			$chat = $is_group_member ? $group : null;
 		}
 		else {
-			$chat = $db->where('id', $chat_id)->getOne(T_U_CHATS);
+			$chat = $db->where('id', $chat_id)
+				->where('user_id', $wo['user']['id'])
+				->getOne(T_U_CHATS);
 		}
 		if (!empty($chat)) {
 			if (!empty($update_data)) {
-				$info = $db->where('type',$chat_type)->where('user_id',$wo['user']['id'])->where('chat_id',$chat_id)->getOne(T_MUTE);
+				$info = $db->where('type',$chat_type)->where('user_id',$wo['user']['id'])->where('chat_id',$chat_id)->where('message_id',0)->getOne(T_MUTE);
 				if (!empty($info)) {
 					$update_data['chat_id'] = $chat_id;
 					$db->where('id',$info->id)->update(T_MUTE,$update_data);
@@ -40,6 +44,7 @@ if (!empty($_POST['chat_id']) && is_numeric($_POST['chat_id']) && $_POST['chat_i
 					$update_data['type'] = $chat_type;
 					$update_data['time'] = time();
 					$update_data['chat_id'] = $chat_id;
+					$update_data['message_id'] = 0;
 					$db->insert(T_MUTE,$update_data);
 				}
 				$response_data = array(

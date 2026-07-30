@@ -175,7 +175,6 @@ if ($type == 'get_user_messages') {
                 }
                 array_push($json_success_data, $message);
             }
-            $send_messages_to_phones = Wo_MessagesPushNotifier();
         }
     } else {
         header("Content-type: application/json");

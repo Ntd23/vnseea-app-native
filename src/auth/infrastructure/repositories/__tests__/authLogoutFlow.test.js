@@ -33,11 +33,14 @@ describe('logout flow cleanup and navigation', () => {
     expect(logoutBlock).toContain(
       "logAuthDebug('auth_logout_local_cleanup_done'",
     );
-    expect(logoutBlock).toContain('catch (error)');
+    expect(logoutBlock).toContain('.catch(error =>');
     expect(logoutBlock).toContain('clearLocalAuthState();');
     expect(cleanupBlock).toContain('disconnectLiveKitCallRealtime();');
     expect(cleanupBlock).toContain('logoutPushUser();');
     expect(cleanupBlock).toContain('sessionStorage.clearSession();');
+    expect(cleanupBlock.indexOf('sessionStorage.clearSession();')).toBeLessThan(
+      cleanupBlock.indexOf('logoutPushUser();'),
+    );
     expect(logoutBlock).not.toContain('throw error');
   });
 
@@ -64,7 +67,7 @@ describe('logout flow cleanup and navigation', () => {
     );
     expect(logoutBlock).toContain('resetNavigationToLogin();');
     expect(source).toContain('navigationRef.isReady()');
-    expect(source).toContain('navigationRef.reset({');
+    expect(source).toContain('navigationRef.resetRoot({');
     expect(source).toContain('routes: [{ name: ROUTES.LOGIN }]');
     expect(source).toContain("logAuthDebug('auth_logout_navigation_reset'");
     expect(source).toContain(
@@ -118,7 +121,7 @@ describe('logout flow cleanup and navigation', () => {
     expect(logoutBlock).toContain("logPushDebug('push_opt_out_complete'");
   });
 
-  it('logs backend logout token/device cleanup without exposing raw access tokens', () => {
+  it('releases only the current installation without exposing raw access tokens', () => {
     const source = read('phtml/api/v2/endpoints/delete-access-token.php');
 
     expect(source).toContain('function Wo_VnseeaLogoutDebugLog');
@@ -126,10 +129,14 @@ describe('logout flow cleanup and navigation', () => {
     expect(source).toContain('vnseea_logout_debug.log');
     expect(source).toContain('FILE_APPEND | LOCK_EX');
     expect(source).toContain("Wo_VnseeaLogoutDebugLog('logout_request'");
+    expect(source).toContain('VNSEEA_ReleasePushInstallation');
     expect(source).toContain(
-      "Wo_VnseeaLogoutDebugLog('logout_device_ids_cleared'",
+      "Wo_VnseeaLogoutDebugLog('logout_push_installation_release'",
     );
+    expect(source).toContain("'push_release_pending'");
     expect(source).toContain('Wo_VnseeaLogoutMaskValue($access_token)');
+    expect(source).toContain('if (!empty($installation_id) && !empty($device_secret))');
+    // Transitional clients without an installation keep the legacy cleanup.
     expect(source).toContain("`android_m_device_id` = ''");
     expect(source).toContain("`ios_m_device_id` = ''");
     expect(source).toContain("`android_n_device_id` = ''");

@@ -69,6 +69,7 @@ $pages_without_access_token = array(
     'two-factor',
     'reset_password',
     'validation_user'
+    ,'push-devices'
 );
 $pages_without_loggedin     = array(
     'get-site-settings',
@@ -89,6 +90,7 @@ $pages_without_loggedin     = array(
     'two-factor',
     'reset_password',
     'validation_user'
+    ,'push-devices'
 );
 if (!file_exists($api)) {
     $response_data = array(

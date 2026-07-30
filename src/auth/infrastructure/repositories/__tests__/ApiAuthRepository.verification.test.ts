@@ -2,7 +2,9 @@ import { apiRoutes } from '../../../../shared-kernel/application/constants/route
 import { apiBridge } from '../../../../shared-kernel/infrastructure/api/apiBridge';
 import { sessionStorage } from '../../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { identifyPushUser } from '../../../../shared-kernel/infrastructure/push/oneSignalPush';
+import { syncPushDevicesAfterAuthentication } from '../../../../shared-kernel/infrastructure/push/pushDeviceRegistration';
 import { connectLiveKitCallRealtime } from '../../../../messages/infrastructure/realtime/liveKitCallRealtime';
+import { flushPendingPushNotificationNavigation } from '../../../../notifications/application/navigation/pushNotificationNavigation';
 import { createAuthRepository } from '../ApiAuthRepository';
 
 jest.mock('../../../../shared-kernel/infrastructure/api/apiBridge', () => ({
@@ -26,6 +28,23 @@ jest.mock('../../../../shared-kernel/infrastructure/push/oneSignalPush', () => (
   logoutPushUser: jest.fn(),
 }));
 
+jest.mock(
+  '../../../../shared-kernel/infrastructure/push/pushDeviceRegistration',
+  () => ({
+    completeCurrentPushInstallationRelease: jest.fn(),
+    retryPendingPushDeviceWork: jest.fn(),
+    stageCurrentPushInstallationRelease: jest.fn(),
+    syncPushDevicesAfterAuthentication: jest.fn().mockResolvedValue(undefined),
+  }),
+);
+
+jest.mock(
+  '../../../../notifications/application/navigation/pushNotificationNavigation',
+  () => ({
+    flushPendingPushNotificationNavigation: jest.fn(),
+  }),
+);
+
 jest.mock('../../../../messages/infrastructure/realtime/liveKitCallRealtime', () => ({
   connectLiveKitCallRealtime: jest.fn(),
   disconnectLiveKitCallRealtime: jest.fn(),
@@ -35,6 +54,9 @@ const post = apiBridge.post as jest.Mock;
 const setSession = sessionStorage.setSession as jest.Mock;
 const identify = identifyPushUser as jest.Mock;
 const connectRealtime = connectLiveKitCallRealtime as jest.Mock;
+const syncPushDevices = syncPushDevicesAfterAuthentication as jest.Mock;
+const flushPushNavigation =
+  flushPendingPushNotificationNavigation as jest.Mock;
 
 describe('ApiAuthRepository account verification', () => {
   beforeEach(() => {
@@ -74,6 +96,8 @@ describe('ApiAuthRepository account verification', () => {
       expect.objectContaining({ accessToken: 'verified-token', userId: '42' }),
     );
     expect(identify).toHaveBeenCalledWith('42');
+    expect(syncPushDevices).toHaveBeenCalledTimes(1);
+    expect(flushPushNavigation).toHaveBeenCalledTimes(1);
     expect(connectRealtime).toHaveBeenCalledTimes(1);
   });
 
