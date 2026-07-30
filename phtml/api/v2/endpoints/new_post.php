@@ -140,6 +140,18 @@ $page_id       = 0;
 $event_id       = 0;
 $group_id      = 0;
 $image_array   = array();
+$single_photo_uploaded = false;
+$should_register_album_photos = false;
+$created_post_media_files = array();
+$cleanup_created_post_media = function () use (&$created_post_media_files) {
+    foreach (array_unique(array_filter($created_post_media_files)) as $path) {
+        Wo_DeleteFromToS3($path);
+        if (file_exists($path)) {
+            @unlink($path);
+        }
+    }
+    $created_post_media_files = array();
+};
 if (!function_exists('Vnseea_ResolveVideoPostPath')) {
     function Vnseea_ResolveVideoPostPath($video_filename) {
         if (empty($video_filename)) {
@@ -403,6 +415,8 @@ if (isset($_FILES['postPhotos']['name']) && empty($mediaFilename) && empty($_POS
             if (!empty($media)) {
                 $mediaFilename = $media['filename'];
                 $mediaName     = $media['name'];
+                $single_photo_uploaded = true;
+                $created_post_media_files[] = $mediaFilename;
             }
             if (empty($mediaFilename)) {
             	$error_code    = 10;
@@ -457,6 +471,7 @@ if (!empty($_POST['album_name'])) {
 if (!isset($_FILES['postPhotos']['name'])) {
     $album_name = '';
 }
+$should_register_album_photos = isset($_FILES['postPhotos']['name']) && !$single_photo_uploaded;
 $traveling = '';
 $watching  = '';
 $playing   = '';
@@ -636,10 +651,13 @@ if (empty($error_message)) {
             'post_data' => $post_data
         ));
     } else {
-        $tag_transaction_started = false;
-        if (!empty($tagged_user_ids)) {
-            $tag_transaction_started = mysqli_begin_transaction($sqlConnect);
-            if (!$tag_transaction_started) {
+        $post_transaction_started = false;
+        $requires_post_transaction = !empty($tagged_user_ids)
+            || $is_option === true
+            || $should_register_album_photos;
+        if ($requires_post_transaction) {
+            $post_transaction_started = mysqli_begin_transaction($sqlConnect);
+            if (!$post_transaction_started) {
                 $error_code = 18;
                 $error_message = 'Unable to start post transaction.';
             }
@@ -653,15 +671,17 @@ if (empty($error_message)) {
 
     if ($id) {
         $post_dependencies_valid = true;
+        $post_dependency_error = '';
         if ($is_option == true) {
             foreach ($_POST['answer'] as $key => $value) {
                 $add_opition = Wo_AddOption($id, $value);
                 if (!$add_opition) {
                     $post_dependencies_valid = false;
+                    $post_dependency_error = 'post_options_save_failed';
                 }
             }
         }
-        if (isset($_FILES['postPhotos']['name'])) {
+        if ($should_register_album_photos) {
             if (count($_FILES['postPhotos']['name']) > 0) {
                 for ($i = 0; $i < count($_FILES['postPhotos']['name']); $i++) {
                     $fileInfo = array(
@@ -673,27 +693,52 @@ if (empty($error_message)) {
                     );
                     $file     = Wo_ShareFile($fileInfo, 1);
                     if (!empty($file)) {
+                        $created_post_media_files[] = $file['filename'];
                         $media_album = Wo_RegisterAlbumMedia($id, $file['filename']);
                         if (!$media_album) {
                             $post_dependencies_valid = false;
+                            $post_dependency_error = 'post_media_save_failed';
                         }
                     } else {
                         $post_dependencies_valid = false;
+                        $post_dependency_error = 'post_media_save_failed';
                     }
                 }
             }
         }
+        $tags_saved = true;
         if (!empty($tagged_user_ids) && empty($ffmpeg_convert_video)) {
             $tags_saved = $post_dependencies_valid
-                && VNSEEA_SavePostTaggedUsers($id, (int) $wo['user']['user_id'], $tagged_user_ids);
-            if (!$tags_saved || !mysqli_commit($sqlConnect)) {
+                ? VNSEEA_SavePostTaggedUsers($id, (int) $wo['user']['user_id'], $tagged_user_ids)
+                : false;
+        }
+        if (!$post_dependencies_valid) {
+            if ($post_transaction_started) {
                 mysqli_rollback($sqlConnect);
-                $tag_transaction_started = false;
-                $id = false;
-                $error_code = 19;
-                $error_message = 'Unable to save tagged people.';
-            } else {
-                $tag_transaction_started = false;
+            }
+            $post_transaction_started = false;
+            $id = false;
+            $error_code = $post_dependency_error === 'post_media_save_failed' ? 20 : 21;
+            $error_message = $post_dependency_error === 'post_media_save_failed'
+                ? 'Unable to save post media.'
+                : 'Unable to save post content.';
+        } elseif (!$tags_saved) {
+            if ($post_transaction_started) {
+                mysqli_rollback($sqlConnect);
+            }
+            $post_transaction_started = false;
+            $id = false;
+            $error_code = 19;
+            $error_message = 'Unable to save tagged people.';
+        } elseif ($post_transaction_started && !mysqli_commit($sqlConnect)) {
+            mysqli_rollback($sqlConnect);
+            $post_transaction_started = false;
+            $id = false;
+            $error_code = 22;
+            $error_message = 'Unable to commit post.';
+        } else {
+            $post_transaction_started = false;
+            if (!empty($tagged_user_ids) && empty($ffmpeg_convert_video)) {
                 VNSEEA_NotifyPostTaggedUsers($id, (int) $wo['user']['user_id'], $tagged_user_ids);
             }
         }
@@ -789,9 +834,11 @@ if (empty($error_message)) {
             
     }
     else{
-        if (!empty($tag_transaction_started)) {
+        if (!empty($post_transaction_started)) {
             mysqli_rollback($sqlConnect);
+            $post_transaction_started = false;
         }
+        $cleanup_created_post_media();
         if (empty($error_code)) {
             $error_code = 14;
         }
@@ -799,4 +846,7 @@ if (empty($error_message)) {
             $error_message = 'something went wrong';
         }
     }
+}
+if (!empty($error_message) && !empty($created_post_media_files)) {
+    $cleanup_created_post_media();
 }

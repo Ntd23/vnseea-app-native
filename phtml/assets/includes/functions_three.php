@@ -7770,67 +7770,80 @@ function Wo_GetAllStatus()
 }
 function Wo_SharePostOn($id = false, $type_id = 0, $type = '')
 {
-	global $sqlConnect, $wo;
+	global $sqlConnect, $wo, $db;
 	if ($wo['loggedin'] == false || !$id || $id < 1 || !$type_id) {
 		return false;
 	}
-	$id        = Wo_Secure($id);
-	$user      = $wo['user']['id'];
-	$time      = time();
-	$sql       = '';
-	// if (Wo_IsPostShared($id)) {
-	//     $shared_post = Wo_PostData($id);
-	//     $post = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = {$shared_post['parent_id']}");
-	//     $post_data = mysqli_fetch_assoc($post);
-	// } else {
-	$post      = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = {$id}");
-	$post_data = mysqli_fetch_assoc($post);
-	//}
-	if ($post && !empty($post_data) && VNSEEA_CanSharePostTree($post_data, $wo['user']['id'])) {
-		$post_data['user_id'] = $user;
-		if ($type == 'group' && !empty($type_id)) {
-			$post_data['group_id'] = $type_id;
+	$id = (int) Wo_Secure($id);
+	$type_id = (int) Wo_Secure($type_id);
+	$post = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = {$id} LIMIT 1");
+	$post_data = $post && mysqli_num_rows($post) ? mysqli_fetch_assoc($post) : array();
+	if (empty($post_data) || !VNSEEA_CanSharePostTree($post_data, $wo['user']['id'])) {
+		return false;
+	}
+
+	$post_data = VNSEEA_PrepareSharedPostCloneData(
+		$post_data,
+		(int) $wo['user']['id'],
+		$type_id,
+		$type,
+		$id,
+		Wo_SeoLink('index.php?link1=post&id=' . $id),
+		time()
+	);
+	if (empty($post_data)) {
+		return false;
+	}
+
+	$transaction_started = false;
+	try {
+		$db->startTransaction();
+		$transaction_started = true;
+
+		$last = $db->insert(T_POSTS, $post_data);
+		if (empty($last)) {
+			throw new RuntimeException('shared_post_insert_failed');
 		}
-		if ($type == 'page' && !empty($type_id)) {
-			$post_data['page_id'] = $type_id;
-			$post_data['user_id'] = 0;
-		}
-		if (($type == 'user' || $type == 'timeline') && !empty($type_id)) {
-			$post_data['user_id']  = $type_id;
-			$post_data['page_id']  = 0;
-			$post_data['group_id'] = 0;
-		}
-		$post_data['id']              = 0;
-		$post_data['post_id']         = 0;
-		$post_data['post_url']        = Wo_SeoLink('index.php?link1=post&id=' . $id);
-		$post_data['parent_id']       = $id;
-		$post_data['boosted']         = 0;
-		$post_data['time']            = time();
-		$post_data['postText']        = '';
-		$post_data['postType']        = '';
-		$post_data['comments_status'] = 1;
-		// $post_data['stream_name']    = '';
-		// $post_data['live_time']    = 0;
-		$fields                       = '`' . implode('`, `', array_keys($post_data)) . '`';
-		$data                         = '\'' . implode('\', \'', $post_data) . '\'';
-		$sql                          = "INSERT INTO " . T_POSTS . " ({$fields}) VALUES ({$data})";
-		$query1                       = mysqli_query($sqlConnect, $sql);
-		$last                         = mysqli_insert_id($sqlConnect);
+
 		if (!empty($post_data['album_name'])) {
-			$query = mysqli_query($sqlConnect, "SELECT `id`,`image`,`post_id` FROM " . T_ALBUMS_MEDIA . " WHERE `post_id` = {$id} ORDER BY `id` DESC");
-			if (mysqli_num_rows($query)) {
-				while ($fetched_data = mysqli_fetch_assoc($query)) {
-					$media = $fetched_data['image'];
-					mysqli_query($sqlConnect, "INSERT INTO " . T_ALBUMS_MEDIA . " (`post_id`,`image`) VALUES ({$last}, '{$media}')");
+			$album_media = $db
+				->where('post_id', $id)
+				->orderBy('id', 'DESC')
+				->get(T_ALBUMS_MEDIA, null, array('image'));
+			foreach ($album_media as $media) {
+				if (empty($media['image']) || !$db->insert(T_ALBUMS_MEDIA, array(
+					'post_id' => (int) $last,
+					'image' => $media['image'],
+				))) {
+					throw new RuntimeException('shared_post_media_failed');
 				}
 			}
 		}
-		$query2 = mysqli_query($sqlConnect, "UPDATE " . T_POSTS . " SET `post_id` = {$last} WHERE `id` = {$last}");
-		if ($query1 && $query2) {
-			return $last;
+
+		$finalized = $db
+			->where('id', (int) $last)
+			->update(T_POSTS, array('post_id' => (int) $last));
+		if (!$finalized) {
+			throw new RuntimeException('shared_post_finalize_failed');
 		}
+		if (!$db->commit()) {
+			throw new RuntimeException('shared_post_commit_failed');
+		}
+		$transaction_started = false;
+
+		return (int) $last;
+	} catch (Throwable $exception) {
+		$db_errno = (int) $db->getLastErrno();
+		if ($transaction_started) {
+			$db->rollback();
+		}
+		error_log(
+			'[post-share] clone_failed source_post_id=' . $id
+			. ' target_type=' . preg_replace('/[^a-z_]/', '', strtolower((string) $type))
+			. ' db_errno=' . $db_errno
+		);
+		return false;
 	}
-	return false;
 }
 // manage packages
 function Wo_GetProInfo($id)

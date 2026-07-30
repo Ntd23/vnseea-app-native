@@ -129,7 +129,7 @@ describe('ApiNotificationsRepository notification mapping', () => {
     const sellerItem = mapNotificationRecord({
       id: 6,
       type: 'status_changed',
-      url: 'index.php?link1=order&id=order-hash',
+      url: 'index.php?link1=orders&id=order-hash',
     });
     const buyerItem = mapNotificationRecord({
       id: 7,

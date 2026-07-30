@@ -90,4 +90,19 @@ describe('ApiFeedRepository message sharing', () => {
     ).rejects.toThrow('Thiếu hoặc trùng đích nhận');
     expect(backendApi.post).not.toHaveBeenCalled();
   });
+
+  it('rejects an internal-share success envelope without a persisted post id', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValue({
+      api_status: 200,
+      data: { id: 0 },
+    });
+
+    await expect(
+      createFeedRepository().sharePost({
+        postId: '42',
+        destination: 'timeline',
+        userId: 'viewer-1',
+      }),
+    ).rejects.toThrow('Không thể chia sẻ bài viết');
+  });
 });

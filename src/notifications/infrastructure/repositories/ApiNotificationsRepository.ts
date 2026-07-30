@@ -306,7 +306,7 @@ export function mapNotificationRecord(
       /\/(?:customer_order|order)\/([^/?#]+)/i,
     ]);
   const orderMode = targetUrls.some(url =>
-    /[?&]link1=order(?:[&#]|$)/i.test(url),
+    /[?&]link1=orders?(?:[&#]|$)/i.test(url),
   )
     ? ('seller' as const)
     : targetUrls.some(url => /[?&]link1=customer_order(?:[&#]|$)/i.test(url))

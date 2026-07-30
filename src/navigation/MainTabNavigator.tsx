@@ -40,11 +40,7 @@ import {
   getCustomTabRoutes,
   shouldHideIosNativeTabBar,
 } from './mainTabConfig';
-import {
-  setSyncedCartCount,
-  useSyncedCartCount,
-} from '../shared-kernel/application/state/cartCountSync';
-import { createProductRepository } from '../product';
+import { useOrderNotificationBadges } from '../orders/application/notifications/orderNotificationBadgeStore';
 import { MAIN_SURFACE_TAB_TRANSITION_OPTIONS } from './mainSurfaceTransition';
 
 const BRAND_COLOR = APP_BRAND_COLOR;
@@ -299,8 +295,7 @@ function IosLiquidTabBar({
   state,
   navigation,
 }: MaterialTopTabBarProps) {
-  const { cartCount } = useSyncedCartCount(0);
-  const productRepository = useMemo(() => createProductRepository(), []);
+  const orderBadges = useOrderNotificationBadges();
   const language = useAppLanguage();
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(0)).current;
@@ -316,21 +311,6 @@ function IosLiquidTabBar({
   }, [shouldHideTabBar, state.index]);
 
   useEffect(() => {
-    let isActive = true;
-
-    productRepository
-      .getCartCount()
-      .then(count => {
-        if (isActive) setSyncedCartCount(count);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      isActive = false;
-    };
-  }, [productRepository]);
-
-  useEffect(() => {
     return tabBarVisibility.subscribe(isVisible => {
       Animated.timing(translateY, {
         toValue: isVisible ? 0 : tabBarHeight,
@@ -343,7 +323,11 @@ function IosLiquidTabBar({
   const items = useMemo(
     () =>
       IOS_NATIVE_TAB_ROUTES.map(({ name, accessibilityLabel }) => {
-        const options = createIosNativeTabOptions(name, language, cartCount);
+        const options = createIosNativeTabOptions(
+          name,
+          language,
+          orderBadges.totalCount,
+        );
         const label =
           typeof options.tabBarLabel === 'string'
             ? options.tabBarLabel
@@ -363,7 +347,7 @@ function IosLiquidTabBar({
           badgeValue,
         };
       }),
-    [cartCount, language],
+    [language, orderBadges.totalCount],
   );
 
   const handleTabPress = useCallback(

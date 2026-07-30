@@ -2949,7 +2949,14 @@ export function createFeedRepository(): FeedRepository {
         message?: string;
       }>(apiRoutes.feed.posts, payload);
 
-      if (String(response.api_status) !== '200' || !response.data) {
+      const persistedPostId = String(
+        response.data?.id ?? response.data?.post_id ?? '',
+      ).trim();
+      if (
+        String(response.api_status) !== '200' ||
+        !response.data ||
+        !/^[1-9]\d*$/.test(persistedPostId)
+      ) {
         throw new Error(
           response.errors?.error_text ||
             response.message ||

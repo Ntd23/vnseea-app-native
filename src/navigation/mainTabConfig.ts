@@ -65,7 +65,7 @@ export function formatIosTabBadge(count: number) {
 export function createIosNativeTabOptions(
   routeName: MainTabRouteName,
   language: AppLanguage = 'vi',
-  cartCount = 0,
+  marketplaceBadgeCount = 0,
 ): NativeBottomTabNavigationOptions {
   const options: NativeBottomTabNavigationOptions = {
     tabBarLabel:
@@ -77,7 +77,7 @@ export function createIosNativeTabOptions(
   };
 
   if (routeName === ROUTES.MARKETPLACE) {
-    options.tabBarBadge = formatIosTabBadge(cartCount);
+    options.tabBarBadge = formatIosTabBadge(marketplaceBadgeCount);
     options.tabBarBadgeStyle = { backgroundColor: '#EF4444' };
   }
 

@@ -28,6 +28,7 @@ import {
   RotateCw,
   Search,
   ShoppingBag,
+  Bell,
   SlidersHorizontal,
   X,
   ChevronDown,
@@ -53,6 +54,7 @@ import {
   publishNativeTabScrollIntent,
 } from '../../../navigation/nativeTabScrollPublisher';
 import { getTabReselectAction } from '../../../navigation/tabReselectAction';
+import { useOrderNotificationBadges } from '../../../orders/application/notifications/orderNotificationBadgeStore';
 
 const MARKETPLACE_COLUMN_STYLE = {
   justifyContent: 'space-between',
@@ -403,6 +405,7 @@ function DistancePickerModal({
 function MarketplaceScreen() {
   const navigation = useContext(NavigationContext);
   const isMarketplaceFocused = useIsFocused();
+  const orderBadges = useOrderNotificationBadges();
   const marketplaceListRef = useRef<FlatList<ProductItem>>(null);
   const {
     bottomContentPadding,
@@ -599,6 +602,13 @@ function MarketplaceScreen() {
   const handleMyProducts = useCallback(() => {
     navigate(ROUTES.MY_PRODUCTS);
   }, [navigate]);
+
+  const handleOrderNotifications = useCallback(() => {
+    navigate(ROUTES.MY_PRODUCTS, {
+      initialTab:
+        orderBadges.preferredMode === 'seller' ? 'orders' : 'purchased',
+    });
+  }, [navigate, orderBadges.preferredMode]);
 
   const handleOpenFeed = useCallback(
     (params?: { filter?: 'photos' }) => {
@@ -1100,17 +1110,43 @@ function MarketplaceScreen() {
         pointerEvents="box-none"
       >
       
-        <TouchableOpacity
-          className="btn-primary h-10 px-4 items-center justify-center rounded-full"
-          activeOpacity={0.9}
-          hitSlop={{ top: 10, right: 10, bottom: 10, left: 15 }}
-          onPress={handleMyProducts}
-        >
-          <ShoppingBag size={17} color="#FFFFFF" />
-          <Text className="text-caption-primary text-inverse">
-            Sản phẩm của tôi
-          </Text>
-        </TouchableOpacity>
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            className="btn-primary h-10 px-4 items-center justify-center rounded-full"
+            activeOpacity={0.9}
+            hitSlop={{ top: 10, right: 5, bottom: 10, left: 15 }}
+            onPress={handleMyProducts}
+          >
+            <ShoppingBag size={17} color="#FFFFFF" />
+            <Text className="text-caption-primary text-inverse">
+              Sản phẩm của tôi
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            className="relative ml-2 h-10 w-10 items-center justify-center rounded-full bg-brand"
+            activeOpacity={0.85}
+            hitSlop={{ top: 10, right: 15, bottom: 10, left: 5 }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              orderBadges.totalCount > 0
+                ? `Thông báo đơn hàng, ${orderBadges.totalCount} chưa đọc`
+                : 'Thông báo đơn hàng'
+            }
+            onPress={handleOrderNotifications}
+          >
+            <Bell size={19} color="#FFFFFF" />
+            {orderBadges.totalCount > 0 ? (
+              <View className="absolute -right-1 -top-1 min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-red-500 px-1">
+                <Text className="text-[10px] font-bold leading-[14px] text-white">
+                  {orderBadges.totalCount > 99
+                    ? '99+'
+                    : orderBadges.totalCount}
+                </Text>
+              </View>
+            ) : null}
+          </TouchableOpacity>
+        </View>
       </View>
       {/* Tạm thời comment thanh tab icons ở trên đầu trang Cửa hàng theo yêu cầu */}
       {/* <View pointerEvents="auto">{marketplaceTopTabs}</View> */}

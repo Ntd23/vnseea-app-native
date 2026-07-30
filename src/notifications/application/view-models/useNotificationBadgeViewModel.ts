@@ -8,32 +8,49 @@ import {
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
 import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  replaceOrderNotificationBadges,
+  setOrderNotificationBadgeOwner,
+} from '../../../orders/application/notifications/orderNotificationBadgeStore';
 
 const POLL_INTERVAL_MS = 30000;
 
 export function useNotificationBadgeViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
   const messagesRepository = useMemo(() => createMessagesRepository(), []);
+  const sessionUserId = sessionStorage.getSession()?.userId;
   const { notificationCount, messageCount } = useUnreadBadgeCounts();
 
   const refresh = useCallback(async () => {
     try {
-      const [counts, unreadChats] = await Promise.all([
-        repository.getUnreadCounts(),
+      const [notificationsPage, unreadChats] = await Promise.all([
+        repository.getNotifications({ limit: 100 }),
         messagesRepository.getUnreadChats().catch(() => []),
       ]);
       const chatUnreadCount = unreadChats.reduce(
         (total, chat) => total + chat.unreadCount,
         0,
       );
+      replaceOrderNotificationBadges(
+        notificationsPage.items,
+        sessionUserId,
+      );
       setUnreadBadgeCounts({
-        notificationCount: counts.notificationCount,
-        messageCount: Math.max(counts.messageCount, chatUnreadCount),
+        notificationCount: notificationsPage.unreadCount,
+        messageCount: Math.max(
+          notificationsPage.unreadMessageCount,
+          chatUnreadCount,
+        ),
       });
     } catch (error) {
       console.warn('[useNotificationBadgeViewModel] refresh failed', error);
     }
-  }, [messagesRepository, repository]);
+  }, [messagesRepository, repository, sessionUserId]);
+
+  useEffect(() => {
+    setOrderNotificationBadgeOwner(sessionUserId);
+  }, [sessionUserId]);
 
   useEffect(() => {
     refresh().catch(() => undefined);

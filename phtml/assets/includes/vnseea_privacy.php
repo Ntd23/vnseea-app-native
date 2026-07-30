@@ -275,6 +275,59 @@ function VNSEEA_CanSharePostTree($post, $viewer_id = 0, $loader = null)
     return false;
 }
 
+function VNSEEA_PrepareSharedPostCloneData(
+    $post,
+    $actor_id,
+    $target_id,
+    $target_type,
+    $source_post_id,
+    $post_url,
+    $created_at
+) {
+    $post = VNSEEA_PrivacyArray($post);
+    $actor_id = (int) $actor_id;
+    $target_id = (int) $target_id;
+    $source_post_id = (int) $source_post_id;
+    $target_type = strtolower(trim((string) $target_type));
+
+    if (
+        empty($post)
+        || $actor_id < 1
+        || $target_id < 1
+        || $source_post_id < 1
+        || !in_array($target_type, array('user', 'timeline', 'page', 'group'), true)
+    ) {
+        return array();
+    }
+
+    unset($post['id']);
+    $post['user_id'] = $actor_id;
+    $post['page_id'] = 0;
+    $post['group_id'] = 0;
+    $post['event_id'] = 0;
+    $post['recipient_id'] = 0;
+
+    if ($target_type === 'page') {
+        $post['user_id'] = 0;
+        $post['page_id'] = $target_id;
+    } elseif ($target_type === 'group') {
+        $post['group_id'] = $target_id;
+    } else {
+        $post['user_id'] = $target_id;
+    }
+
+    $post['post_id'] = 0;
+    $post['post_url'] = (string) $post_url;
+    $post['parent_id'] = $source_post_id;
+    $post['boosted'] = 0;
+    $post['time'] = (int) $created_at;
+    $post['postText'] = '';
+    $post['postType'] = '';
+    $post['comments_status'] = 1;
+
+    return $post;
+}
+
 function VNSEEA_ResolveShareableSourcePostId($post_id, $viewer_id = 0, $loader = null)
 {
     $post_id = (int) $post_id;
