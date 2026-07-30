@@ -35,11 +35,15 @@ if (!function_exists('VNSEEA_PushDeliveryDebugLog')) {
         if (!is_dir($log_dir)) {
             @mkdir($log_dir, 0755, true);
         }
-        @file_put_contents(
+        $written = @file_put_contents(
             $log_dir . '/vnseea_push_debug.log',
             $line . PHP_EOL,
             FILE_APPEND | LOCK_EX
         );
+        if ($written === false) {
+            error_log('[vnseea_push_debug] push_debug_file_write_failed path=' .
+                $log_dir . '/vnseea_push_debug.log');
+        }
     }
 }
 
@@ -633,6 +637,9 @@ if (!function_exists('VNSEEA_MessagePushDescriptor')) {
         if ($type_two === 'message_pin_event') {
             return array('type' => 'pin', 'text' => $is_vi ? 'Đã ghim một tin nhắn' : 'Pinned a message');
         }
+        if ($type_two === 'message_unpin_event') {
+            return array('type' => 'unpin', 'text' => $is_vi ? 'Đã bỏ ghim một tin nhắn' : 'Unpinned a message');
+        }
         if ($type_two === 'story_reply' || !empty($message['story_id'])) {
             return array('type' => 'story', 'text' => $is_vi ? 'Đã trả lời tin của bạn' : 'Replied to your story');
         }
@@ -896,37 +903,324 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
 }
 
 if (!function_exists('VNSEEA_NotificationPushText')) {
+    function VNSEEA_NotificationPushSnippet($text)
+    {
+        $text = VNSEEA_NormalizeMessagePushText($text);
+        $technical_tokens = array(
+            '',
+            'post',
+            'comment',
+            'replay',
+            'reply',
+            'message',
+            'story',
+            'photo',
+            'video',
+            'file'
+        );
+        if (in_array(strtolower($text), $technical_tokens, true)) {
+            return '';
+        }
+        if (preg_match('/^[a-z][a-z0-9_-]{1,47}$/', $text) === 1) {
+            return '';
+        }
+        $limit = 96;
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            return mb_strlen($text, 'UTF-8') > $limit
+                ? rtrim(mb_substr($text, 0, $limit - 1, 'UTF-8')) . '…'
+                : $text;
+        }
+        return strlen($text) > $limit
+            ? rtrim(substr($text, 0, $limit - 3)) . '...'
+            : $text;
+    }
+
     function VNSEEA_NotificationPushText($notification, $language)
     {
         $is_vi = strpos(strtolower((string)$language), 'vi') === 0 ||
             strtolower((string)$language) === 'vietnamese';
-        $text = VNSEEA_NormalizeMessagePushText(isset($notification['text']) ? $notification['text'] : '');
-        if ($text !== '') {
-            return $text;
+        $type = !empty($notification['type'])
+            ? strtolower(trim((string)$notification['type']))
+            : '';
+        $raw_text = VNSEEA_NormalizeMessagePushText(
+            isset($notification['text']) ? $notification['text'] : ''
+        );
+        $snippet = VNSEEA_NotificationPushSnippet($raw_text);
+
+        if ($type === 'reaction') {
+            $reaction_target = strtolower($raw_text);
+            if ($reaction_target === 'comment') {
+                return $is_vi
+                    ? 'Đã bày tỏ cảm xúc về bình luận của bạn'
+                    : 'Reacted to your comment';
+            }
+            if ($reaction_target === 'replay' || $reaction_target === 'reply') {
+                return $is_vi
+                    ? 'Đã bày tỏ cảm xúc về câu trả lời của bạn'
+                    : 'Reacted to your reply';
+            }
+            if ($reaction_target === 'story') {
+                return $is_vi
+                    ? 'Đã bày tỏ cảm xúc về tin của bạn'
+                    : 'Reacted to your story';
+            }
+            return $is_vi
+                ? 'Đã bày tỏ cảm xúc về bài viết của bạn'
+                : 'Reacted to your post';
         }
-        $type = !empty($notification['type']) ? $notification['type'] : '';
+
+        if ($type === 'comment') {
+            if ($snippet !== '') {
+                return ($is_vi ? 'Đã bình luận: “' : 'Commented: “') . $snippet . '”';
+            }
+            return $is_vi
+                ? 'Đã bình luận về bài viết của bạn'
+                : 'Commented on your post';
+        }
+
+        if ($type === 'comment_reply' || $type === 'also_replied') {
+            if ($snippet !== '') {
+                return ($is_vi ? 'Đã trả lời bình luận: “' : 'Replied to your comment: “') .
+                    $snippet . '”';
+            }
+            return $is_vi
+                ? 'Đã trả lời bình luận của bạn'
+                : 'Replied to your comment';
+        }
+
         $vi = array(
             'following' => 'Đã theo dõi bạn',
             'friends_request' => 'Đã gửi cho bạn một lời mời kết bạn',
             'accepted_request' => 'Đã chấp nhận lời mời kết bạn',
-            'reaction' => 'Đã bày tỏ cảm xúc với nội dung của bạn',
             'liked_post' => 'Đã thích bài viết của bạn',
-            'comment' => 'Đã bình luận về bài viết của bạn',
-            'comment_reply' => 'Đã trả lời bình luận của bạn',
-            'share_post' => 'Đã chia sẻ bài viết của bạn'
+            'wondered_post' => 'Đã bày tỏ cảm xúc về bài viết của bạn',
+            'liked_comment' => 'Đã thích bình luận của bạn',
+            'wondered_comment' => 'Đã bày tỏ cảm xúc về bình luận của bạn',
+            'liked_reply_comment' => 'Đã thích câu trả lời của bạn',
+            'wondered_reply_comment' => 'Đã bày tỏ cảm xúc về câu trả lời của bạn',
+            'share_post' => 'Đã chia sẻ bài viết của bạn',
+            'shared_post' => 'Đã chia sẻ bài viết của bạn',
+            'shared_your_post' => 'Đã chia sẻ bài viết của bạn',
+            'shared_a_post_in_timeline' => 'Đã chia sẻ một bài viết lên trang cá nhân của bạn',
+            'comment_mention' => 'Đã nhắc đến bạn trong một bình luận',
+            'comment_reply_mention' => 'Đã nhắc đến bạn trong một câu trả lời',
+            'post_mention' => 'Đã nhắc đến bạn trong một bài viết',
+            'profile_wall_post' => 'Đã đăng lên trang cá nhân của bạn',
+            'visited_profile' => 'Đã xem trang cá nhân của bạn',
+            'liked_page' => 'Đã thích Trang của bạn',
+            'invited_page' => 'Đã mời bạn thích một Trang',
+            'accepted_invite' => 'Đã chấp nhận lời mời quản lý Trang',
+            'page_admin' => 'Đã thêm bạn làm quản trị viên Trang',
+            'joined_group' => 'Đã tham gia nhóm của bạn',
+            'requested_to_join_group' => 'Đã gửi yêu cầu tham gia nhóm',
+            'accepted_join_request' => 'Đã chấp nhận yêu cầu tham gia nhóm của bạn',
+            'added_you_to_group' => 'Đã thêm bạn vào một nhóm',
+            'group_admin' => 'Đã thêm bạn làm quản trị viên nhóm',
+            'accept_group_chat_request' => 'Đã chấp nhận lời mời vào nhóm chat',
+            'declined_group_chat_request' => 'Đã từ chối lời mời vào nhóm chat',
+            'interested_event' => 'Đã quan tâm đến sự kiện của bạn',
+            'going_event' => 'Sẽ tham dự sự kiện của bạn',
+            'invited_event' => 'Đã mời bạn tham gia một sự kiện',
+            'viewed_story' => 'Đã xem tin của bạn',
+            'live_video' => 'Đang phát trực tiếp',
+            'forum_reply' => 'Đã trả lời chủ đề của bạn',
+            'thread_reply' => 'Đã trả lời chủ đề của bạn',
+            'blog_commented' => 'Đã bình luận về bài viết blog của bạn',
+            'apply_job' => 'Đã ứng tuyển vào công việc của bạn',
+            'fund_donate' => 'Đã ủng hộ chiến dịch gây quỹ của bạn',
+            'new_orders' => 'Bạn có đơn hàng mới',
+            'status_changed' => 'Trạng thái đơn hàng của bạn đã thay đổi',
+            'added_tracking' => 'Đơn hàng của bạn đã có thông tin vận chuyển',
+            'added_tracking_info' => 'Thông tin vận chuyển của đơn hàng đã được cập nhật',
+            'sent_u_money' => 'Đã gửi VNSEEA cho bạn',
+            'gift' => 'Đã gửi quà cho bạn',
+            'poke' => 'Đã chọc bạn',
+            'poked' => 'Đã chọc bạn',
+            'report' => 'Bạn có một báo cáo mới',
+            'user_reports' => 'Bạn có một báo cáo người dùng mới',
+            'verify' => 'Bạn có một yêu cầu xác minh mới'
         );
         $en = array(
             'following' => 'Started following you',
             'friends_request' => 'Sent you a friend request',
             'accepted_request' => 'Accepted your friend request',
-            'reaction' => 'Reacted to your content',
             'liked_post' => 'Liked your post',
-            'comment' => 'Commented on your post',
-            'comment_reply' => 'Replied to your comment',
-            'share_post' => 'Shared your post'
+            'wondered_post' => 'Reacted to your post',
+            'liked_comment' => 'Liked your comment',
+            'wondered_comment' => 'Reacted to your comment',
+            'liked_reply_comment' => 'Liked your reply',
+            'wondered_reply_comment' => 'Reacted to your reply',
+            'share_post' => 'Shared your post',
+            'shared_post' => 'Shared your post',
+            'shared_your_post' => 'Shared your post',
+            'shared_a_post_in_timeline' => 'Shared a post to your timeline',
+            'comment_mention' => 'Mentioned you in a comment',
+            'comment_reply_mention' => 'Mentioned you in a reply',
+            'post_mention' => 'Mentioned you in a post',
+            'profile_wall_post' => 'Posted on your timeline',
+            'visited_profile' => 'Viewed your profile',
+            'liked_page' => 'Liked your Page',
+            'invited_page' => 'Invited you to like a Page',
+            'accepted_invite' => 'Accepted your Page invitation',
+            'page_admin' => 'Added you as a Page administrator',
+            'joined_group' => 'Joined your group',
+            'requested_to_join_group' => 'Requested to join your group',
+            'accepted_join_request' => 'Accepted your group join request',
+            'added_you_to_group' => 'Added you to a group',
+            'group_admin' => 'Added you as a group administrator',
+            'accept_group_chat_request' => 'Accepted your group chat invitation',
+            'declined_group_chat_request' => 'Declined your group chat invitation',
+            'interested_event' => 'Is interested in your event',
+            'going_event' => 'Is going to your event',
+            'invited_event' => 'Invited you to an event',
+            'viewed_story' => 'Viewed your story',
+            'live_video' => 'Is live now',
+            'forum_reply' => 'Replied to your topic',
+            'thread_reply' => 'Replied to your topic',
+            'blog_commented' => 'Commented on your blog post',
+            'apply_job' => 'Applied for your job',
+            'fund_donate' => 'Donated to your fundraiser',
+            'new_orders' => 'You have a new order',
+            'status_changed' => 'Your order status has changed',
+            'added_tracking' => 'Tracking was added to your order',
+            'added_tracking_info' => 'Your order tracking was updated',
+            'sent_u_money' => 'Sent you VNSEEA',
+            'gift' => 'Sent you a gift',
+            'poke' => 'Poked you',
+            'poked' => 'Poked you',
+            'report' => 'You have a new report',
+            'user_reports' => 'You have a new user report',
+            'verify' => 'You have a new verification request'
         );
         $copy = $is_vi ? $vi : $en;
-        return isset($copy[$type]) ? $copy[$type] : ($is_vi ? 'Bạn có thông báo mới' : 'You have a new notification');
+        if (isset($copy[$type])) {
+            return $copy[$type];
+        }
+        if ($snippet !== '') {
+            return $snippet;
+        }
+        return $is_vi ? 'Bạn có thông báo mới' : 'You have a new notification';
+    }
+}
+
+if (!function_exists('VNSEEA_NotificationPushRoutingData')) {
+    function VNSEEA_NotificationPushRoutingData($notification)
+    {
+        $type = !empty($notification['type']) ? (string)$notification['type'] : 'notification';
+        $text = strtolower(
+            VNSEEA_NormalizeMessagePushText(
+                isset($notification['text']) ? $notification['text'] : ''
+            )
+        );
+        $comment_types = array(
+            'comment',
+            'comment_reply',
+            'comment_mention',
+            'comment_reply_mention',
+            'also_replied',
+            'liked_comment',
+            'wondered_comment',
+            'liked_reply_comment',
+            'wondered_reply_comment'
+        );
+        $focus_comments = in_array(strtolower($type), $comment_types, true) ||
+            (strtolower($type) === 'reaction' &&
+                in_array($text, array('comment', 'reply', 'replay'), true));
+        $query = array();
+        foreach (array('url', 'full_link') as $url_key) {
+            if (empty($notification[$url_key])) {
+                continue;
+            }
+            $query_string = parse_url(
+                html_entity_decode((string)$notification[$url_key], ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                PHP_URL_QUERY
+            );
+            if (is_string($query_string) && $query_string !== '') {
+                parse_str($query_string, $parsed_query);
+                if (is_array($parsed_query)) {
+                    $query = array_merge($query, $parsed_query);
+                }
+            }
+        }
+        $read_target = function ($notification_keys, $query_keys = array()) use ($notification, $query) {
+            foreach ($notification_keys as $key) {
+                if (isset($notification[$key])) {
+                    $value = trim((string)$notification[$key]);
+                    if ($value !== '' && $value !== '0') {
+                        return $value;
+                    }
+                }
+            }
+            foreach ($query_keys as $key) {
+                if (isset($query[$key]) && !is_array($query[$key])) {
+                    $value = trim((string)$query[$key]);
+                    if ($value !== '' && $value !== '0') {
+                        return $value;
+                    }
+                }
+            }
+            return '';
+        };
+        $link1 = isset($query['link1']) && !is_array($query['link1'])
+            ? strtolower(trim((string)$query['link1']))
+            : '';
+        $query_type = isset($query['type']) && !is_array($query['type'])
+            ? strtolower(trim((string)$query['type']))
+            : '';
+        $product_id = $read_target(array('product_id'), array('product_id'));
+        if ($product_id === '' &&
+            in_array($link1, array('products', 'edit-product'), true)) {
+            $product_id = $read_target(array(), array('id', 'c_id'));
+        }
+        $job_id = $read_target(array('job_id'), array('job_id'));
+        if ($job_id === '' && $query_type === 'job_apply') {
+            $job_id = $read_target(array(), array('id'));
+        }
+        $funding_id = $read_target(
+            array('fund_id', 'funding_id'),
+            array('fund_id', 'funding_id')
+        );
+        if ($funding_id === '' && $link1 === 'show_fund') {
+            $funding_id = $read_target(array(), array('id'));
+        }
+        $order_id = $read_target(
+            array('order_id', 'order_hash_id', 'hash_id'),
+            array('order_id', 'order_hash_id', 'hash_id')
+        );
+        if ($order_id === '' &&
+            in_array($link1, array('order', 'orders', 'customer_order'), true)) {
+            $order_id = $read_target(array(), array('id'));
+        }
+        $routing = array(
+            'push_kind' => 'notification',
+            'payload_kind' => 'social',
+            'notification_type' => $type,
+            'type' => $type,
+            'type2' => !empty($notification['type2']) ? (string)$notification['type2'] : '',
+            'notifier_id' => !empty($notification['notifier_id']) ? (string)$notification['notifier_id'] : '',
+            'user_id' => !empty($notification['notifier_id']) ? (string)$notification['notifier_id'] : '',
+            'post_id' => !empty($notification['post_id']) ? (string)$notification['post_id'] : '',
+            'comment_id' => !empty($notification['comment_id']) ? (string)$notification['comment_id'] : '',
+            'reply_id' => !empty($notification['reply_id']) ? (string)$notification['reply_id'] : '',
+            'page_id' => !empty($notification['page_id']) ? (string)$notification['page_id'] : '',
+            'group_id' => !empty($notification['group_id']) ? (string)$notification['group_id'] : '',
+            'group_chat_id' => !empty($notification['group_chat_id']) ? (string)$notification['group_chat_id'] : '',
+            'event_id' => !empty($notification['event_id']) ? (string)$notification['event_id'] : '',
+            'thread_id' => !empty($notification['thread_id']) ? (string)$notification['thread_id'] : '',
+            'blog_id' => !empty($notification['blog_id']) ? (string)$notification['blog_id'] : '',
+            'story_id' => !empty($notification['story_id']) ? (string)$notification['story_id'] : '',
+            'product_id' => $product_id,
+            'job_id' => $job_id,
+            'fund_id' => $funding_id,
+            'funding_id' => $funding_id,
+            'order_id' => $order_id,
+            'order_hash_id' => $order_id,
+            'hash_id' => $order_id,
+            'url' => !empty($notification['url']) ? (string)$notification['url'] : '',
+            'full_link' => !empty($notification['full_link']) ? (string)$notification['full_link'] : '',
+            'focus_comments' => $focus_comments
+        );
+        return $routing;
     }
 }
 
@@ -950,19 +1244,18 @@ if (!function_exists('VNSEEA_EnqueueNotificationPush')) {
         $recipient_id = (int)$notification['recipient_id'];
         $recipient = Wo_UserData($recipient_id);
         $notifier = Wo_UserData((int)$notification['notifier_id']);
-        $payload = array(
-            'type' => !empty($notification['type']) ? $notification['type'] : 'notification',
+        $payload = array_merge(
+            VNSEEA_NotificationPushRoutingData($notification),
+            array(
             'notification_id' => (string)$notification_id,
             'recipient_id' => (string)$recipient_id,
-            'notifier_id' => (string)$notification['notifier_id'],
-            'post_id' => !empty($notification['post_id']) ? (string)$notification['post_id'] : '',
-            'comment_id' => !empty($notification['comment_id']) ? (string)$notification['comment_id'] : '',
-            'reply_id' => !empty($notification['reply_id']) ? (string)$notification['reply_id'] : '',
-            'story_id' => !empty($notification['story_id']) ? (string)$notification['story_id'] : '',
             'title' => !empty($notifier['name']) ? $notifier['name'] : 'VNSEEA',
+            'name' => !empty($notifier['name']) ? $notifier['name'] : 'VNSEEA',
+            'avatar' => !empty($notifier['avatar']) ? $notifier['avatar'] : '',
             'body' => VNSEEA_NotificationPushText(
                 $notification,
                 !empty($recipient['language']) ? $recipient['language'] : 'vi'
+            )
             )
         );
         $batch_uuid = VNSEEA_PushUuidV4();
@@ -1093,7 +1386,7 @@ if (!function_exists('VNSEEA_SendOneSignalDelivery')) {
             $request['existing_android_channel_id'] = 'vnseea_notifications_sound_v1';
             $request['android_sound'] = 'app_notification_sound';
         } else {
-            $request['ios_sound'] = 'app_notification_sound.mp3';
+            $request['ios_sound'] = 'default';
         }
 
         VNSEEA_PushDeliveryDebugLog('onesignal_delivery_attempt', $debug_context);

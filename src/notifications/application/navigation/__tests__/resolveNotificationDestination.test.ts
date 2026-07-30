@@ -35,13 +35,36 @@ describe('resolveNotificationDestination', () => {
     ['friends_request', 'profile'],
     ['added_u_as', 'profile'],
     ['memory', 'memories'],
-    ['viewed_story', 'stories'],
     ['sent_u_money', 'points'],
     ['subscribed_to_you', 'balance'],
   ])('routes %s to %s', (type, expectedKind) => {
     expect(resolveNotificationDestination(notification({ type })).kind).toBe(
       expectedKind,
     );
+  });
+
+  it.each(['viewed_story', 'reaction'])(
+    'opens the exact Story for %s when story_id is available',
+    type => {
+      expect(
+        resolveNotificationDestination(
+          notification({
+            type,
+            text: type === 'reaction' ? 'story' : '',
+            storyId: '145',
+            url: 'https://v2.vnseea.vn/timeline?story=true&story_id=145',
+          }),
+        ),
+      ).toEqual({ kind: 'story', storyId: '145' });
+    },
+  );
+
+  it('falls back to the Story list when a Story target is unavailable', () => {
+    expect(
+      resolveNotificationDestination(
+        notification({ type: 'viewed_story' }),
+      ),
+    ).toEqual({ kind: 'stories' });
   });
 
   it.each(['forum_reply', 'thread_reply'])(

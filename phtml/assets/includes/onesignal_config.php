@@ -12,7 +12,15 @@ function Wo_VnseeaPushDebugLog($event, $context = array()) {
     );
     $line = '[vnseea_push_debug] ' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     error_log($line);
-    @file_put_contents($log_dir . '/vnseea_push_debug.log', $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+    $written = @file_put_contents(
+        $log_dir . '/vnseea_push_debug.log',
+        $line . PHP_EOL,
+        FILE_APPEND | LOCK_EX
+    );
+    if ($written === false) {
+        error_log('[vnseea_push_debug] push_debug_file_write_failed path=' .
+            $log_dir . '/vnseea_push_debug.log');
+    }
 }
 
 function Wo_VnseeaPushDebugSanitize($value) {
@@ -223,7 +231,7 @@ function Wo_SendPushNotification($data = array(), $push_type = 'chat') {
         }
         if ($push_type == 'ios_messenger' || $push_type == 'ios_native') {
             if (empty($final_request_data['ios_sound'])) {
-                $final_request_data['ios_sound'] = $default_mobile_notification_sound . '.mp3';
+                $final_request_data['ios_sound'] = 'default';
             }
         }
     }

@@ -108,16 +108,121 @@ describe('push notification navigation', () => {
   it('maps a social reaction push to the same post target as notification center data', () => {
     const { navigation } = loadHarness(true);
 
-    const item = navigation.mapPushNotificationOpenPayload(pushPayload());
+    const item = navigation.mapPushNotificationOpenPayload(
+      pushPayload({
+        additionalData: {
+          push_kind: 'notification',
+          payload_kind: 'social',
+          notification_type: 'reaction',
+          type: 'reaction',
+          type2: '1',
+          notification_id: '77',
+          post_id: '42',
+          notifier_id: '7',
+          recipient_id: '42',
+        },
+      }),
+    );
 
     expect(item).toEqual(
       expect.objectContaining({
-        type: 'liked_post',
+        type: 'reaction',
+        type2: '1',
         postId: '42',
         notifierId: '7',
       }),
     );
     expect(item.notifier.name).toBe('Người gửi');
+  });
+
+  it('preserves canonical social routing fields through cold-start storage', async () => {
+    const loggedOut = loadHarness(false, { accessToken: null });
+    loggedOut.navigation.initializePushNotificationNavigation();
+    loggedOut.pushNotificationOpenEvents.emit(
+      pushPayload({
+        additionalData: {
+          push_kind: 'notification',
+          payload_kind: 'social',
+          notification_type: 'liked_page',
+          type: 'liked_page',
+          type2: 'page',
+          notification_id: '88',
+          notifier_id: '7',
+          recipient_id: '42',
+          page_id: '15',
+          url: 'index.php?link1=timeline&u=vnseea-page',
+        },
+      }),
+    );
+
+    const loggedIn = loadHarness(true, { preserveStorage: true });
+    loggedIn.navigation.initializePushNotificationNavigation();
+    await loggedIn.navigation.flushPendingPushNotificationNavigation();
+
+    expect(loggedIn.navigateToNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'liked_page',
+        type2: 'page',
+        notifierId: '7',
+        pageId: '15',
+      }),
+      loggedIn.navigationRef,
+    );
+  });
+
+  it('preserves comment focus for a social push target', () => {
+    const { navigation } = loadHarness(true);
+
+    const item = navigation.mapPushNotificationOpenPayload(
+      pushPayload({
+        additionalData: {
+          push_kind: 'notification',
+          payload_kind: 'social',
+          notification_type: 'reaction',
+          type: 'reaction',
+          notification_id: '89',
+          notifier_id: '7',
+          recipient_id: '42',
+          post_id: '15',
+          focus_comments: '1',
+        },
+      }),
+    );
+
+    expect(item).toEqual(
+      expect.objectContaining({
+        type: 'reaction',
+        postId: '15',
+        focusComments: true,
+      }),
+    );
+  });
+
+  it('preserves the exact Story target for Story reaction pushes', () => {
+    const { navigation } = loadHarness(true);
+
+    const item = navigation.mapPushNotificationOpenPayload(
+      pushPayload({
+        additionalData: {
+          push_kind: 'notification',
+          payload_kind: 'social',
+          notification_type: 'reaction',
+          type: 'reaction',
+          notification_id: '90',
+          notifier_id: '7',
+          recipient_id: '42',
+          story_id: '145',
+          text: 'story',
+        },
+      }),
+    );
+
+    expect(item).toEqual(
+      expect.objectContaining({
+        type: 'reaction',
+        storyId: '145',
+      }),
+    );
   });
 
   it('buffers a cold-start click until the root navigator is ready', async () => {

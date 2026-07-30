@@ -79,8 +79,8 @@ function logAuthDebug(event: string, data: Record<string, unknown> = {}) {
 }
 
 function clearLocalAuthState() {
-  disconnectLiveKitCallRealtime();
   sessionStorage.clearSession();
+  disconnectLiveKitCallRealtime();
   logoutPushUser();
 }
 
@@ -213,9 +213,18 @@ export function createAuthRepository(): AuthRepository {
     async logout() {
       const activeSession = sessionStorage.getSession();
       const hadAccessToken = Boolean(activeSession?.accessToken);
-      const pendingRelease = hadAccessToken
-        ? stageCurrentPushInstallationRelease()
-        : null;
+      let pendingRelease = null;
+
+      if (hadAccessToken) {
+        try {
+          pendingRelease = stageCurrentPushInstallationRelease();
+        } catch (error) {
+          logAuthDebug('auth_logout_push_release_stage_error', {
+            userId: activeSession?.userId ?? '',
+            error: authDebugError(error),
+          });
+        }
+      }
 
       logAuthDebug('auth_logout_start', {
         hadAccessToken,

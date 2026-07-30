@@ -44,6 +44,7 @@
     "react-native-create-thumbnail": "^2.2.0",
     "react-native-css-interop": "0.2.3",
     "react-native-gesture-handler": "^2.31.2",
+    "react-native-get-random-values": "2.0.0",
     "react-native-image-picker": "^8.2.1",
     "react-native-localize": "^3.7.0",
     "react-native-maps": "^1.27.2",

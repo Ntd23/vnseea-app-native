@@ -53,6 +53,7 @@ export interface NotificationsItem {
   groupName?: string;
   eventId?: string;
   event?: EventsItem;
+  storyId?: string;
   productId?: string;
   fundingId?: string;
   blogId?: string;
@@ -62,6 +63,7 @@ export interface NotificationsItem {
   groupChatId?: string; // ID của nhóm chat khi có lời mời tham gia
   messageConversationType?: 'user' | 'page' | 'group';
   messageConversationId?: string;
+  focusComments?: boolean;
   seen: boolean;
   seenAt?: number;
   createdAt: number;

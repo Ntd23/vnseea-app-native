@@ -1,4 +1,5 @@
 import { pushInstallationStorage } from '../pushInstallationStorage';
+import CryptoJS from 'crypto-js';
 
 describe('pushInstallationStorage', () => {
   beforeEach(() => {
@@ -12,6 +13,23 @@ describe('pushInstallationStorage', () => {
     expect(second).toEqual(first);
     expect(first.installationId).toMatch(/^pi_[a-f0-9]{48}$/);
     expect(first.deviceSecret).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('does not depend on CryptoJS random support in React Native', () => {
+    const cryptoRandom = jest
+      .spyOn(CryptoJS.lib.WordArray, 'random')
+      .mockImplementation(() => {
+        throw new Error(
+          'Native crypto module could not be used to get secure random number.',
+        );
+      });
+
+    expect(pushInstallationStorage.getOrCreateIdentity()).toEqual({
+      installationId: expect.stringMatching(/^pi_[a-f0-9]{48}$/),
+      deviceSecret: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+
+    cryptoRandom.mockRestore();
   });
 
   it('keeps a token received before login and scopes sync ownership by user', () => {
