@@ -19,5 +19,6 @@ require_once('includes/vnseea_post_tags.php');
 require_once('includes/functions_one.php');
 require_once('includes/functions_two.php');
 require_once('includes/functions_three.php');
+require_once('includes/vnseea_batch_hydration.php');
 require_once('includes/vnseea_live.php');
 require_once('includes/vnseea_push_delivery.php');

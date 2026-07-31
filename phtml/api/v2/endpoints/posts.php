@@ -57,6 +57,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'publisher_id' => 0,
                 'after_post_id' => $after_post_id,
                 'placement' => 'multi_image_post',
+                'hydration_profile' => 'feed_summary',
                 'anonymous' => true
             );
             if (!empty($_POST['ad_id']) && is_numeric($_POST['ad_id']) && $_POST['ad_id'] > 0) {
@@ -157,7 +158,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'limit' => $limit,
                 'publisher_id' => $user_id,
                 'after_post_id' => $after_post_id,
-                'placement' => 'multi_image_post'
+                'placement' => 'multi_image_post',
+                'hydration_profile' => 'feed_summary'
             );
 			$posts = Wo_GetPosts($postsData);
 			foreach ($posts as $key => $value) {
@@ -250,7 +252,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'limit' => $limit,
                 'group_id' => $group_id,
                 'after_post_id' => $after_post_id,
-                'placement' => 'multi_image_post'
+                'placement' => 'multi_image_post',
+                'hydration_profile' => 'feed_summary'
             );
 			$posts = Wo_GetPosts($postsData);
 			foreach ($posts as $key => $value) {
@@ -343,7 +346,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'limit' => $limit,
                 'page_id' => $page_id,
                 'after_post_id' => $after_post_id,
-                'placement' => 'multi_image_post'
+                'placement' => 'multi_image_post',
+                'hydration_profile' => 'feed_summary'
             );
 			$posts = Wo_GetPosts($postsData);
 			foreach ($posts as $key => $value) {
@@ -436,7 +440,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'limit' => $limit,
                 'event_id' => $event_id,
                 'after_post_id' => $after_post_id,
-                'placement' => 'multi_image_post'
+                'placement' => 'multi_image_post',
+                'hydration_profile' => 'feed_summary'
             );
 			$posts = Wo_GetPosts($postsData);
 			foreach ($posts as $key => $value) {
