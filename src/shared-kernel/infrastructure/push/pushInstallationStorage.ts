@@ -1,4 +1,3 @@
-import CryptoJS from 'crypto-js';
 import { createMMKV } from 'react-native-mmkv';
 
 export type PushProvider = 'onesignal' | 'apns_voip';
@@ -63,8 +62,22 @@ function writeState(state: PushInstallationState) {
   storage.set(STATE_KEY, JSON.stringify(state));
 }
 
+interface SecureRandomRuntime {
+  crypto?: {
+    getRandomValues(values: Uint8Array): Uint8Array;
+  };
+}
+
 function randomHex(bytes: number) {
-  return CryptoJS.lib.WordArray.random(bytes).toString(CryptoJS.enc.Hex);
+  const values = new Uint8Array(bytes);
+  const runtimeCrypto = (globalThis as unknown as SecureRandomRuntime).crypto;
+  if (!runtimeCrypto?.getRandomValues) {
+    throw new Error('Secure random generator is unavailable.');
+  }
+  runtimeCrypto.getRandomValues(values);
+  return Array.from(values, value => value.toString(16).padStart(2, '0')).join(
+    '',
+  );
 }
 
 function createIdentity(): PushInstallationIdentity {

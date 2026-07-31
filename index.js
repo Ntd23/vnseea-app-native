@@ -3,6 +3,7 @@
  * @format
  */
 import './src/shared-kernel/infrastructure/polyfills/runtimeGlobals';
+import 'react-native-get-random-values';
 import 'react-native-gesture-handler';
 import './global.css';
 

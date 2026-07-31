@@ -20,6 +20,7 @@ export type NotificationDestination =
   | { kind: 'product'; productId: string; fallbackUrl?: string }
   | { kind: 'job'; jobId: string }
   | { kind: 'blog'; blogId: string }
+  | { kind: 'story'; storyId: string }
   | { kind: 'live'; postId: string }
   | { kind: 'post'; postId: string }
   | { kind: 'page' }
@@ -150,6 +151,10 @@ export function resolveNotificationDestination(
 
   if (type === 'memory') {
     return { kind: 'memories' };
+  }
+
+  if (item.storyId && (type === 'viewed_story' || type === 'reaction')) {
+    return { kind: 'story', storyId: item.storyId };
   }
 
   if (FORUM_NOTIFICATION_TYPES.has(type)) {

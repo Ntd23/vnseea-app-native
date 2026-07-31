@@ -522,172 +522,130 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 		                    );
 		}
 
+		$resolve_shared_post_owner = function ($post) {
+			if (!empty($post['user_id'])) {
+				return (int) $post['user_id'];
+			}
+			if (!empty($post['page_id'])) {
+				$source_page = Wo_PageData($post['page_id']);
+				return !empty($source_page['user_id']) ? (int) $source_page['user_id'] : 0;
+			}
+			return 0;
+		};
+		$complete_shared_post = function ($post, $result, $extra_notifications = array()) use (
+			&$response_data,
+			&$error_code,
+			&$error_message,
+			$non_allowed,
+			$resolve_shared_post_owner
+		) {
+			if (empty($result)) {
+				$error_code = 8;
+				$error_message = 'Unable to share post.';
+				return false;
+			}
+			if (!empty($_POST['text'])) {
+				Wo_UpdatePost(array(
+					'post_id' => $result,
+					'text' => $_POST['text'],
+				));
+			}
+
+			$new_post = Wo_PostData($result);
+			if (empty($new_post)) {
+				$error_code = 8;
+				$error_message = 'Unable to load shared post.';
+				return false;
+			}
+			$new_post = VNSEEA_AttachSharedPostInfo($new_post, $non_allowed);
+			if (empty($new_post) || empty($new_post['id'])) {
+				$error_code = 8;
+				$error_message = 'Unable to load shared post.';
+				return false;
+			}
+			foreach (array('publisher', 'user_data') as $identity_key) {
+				if (empty($new_post[$identity_key]) || !is_array($new_post[$identity_key])) {
+					continue;
+				}
+				foreach ($non_allowed as $field) {
+					unset($new_post[$identity_key][$field]);
+				}
+			}
+			if (!empty($new_post['get_post_comments'])) {
+				foreach ($new_post['get_post_comments'] as $comment_index => $comment) {
+					if (empty($comment['publisher']) || !is_array($comment['publisher'])) {
+						continue;
+					}
+					foreach ($non_allowed as $field) {
+						unset($new_post['get_post_comments'][$comment_index]['publisher'][$field]);
+					}
+				}
+			}
+
+			Wo_PublishRealtimePostChange($post['id'], 'share');
+			$source_owner_id = $resolve_shared_post_owner($post);
+			if ($source_owner_id > 0) {
+				Wo_RegisterNotification(array(
+					'recipient_id' => $source_owner_id,
+					'post_id' => $post['id'],
+					'type' => 'shared_your_post',
+					'url' => 'index.php?link1=post&id=' . $result,
+				));
+			}
+			foreach ($extra_notifications as $notification) {
+				Wo_RegisterNotification($notification);
+			}
+
+			$response_data = array(
+				'api_status' => 200,
+				'data' => $new_post,
+			);
+			return true;
+		};
+
 		if ($_POST['type'] == 'share_post_on_timeline') {
 			$user = Wo_UserData(Wo_Secure($_POST['user_id']));
 			$post = Wo_PostData(Wo_Secure($_POST['id']));
-	        $user_id = $post['user_id'];
-	        if (empty($post['user_id']) && !empty($post['page_id'])) {
-	            $page = Wo_PageData($post['page_id']);
-	            $user_id = $page['user_id'];
-	        }
-	        if (!empty($post) && !empty($user)) {
-	            $result = Wo_SharePostOn($post['id'],$user['user_id'],'user');
-	            if (!empty($_POST['text'])) {
-		            $updatePost = Wo_UpdatePost(array(
-		                'post_id' => $result,
-		                'text' => $_POST['text']
-		            ));
-		        }
-		            $new_post = Wo_PostData($result);
-		            $new_post = VNSEEA_AttachSharedPostInfo($new_post, $non_allowed);
-		            if (!empty($result) && !empty($new_post)) {
-		                Wo_PublishRealtimePostChange($post['id'], 'share');
-		            }
-	            if (!empty($new_post['publisher'])) {
-                    foreach ($non_allowed as $key4 => $value4) {
-                      unset($new_post['publisher'][$value4]);
-                    }
-                }
-                if (!empty($new_post['get_post_comments'])) {
-			        foreach ($new_post['get_post_comments'] as $key3 => $comment) {
-
-				        foreach ($non_allowed as $key5 => $value5) {
-				          unset($new_post['get_post_comments'][$key3]['publisher'][$value5]);
-				        }
-				    }
-				}
-
-				$notification_data_array = array(
-		            'recipient_id' => $user_id,
-		            'post_id' => $post['id'],
-		            'type' => 'shared_your_post',
-		            'url' => 'index.php?link1=post&id=' . $result
-		        );
-		        Wo_RegisterNotification($notification_data_array);
-
-	            $notification_data_array = array(
-	                'recipient_id' => $user['id'],
-	                'post_id' => $post['id'],
-	                'type' => 'shared_a_post_in_timeline',
-	                'url' => 'index.php?link1=post&id=' . $result
-	            );
-	            Wo_RegisterNotification($notification_data_array);
-
-	            $response_data = array(
-		                        'api_status' => 200,
-		                        'data' => $new_post
-		                    );
-	        }
-	        else{
-	        	$error_code    = 5;
-			    $error_message = 'id and user_id can not be empty';
-	        }
+			if (!empty($post) && !empty($user)) {
+				$result = Wo_SharePostOn($post['id'], $user['user_id'], 'user');
+				$complete_shared_post($post, $result, array(array(
+					'recipient_id' => $user['id'],
+					'post_id' => $post['id'],
+					'type' => 'shared_a_post_in_timeline',
+					'url' => 'index.php?link1=post&id=' . $result,
+				)));
+			} else {
+				$error_code = 5;
+				$error_message = 'id and user_id can not be empty';
+			}
 		}
 
 		if ($_POST['type'] == 'share_post_on_page') {
 			$page = Wo_PageData(Wo_Secure($_POST['page_id']));
-	        $post = Wo_PostData(Wo_Secure($_POST['id']));
-	        $user_id = $post['user_id'];
-	        if (empty($post['user_id'])) {
-	            $user_id = $page['user_id'];
-	        }
-	        if (!empty($post) && !empty($page) && $page['user_id'] == $wo['user']['id']) {
-	            $result = Wo_SharePostOn($post['id'],$page['id'],'page');
-	            if (!empty($_POST['text'])) {
-		            $updatePost = Wo_UpdatePost(array(
-		                'post_id' => $result,
-		                'text' => $_POST['text']
-		            ));
-		        }
-		            $new_post = Wo_PostData($result);
-		            $new_post = VNSEEA_AttachSharedPostInfo($new_post, $non_allowed);
-		            if (!empty($result) && !empty($new_post)) {
-		                Wo_PublishRealtimePostChange($post['id'], 'share');
-		            }
-	            if (!empty($new_post['publisher'])) {
-                    foreach ($non_allowed as $key4 => $value4) {
-                      unset($new_post['publisher'][$value4]);
-                    }
-                }
-                if (!empty($new_post['get_post_comments'])) {
-			        foreach ($new_post['get_post_comments'] as $key3 => $comment) {
-
-				        foreach ($non_allowed as $key5 => $value5) {
-				          unset($new_post['get_post_comments'][$key3]['publisher'][$value5]);
-				        }
-				    }
-				}
-
-				$notification_data_array = array(
-		            'recipient_id' => $user_id,
-		            'post_id' => $post['id'],
-		            'type' => 'shared_your_post',
-		            'url' => 'index.php?link1=post&id=' . $result
-		        );
-		        Wo_RegisterNotification($notification_data_array);
-
-	            $response_data = array(
-		                        'api_status' => 200,
-		                        'data' => $new_post
-		                    );
-	        }
-	        else{
-	        	$error_code    = 6;
-			    $error_message = 'id and page_id can not be empty';
-	        }
+			$post = Wo_PostData(Wo_Secure($_POST['id']));
+			if (
+				!empty($post)
+				&& !empty($page)
+				&& (Wo_IsPageOnwer($page['id']) === true || Wo_UserCanPostPage($page['id']) === true)
+			) {
+				$result = Wo_SharePostOn($post['id'], $page['id'], 'page');
+				$complete_shared_post($post, $result);
+			} else {
+				$error_code = 6;
+				$error_message = 'id and page_id can not be empty';
+			}
 		}
 
 		if ($_POST['type'] == 'share_post_on_group') {
 			$group = Wo_GroupData(Wo_Secure($_POST['group_id']));
-	        $post = Wo_PostData(Wo_Secure($_POST['id']));
-	        $user_id = $post['user_id'];
-	        if (empty($post['user_id'])) {
-	            $user_id = $page['user_id'];
-	        }
-	        if (!empty($post) && !empty($group) && $group['user_id'] == $wo['user']['id']) {
-	            $result = Wo_SharePostOn($post['id'],$group['id'],'group');
-	            if (!empty($_POST['text'])) {
-		            $updatePost = Wo_UpdatePost(array(
-		                'post_id' => $result,
-		                'text' => $_POST['text']
-		            ));
-		        }
-		            $new_post = Wo_PostData($result);
-		            $new_post = VNSEEA_AttachSharedPostInfo($new_post, $non_allowed);
-		            if (!empty($result) && !empty($new_post)) {
-		                Wo_PublishRealtimePostChange($post['id'], 'share');
-		            }
-	            if (!empty($new_post['publisher'])) {
-                    foreach ($non_allowed as $key4 => $value4) {
-                      unset($new_post['publisher'][$value4]);
-                    }
-                }
-                if (!empty($new_post['get_post_comments'])) {
-			        foreach ($new_post['get_post_comments'] as $key3 => $comment) {
-
-				        foreach ($non_allowed as $key5 => $value5) {
-				          unset($new_post['get_post_comments'][$key3]['publisher'][$value5]);
-				        }
-				    }
-				}
-
-				$notification_data_array = array(
-		            'recipient_id' => $user_id,
-		            'post_id' => $post['id'],
-		            'type' => 'shared_your_post',
-		            'url' => 'index.php?link1=post&id=' . $result
-		        );
-		        Wo_RegisterNotification($notification_data_array);
-
-	            $response_data = array(
-		                        'api_status' => 200,
-		                        'data' => $new_post
-		                    );
-	        }
-	        else{
-	        	$error_code    = 7;
-			    $error_message = 'id and group_id can not be empty';
-	        }
+			$post = Wo_PostData(Wo_Secure($_POST['id']));
+			if (!empty($post) && !empty($group) && Wo_CanBeOnGroup($group['id']) === true) {
+				$result = Wo_SharePostOn($post['id'], $group['id'], 'group');
+				$complete_shared_post($post, $result);
+			} else {
+				$error_code = 7;
+				$error_message = 'id and group_id can not be empty';
+			}
 		}
 
 		if ($_POST['type'] == 'saved') {

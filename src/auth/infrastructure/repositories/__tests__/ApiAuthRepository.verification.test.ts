@@ -1,9 +1,18 @@
 import { apiRoutes } from '../../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../../shared-kernel/infrastructure/api/apiBridge';
 import { sessionStorage } from '../../../../shared-kernel/infrastructure/storage/sessionStorage';
-import { identifyPushUser } from '../../../../shared-kernel/infrastructure/push/oneSignalPush';
-import { syncPushDevicesAfterAuthentication } from '../../../../shared-kernel/infrastructure/push/pushDeviceRegistration';
-import { connectLiveKitCallRealtime } from '../../../../messages/infrastructure/realtime/liveKitCallRealtime';
+import {
+  identifyPushUser,
+  logoutPushUser,
+} from '../../../../shared-kernel/infrastructure/push/oneSignalPush';
+import {
+  stageCurrentPushInstallationRelease,
+  syncPushDevicesAfterAuthentication,
+} from '../../../../shared-kernel/infrastructure/push/pushDeviceRegistration';
+import {
+  connectLiveKitCallRealtime,
+  disconnectLiveKitCallRealtime,
+} from '../../../../messages/infrastructure/realtime/liveKitCallRealtime';
 import { flushPendingPushNotificationNavigation } from '../../../../notifications/application/navigation/pushNotificationNavigation';
 import { createAuthRepository } from '../ApiAuthRepository';
 
@@ -32,7 +41,7 @@ jest.mock(
   '../../../../shared-kernel/infrastructure/push/pushDeviceRegistration',
   () => ({
     completeCurrentPushInstallationRelease: jest.fn(),
-    retryPendingPushDeviceWork: jest.fn(),
+    retryPendingPushDeviceWork: jest.fn().mockResolvedValue(undefined),
     stageCurrentPushInstallationRelease: jest.fn(),
     syncPushDevicesAfterAuthentication: jest.fn().mockResolvedValue(undefined),
   }),
@@ -54,7 +63,11 @@ const post = apiBridge.post as jest.Mock;
 const setSession = sessionStorage.setSession as jest.Mock;
 const identify = identifyPushUser as jest.Mock;
 const connectRealtime = connectLiveKitCallRealtime as jest.Mock;
+const disconnectRealtime = disconnectLiveKitCallRealtime as jest.Mock;
 const syncPushDevices = syncPushDevicesAfterAuthentication as jest.Mock;
+const stagePushRelease = stageCurrentPushInstallationRelease as jest.Mock;
+const clearSession = sessionStorage.clearSession as jest.Mock;
+const logoutPush = logoutPushUser as jest.Mock;
 const flushPushNavigation =
   flushPendingPushNotificationNavigation as jest.Mock;
 
@@ -115,5 +128,24 @@ describe('ApiAuthRepository account verification', () => {
     expect(setSession).not.toHaveBeenCalled();
     expect(identify).not.toHaveBeenCalled();
     expect(connectRealtime).not.toHaveBeenCalled();
+  });
+
+  it('clears the local session when staging push release fails', async () => {
+    (sessionStorage.getSession as jest.Mock).mockReturnValue({
+      accessToken: 'active-token',
+      userId: '42',
+    });
+    post.mockResolvedValueOnce({ api_status: 200 });
+    stagePushRelease.mockImplementationOnce(() => {
+      throw new Error(
+        'Native crypto module could not be used to get secure random number.',
+      );
+    });
+
+    await expect(createAuthRepository().logout()).resolves.toBeUndefined();
+
+    expect(disconnectRealtime).toHaveBeenCalledTimes(1);
+    expect(clearSession).toHaveBeenCalledTimes(1);
+    expect(logoutPush).toHaveBeenCalledTimes(1);
   });
 });

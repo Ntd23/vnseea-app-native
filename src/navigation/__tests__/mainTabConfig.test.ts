@@ -107,7 +107,7 @@ describe('main tab platform configuration', () => {
     );
   });
 
-  it('keeps the cart badge on Marketplace without adding a notification tab badge', () => {
+  it('shows the aggregate order notification badge on Marketplace', () => {
     expect(
       createIosNativeTabOptions(ROUTES.MARKETPLACE, 'vi', 3).tabBarBadge,
     ).toBe(3);

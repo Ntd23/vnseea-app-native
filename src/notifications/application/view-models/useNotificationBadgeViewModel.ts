@@ -8,6 +8,11 @@ import {
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
 import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  replaceOrderNotificationBadges,
+  setOrderNotificationBadgeOwner,
+} from '../../../orders/application/notifications/orderNotificationBadgeStore';
 import { createNotificationBadgeSync } from './notificationBadgeSync';
 
 let notificationsRepository: ReturnType<
@@ -15,11 +20,36 @@ let notificationsRepository: ReturnType<
 > | null = null;
 let messagesRepository: ReturnType<typeof createMessagesRepository> | null = null;
 
+async function fetchNotificationCountsAndOrderBadges() {
+  notificationsRepository ??= createNotificationsRepository();
+  const repository = notificationsRepository;
+  const ownerId = sessionStorage.getSession()?.userId;
+  setOrderNotificationBadgeOwner(ownerId);
+
+  const refreshOrderBadges = ownerId
+    ? repository
+        .getNotifications({ limit: 100 })
+        .then(page => {
+          if (sessionStorage.getSession()?.userId !== ownerId) return;
+          replaceOrderNotificationBadges(page.items, ownerId);
+        })
+        .catch(error => {
+          console.warn(
+            '[useNotificationBadgeViewModel] order badge refresh failed',
+            error,
+          );
+        })
+    : Promise.resolve();
+
+  const [counts] = await Promise.all([
+    repository.getUnreadCounts(),
+    refreshOrderBadges,
+  ]);
+  return counts;
+}
+
 const notificationBadgeSync = createNotificationBadgeSync({
-  fetchNotificationCounts: () => {
-    notificationsRepository ??= createNotificationsRepository();
-    return notificationsRepository.getUnreadCounts();
-  },
+  fetchNotificationCounts: fetchNotificationCountsAndOrderBadges,
   fetchUnreadChatCount: async () => {
     messagesRepository ??= createMessagesRepository();
     const unreadChats = await messagesRepository.getUnreadChats();
@@ -43,7 +73,12 @@ const notificationBadgeSync = createNotificationBadgeSync({
 });
 
 export function useNotificationBadgeViewModel() {
+  const sessionUserId = sessionStorage.getSession()?.userId;
   const { notificationCount, messageCount } = useUnreadBadgeCounts();
+
+  useEffect(() => {
+    setOrderNotificationBadgeOwner(sessionUserId);
+  }, [sessionUserId]);
 
   useEffect(() => {
     return notificationBadgeSync.subscribe();

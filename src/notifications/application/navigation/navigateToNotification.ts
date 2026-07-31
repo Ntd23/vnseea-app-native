@@ -10,6 +10,8 @@ import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import type { OrdersItem } from '../../../orders/domain/types/orders.types';
 import { createOrdersRepository } from '../../../orders/infrastructure/repositories/ApiOrdersRepository';
 import { createEventsRepository } from '../../../events/infrastructure/repositories/ApiEventsRepository';
+import type { StoryItem } from '../../../stories/domain/types/stories.types';
+import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
 import { resolveNotificationDestination } from './resolveNotificationDestination';
 
@@ -21,6 +23,18 @@ export type NotificationNavigator = {
 
 const ordersRepository = createOrdersRepository();
 const eventsRepository = createEventsRepository();
+const storiesRepository = createStoriesRepository();
+const COMMENT_NOTIFICATION_TYPES = new Set([
+  'comment',
+  'comment_reply',
+  'comment_mention',
+  'comment_reply_mention',
+  'also_replied',
+  'liked_comment',
+  'wondered_comment',
+  'liked_reply_comment',
+  'wondered_reply_comment',
+]);
 
 function toPositiveNumberId(value: string | undefined) {
   const id = Number(value);
@@ -65,6 +79,22 @@ function findOrderByIdentifier(items: OrdersItem[], orderId: string) {
       line => normalizeOrderIdentifier(line.id) === target,
     );
   });
+}
+
+function findStoryTarget(stories: StoryItem[], storyId: string) {
+  for (let userIndex = 0; userIndex < stories.length; userIndex += 1) {
+    const story = stories[userIndex];
+    const segmentIndex = story.media.findIndex(
+      media => media.storyId === storyId || media.id === storyId,
+    );
+    if (story.id === storyId || segmentIndex >= 0) {
+      return {
+        userIndex,
+        segmentIndex: segmentIndex >= 0 ? segmentIndex : 0,
+      };
+    }
+  }
+  return null;
 }
 
 function toGroupChatRouteItem(
@@ -136,6 +166,19 @@ export async function navigateToNotification(
   navigation: NotificationNavigator,
 ) {
   const destination = resolveNotificationDestination(item);
+  console.info('[PushNotificationNavigation] destination_resolved', {
+    notificationId: item.notification_id,
+    type: item.type,
+    destination: destination.kind,
+    notifierId: item.notifierId ?? '',
+    postId: item.postId ?? '',
+    pageId: item.pageId ?? '',
+    groupId: item.groupId ?? '',
+    eventId: item.eventId ?? '',
+    storyId: item.storyId ?? '',
+    messageConversationType: item.messageConversationType ?? '',
+    messageConversationId: item.messageConversationId ?? '',
+  });
 
   switch (destination.kind) {
     case 'profile':
@@ -177,6 +220,24 @@ export async function navigateToNotification(
     case 'blog':
       navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: destination.blogId });
       return;
+    case 'story': {
+      try {
+        const stories = await storiesRepository.getUserStories();
+        const target = findStoryTarget(stories, destination.storyId);
+        if (target) {
+          navigation.navigate(ROUTES.STORY_VIEWER, {
+            stories,
+            initialUserIndex: target.userIndex,
+            initialSegmentIndex: target.segmentIndex,
+          });
+          return;
+        }
+      } catch (error) {
+        console.warn('[NotificationNavigation] load Story target failed', error);
+      }
+      navigation.navigate(ROUTES.STORIES_LIST);
+      return;
+    }
     case 'live': {
       const postId = toPositiveNumberId(destination.postId);
       if (postId) navigation.navigate(ROUTES.LIVE_ROOM, { postId });
@@ -184,7 +245,13 @@ export async function navigateToNotification(
       return;
     }
     case 'post':
-      navigation.navigate(ROUTES.POST_DETAIL, { postId: destination.postId });
+      navigation.navigate(ROUTES.POST_DETAIL, {
+        postId: destination.postId,
+        ...(item.focusComments ||
+        COMMENT_NOTIFICATION_TYPES.has(item.type.toLowerCase())
+          ? { focusComments: true }
+          : {}),
+      });
       return;
     case 'page':
       navigation.navigate(ROUTES.PAGE_DETAIL, { page: toPageRouteItem(item) });

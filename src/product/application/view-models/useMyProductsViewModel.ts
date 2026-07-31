@@ -43,8 +43,11 @@ function matchesOrderStatus(item: OrdersItem, status: OrderStatusFilter) {
   return status === 'all' || item.status === status;
 }
 
-export function useMyProductsViewModel(targetUserId?: number) {
-  const [activeTab, setActiveTab] = useState<MyProductsTab>('products');
+export function useMyProductsViewModel(
+  targetUserId?: number,
+  initialTab: MyProductsTab = 'products',
+) {
+  const [activeTab, setActiveTab] = useState<MyProductsTab>(initialTab);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [categoriesById, setCategoriesById] = useState<Record<string, string>>(
     {},

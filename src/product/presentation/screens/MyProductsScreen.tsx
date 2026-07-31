@@ -55,6 +55,10 @@ import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { markOrderNotificationModeRead } from '../../../orders/application/notifications/orderNotificationBadgeActions';
+import { useOrderNotificationBadges } from '../../../orders/application/notifications/orderNotificationBadgeStore';
+import type { OrderNotificationMode } from '../../../orders/application/notifications/orderNotificationBadges';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 
 type MyProductsNav = NativeStackNavigationProp<RootStackParamList>;
 type MyProductsRoute = RouteProp<RootStackParamList, typeof ROUTES.MY_PRODUCTS>;
@@ -895,9 +899,13 @@ function PurchasedOrderCard({
 function MyProductsScreen() {
   const navigation = useNavigation<MyProductsNav>();
   const route = useRoute<MyProductsRoute>();
+  const orderBadges = useOrderNotificationBadges();
   const targetUserIdRaw = route.params?.userId;
   const targetUserId = targetUserIdRaw ? Number(targetUserIdRaw) : undefined;
-  const vm = useMyProductsViewModel(targetUserId);
+  const vm = useMyProductsViewModel(
+    targetUserId,
+    route.params?.initialTab ?? 'products',
+  );
   const { setActiveTab } = vm;
   const deleteProductAction = vm.deleteProduct;
   const updateSellerOrderStatus = vm.updateOrderStatus;
@@ -910,6 +918,29 @@ function MyProductsScreen() {
     }
   }, [route.params?.initialTab, setActiveTab]);
 
+  const markOrderTabRead = useCallback(
+    async (mode: OrderNotificationMode) => {
+      const result = await markOrderNotificationModeRead(mode);
+      if (result.failedCount > 0) {
+        showSnackbar({
+          type: 'error',
+          message: 'Chưa thể đánh dấu tất cả thông báo đơn hàng đã đọc.',
+        });
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (targetUserId) return;
+
+    if (vm.activeTab === 'purchased') {
+      markOrderTabRead('purchased').catch(() => undefined);
+    } else if (vm.activeTab === 'orders') {
+      markOrderTabRead('seller').catch(() => undefined);
+    }
+  }, [markOrderTabRead, targetUserId, vm.activeTab]);
+
   const handleCreate = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_PRODUCT);
   }, [navigation]);
@@ -920,9 +951,14 @@ function MyProductsScreen() {
         navigation.navigate(ROUTES.MARKETPLACE);
         return;
       }
+      if (!targetUserId && tab === 'purchased') {
+        markOrderTabRead('purchased').catch(() => undefined);
+      } else if (!targetUserId && tab === 'orders') {
+        markOrderTabRead('seller').catch(() => undefined);
+      }
       setActiveTab(tab);
     },
-    [navigation, setActiveTab],
+    [markOrderTabRead, navigation, setActiveTab, targetUserId],
   );
 
   const handleProductPress = useCallback(
@@ -1118,21 +1154,43 @@ function MyProductsScreen() {
             const tabLabel = targetUserId && tab.key === 'marketplace'
               ? 'Chuyển đến Thị trường'
               : tab.label;
+            const tabBadgeCount =
+              !targetUserId && tab.key === 'purchased'
+                ? orderBadges.purchasedCount
+                : !targetUserId && tab.key === 'orders'
+                  ? orderBadges.sellerCount
+                  : 0;
 
             return (
               <TouchableOpacity
                 key={tab.key}
                 className="py-3.5 relative"
                 activeOpacity={0.8}
+                accessibilityRole="tab"
+                accessibilityLabel={
+                  tabBadgeCount > 0
+                    ? `${tabLabel}, ${tabBadgeCount} chưa đọc`
+                    : tabLabel
+                }
+                accessibilityState={{ selected: isActive }}
                 onPress={() => handleTabPress(tab.key)}
               >
-                <Text
-                  className={`text-body-primary font-semibold ${
-                    isActive ? 'text-slate-900 font-bold' : 'text-slate-500'
-                  }`}
-                >
-                  {tabLabel}
-                </Text>
+                <View className="flex-row items-center">
+                  <Text
+                    className={`text-body-primary font-semibold ${
+                      isActive ? 'text-slate-900 font-bold' : 'text-slate-500'
+                    }`}
+                  >
+                    {tabLabel}
+                  </Text>
+                  {tabBadgeCount > 0 ? (
+                    <View className="ml-1.5 min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1">
+                      <Text className="text-[10px] font-bold leading-[16px] text-white">
+                        {tabBadgeCount > 99 ? '99+' : tabBadgeCount}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
                 {isActive && (
                   <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand rounded-full" />
                 )}

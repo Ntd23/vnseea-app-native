@@ -18,6 +18,7 @@ import {
 } from '../../application/i18n/notificationCopy';
 import { createLatestRequestGuard } from './notificationRequestGuard';
 import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
+import { replaceOrderNotificationBadges } from '../../../orders/application/notifications/orderNotificationBadgeStore';
 
 const PAGE_SIZE = 100;
 
@@ -97,6 +98,10 @@ export function useNotificationsViewModel() {
       notificationCount: unreadCount,
     });
   }, [unreadCount]);
+
+  useEffect(() => {
+    replaceOrderNotificationBadges(notifications, cacheOwnerId);
+  }, [cacheOwnerId, notifications]);
 
   useEffect(() => {
     notificationsCacheStorage.setSnapshot(

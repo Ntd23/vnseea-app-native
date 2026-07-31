@@ -173,7 +173,13 @@ export function mapNotificationRecord(
     normalizeUrl(ajaxUrl),
     normalizeUrl(fullLink),
   ].filter(Boolean);
-  const notifierId = readString(notifierRaw, 'user_id', 'sender_id', 'id');
+  const notifierId = readString(
+    notifierRaw,
+    'notifier_id',
+    'user_id',
+    'sender_id',
+    'id',
+  );
   const notifierName = readString(
     notifierRaw,
     'name',
@@ -292,6 +298,7 @@ export function mapNotificationRecord(
           id: readString(eventRaw, 'id', 'event_id') || eventId,
         } as unknown as EventsItem)
       : undefined;
+  const storyId = readTargetString(raw, 'story_id', 'storyId');
   const orderId =
     readTargetString(raw, 'order_id', 'order_hash_id', 'hash_id') ||
     readAnyUrlTargetId(targetUrls, [
@@ -299,7 +306,7 @@ export function mapNotificationRecord(
       /\/(?:customer_order|order)\/([^/?#]+)/i,
     ]);
   const orderMode = targetUrls.some(url =>
-    /[?&]link1=order(?:[&#]|$)/i.test(url),
+    /[?&]link1=orders?(?:[&#]|$)/i.test(url),
   )
     ? ('seller' as const)
     : targetUrls.some(url => /[?&]link1=customer_order(?:[&#]|$)/i.test(url))
@@ -322,6 +329,7 @@ export function mapNotificationRecord(
     groupName,
     eventId,
     event,
+    storyId,
     productId,
     fundingId,
     blogId,
@@ -331,6 +339,7 @@ export function mapNotificationRecord(
     groupChatId: readTargetString(raw, 'group_chat_id', 'groupChatId'),
     messageConversationType,
     messageConversationId: messageConversationId || undefined,
+    focusComments: readBool(raw, 'focus_comments'),
     seen: readBool(raw, 'seen'),
     seenAt: readNumber(raw, 'seen_at', 'seenAt'),
     createdAt: readNumber(raw, 'time', 'created_at', 'posted_at') ?? 0,
