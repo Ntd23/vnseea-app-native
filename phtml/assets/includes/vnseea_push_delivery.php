@@ -805,14 +805,9 @@ if (!function_exists('VNSEEA_QueuePushDelivery')) {
 if (!function_exists('VNSEEA_SchedulePushDeliveryDispatch')) {
     function VNSEEA_SchedulePushDeliveryDispatch()
     {
-        static $scheduled = false;
-        if ($scheduled) {
-            return;
-        }
-        $scheduled = true;
-        register_shutdown_function(function () {
-            VNSEEA_ProcessPushDeliveryQueue(50);
-        });
+        // Delivery is drained by the dedicated CLI worker. Web requests only
+        // persist queue rows so PHP-FPM never waits on OneSignal or APNs.
+        return true;
     }
 }
 

@@ -2965,8 +2965,8 @@ function Wo_GetTotalUsers()
 }
 function Wo_NotificationWebPushNotifier()
 {
-	// Compatibility entrypoint: delivery creation now happens at mutation time.
-	return VNSEEA_ProcessPushDeliveryQueue(50);
+	// Compatibility entrypoint: the dedicated CLI worker drains the queue.
+	return 0;
 
 	global $sqlConnect, $wo;
 	if ($wo['loggedin'] == false) {
@@ -3249,8 +3249,8 @@ function Wo_NotificationWebPushNotifier()
 }
 function Wo_MessagesPushNotifier()
 {
-	// Compatibility entrypoint: never infer new push work while reading chats.
-	return VNSEEA_ProcessPushDeliveryQueue(50);
+	// Compatibility entrypoint: the dedicated CLI worker drains the queue.
+	return 0;
 
 	global $sqlConnect, $wo, $db;
 	if ($wo['loggedin'] == false) {

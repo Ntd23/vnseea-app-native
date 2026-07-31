@@ -156,41 +156,63 @@ if (!function_exists('VNSEEA_SavePostTaggedUsers')) {
     }
 }
 
-if (!function_exists('VNSEEA_GetPostTaggedUsers')) {
-    function VNSEEA_GetPostTaggedUsers($post_id)
+if (!function_exists('VNSEEA_GetPostTaggedUsersBatch')) {
+    function VNSEEA_GetPostTaggedUsersBatch($post_ids)
     {
         global $sqlConnect;
 
-        $post_id = (int) $post_id;
-        if ($post_id < 1) {
+        $ids = array();
+        foreach ((array) $post_ids as $post_id) {
+            $post_id = (int) $post_id;
+            if ($post_id > 0) {
+                $ids[$post_id] = $post_id;
+            }
+        }
+        if (empty($ids)) {
             return array();
         }
         $query = mysqli_query(
             $sqlConnect,
-            'SELECT u.`user_id`, u.`username`, u.`first_name`, u.`last_name`, u.`avatar` ' .
+            'SELECT t.`post_id`, u.`user_id`, u.`username`, u.`first_name`, u.`last_name`, u.`avatar` ' .
             'FROM ' . T_POST_TAGGED_USERS . ' t ' .
             'INNER JOIN ' . T_USERS . ' u ON u.`user_id` = t.`user_id` ' .
-            "WHERE t.`post_id` = {$post_id} AND u.`active` = '1' AND u.`banned` = '0' " .
-            'ORDER BY t.`id` ASC'
+            'WHERE t.`post_id` IN (' . implode(',', $ids) . ") AND u.`active` = '1' AND u.`banned` = '0' " .
+            'ORDER BY t.`post_id` ASC, t.`id` ASC'
         );
         if (!$query) {
             return array();
         }
 
-        $users = array();
+        $users_by_post = array();
         while ($user = mysqli_fetch_assoc($query)) {
+            $post_id = (int) $user['post_id'];
+            if (!isset($users_by_post[$post_id])) {
+                $users_by_post[$post_id] = array();
+            }
             $name = trim($user['first_name'] . ' ' . $user['last_name']);
             if ($name === '') {
                 $name = $user['username'];
             }
-            $users[] = array(
+            $users_by_post[$post_id][] = array(
                 'user_id' => (string) $user['user_id'],
                 'name' => $name,
                 'username' => $user['username'],
                 'avatar' => function_exists('Wo_GetMedia') ? Wo_GetMedia($user['avatar']) : $user['avatar']
             );
         }
-        return $users;
+        return $users_by_post;
+    }
+}
+
+if (!function_exists('VNSEEA_GetPostTaggedUsers')) {
+    function VNSEEA_GetPostTaggedUsers($post_id)
+    {
+        $post_id = (int) $post_id;
+        if ($post_id < 1) {
+            return array();
+        }
+        $users_by_post = VNSEEA_GetPostTaggedUsersBatch(array($post_id));
+        return isset($users_by_post[$post_id]) ? $users_by_post[$post_id] : array();
     }
 }
 

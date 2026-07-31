@@ -1,4 +1,5 @@
 <?php
+// English description: Returns message contacts with follow relationship metadata and latest chat activity.
 $video_call = false;
 $video_call_user = array();
 
@@ -62,30 +63,181 @@ if (empty($wo['user']['timezone'])) {
 $timezone = new DateTimeZone($wo['user']['timezone']);
 
 $array = array();
+$chat_refs = array();
+$message_peer_ids = array();
+$message_user_data = array();
+foreach ($messages as $message_user) {
+    $peer_id = !empty($message_user['user_id']) ? (int)$message_user['user_id'] : 0;
+    $chat_id = !empty($message_user['chat_id']) ? (int)$message_user['chat_id'] : 0;
+    if ($peer_id > 0) {
+        $message_peer_ids[$peer_id] = $peer_id;
+        $message_user_data[$peer_id] = $message_user;
+    }
+    if ($chat_id > 0) {
+        $chat_refs[] = array('type' => 'user', 'chat_id' => $chat_id);
+    }
+}
+foreach ($groups as $group_chat) {
+    $chat_id = !empty($group_chat['chat_id']) ? (int)$group_chat['chat_id'] : 0;
+    if ($chat_id > 0) {
+        $chat_refs[] = array('type' => 'group', 'chat_id' => $chat_id);
+    }
+}
+foreach ($pages as $page_chat) {
+    $chat_id = !empty($page_chat['chat_id']) ? (int)$page_chat['chat_id'] : 0;
+    if ($chat_id > 0) {
+        $chat_refs[] = array('type' => 'page', 'chat_id' => $chat_id);
+    }
+}
+$message_user_data[(int)$wo['user']['id']] = $wo['user'];
+$conversation_mutes = VNSEEA_GetConversationMutesBatch($chat_refs, $wo['user']['id']);
+$latest_user_messages = VNSEEA_GetMessagesHeaderBatch($message_peer_ids, $message_user_data);
+$unread_user_counts = VNSEEA_GetUnreadMessageCountsBatch($message_peer_ids);
+$chat_colors = VNSEEA_GetChatColorsBatch($message_peer_ids, $wo['user']['id']);
+$latest_page_messages = VNSEEA_GetPageMessageHeadersBatch($pages);
+$page_ids = array();
+$page_user_ids = array();
+foreach ($pages as $page_chat) {
+    $page_message = !empty($page_chat['message']) && is_array($page_chat['message'])
+        ? $page_chat['message']
+        : array();
+    if (!empty($page_message['page_id'])) {
+        $page_ids[(int)$page_message['page_id']] = (int)$page_message['page_id'];
+    }
+    foreach (array('user_id', 'conversation_user_id', 'from_id', 'to_id') as $field) {
+        if (!empty($page_message[$field])) {
+            $page_user_ids[(int)$page_message[$field]] = (int)$page_message[$field];
+        }
+    }
+}
+foreach ($latest_page_messages as $page_message) {
+    foreach (array('from_id', 'to_id') as $field) {
+        if (!empty($page_message[$field])) {
+            $page_user_ids[(int)$page_message[$field]] = (int)$page_message[$field];
+        }
+    }
+}
+$page_data_cache = function_exists('VNSEEA_GetChatPagesBatch')
+    ? VNSEEA_GetChatPagesBatch($page_ids)
+    : array();
+$page_user_cache = function_exists('VNSEEA_GetChatUsersBatch')
+    ? VNSEEA_GetChatUsersBatch($page_user_ids)
+    : array();
+$follow_relationships = array();
+if (!empty($messages)) {
+    $message_user_ids = array();
+    foreach ($messages as $message_user) {
+        $message_user_id = !empty($message_user['user_id']) ? (int) $message_user['user_id'] : 0;
+        if ($message_user_id > 0 && $message_user_id !== (int) $wo['user']['id']) {
+            $message_user_ids[$message_user_id] = $message_user_id;
+        }
+    }
+
+    if (!empty($message_user_ids)) {
+        $current_user_id = (int) $wo['user']['id'];
+        $message_user_ids_sql = implode(',', $message_user_ids);
+        $follow_query = mysqli_query(
+            $sqlConnect,
+            "SELECT
+                f.`follower_id`,
+                f.`following_id`,
+                GREATEST(
+                    COALESCE(MAX(a.`time`), 0),
+                    COALESCE(MAX(n.`time`), 0)
+                ) AS `relationship_activity_at`
+             FROM " . T_FOLLOWERS . " f
+             LEFT JOIN " . T_ACTIVITIES . " a
+                ON a.`activity_type` IN ('following', 'friend')
+                AND (
+                    (a.`user_id` = f.`follower_id` AND a.`follow_id` = f.`following_id`)
+                    OR
+                    (a.`user_id` = f.`following_id` AND a.`follow_id` = f.`follower_id`)
+                )
+             LEFT JOIN " . T_NOTIFICATION . " n
+                ON n.`type` IN ('following', 'accepted_request')
+                AND (
+                    (n.`notifier_id` = f.`follower_id` AND n.`recipient_id` = f.`following_id`)
+                    OR
+                    (n.`notifier_id` = f.`following_id` AND n.`recipient_id` = f.`follower_id`)
+                )
+             WHERE f.`active` = '1'
+             AND (
+                (f.`follower_id` = {$current_user_id} AND f.`following_id` IN ({$message_user_ids_sql}))
+                OR
+                (f.`following_id` = {$current_user_id} AND f.`follower_id` IN ({$message_user_ids_sql}))
+             )"
+             . " GROUP BY f.`follower_id`, f.`following_id`"
+        );
+
+        if ($follow_query) {
+            while ($follow_row = mysqli_fetch_assoc($follow_query)) {
+                $follower_id = (int) $follow_row['follower_id'];
+                $following_id = (int) $follow_row['following_id'];
+                $related_user_id = $follower_id === $current_user_id ? $following_id : $follower_id;
+
+                if (empty($follow_relationships[$related_user_id])) {
+                    $follow_relationships[$related_user_id] = array(
+                        'is_following' => 0,
+                        'is_following_me' => 0,
+                        'relationship_activity_at' => 0
+                    );
+                }
+                if ($follower_id === $current_user_id) {
+                    $follow_relationships[$related_user_id]['is_following'] = 1;
+                }
+                if ($following_id === $current_user_id) {
+                    $follow_relationships[$related_user_id]['is_following_me'] = 1;
+                }
+                $follow_relationships[$related_user_id]['relationship_activity_at'] = max(
+                    $follow_relationships[$related_user_id]['relationship_activity_at'],
+                    (int) $follow_row['relationship_activity_at']
+                );
+            }
+        }
+    }
+}
 if (!empty($messages)) {
     foreach ($messages as $value) {
+        $relationship = !empty($follow_relationships[(int) $value['user_id']])
+            ? $follow_relationships[(int) $value['user_id']]
+            : array('is_following' => 0, 'is_following_me' => 0, 'relationship_activity_at' => 0);
+        $value['is_following'] = $relationship['is_following'];
+        $value['is_following_me'] = $relationship['is_following_me'];
+        $value['relationship_activity_at'] = $relationship['relationship_activity_at'];
+        $value['has_follow_relationship'] = (
+            !empty($relationship['is_following']) || !empty($relationship['is_following_me'])
+        ) ? 1 : 0;
         $value['chat_type'] = 'user';
         $value['mute'] = array('notify' => 'yes',
                                'call_chat' => 'yes',
                                'archive' => 'no',
                                'fav' => 'no',
                                'pin' => 'no');
-        $mute = $db->where('user_id',$wo['user']['id'])->where('chat_id',$value['chat_id'])->where('type','user')->getOne(T_MUTE);
+        $mute_key = 'user:' . (int)$value['chat_id'];
+        $mute = isset($conversation_mutes[$mute_key]) ? $conversation_mutes[$mute_key] : array();
         if (!empty($mute)) {
-            $value['mute']['notify'] = $mute->notify;
-            $value['mute']['call_chat'] = $mute->call_chat;
-            $value['mute']['archive'] = $mute->archive;
-            $value['mute']['fav'] = $mute->fav;
-            $value['mute']['pin'] = $mute->pin;
+            $value['mute']['notify'] = $mute['notify'];
+            $value['mute']['call_chat'] = $mute['call_chat'];
+            $value['mute']['archive'] = $mute['archive'];
+            $value['mute']['fav'] = $mute['fav'];
+            $value['mute']['pin'] = $mute['pin'];
         }
-        $value['last_message'] = Wo_GetMessagesHeader(array('user_id' => $value['user_id']), 'user');
+        $peer_id = (int)$value['user_id'];
+        $value['last_message'] = isset($latest_user_messages[$peer_id])
+            ? $latest_user_messages[$peer_id]
+            : false;
+        if (empty($value['last_message'])) {
+            $value['message_count'] = isset($unread_user_counts[$peer_id]) ? $unread_user_counts[$peer_id] : 0;
+            $array[] = $value;
+            continue;
+        }
         foreach ($non_allowed as $key5 => $value5) {
             if (!empty($value['last_message']['messageUser'])) {
                 unset($value['last_message']['messageUser'][$value5]);
             }
           
         }
-        $message = $value['last_message'];
+        $message = VNSEEA_AttachCanonicalMessageContext($value['last_message']);
         $message['text'] = openssl_encrypt($message['text'], "AES-128-ECB", $message['time']);
         if (empty($message['stickers'])) {
             $message['stickers'] = '';
@@ -108,10 +260,12 @@ if (!empty($messages)) {
             $message['type']   = 'map';
         }
         $message['type']     = $message_po . '_' . $message['type'];
-        $message['product']     = null;
+        $message['product'] = !empty($message['product']) ? $message['product'] : null;
         if (!empty($message['product_id'])) {
             $message['type']     = $message_po . '_product';
-            $message['product'] = Wo_GetProduct($message['product_id']);
+            if (empty($message['product']) && function_exists('VNSEEA_GetMessageContextProduct')) {
+                $message['product'] = VNSEEA_GetMessageContextProduct((int)$message['product_id']);
+            }
         }
         $message['file_size'] = 0;
         if (!empty($message['media'])) {
@@ -131,9 +285,9 @@ if (!empty($messages)) {
                 $message['time_text'] = $time->format('H:i');
             }
         }
-        $message['chat_color'] = Wo_GetChatColor($wo['user']['user_id'], $value['user_id']);
+        $message['chat_color'] = isset($chat_colors[$peer_id]) ? $chat_colors[$peer_id] : false;
         $value['last_message'] = $message;
-        $value['message_count'] = Wo_CountMessages(array('new' => true,'user_id' => $value['user_id']),'user');
+        $value['message_count'] = isset($unread_user_counts[$peer_id]) ? $unread_user_counts[$peer_id] : 0;
         $array[] = $value;
     }
 }
@@ -144,13 +298,14 @@ if (!empty($groups)) {
                                'archive' => 'no',
                                'fav' => 'no',
                                'pin' => 'no');
-        $mute = $db->where('user_id',$wo['user']['id'])->where('chat_id',$value['chat_id'])->where('type','group')->getOne(T_MUTE);
+        $mute_key = 'group:' . (int)$value['chat_id'];
+        $mute = isset($conversation_mutes[$mute_key]) ? $conversation_mutes[$mute_key] : array();
         if (!empty($mute)) {
-            $value['mute']['notify'] = $mute->notify;
-            $value['mute']['call_chat'] = $mute->call_chat;
-            $value['mute']['archive'] = $mute->archive;
-            $value['mute']['fav'] = $mute->fav;
-            $value['mute']['pin'] = $mute->pin;
+            $value['mute']['notify'] = $mute['notify'];
+            $value['mute']['call_chat'] = $mute['call_chat'];
+            $value['mute']['archive'] = $mute['archive'];
+            $value['mute']['fav'] = $mute['fav'];
+            $value['mute']['pin'] = $mute['pin'];
         }
     	if (!empty($value['user_data'])) {
             foreach ($non_allowed as $key4 => $value4) {
@@ -177,7 +332,7 @@ if (!empty($groups)) {
                 }
             }
 
-            $message = $value['last_message'];
+            $message = VNSEEA_AttachCanonicalMessageContext($value['last_message']);
             $message['text'] = openssl_encrypt($message['text'], "AES-128-ECB", $message['time']);
             if (empty($message['stickers'])) {
                 $message['stickers'] = '';
@@ -200,10 +355,12 @@ if (!empty($groups)) {
                 $message['type']   = 'map';
             }
             $message['type']     = $message_po . '_' . $message['type'];
-            $message['product']     = null;
+            $message['product'] = !empty($message['product']) ? $message['product'] : null;
             if (!empty($message['product_id'])) {
                 $message['type']     = $message_po . '_product';
-                $message['product'] = Wo_GetProduct($message['product_id']);
+                if (empty($message['product']) && function_exists('VNSEEA_GetMessageContextProduct')) {
+                    $message['product'] = VNSEEA_GetMessageContextProduct((int)$message['product_id']);
+                }
             }
             $message['file_size'] = 0;
             if (!empty($message['media'])) {
@@ -235,35 +392,44 @@ if (!empty($groups)) {
 }
 if (!empty($pages)) {
     foreach ($pages as $key => $value) {
-    	$page = Wo_PageData($value['message']['page_id']);
+        $page_id = !empty($value['message']['page_id']) ? (int)$value['message']['page_id'] : 0;
+        if ($page_id < 1) {
+            continue;
+        }
+        $page = !empty($page_data_cache[$page_id]) ? $page_data_cache[$page_id] : array();
+        if (empty($page)) {
+            continue;
+        }
         $page['chat_id'] = $value['chat_id'];
         $page['mute'] = array('notify' => 'yes',
                                'call_chat' => 'yes',
                                'archive' => 'no',
                                'fav' => 'no',
                                'pin' => 'no');
-        $mute = $db->where('user_id',$wo['user']['id'])->where('chat_id',$value['chat_id'])->where('type','page')->getOne(T_MUTE);
+        $mute_key = 'page:' . (int)$value['chat_id'];
+        $mute = isset($conversation_mutes[$mute_key]) ? $conversation_mutes[$mute_key] : array();
         if (!empty($mute)) {
-            $page['mute']['notify'] = $mute->notify;
-            $page['mute']['call_chat'] = $mute->call_chat;
-            $page['mute']['archive'] = $mute->archive;
-            $page['mute']['fav'] = $mute->fav;
-            $page['mute']['pin'] = $mute->pin;
+            $page['mute']['notify'] = $mute['notify'];
+            $page['mute']['call_chat'] = $mute['call_chat'];
+            $page['mute']['archive'] = $mute['archive'];
+            $page['mute']['fav'] = $mute['fav'];
+            $page['mute']['pin'] = $mute['pin'];
         }
         if (!empty($page) && !empty($value['message']) && !empty($value['message']['page_id']) && !empty($value['message']['user_id']) && !empty($value['message']['conversation_user_id'])) {
             $user_id = $wo['user']['id'];
             $timezone = new DateTimeZone($wo['user']['timezone']);
-            $message = Wo_GetPageMessages(array(
-                                        'page_id' => $value['message']['page_id'],
-                                        'from_id' => $value['message']['user_id'],
-                                        'to_id'   => $value['message']['conversation_user_id'],
-                                        'limit' => 1,
-                                        'limit_type' => 1
-                                    ));
-            if (!empty($message) && !empty($message[0]) && !empty($message[0]['time'])) {
-                $page['last_message'] = $message[0];
+            $page_message_key = VNSEEA_PageConversationKey(
+                $value['message']['page_id'],
+                $value['message']['user_id'],
+                $value['message']['conversation_user_id']
+            );
+            $message = isset($latest_page_messages[$page_message_key])
+                ? $latest_page_messages[$page_message_key]
+                : array();
+            if (!empty($message) && !empty($message['time'])) {
+                $page['last_message'] = $message;
 
-                $message = $page['last_message'];
+                $message = VNSEEA_AttachCanonicalMessageContext($page['last_message']);
                 $message['text'] = openssl_encrypt($message['text'], "AES-128-ECB", $message['time']);
                 if (empty($message['stickers'])) {
                     $message['stickers'] = '';
@@ -286,10 +452,12 @@ if (!empty($pages)) {
                     $message['type']   = 'map';
                 }
                 $message['type']     = $message_po . '_' . $message['type'];
-                $message['product']     = null;
+                $message['product'] = !empty($message['product']) ? $message['product'] : null;
                 if (!empty($message['product_id'])) {
                     $message['type']     = $message_po . '_product';
-                    $message['product'] = Wo_GetProduct($message['product_id']);
+                    if (empty($message['product']) && function_exists('VNSEEA_GetMessageContextProduct')) {
+                        $message['product'] = VNSEEA_GetMessageContextProduct((int)$message['product_id']);
+                    }
                 }
                 $message['file_size'] = 0;
                 if (!empty($message['media'])) {
@@ -309,11 +477,13 @@ if (!empty($pages)) {
                         $message['time_text'] = $time->format('H:i');
                     }
                 }
-                $info_id = $message['to_id'];
-                if ($message['from_id'] != $message['user_data']['user_id']) {
-                    $info_id = $message['from_id'];
-                }
-                $message['to_data'] = Wo_UserData($info_id);
+                $info_id = (int)$message['from_id'] === (int)$user_id
+                    ? (int)$message['to_id']
+                    : (int)$message['from_id'];
+                $info_id = (int)$info_id;
+                $message['to_data'] = !empty($page_user_cache[$info_id])
+                    ? $page_user_cache[$info_id]
+                    : array();
 
                 $page['last_message'] = $message;
                 $page['chat_type'] = 'page';
@@ -333,38 +503,53 @@ if (!empty($pages)) {
         }
     }
 }
-array_multisort( array_column($array, "chat_time"), SORT_DESC, $array );
+array_multisort(array_column($array, "chat_time"), SORT_DESC, $array);
 
 
 $check_calles     = Wo_CheckFroInCalls();
+$check_audio_calles = Wo_CheckFroInCalls('audio');
+$check_agora_calls = Wo_CheckFroInCallsAgora();
+$call_user_ids = array();
+foreach (array($check_calles, $check_audio_calles, $check_agora_calls) as $call_state) {
+    if ($call_state !== false && is_array($call_state) && !empty($call_state['from_id'])) {
+        $call_user_ids[(int)$call_state['from_id']] = (int)$call_state['from_id'];
+    }
+}
+$call_users = function_exists('VNSEEA_GetChatUsersBatch')
+    ? VNSEEA_GetChatUsersBatch($call_user_ids)
+    : array();
 if ($check_calles !== false && is_array($check_calles)) {
     $video_call = true;
-    $wo['video_call_user'] = Wo_UserData($check_calles['from_id']);
+    $wo['video_call_user'] = !empty($call_users[(int)$check_calles['from_id']])
+        ? $call_users[(int)$check_calles['from_id']]
+        : array();
     $video_call_user['data'] = $check_calles;
-    $video_call_user['user_id'] = $wo['video_call_user']['user_id'];
-    $video_call_user['avatar'] = $wo['video_call_user']['avatar'];
-    $video_call_user['name'] = $wo['video_call_user']['name'];
+    $video_call_user['user_id'] = !empty($wo['video_call_user']['user_id']) ? $wo['video_call_user']['user_id'] : 0;
+    $video_call_user['avatar'] = !empty($wo['video_call_user']['avatar']) ? $wo['video_call_user']['avatar'] : '';
+    $video_call_user['name'] = !empty($wo['video_call_user']['name']) ? $wo['video_call_user']['name'] : '';
 }
 
-$check_audio_calles     = Wo_CheckFroInCalls('audio');
 if ($check_audio_calles !== false && is_array($check_audio_calles)) {
     $audio_call = true;
-    $wo['audio_call_user'] = Wo_UserData($check_audio_calles['from_id']);
+    $wo['audio_call_user'] = !empty($call_users[(int)$check_audio_calles['from_id']])
+        ? $call_users[(int)$check_audio_calles['from_id']]
+        : array();
     $audio_call_user['data'] = $check_audio_calles;
-    $audio_call_user['user_id'] = $wo['audio_call_user']['user_id'];
-    $audio_call_user['avatar'] = $wo['audio_call_user']['avatar'];
-    $audio_call_user['name'] = $wo['audio_call_user']['name'];
+    $audio_call_user['user_id'] = !empty($wo['audio_call_user']['user_id']) ? $wo['audio_call_user']['user_id'] : 0;
+    $audio_call_user['avatar'] = !empty($wo['audio_call_user']['avatar']) ? $wo['audio_call_user']['avatar'] : '';
+    $audio_call_user['name'] = !empty($wo['audio_call_user']['name']) ? $wo['audio_call_user']['name'] : '';
 }
 $agora_call = false;
 $agora_call_data = array();
-$check_agora_calls     = Wo_CheckFroInCallsAgora();
 if ($check_agora_calls !== false && is_array($check_agora_calls)) {
     $agora_call = true;
-    $wo['agora_call_data'] = Wo_UserData($check_agora_calls['from_id']);
+    $wo['agora_call_data'] = !empty($call_users[(int)$check_agora_calls['from_id']])
+        ? $call_users[(int)$check_agora_calls['from_id']]
+        : array();
     $agora_call_data['data'] = $check_agora_calls;
-    $agora_call_data['user_id'] = $wo['agora_call_data']['user_id'];
-    $agora_call_data['avatar'] = $wo['agora_call_data']['avatar'];
-    $agora_call_data['name'] = $wo['agora_call_data']['name'];
+    $agora_call_data['user_id'] = !empty($wo['agora_call_data']['user_id']) ? $wo['agora_call_data']['user_id'] : 0;
+    $agora_call_data['avatar'] = !empty($wo['agora_call_data']['avatar']) ? $wo['agora_call_data']['avatar'] : '';
+    $agora_call_data['name'] = !empty($wo['agora_call_data']['name']) ? $wo['agora_call_data']['name'] : '';
 }
 
 if (!empty($_POST['SetOnline']) && $_POST['SetOnline'] == 1) {
