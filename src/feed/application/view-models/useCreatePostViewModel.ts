@@ -36,7 +36,6 @@ import type { GetTaggableUsersInput } from '../../domain/repositories/FeedReposi
 
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
-import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 
 const repository = createFeedRepository();
 
@@ -107,11 +106,9 @@ function normalizePickedCaptionValue(suggestion: ReelCaptionSuggestion) {
 async function ensureDraftVideoThumbnail(
   draft: CreatePostDraft,
 ): Promise<CreatePostDraft> {
-  const video = draft.video
-    ? await prepareVideoForUpload(draft.video)
-    : undefined;
+  const video = draft.video;
   if (!video || video.thumbnailUri) {
-    return video && video !== draft.video ? { ...draft, video } : draft;
+    return draft;
   }
 
   const thumbnail = await createVideoUploadThumbnail(video.uri);
@@ -187,7 +184,6 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const draftRef = useRef(draft);
-  const submitInFlightRef = useRef(false);
   draftRef.current = draft;
 
   // ── Caption suggestion state ──────────────────────────────────────
@@ -498,15 +494,12 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
    * retry without re-typing.
    */
   const submit = useCallback(async (): Promise<CreatePostResult | null> => {
-    if (submitInFlightRef.current) return null;
-
     const validationError = validate(draft);
     if (validationError) {
       setError(validationError);
       return null;
     }
 
-    submitInFlightRef.current = true;
     setIsSubmitting(true);
     setError(null);
     try {
@@ -569,7 +562,6 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       setError(message);
       return null;
     } finally {
-      submitInFlightRef.current = false;
       setIsSubmitting(false);
     }
   }, [captionMentionReplacements, copy, draft, eventId, groupId, onCreated, pageId, validate]);

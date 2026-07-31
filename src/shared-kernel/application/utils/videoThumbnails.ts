@@ -33,6 +33,27 @@ type NativeCreateThumbnailModule = {
   }) => Promise<NativeVideoThumbnail>;
 };
 
+type SafeNativeThumbnailFactory = (
+  fileUrl: string,
+  options?: {
+    quality?: number;
+    cacheName?: string;
+  },
+) => Promise<NativeVideoThumbnail>;
+
+type NativeCompressorPackage = {
+  createVideoThumbnail?: SafeNativeThumbnailFactory;
+  utils?: {
+    createVideoThumbnail?: SafeNativeThumbnailFactory;
+  };
+  default?: {
+    createVideoThumbnail?: SafeNativeThumbnailFactory;
+    utils?: {
+      createVideoThumbnail?: SafeNativeThumbnailFactory;
+    };
+  };
+};
+
 type CreateVideoThumbnailOptions = {
   timeStamp?: number;
   cacheName?: string;
@@ -49,6 +70,28 @@ const videoPosterInFlight = new Map<
   Promise<GeneratedVideoThumbnail | undefined>
 >();
 let videoPosterSerialQueue: Promise<unknown> = Promise.resolve();
+let safeNativeThumbnailFactory: SafeNativeThumbnailFactory | null | undefined;
+
+function resolveSafeNativeThumbnailFactory() {
+  if (safeNativeThumbnailFactory !== undefined) {
+    return safeNativeThumbnailFactory ?? undefined;
+  }
+
+  try {
+    const loaded =
+      require('react-native-compressor') as NativeCompressorPackage;
+    safeNativeThumbnailFactory =
+      loaded.createVideoThumbnail ??
+      loaded.utils?.createVideoThumbnail ??
+      loaded.default?.createVideoThumbnail ??
+      loaded.default?.utils?.createVideoThumbnail ??
+      null;
+  } catch {
+    safeNativeThumbnailFactory = null;
+  }
+
+  return safeNativeThumbnailFactory ?? undefined;
+}
 
 function normalizeThumbnailUri(path?: string) {
   if (!path) return '';
@@ -114,11 +157,31 @@ async function createThumbnailAt(
   timeStamp: number,
   cacheName: string,
 ) {
+  const safeFactory = resolveSafeNativeThumbnailFactory();
+  if (safeFactory) {
+    // react-native-create-thumbnail lets an uncaught RuntimeException escape
+    // from its Android worker thread when MediaMetadataRetriever cannot open
+    // a picker URI.  That terminates the whole app before the JS Promise can
+    // reject.  The compressor implementation catches native failures and
+    // rejects normally, so an unsupported video becomes a missing thumbnail
+    // instead of an Android process crash.
+    return safeFactory(videoUri, {
+      quality: 0.9,
+      cacheName: `${cacheName}_${timeStamp}`,
+    });
+  }
+
+  if (Platform.OS === 'android') {
+    throw new Error('Safe Android video thumbnail module is unavailable');
+  }
+
   const nativeModule = NativeModules.CreateThumbnail as
     | NativeCreateThumbnailModule
     | undefined;
   if (!nativeModule?.create) {
-    throw new Error('react-native-create-thumbnail native module is not linked');
+    throw new Error(
+      'react-native-create-thumbnail native module is not linked',
+    );
   }
 
   return nativeModule.create({
@@ -136,6 +199,13 @@ async function createVideoThumbnail(
   options: CreateVideoThumbnailOptions = {},
 ): Promise<GeneratedVideoThumbnail | undefined> {
   if (!videoUri) return undefined;
+  // Never call react-native-create-thumbnail on Android. Its native worker
+  // can throw an uncaught RuntimeException for an unreadable picker URI and
+  // terminate the whole process before the JS Promise gets a chance to catch
+  // it. If the safe implementation is not linked, omit the poster gracefully.
+  if (Platform.OS === 'android' && !resolveSafeNativeThumbnailFactory()) {
+    return undefined;
+  }
   const timeStamp = options.timeStamp ?? DEFAULT_VIDEO_THUMBNAIL_TIME_MS;
   const cacheName =
     options.cacheName ?? `vnseea_video_thumb_${Date.now()}_${timeStamp}`;

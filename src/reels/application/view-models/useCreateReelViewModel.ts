@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
 import type {
   ReelCaptionSuggestion,
@@ -204,17 +203,8 @@ export function useCreateReelViewModel() {
     setUploadState({ phase: 'uploading' });
 
     try {
-      const preparedVideo = await prepareVideoForUpload({
-        uri: draft.videoUri,
-        type: draft.videoType,
-        name: draft.videoName,
-        thumbnailUri: draft.thumbnailUri,
-      });
       const apiDraft = {
         ...draft,
-        videoUri: preparedVideo.uri,
-        videoType: preparedVideo.type,
-        videoName: preparedVideo.name,
         caption: serializeCaptionForBackend(
           draft.caption,
           captionMentionReplacements,
