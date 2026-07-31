@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Search, Tag, Trash2, UserRound } from 'lucide-react-native';
+import { Pencil, Search, Tag, Trash2, UserRound } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type {
   MessageLabelTarget,
@@ -34,10 +34,7 @@ import {
   APP_BRAND_COLOR,
   APP_COLORS,
 } from '../../../shared-kernel/presentation/theme/appColors';
-import type {
-  ChatItem,
-  MessageLabel,
-} from '../../domain/types/messages.types';
+import type { ChatItem, MessageLabel } from '../../domain/types/messages.types';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import { ConversationScreenHeader } from '../components/ConversationScreenHeader';
 
@@ -54,39 +51,44 @@ const repository = createMessagesRepository();
 
 const COPY = {
   vi: {
-    title: 'Nhãn khách hàng',
-    assignTab: 'Gắn nhãn',
-    manageTab: 'Quản lý nhãn',
-    existingLabels: 'Nhãn có thể gắn',
-    manageLabels: 'Nhãn của bạn',
-    noLabels: 'Bạn chưa tạo nhãn nào.',
-    attach: 'Gắn nhãn',
-    detach: 'Gỡ nhãn',
-    selectedCustomer: 'Người đang được gắn nhãn',
-    selectCustomer: 'Chọn người dùng để gắn nhãn',
+    title: 'Thẻ khách hàng',
+    assignTab: 'Gắn thẻ',
+    manageTab: 'Quản lý thẻ',
+    existingLabels: 'Thẻ có thể gắn',
+    manageLabels: 'Thẻ của bạn',
+    noLabels: 'Bạn chưa tạo thẻ nào.',
+    attach: 'Gắn thẻ',
+    detach: 'Gỡ thẻ',
+    selectedCustomer: 'Người đang được gắn thẻ',
+    selectCustomer: 'Chọn người dùng để gắn thẻ',
     changeCustomer: 'Đổi người',
     searchCustomer: 'Tìm trong cuộc trò chuyện 1-1',
     noUsers: 'Không tìm thấy cuộc trò chuyện phù hợp.',
-    name: 'Tên nhãn',
+    name: 'Tên thẻ',
     namePlaceholder: 'Ví dụ: Khách hàng tiềm năng',
-    color: 'Màu nhãn',
-    create: 'Tạo nhãn',
-    loadingError: 'Không thể tải dữ liệu nhãn.',
+    color: 'Màu thẻ',
+    create: 'Tạo thẻ',
+    update: 'Lưu thay đổi',
+    edit: 'Sửa',
+    editingTitle: 'Đang sửa thẻ',
+    cancelEdit: 'Hủy sửa',
+    loadingError: 'Không thể tải dữ liệu thẻ.',
     retry: 'Thử lại',
-    attachSuccess: 'Đã gắn nhãn.',
-    detachSuccess: 'Đã gỡ nhãn.',
-    mutationError: 'Không thể cập nhật nhãn. Vui lòng thử lại.',
-    createSuccess: 'Đã tạo nhãn thành công.',
-    createAttachError:
-      'Đã tạo nhãn nhưng chưa thể gắn cho người dùng này.',
-    createError: 'Không thể tạo nhãn. Vui lòng thử lại.',
-    deleteTitle: 'Xóa nhãn?',
+    attachSuccess: 'Đã gắn thẻ.',
+    detachSuccess: 'Đã gỡ thẻ.',
+    mutationError: 'Không thể cập nhật thẻ. Vui lòng thử lại.',
+    createSuccess: 'Đã tạo thẻ thành công.',
+    createAttachError: 'Đã tạo thẻ nhưng chưa thể gắn cho người dùng này.',
+    createError: 'Không thể tạo thẻ. Vui lòng thử lại.',
+    updateSuccess: 'Đã cập nhật thẻ.',
+    updateError: 'Không thể cập nhật thẻ. Vui lòng thử lại.',
+    deleteTitle: 'Xóa thẻ?',
     deleteMessage: (name: string) =>
-      `Nhãn “${name}” sẽ được gỡ khỏi tất cả người dùng.`,
+      `Thẻ “${name}” sẽ được gỡ khỏi tất cả người dùng.`,
     cancel: 'Hủy',
     delete: 'Xóa',
-    deleteSuccess: 'Đã xóa nhãn.',
-    deleteError: 'Không thể xóa nhãn.',
+    deleteSuccess: 'Đã xóa thẻ.',
+    deleteError: 'Không thể xóa thẻ.',
   },
   en: {
     title: 'Customer labels',
@@ -106,6 +108,10 @@ const COPY = {
     namePlaceholder: 'For example: Potential customer',
     color: 'Label color',
     create: 'Create label',
+    update: 'Save changes',
+    edit: 'Edit',
+    editingTitle: 'Editing label',
+    cancelEdit: 'Cancel editing',
     loadingError: 'Unable to load label data.',
     retry: 'Retry',
     attachSuccess: 'Label assigned.',
@@ -115,9 +121,10 @@ const COPY = {
     createAttachError:
       'The label was created but could not be assigned to this customer.',
     createError: 'Unable to create the label. Please try again.',
+    updateSuccess: 'Label updated.',
+    updateError: 'Unable to update the label. Please try again.',
     deleteTitle: 'Delete label?',
-    deleteMessage: (name: string) =>
-      `“${name}” will be removed from everyone.`,
+    deleteMessage: (name: string) => `“${name}” will be removed from everyone.`,
     cancel: 'Cancel',
     delete: 'Delete',
     deleteSuccess: 'Label deleted.',
@@ -137,10 +144,7 @@ function getTargetFromChat(chat: ChatItem): MessageLabelTarget | null {
   };
 }
 
-function dedupeTargets(
-  chats: ChatItem[],
-  initialTarget?: MessageLabelTarget,
-) {
+function dedupeTargets(chats: ChatItem[], initialTarget?: MessageLabelTarget) {
   const targets = new Map<string, MessageLabelTarget>();
   if (initialTarget?.userId) targets.set(initialTarget.userId, initialTarget);
 
@@ -201,6 +205,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
   const [targetQuery, setTargetQuery] = useState('');
   const [labelName, setLabelName] = useState('');
   const [labelColor, setLabelColor] = useState<string>(DEFAULT_LABEL_COLOR);
+  const [editingLabel, setEditingLabel] = useState<MessageLabel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isTargetLabelsLoading, setIsTargetLabelsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -209,6 +214,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
     new Set(),
   );
   const targetLoadGenerationRef = useRef(0);
+  const manageScrollRef = useRef<ScrollView>(null);
 
   const palette = useMemo(
     () => ({
@@ -289,6 +295,25 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
     setIsTargetLabelsLoading(false);
   }, []);
 
+  const resetLabelForm = useCallback(() => {
+    setEditingLabel(null);
+    setLabelName('');
+    setLabelColor(DEFAULT_LABEL_COLOR);
+  }, []);
+
+  const startEditingLabel = useCallback((label: MessageLabel) => {
+    setEditingLabel(label);
+    setLabelName(label.name);
+    setLabelColor(
+      HEX_COLOR_PATTERN.test(label.color)
+        ? label.color.toUpperCase()
+        : DEFAULT_LABEL_COLOR,
+    );
+    requestAnimationFrame(() => {
+      manageScrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }, []);
+
   const toggleAttachedLabel = useCallback(
     async (label: MessageLabel) => {
       if (!selectedTarget || mutatingLabelIds.has(label.id)) return;
@@ -357,6 +382,9 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                 next.delete(label.id);
                 return next;
               });
+              if (editingLabel?.id === label.id) {
+                resetLabelForm();
+              }
               showSnackbar({ type: 'success', message: copy.deleteSuccess });
             } catch {
               showSnackbar({ type: 'error', message: copy.deleteError });
@@ -371,22 +399,39 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
         },
       ]);
     },
-    [copy],
+    [copy, editingLabel?.id, resetLabelForm],
   );
 
-  const createLabel = useCallback(async () => {
+  const saveLabel = useCallback(async () => {
     const normalizedName = labelName.trim();
     if (!normalizedName || isSaving) return;
 
+    const normalizedColor = HEX_COLOR_PATTERN.test(labelColor)
+      ? labelColor.toUpperCase()
+      : DEFAULT_LABEL_COLOR;
+
     setIsSaving(true);
     try {
+      if (editingLabel) {
+        await repository.updateLabel(
+          editingLabel.id,
+          normalizedName,
+          normalizedColor,
+        );
+        setLabels(current =>
+          current.map(label =>
+            label.id === editingLabel.id
+              ? { ...label, name: normalizedName, color: normalizedColor }
+              : label,
+          ),
+        );
+        resetLabelForm();
+        showSnackbar({ type: 'success', message: copy.updateSuccess });
+        return;
+      }
+
       const existingIds = new Set(labels.map(label => label.id));
-      await repository.createLabel(
-        normalizedName,
-        HEX_COLOR_PATTERN.test(labelColor)
-          ? labelColor.toUpperCase()
-          : DEFAULT_LABEL_COLOR,
-      );
+      await repository.createLabel(normalizedName, normalizedColor);
       const refreshedLabels = await repository.listLabels();
       setLabels(refreshedLabels);
       const createdLabel =
@@ -402,13 +447,8 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
       let attached = false;
       if (selectedTarget) {
         try {
-          await repository.attachLabel(
-            selectedTarget.userId,
-            createdLabel.id,
-          );
-          setAttachedLabelIds(current =>
-            new Set(current).add(createdLabel.id),
-          );
+          await repository.attachLabel(selectedTarget.userId, createdLabel.id);
+          setAttachedLabelIds(current => new Set(current).add(createdLabel.id));
           attached = true;
         } catch {
           showSnackbar({
@@ -421,10 +461,12 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
       if (!selectedTarget || attached) {
         showSnackbar({ type: 'success', message: copy.createSuccess });
       }
-      setLabelName('');
-      setLabelColor(DEFAULT_LABEL_COLOR);
+      resetLabelForm();
     } catch {
-      showSnackbar({ type: 'error', message: copy.createError });
+      showSnackbar({
+        type: 'error',
+        message: editingLabel ? copy.updateError : copy.createError,
+      });
     } finally {
       setIsSaving(false);
     }
@@ -432,10 +474,14 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
     copy.createAttachError,
     copy.createError,
     copy.createSuccess,
+    copy.updateError,
+    copy.updateSuccess,
+    editingLabel,
     isSaving,
     labelColor,
     labelName,
     labels,
+    resetLabelForm,
     selectedTarget,
   ]);
 
@@ -568,10 +614,7 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={palette.card}
       />
-      <ConversationScreenHeader
-        title={copy.title}
-        onBack={navigation.goBack}
-      />
+      <ConversationScreenHeader title={copy.title} onBack={navigation.goBack} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -606,23 +649,17 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                     key={item}
                     className="flex-1 items-center rounded-md py-2.5"
                     style={{
-                      backgroundColor: selected
-                        ? palette.card
-                        : 'transparent',
+                      backgroundColor: selected ? palette.card : 'transparent',
                     }}
                     onPress={() => setMode(item)}
                   >
                     <Text
                       className="font-bold"
                       style={{
-                        color: selected
-                          ? APP_BRAND_COLOR
-                          : palette.muted,
+                        color: selected ? APP_BRAND_COLOR : palette.muted,
                       }}
                     >
-                      {item === 'assign'
-                        ? copy.assignTab
-                        : copy.manageTab}
+                      {item === 'assign' ? copy.assignTab : copy.manageTab}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -715,79 +752,49 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                 ) : null}
               </ScrollView>
             ) : (
-              <View style={{ flex: 1 }}>
-                <ScrollView
-                  testID="message-labels-manage-list"
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{
-                    paddingHorizontal: 16,
-                    paddingBottom: 12,
-                  }}
-                  showsVerticalScrollIndicator={false}
-                >
-                  <Text
-                    className="mb-2 text-xs font-bold uppercase"
-                    style={{ color: palette.muted }}
-                  >
-                    {copy.manageLabels}
-                  </Text>
-                  <View
-                    className="overflow-hidden rounded-lg border"
-                    style={{
-                      backgroundColor: palette.card,
-                      borderColor: palette.border,
-                    }}
-                  >
-                    {labels.length === 0
-                      ? renderLabelEmptyState()
-                      : labels.map(label => {
-                          const mutating = mutatingLabelIds.has(label.id);
-                          return (
-                            <View
-                              key={label.id}
-                              className="min-h-14 flex-row items-center border-b px-3 py-2"
-                              style={{ borderBottomColor: palette.border }}
-                            >
-                              <View
-                                className="mr-3 h-4 w-4 rounded-full"
-                                style={{ backgroundColor: label.color }}
-                              />
-                              <Text
-                                className="flex-1 font-semibold"
-                                style={{ color: palette.text }}
-                              >
-                                {label.name}
-                              </Text>
-                              <TouchableOpacity
-                                accessibilityRole="button"
-                                accessibilityLabel={`${copy.delete} ${label.name}`}
-                                className="h-11 w-11 items-center justify-center rounded-full"
-                                disabled={mutating}
-                                onPress={() => deleteLabel(label)}
-                              >
-                                {mutating ? (
-                                  <ActivityIndicator
-                                    size="small"
-                                    color={APP_BRAND_COLOR}
-                                  />
-                                ) : (
-                                  <Trash2 size={19} color="#DC2626" />
-                                )}
-                              </TouchableOpacity>
-                            </View>
-                          );
-                        })}
-                  </View>
-                </ScrollView>
-
+              <ScrollView
+                ref={manageScrollRef}
+                testID="message-labels-manage-list"
+                style={{ flex: 1 }}
+                contentContainerStyle={{
+                  paddingHorizontal: 16,
+                  paddingBottom: 24,
+                }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
                 <View
                   testID="message-labels-create-form"
-                  className="border-t px-4 pb-3 pt-3"
+                  className="rounded-lg border p-3"
                   style={{
                     backgroundColor: palette.card,
-                    borderTopColor: palette.border,
+                    borderColor: palette.border,
                   }}
                 >
+                  {editingLabel ? (
+                    <View className="mb-3 flex-row items-center">
+                      <Text
+                        className="flex-1 text-sm font-bold text-brand"
+                        numberOfLines={1}
+                      >
+                        {copy.editingTitle}: {editingLabel.name}
+                      </Text>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={copy.cancelEdit}
+                        className="min-h-10 justify-center px-2"
+                        disabled={isSaving}
+                        onPress={resetLabelForm}
+                      >
+                        <Text
+                          className="font-bold"
+                          style={{ color: palette.muted }}
+                        >
+                          {copy.cancel}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
                   <Text
                     className="mb-2 text-xs font-bold uppercase"
                     style={{ color: palette.muted }}
@@ -825,18 +832,81 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
                         : 'bg-slate-300'
                     }`}
                     disabled={!labelName.trim() || isSaving}
-                    onPress={() => createLabel().catch(() => undefined)}
+                    onPress={() => saveLabel().catch(() => undefined)}
                   >
                     {isSaving ? (
                       <ActivityIndicator color="#FFFFFF" />
                     ) : (
                       <Text className="font-bold text-white">
-                        {copy.create}
+                        {editingLabel ? copy.update : copy.create}
                       </Text>
                     )}
                   </TouchableOpacity>
                 </View>
-              </View>
+
+                <Text
+                  className="mb-2 mt-5 text-xs font-bold uppercase"
+                  style={{ color: palette.muted }}
+                >
+                  {copy.manageLabels}
+                </Text>
+                <View
+                  className="overflow-hidden rounded-lg border"
+                  style={{
+                    backgroundColor: palette.card,
+                    borderColor: palette.border,
+                  }}
+                >
+                  {labels.length === 0
+                    ? renderLabelEmptyState()
+                    : labels.map(label => {
+                        const mutating = mutatingLabelIds.has(label.id);
+                        return (
+                          <View
+                            key={label.id}
+                            className="min-h-14 flex-row items-center border-b px-3 py-2"
+                            style={{ borderBottomColor: palette.border }}
+                          >
+                            <View
+                              className="mr-3 h-4 w-4 rounded-full"
+                              style={{ backgroundColor: label.color }}
+                            />
+                            <Text
+                              className="flex-1 font-semibold"
+                              style={{ color: palette.text }}
+                            >
+                              {label.name}
+                            </Text>
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel={`${copy.edit} ${label.name}`}
+                              className="h-11 w-11 items-center justify-center rounded-full"
+                              disabled={mutating || isSaving}
+                              onPress={() => startEditingLabel(label)}
+                            >
+                              <Pencil size={18} color={APP_BRAND_COLOR} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel={`${copy.delete} ${label.name}`}
+                              className="h-11 w-11 items-center justify-center rounded-full"
+                              disabled={mutating || isSaving}
+                              onPress={() => deleteLabel(label)}
+                            >
+                              {mutating ? (
+                                <ActivityIndicator
+                                  size="small"
+                                  color={APP_BRAND_COLOR}
+                                />
+                              ) : (
+                                <Trash2 size={19} color="#DC2626" />
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                </View>
+              </ScrollView>
             )}
           </View>
         )}

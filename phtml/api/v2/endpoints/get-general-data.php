@@ -481,6 +481,24 @@ $timezone = new DateTimeZone($wo['user']['timezone']);
         $response_data['notifications'] = $final_notifications;
         $response_data['new_notifications_count'] = $count_notifications;
     }
+
+    // Lightweight badge counters. Keep these separate from the full
+    // notification/group-request payload so mobile badge refreshes do not
+    // hydrate and format up to 100 records on every poll.
+    if (!empty($data['count_notifications'])) {
+        $count_notifications_options = array(
+            'unread' => true,
+            'remove_notification' => array('visited_profile', 'message', 'chat', 'chat_message', 'new_message')
+        );
+        $include_all_notifications = (!empty($_POST['include_all_notifications']) && $_POST['include_all_notifications'] == 1);
+        if ($include_all_notifications !== true) {
+            $count_notifications_options['remove_notification'] = array_merge(
+                $count_notifications_options['remove_notification'],
+                array('requested_to_join_group', 'interested_event', 'going_event', 'invited_event', 'forum_reply', 'admin_notification')
+            );
+        }
+        $response_data['new_notifications_count'] = Wo_CountNotifications($count_notifications_options);
+    }
     
     if (!empty($data['friend_requests'])) {
     	$final_friend_requests = array();
@@ -513,6 +531,9 @@ $timezone = new DateTimeZone($wo['user']['timezone']);
             }
         }
         $response_data['group_chat_requests'] = $final_group_chat_requests;
+        $response_data['new_group_chat_requests_count'] = Wo_CountGroupChatRequests();
+    }
+    if (!empty($data['count_group_chat_requests'])) {
         $response_data['new_group_chat_requests_count'] = Wo_CountGroupChatRequests();
     }
 

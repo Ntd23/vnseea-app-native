@@ -39,6 +39,7 @@ jest.mock(
 );
 
 import type { LiveStreamItem } from '../../../domain/types/live.types';
+import { clearLiveRequestResource } from '../../state/liveRequestResource';
 import { useLiveViewModel } from '../useLiveViewModel';
 
 function deferred<T>() {
@@ -49,6 +50,13 @@ function deferred<T>() {
     reject = rejectPromise;
   });
   return { promise, reject, resolve };
+}
+
+async function flushAsyncWork() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 const liveItem: LiveStreamItem = {
@@ -77,6 +85,7 @@ describe('useLiveViewModel request concurrency', () => {
     mockGetLiveFriends.mockReset().mockResolvedValue([]);
     mockGetUserLiveStreams.mockReset().mockResolvedValue([]);
     mockGetLivePost.mockReset().mockResolvedValue(liveItem);
+    clearLiveRequestResource();
     Object.defineProperty(AppState, 'currentState', {
       configurable: true,
       value: 'active',
@@ -178,13 +187,18 @@ describe('useLiveViewModel request concurrency', () => {
 
     await act(async () => {
       probeRequest.resolve(liveItem);
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushAsyncWork();
     });
 
     await act(async () => {
       jest.advanceTimersByTime(5_000);
       await Promise.resolve();
+    });
+    expect(mockGetLivePost).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(10_000);
+      await flushAsyncWork();
     });
     expect(mockGetLivePost).toHaveBeenCalledTimes(2);
     await act(async () => renderer.unmount());

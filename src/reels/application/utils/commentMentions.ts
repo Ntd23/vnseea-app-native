@@ -49,6 +49,39 @@ function findNextKnownMentionIndex(
   return -1;
 }
 
+function replaceKnownMentionValue(
+  text: string,
+  value: string,
+  replacement: string,
+  { allowAtPrefix = true }: { allowAtPrefix?: boolean } = {},
+) {
+  if (!value) return text;
+
+  const parts: string[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const index = findNextKnownMentionIndex(text, value, cursor);
+    if (index < 0) {
+      parts.push(text.slice(cursor));
+      break;
+    }
+
+    const hasAtPrefix = index > 0 && text.charAt(index - 1) === '@';
+    if (!allowAtPrefix && hasAtPrefix) {
+      const end = index + value.length;
+      parts.push(text.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    parts.push(text.slice(cursor, index), replacement);
+    cursor = index + value.length;
+  }
+
+  return parts.join('');
+}
+
 function findNextUnknownMention(text: string, fromIndex: number) {
   UNKNOWN_COMMENT_MENTION_PATTERN.lastIndex = fromIndex;
   let match = UNKNOWN_COMMENT_MENTION_PATTERN.exec(text);
@@ -165,12 +198,46 @@ export function hydrateCommentMentionText(
     .reduce((next, mention) => {
       const displayValue = getCommentMentionDisplayValue(mention);
       const backendValue = getCommentMentionBackendValue(mention);
-      const idToken = `@[${mention.userId}]`;
-      return next
-        .split(idToken)
-        .join(displayValue)
-        .split(backendValue)
-        .join(displayValue);
+      const idToken = mention.userId ? `@[${mention.userId}]` : '';
+      const hasExplicitMention =
+        (idToken ? next.includes(idToken) : false) ||
+        findNextKnownMentionIndex(next, backendValue, 0) >= 0 ||
+        findNextKnownMentionIndex(next, displayValue, 0) >= 0;
+      const hydratedId = idToken
+        ? replaceKnownMentionValue(next, idToken, displayValue)
+        : next;
+      const hydrated = replaceKnownMentionValue(
+        hydratedId,
+        backendValue,
+        displayValue,
+      );
+
+      if (hasExplicitMention) return hydrated;
+
+      // Older comment responses return the rendered anchor label after
+      // `strip_tags()`, so an intentional mention can arrive as plain
+      // `username` / `Display Name` without its leading `@`. When mention
+      // metadata is still available locally, restore the visual token.
+      const bareCandidates = [
+        mention.displayName.trim().replace(/^@+/, ''),
+        mention.username.trim().replace(/^@+/, ''),
+      ]
+        .filter(
+          (value, index, values) => value && values.indexOf(value) === index,
+        )
+        .sort((left, right) => right.length - left.length);
+
+      for (const candidate of bareCandidates) {
+        const restored = replaceKnownMentionValue(
+          hydrated,
+          candidate,
+          displayValue,
+          { allowAtPrefix: false },
+        );
+        if (restored !== hydrated) return restored;
+      }
+
+      return hydrated;
     }, text);
 }
 

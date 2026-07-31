@@ -20,6 +20,7 @@
 //     lower.
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { ApiBridgeError } from '../../../shared-kernel/application/api/apiResponse';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -54,6 +55,8 @@ import type {
   FeedTextPost,
   FeedVideoPost,
   FeedPollPost,
+  FeedProductPost,
+  FeedJobPost,
   PostFeeling,
   PostPrivacy,
   PostLinkPreview,
@@ -61,6 +64,8 @@ import type {
   PostTaggedUser,
   SharedPostPreviewModel,
 } from '../../domain/types/feed.types';
+import type { ProductItem } from '../../../product/domain/types/product.types';
+import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import { buildSharedPostPreviewModel } from '../../application/sharing/sharedPostPreview';
 import { mapProfileMediaActivity } from '../../application/mappers/profileMediaActivity';
 import {
@@ -70,6 +75,7 @@ import {
   type ContentAudienceWireContract,
 } from '../../../shared-kernel/domain/types/contentAudience';
 import { normalizeHostedMediaUrl } from '../../../community/application/groupDetailState';
+import { mapFeedRequestsWithConcurrency } from './feedRequestPool';
 
 // Privacy mapping
 // WoWonder's `postPrivacy` is numeric and enforced by Wo_GetPostData:
@@ -800,11 +806,24 @@ function looksLikeGeneratedSmallImage(url: string): boolean {
 function extractPhotoUrls(raw: Record<string, unknown>): string[] {
   const urls: string[] = [];
 
-  const tryPush = (url: string | undefined) => {
+  const tryPush = (
+    url: string | undefined,
+    allowExtensionlessHostedImage = false,
+  ) => {
     if (!url) return;
     const fullUrl = normalizeMediaUrl(url);
     if (!fullUrl) return;
-    if (!IMAGE_URL_PATTERN.test(fullUrl)) return;
+    if (
+      !IMAGE_URL_PATTERN.test(fullUrl) &&
+      !(
+        allowExtensionlessHostedImage &&
+        /^https?:\/\//i.test(fullUrl) &&
+        !VIDEO_URL_PATTERN.test(fullUrl) &&
+        !AUDIO_URL_PATTERN.test(fullUrl)
+      )
+    ) {
+      return;
+    }
     if (urls.includes(fullUrl)) return;
     urls.push(fullUrl);
   };
@@ -813,7 +832,7 @@ function extractPhotoUrls(raw: Record<string, unknown>): string[] {
   tryPush(readString(raw, 'postFile'));
 
   // Path 4: link-preview / imported image
-  tryPush(readString(raw, 'postPhoto'));
+  tryPush(readString(raw, 'postPhoto'), true);
 
   // Paths 2 + 3: album / multi-image — try every shape WoWonder is
   // known to use. Order matters: `photo_album` and `photo_multi` are
@@ -831,7 +850,7 @@ function extractPhotoUrls(raw: Record<string, unknown>): string[] {
     if (!Array.isArray(candidate)) continue;
     for (const item of candidate) {
       if (typeof item === 'string') {
-        tryPush(item);
+        tryPush(item, true);
         continue;
       }
       if (item && typeof item === 'object') {
@@ -851,9 +870,9 @@ function extractPhotoUrls(raw: Record<string, unknown>): string[] {
         // after that so installs that surface photos under another name still
         // work.
         if (preferredImage) {
-          tryPush(preferredImage);
+          tryPush(preferredImage, true);
         } else {
-          tryPush(readString(obj, 'url', 'source', 'src', 'photo'));
+          tryPush(readString(obj, 'url', 'source', 'src', 'photo'), true);
         }
       }
     }
@@ -1138,6 +1157,213 @@ function readNestedImage(entity: Record<string, unknown>) {
   return image ? normalizeMediaUrl(image) || undefined : undefined;
 }
 
+function readNestedImages(
+  entity: Record<string, unknown>,
+): ProductItem['images'] {
+  const images = Array.isArray(entity.images) ? entity.images : [];
+  return images
+    .map((item, index) => {
+      const record =
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? (item as Record<string, unknown>)
+          : null;
+      const image = normalizeMediaUrl(
+        typeof item === 'string'
+          ? item
+          : record
+          ? readString(record, 'image', 'image_org', 'url', 'src')
+          : '',
+      );
+      if (!image) return null;
+      return {
+        id: record ? readNumber(record, 'id') || index + 1 : index + 1,
+        image,
+        product_id: record
+          ? readNumber(record, 'product_id', 'productId')
+          : 0,
+      };
+    })
+    .filter((item): item is ProductItem['images'][number] => Boolean(item));
+}
+
+function looksLikeProductPost(raw: Record<string, unknown>) {
+  const postType = readString(raw, 'postType', 'post_type').toLowerCase();
+  return Boolean(
+    readNestedRecord(raw, 'product', 'product_data') ||
+      postType === 'product' ||
+      readNumber(raw, 'product_id') > 0,
+  );
+}
+
+function mapProductPost(raw: Record<string, unknown>): FeedProductPost {
+  const base = mapTextPostBase(raw);
+  const product = readNestedRecord(raw, 'product', 'product_data') ?? {};
+  const seller =
+    readNestedRecord(product, 'seller', 'user_data', 'publisher') ?? {};
+  const productId =
+    readNumber(product, 'id', 'product_id') || readNumber(raw, 'product_id');
+  const images = readNestedImages(product);
+  const fallbackImage =
+    readNestedImage(product) || base.photos[0] || normalizeMediaUrl(readString(raw, 'postFile'));
+  if (images.length === 0 && fallbackImage) {
+    images.push({ id: 1, image: fallbackImage, product_id: productId });
+  }
+
+  const sellerId =
+    readNumber(seller, 'user_id', 'id') ||
+    Number(base.publisher.id || readString(raw, 'user_id')) ||
+    0;
+  const postId = readNumber(product, 'post_id') || Number(base.id) || 0;
+
+  return {
+    ...base,
+    kind: 'product',
+    product: {
+      id: productId,
+      user_id: readNumber(product, 'user_id') || sellerId,
+      name: cleanCaption(readString(product, 'name', 'title', 'product_title')) || 'Sản phẩm',
+      category: readNumber(product, 'category', 'category_id'),
+      category_name: cleanCaption(
+        readString(product, 'category_name', 'category_label'),
+      ),
+      product_sub_category:
+        readString(product, 'product_sub_category') || undefined,
+      sub_category:
+        readNumber(product, 'sub_category', 'sub_id') || undefined,
+      description: cleanCaption(readString(product, 'description')),
+      price: readString(product, 'price', 'product_price'),
+      points:
+        readString(
+          product,
+          'points',
+          'product_points',
+          'point_price',
+          'points_price',
+        ) || undefined,
+      currency: readString(product, 'currency'),
+      currency_code: readString(product, 'currency_code', 'currency'),
+      currency_symbol: readString(product, 'currency_symbol'),
+      price_format:
+        readString(product, 'price_format', 'price_text') || undefined,
+      location: cleanCaption(readString(product, 'location')),
+      lat: readString(product, 'lat') || undefined,
+      lng: readString(product, 'lng') || undefined,
+      type: readNumber(product, 'type'),
+      units: readNumber(product, 'units') || undefined,
+      rating: readString(product, 'rating') || undefined,
+      reviews_count: readString(product, 'reviews_count') || undefined,
+      active: readNumber(product, 'active') || 1,
+      post_id: postId,
+      time: readString(product, 'time') || String(base.postedAt ?? ''),
+      images,
+      seller: {
+        user_id: sellerId,
+        username:
+          readString(seller, 'username', 'user_name') || base.publisher.username,
+        name:
+          cleanCaption(readString(seller, 'name', 'full_name')) ||
+          base.publisher.name,
+        avatar:
+          normalizeMediaUrl(readString(seller, 'avatar', 'profile_picture')) ||
+          base.publisher.avatarUrl ||
+          '',
+      },
+      is_owner: readBool(product, 'is_owner', 'isOwner'),
+      can_contact_seller:
+        readOptionalBool(product, 'can_contact_seller', 'canContactSeller') ??
+        true,
+      can_add_to_cart:
+        readOptionalBool(product, 'can_add_to_cart', 'canAddToCart') ?? true,
+    },
+  };
+}
+
+function looksLikeJobPost(raw: Record<string, unknown>) {
+  const postType = readString(raw, 'postType', 'post_type').toLowerCase();
+  return Boolean(
+    readNestedRecord(raw, 'job', 'job_data') ||
+      postType === 'job' ||
+      readNumber(raw, 'job_id') > 0,
+  );
+}
+
+function mapJobPost(raw: Record<string, unknown>): FeedJobPost {
+  const base = mapTextPostBase(raw);
+  const job = readNestedRecord(raw, 'job', 'job_data') ?? {};
+  const page = readNestedRecord(job, 'page') ?? readNestedRecord(raw, 'page');
+  const jobImage =
+    readNestedImage(job) || base.photos[0] || normalizeMediaUrl(readString(raw, 'postFile')) || '';
+  const jobId = readString(job, 'id', 'job_id') || readString(raw, 'job_id');
+  const postId = readString(job, 'post_id') || base.id;
+  const pageId = readString(job, 'page_id') || readString(page ?? {}, 'page_id', 'id');
+  const pageTitle =
+    cleanCaption(readString(page ?? {}, 'page_title', 'name', 'full_name')) ||
+    base.publisher.name;
+
+  const mappedJob: JobsItem = {
+    id: jobId,
+    title:
+      cleanCaption(readString(job, 'title', 'job_title', 'name')) || 'Việc làm',
+    description: cleanCaption(readString(job, 'description')),
+    location: cleanCaption(readString(job, 'location', 'address')),
+    lat: readString(job, 'lat') || undefined,
+    lng: readString(job, 'lng') || undefined,
+    minimum: readNumber(job, 'minimum') || undefined,
+    maximum: readNumber(job, 'maximum') || undefined,
+    salary_date: readString(job, 'salary_date'),
+    salary_date_label:
+      readString(job, 'salary_date_label') || readString(job, 'salary_date'),
+    job_type: readString(job, 'job_type'),
+    job_type_label:
+      readString(job, 'job_type_label') || readString(job, 'job_type'),
+    category: readString(job, 'category'),
+    category_label:
+      readString(job, 'category_label') || readString(job, 'category'),
+    currency: readString(job, 'currency') || undefined,
+    currency_symbol: readString(job, 'currency_symbol') || undefined,
+    image: jobImage,
+    image_type: readString(job, 'image_type') || undefined,
+    page_id: pageId,
+    user_id: readString(job, 'user_id') || base.publisher.id,
+    time: readNumber(job, 'time') || base.postedAt || 0,
+    post_id: postId || undefined,
+    apply: readBool(job, 'apply'),
+    apply_count: readNumber(job, 'apply_count'),
+    url: readString(job, 'url') || undefined,
+    page: page
+      ? {
+          page_id: pageId,
+          page_title: pageTitle,
+          page_name: readString(page, 'page_name', 'username'),
+          page_description: cleanCaption(
+            readString(page, 'page_description', 'description'),
+          ),
+          avatar:
+            normalizeMediaUrl(readString(page, 'avatar', 'profile_picture')) ||
+            base.publisher.avatarUrl ||
+            '',
+          cover: normalizeMediaUrl(readString(page, 'cover')) || '',
+          user_id: readString(page, 'user_id') || base.publisher.id,
+          is_page_onwer: readBool(page, 'is_page_onwer', 'is_page_owner'),
+        }
+      : undefined,
+  };
+
+  return {
+    ...base,
+    kind: 'job',
+    job: mappedJob,
+    publisher: mappedJob.page
+      ? {
+          id: String(mappedJob.page.user_id || base.publisher.id),
+          name: mappedJob.page.page_title || base.publisher.name,
+          username: mappedJob.page.page_name || base.publisher.username,
+          avatarUrl: mappedJob.page.avatar || base.publisher.avatarUrl,
+        }
+      : base.publisher,
+  };
+}
+
 function mapSharedAttachmentPreview(
   raw: Record<string, unknown>,
 ): SharedPostPreviewModel | null {
@@ -1258,17 +1484,29 @@ function mapTextPost(
 // rehydrates with the new account's suggestions. Reset whenever the
 // cache TTL expires.
 const SUGGESTED_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DISCOVERY_AUTHOR_COHORT_SIZE = 8;
+const DISCOVERY_AUTHOR_REQUEST_CONCURRENCY = 4;
+const MIN_RECOMMENDED_PAGE_FILL_RATIO = 0.7;
 
 const suggestedUsersCache = new Map<
   string,
   { ids: string[]; expiresAt: number }
 >();
+const suggestedAuthorOffsets = new Map<string, number>();
+const activeSuggestedAuthorCohorts = new Map<string, string[]>();
+type RecommendedEndpointAvailability =
+  | 'unknown'
+  | 'available'
+  | 'unsupported';
+let recommendedEndpointAvailability: RecommendedEndpointAvailability =
+  'unknown';
 
 function getCachedSuggestedIds(viewerId: string): string[] | null {
   const entry = suggestedUsersCache.get(viewerId);
   if (!entry) return null;
   if (entry.expiresAt < Date.now()) {
     suggestedUsersCache.delete(viewerId);
+    activeSuggestedAuthorCohorts.delete(viewerId);
     return null;
   }
   return entry.ids;
@@ -1279,9 +1517,59 @@ function setCachedSuggestedIds(viewerId: string, ids: string[]): void {
     ids,
     expiresAt: Date.now() + SUGGESTED_CACHE_TTL_MS,
   });
+  const previousOffset = suggestedAuthorOffsets.get(viewerId) ?? 0;
+  suggestedAuthorOffsets.set(
+    viewerId,
+    ids.length > 0 ? previousOffset % ids.length : 0,
+  );
+  if (ids.length === 0) {
+    activeSuggestedAuthorCohorts.delete(viewerId);
+  }
 }
 
-const FEED_REPOSITORY_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
+function takeNextSuggestedAuthorIds(
+  viewerId: string,
+  ids: string[],
+  limit: number,
+): string[] {
+  if (ids.length <= limit) return ids;
+
+  const start = suggestedAuthorOffsets.get(viewerId) ?? 0;
+  const picked = Array.from(
+    { length: Math.min(limit, ids.length) },
+    (_, index) => ids[(start + index) % ids.length],
+  );
+  suggestedAuthorOffsets.set(viewerId, (start + picked.length) % ids.length);
+  return picked;
+}
+
+function getSuggestedAuthorIdsForPage(
+  viewerId: string,
+  ids: string[],
+  limit: number,
+  _afterPostId?: string,
+): string[] {
+  const availableIds = new Set(ids);
+  const activeCohort = (
+    activeSuggestedAuthorCohorts.get(viewerId) ?? []
+  ).filter(id => availableIds.has(id));
+  if (activeCohort.length > 0) {
+    return activeCohort.slice(0, limit);
+  }
+
+  // A single shared `after_post_id` is only safe when the same author cohort
+  // is used for the complete pagination run. Fresh video/head probes can run
+  // between two light-feed pages, so they must reuse (not replace) the active
+  // cohort as well. The TTL expiry above starts the next rotation safely.
+  const picked = takeNextSuggestedAuthorIds(viewerId, ids, limit);
+  activeSuggestedAuthorCohorts.set(viewerId, picked);
+  return picked;
+}
+
+// Per-row fan-out logs are extremely expensive in React Native DEV builds and
+// were measurably blocking the JS thread during pagination. Keep diagnostics
+// opt-in at the call site while normal development uses the production path.
+const FEED_REPOSITORY_DEBUG = false;
 // Diagnostic total-count probes fan out several extra API requests and must
 // never compete with the user's first feed page. Enable locally only when
 // explicitly investigating backend inventory.
@@ -1294,6 +1582,13 @@ type RawFeedPostsPage = {
   reachedEnd?: boolean;
   sourceKind?: 'recommended' | 'legacy';
 };
+
+export function resetFeedRepositoryPaginationStateForTests(): void {
+  suggestedUsersCache.clear();
+  suggestedAuthorOffsets.clear();
+  activeSuggestedAuthorCohorts.clear();
+  recommendedEndpointAvailability = 'unknown';
+}
 
 function debugFeedRepository(label: string, payload: Record<string, unknown>) {
   if (!FEED_REPOSITORY_DEBUG) return;
@@ -1340,10 +1635,63 @@ function getOldestRawPostId(
   posts: Array<Record<string, unknown>>,
 ): string | undefined {
   const ids = posts
+    // Ads use their campaign/ad id in the same `id` field as posts. That id
+    // does not belong to the post timeline and must never become
+    // `after_post_id` (a real device snapshot contained post ids 3781-4504
+    // plus ad id 18, which poisoned the whole feed cursor with `18`).
+    .filter(item => !looksLikeAd(item))
     .map(item => Number(readString(item, 'id', 'post_id')))
     .filter(id => Number.isFinite(id) && id > 0);
   if (ids.length === 0) return undefined;
   return String(Math.min(...ids));
+}
+
+function isRawCursorBackedByAd(
+  cursor: string | undefined,
+  posts: Array<Record<string, unknown>>,
+): boolean {
+  if (!cursor) return false;
+  return posts.some(
+    item =>
+      looksLikeAd(item) && readString(item, 'id', 'ad_id') === cursor,
+  );
+}
+
+function isRecommendedEndpointUnsupportedError(error: unknown): boolean {
+  if (error instanceof ApiBridgeError && error.apiStatus === '404') {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /API Type Not Found/i.test(message);
+}
+
+function getSafestNextRawCursor(
+  afterPostId: string | undefined,
+  candidates: Array<string | undefined>,
+): string | undefined {
+  const current = Number(afterPostId);
+  const numericCandidates = candidates
+    .map(value => Number(value))
+    .filter(
+      value =>
+        Number.isFinite(value) &&
+        value > 0 &&
+        (!Number.isFinite(current) || value < current),
+    );
+
+  if (numericCandidates.length > 0) {
+    // Multiple client-side streams share one cursor. Continue from the least
+    // advanced stream so slower sources are re-read/deduped instead of being
+    // skipped permanently.
+    return String(Math.max(...numericCandidates));
+  }
+
+  return candidates.find(value => {
+    if (!value || value === afterPostId) return false;
+    // Numeric post-id cursors must only move toward older rows. Preserve
+    // opaque cursor compatibility, but never jump back to a larger post id.
+    return !Number.isFinite(current) || !Number.isFinite(Number(value));
+  });
 }
 
 function getOldestFeedPostId(posts: FeedPost[]): string | undefined {
@@ -1378,9 +1726,14 @@ async function fetchRecommendedRawFeedPosts(
   }>(apiRoutes.feed.recommended, payload);
 
   const rows = response.data ?? [];
-  const nextCursor =
+  recommendedEndpointAvailability = 'available';
+  const responseCursor =
     response.next_cursor !== null && response.next_cursor !== undefined
       ? String(response.next_cursor)
+      : undefined;
+  const nextCursor =
+    responseCursor && !isRawCursorBackedByAd(responseCursor, rows)
+      ? responseCursor
       : getOldestRawPostId(rows);
 
   debugFeedRepository('recommended-feed result', {
@@ -1407,10 +1760,17 @@ async function fetchRecommendedRawFeedPostsWithFallback(
   source: FeedSource = 'all',
   minimumUsablePosts = 0,
 ): Promise<RawFeedPostsPage> {
+  if (recommendedEndpointAvailability === 'unsupported') {
+    return fetchRawFeedPosts(limit, afterPostId, source);
+  }
+
   let page: RawFeedPostsPage;
   try {
     page = await fetchRecommendedRawFeedPosts(limit, afterPostId, source);
   } catch (err) {
+    if (isRecommendedEndpointUnsupportedError(err)) {
+      recommendedEndpointAvailability = 'unsupported';
+    }
     debugFeedRepository('recommended-feed fallback', {
       afterPostId: afterPostId ?? 'first',
       error: err instanceof Error ? err.message : String(err),
@@ -1418,40 +1778,70 @@ async function fetchRecommendedRawFeedPostsWithFallback(
     return fetchRawFeedPosts(limit, afterPostId, source);
   }
 
-  if (page.posts.length >= limit && !page.reachedEnd) {
+  const usableLightPostCount =
+    minimumUsablePosts > 0
+      ? mapLightRawFeedPosts(page.posts).length
+      : page.posts.length;
+  const hasEnoughUsablePosts =
+    minimumUsablePosts <= 0 ||
+    usableLightPostCount >= minimumUsablePosts;
+  const hasAdvancingCursor = Boolean(
+    page.nextCursor && page.nextCursor !== afterPostId,
+  );
+  const recommendedPageIsUsable =
+    page.posts.length > 0 &&
+    !page.reachedEnd &&
+    hasEnoughUsablePosts &&
+    (page.posts.length >= limit || hasAdvancingCursor);
+
+  if (recommendedPageIsUsable) {
     return page;
   }
 
-  // A partial recommended page is only sufficient when it contains enough
-  // actually renderable light rows and the backend supplied a cursor that
-  // can continue. Raw rows dominated by videos/stubs must fall through so
-  // the legacy lane can fill the Home page instead of making it look ended.
-  const usableLightPostCount = mapLightRawFeedPosts(page.posts).length;
-  if (
-    afterPostId &&
-    minimumUsablePosts > 0 &&
-    usableLightPostCount >= minimumUsablePosts &&
-    !page.reachedEnd &&
-    page.nextCursor
-  ) {
+  // Once pagination has started, an advancing cursor is more reliable than
+  // `reached_end`, but only when the recommended lane supplied enough rows
+  // that Home can actually render. Sparse media/stub windows still need the
+  // legacy own/follow/discovery lanes to fill the visible page.
+  if (hasAdvancingCursor && hasEnoughUsablePosts) {
+    debugFeedRepository('recommended-feed cursor continuation', {
+      afterPostId,
+      nextCursor: page.nextCursor ?? '(none)',
+      usableLightPostCount,
+      minimumUsablePosts,
+      reachedEnd: page.reachedEnd === true,
+    });
     return page;
   }
 
   // Keep fallback errors visible to the caller. Retrying the complete fan-out
   // immediately inside this function would double the wait and can still be
   // mistaken for an empty feed by higher layers.
-  const legacyPage = await fetchRawFeedPosts(limit, afterPostId, source);
+  let legacyPage: RawFeedPostsPage;
+  try {
+    legacyPage = await fetchRawFeedPosts(limit, afterPostId, source);
+  } catch (err) {
+    if (page.posts.length > 0) {
+      debugFeedRepository('legacy fallback ignored', {
+        afterPostId: afterPostId ?? 'first',
+        recommended: page.posts.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return page;
+    }
+    throw err;
+  }
   if (legacyPage.posts.length > 0) {
     const merged = new Map<string, Record<string, unknown>>();
     for (const post of [...page.posts, ...legacyPage.posts]) {
       merged.set(rawPostKey(post), post);
     }
     const posts = Array.from(merged.values());
-    const nextCursor =
-      page.nextCursor ??
-      legacyPage.nextCursor ??
-      getOldestRawPostId(page.posts) ??
-      getOldestRawPostId(legacyPage.posts);
+    const nextCursor = getSafestNextRawCursor(afterPostId, [
+      page.nextCursor,
+      legacyPage.nextCursor,
+      getOldestRawPostId(page.posts),
+      getOldestRawPostId(legacyPage.posts),
+    ]);
     debugFeedRepository('recommended-feed merged fallback', {
       afterPostId: afterPostId ?? 'first',
       recommended: page.posts.length,
@@ -1523,7 +1913,10 @@ async function fetchRawFeedPosts(
    */
   const fetchDiscoveryPosts = async (
     afterPostId?: string,
-  ): Promise<Array<Record<string, unknown>>> => {
+  ): Promise<{
+    posts: Array<Record<string, unknown>>;
+    nextCursor?: string;
+  }> => {
     const collectUserIds = (
       list: Array<Record<string, unknown>> | undefined,
     ): string[] => {
@@ -1582,9 +1975,11 @@ async function fetchRawFeedPosts(
       ]);
 
       const userIds = new Set<string>();
-      collectUserIds(sugRes.suggestions).forEach(id => userIds.add(id));
+      // Relationship authors come first so a large suggestion response cannot
+      // push followed/follower accounts out of the first discovery window.
       collectUserIds(friendsRes.data?.following).forEach(id => userIds.add(id));
       collectUserIds(friendsRes.data?.followers).forEach(id => userIds.add(id));
+      collectUserIds(sugRes.suggestions).forEach(id => userIds.add(id));
       collectUserIds(nearbyRes.nearby_users).forEach(id => userIds.add(id));
       if (sessionUserIdLocal) userIds.delete(sessionUserIdLocal);
 
@@ -1593,17 +1988,25 @@ async function fetchRawFeedPosts(
 
     const ids = getCachedSuggestedIds(cacheKey);
     if (!ids || ids.length === 0) {
-      return [];
+      return { posts: [] };
     }
 
-    // Shuffle the list of IDs and select up to 20 random authors on each page fetch
-    // to ensure variety and cover all followers/followings over time.
-    const shuffledIds = [...ids].sort(() => Math.random() - 0.5);
-    const pickedIds = shuffledIds.slice(0, 20);
+    const pickedIds = getSuggestedAuthorIdsForPage(
+      cacheKey,
+      ids,
+      DISCOVERY_AUTHOR_COHORT_SIZE,
+      afterPostId,
+    );
     const perUserLimit = 10;
 
-    const perUser = await Promise.all(
-      pickedIds.map(id =>
+    // A 20-request Promise.all burst made pagination wait for the slowest
+    // author and frequently saturated the mobile HTTP connection pool. Eight
+    // pinned authors still provide up to 80 raw rows, while four workers keep
+    // the fallback responsive without changing cursor ordering.
+    const perUser = await mapFeedRequestsWithConcurrency(
+      pickedIds,
+      DISCOVERY_AUTHOR_REQUEST_CONCURRENCY,
+      id =>
         tryFetch({
           type: 'get_user_posts',
           id,
@@ -1613,10 +2016,19 @@ async function fetchRawFeedPosts(
           // posts the followed feed already gave us.
           after_post_id: afterPostId,
         }),
-      ),
     );
 
-    return perUser.flat();
+    return {
+      posts: perUser.flat(),
+      // Each author is an independent timeline. Taking the minimum id after
+      // flattening every author can jump thousands of posts when one sparse
+      // account has a very old row. Use the least-advanced author cursor
+      // instead so active authors can continue page by page without gaps.
+      nextCursor: getSafestNextRawCursor(
+        afterPostId,
+        perUser.map(rows => getOldestRawPostId(rows)),
+      ),
+    };
   };
 
   /**
@@ -1794,12 +2206,18 @@ async function fetchRawFeedPosts(
   //    already healthy so the user doesn't pay for unnecessary
   //    network calls.
   let discoveryRaw: Array<Record<string, unknown>> = [];
-  const followedRatio = followedRaw.length / Math.max(1, followedLimit);
-  const shouldFetchDiscovery = afterPostId ? followedRatio < 0.35 : true;
+  let discoveryCursor: string | undefined;
   if (firstPageDiscoveryPromise) {
-    discoveryRaw = await firstPageDiscoveryPromise;
-  } else if (shouldFetchDiscovery) {
-    discoveryRaw = await fetchDiscoveryPosts(afterPostId);
+    const discoveryPage = await firstPageDiscoveryPromise;
+    discoveryRaw = discoveryPage.posts;
+    discoveryCursor = discoveryPage.nextCursor;
+  } else {
+    // Keep the same relationship cohort moving with the cursor. Otherwise
+    // older posts from active followed/follower accounts are skipped after
+    // their first ten-row window.
+    const discoveryPage = await fetchDiscoveryPosts(afterPostId);
+    discoveryRaw = discoveryPage.posts;
+    discoveryCursor = discoveryPage.nextCursor;
   }
 
   // Merge + dedupe by post id using a Map (O(1) lookup, no Set→Array churn).
@@ -1807,7 +2225,8 @@ async function fetchRawFeedPosts(
   // Keep every fetched source row and dedupe only by id. This preserves the
   // same own-post inventory that Profile can paginate through.
   const mergedMap = new Map<string, Record<string, unknown>>();
-  let pageAdIncluded = false;
+  const maxAdsPerPage = 3;
+  let pageAdsIncluded = 0;
   let ownPostsIncluded = 0;
   const dropCounters = {
     adSkipped: 0,
@@ -1817,7 +2236,7 @@ async function fetchRawFeedPosts(
 
   const pushPost = (post: Record<string, unknown>) => {
     const isAd = looksLikeAd(post);
-    if (isAd && pageAdIncluded) {
+    if (isAd && pageAdsIncluded >= maxAdsPerPage) {
       dropCounters.adSkipped += 1;
       return;
     }
@@ -1838,7 +2257,7 @@ async function fetchRawFeedPosts(
       return;
     }
     mergedMap.set(id, post);
-    if (isAd) pageAdIncluded = true;
+    if (isAd) pageAdsIncluded += 1;
     if (sessionUserId && ownerId === String(sessionUserId)) {
       ownPostsIncluded += 1;
     }
@@ -1893,9 +2312,12 @@ async function fetchRawFeedPosts(
   // follow-up call by sending a zeroed cursor — the worst case is one
   // extra network round-trip; the upside is no false "end of feed".
   const followedCursor = getOldestRawPostId(followedRaw);
-  const discoveryCursor = getOldestRawPostId(discoveryRaw);
   const ownCursor = getOldestRawPostId(ownRaw);
-  const nextCursor = followedCursor ?? discoveryCursor ?? ownCursor;
+  const nextCursor = getSafestNextRawCursor(afterPostId, [
+    followedCursor,
+    discoveryCursor,
+    ownCursor,
+  ]);
   const primaryCount = followedRaw.length;
 
   return {
@@ -1906,6 +2328,7 @@ async function fetchRawFeedPosts(
 }
 
 function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
+  const maxAdsPerPage = 3;
   const ads = posts.filter((post): post is FeedAdPost => post.kind === 'ad');
   if (ads.length === 0) {
     return posts.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
@@ -1921,8 +2344,8 @@ function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
   }
 
   const mixed: FeedPost[] = [...content];
-  ads.slice(0, 1).forEach((ad, index) => {
-    const insertAt = Math.min(content.length, 4 + index * 8);
+  ads.slice(0, maxAdsPerPage).forEach((ad, index) => {
+    const insertAt = Math.min(content.length, 4 + index * 6);
     const previous = mixed[Math.max(0, insertAt - 1)];
     const next = mixed[insertAt];
     const previousTime = previous?.postedAt ?? Math.floor(Date.now() / 1000);
@@ -2096,6 +2519,41 @@ export function createFeedRepository(): FeedRepository {
       return mixAdsIntoPosts(posts);
     },
 
+    async getLatestPosts(
+      limit = 8,
+      source: FeedSource = 'all',
+    ): Promise<FeedPost[]> {
+      if (recommendedEndpointAvailability === 'unsupported') {
+        return [];
+      }
+
+      let page: RawFeedPostsPage;
+      try {
+        page = await fetchRecommendedRawFeedPosts(limit, undefined, source);
+      } catch (error) {
+        if (isRecommendedEndpointUnsupportedError(error)) {
+          recommendedEndpointAvailability = 'unsupported';
+          return [];
+        }
+        throw error;
+      }
+      const posts: FeedPost[] = [];
+      for (const item of page.posts) {
+        if (isGroupRawPost(item) || looksLikeLive(item)) continue;
+
+        if (looksLikeAd(item)) {
+          posts.push(mapAdPost(item));
+        } else if (looksLikeVideo(item)) {
+          posts.push(mapVideoPost(item));
+        } else if (looksLikePoll(item)) {
+          posts.push(mapPollPost(item));
+        } else if (looksLikeTextOrPhoto(item)) {
+          posts.push(mapTextPost(item));
+        }
+      }
+      return mixAdsIntoPosts(posts).slice(0, limit);
+    },
+
     async getLightPosts(
       limit = 20,
       afterPostId?: string,
@@ -2141,17 +2599,26 @@ export function createFeedRepository(): FeedRepository {
       let cursorStalled = false;
       let primaryCount = 0;
       let scannedRawRows = 0;
+      const visitedRawCursors = new Set<string>();
+      if (cursor) visitedRawCursors.add(cursor);
 
       for (
         let scan = 0;
         scan < maxScanPages && mappedById.size < limit;
         scan += 1
       ) {
+        const remainingVisibleSlots = Math.max(1, limit - mappedById.size);
+        const minimumUsablePosts = Math.max(
+          1,
+          Math.ceil(
+            remainingVisibleSlots * MIN_RECOMMENDED_PAGE_FILL_RATIO,
+          ),
+        );
         const page = await fetchRecommendedRawFeedPostsWithFallback(
           rawLimit,
           cursor,
           source,
-          Math.max(1, limit - mappedById.size),
+          minimumUsablePosts,
         );
         scannedRawRows += page.posts.length;
         primaryCount += page.primaryCount;
@@ -2164,16 +2631,23 @@ export function createFeedRepository(): FeedRepository {
 
         const nextRawCursor = page.nextCursor ?? getOldestRawPostId(page.posts);
         const advancedCursor = Boolean(
-          nextRawCursor && nextRawCursor !== cursor,
+          nextRawCursor &&
+            nextRawCursor !== cursor &&
+            !visitedRawCursors.has(nextRawCursor),
         );
-        lastRawCursor = nextRawCursor;
-        reachedEnd = page.reachedEnd === true;
-        cursorStalled = page.posts.length === 0 || !advancedCursor;
+        cursorStalled = !advancedCursor;
 
-        if (reachedEnd || cursorStalled) {
+        if (cursorStalled) {
+          // An empty transport window without an explicit end signal can be
+          // transient. Return the missing cursor to the ViewModel and let its
+          // consecutive-strike guard retry before declaring the feed ended.
+          reachedEnd = page.reachedEnd === true;
           break;
         }
 
+        lastRawCursor = nextRawCursor;
+        reachedEnd = false;
+        visitedRawCursors.add(nextRawCursor as string);
         cursor = nextRawCursor;
       }
 
@@ -2186,7 +2660,11 @@ export function createFeedRepository(): FeedRepository {
       // away: the server cursor already advances past the complete raw
       // window, so discarding them here would permanently skip posts that
       // Profile can still display.
-      const nextCursor = lastRawCursor ?? renderedCursor;
+      const nextCursor = reachedEnd
+        ? undefined
+        : cursorStalled && cursor
+        ? cursor
+        : lastRawCursor ?? renderedCursor;
 
       debugFeedRepository('light posts page', {
         requestedLimit: limit,
@@ -2208,7 +2686,7 @@ export function createFeedRepository(): FeedRepository {
         prefetchedPosts:
           prefetchedPosts.length > 0 ? prefetchedPosts : undefined,
         nextCursor,
-        reachedEnd: reachedEnd && mappedPosts.length <= limit,
+        reachedEnd,
       };
     },
 
@@ -2541,7 +3019,7 @@ export function createFeedRepository(): FeedRepository {
 
     async getUserPosts(userId, limit = 20, afterPostId) {
       try {
-        const response = await backendApi.post<{
+        const ownPostsPromise = backendApi.post<{
           api_status: number | string;
           data?: Array<Record<string, unknown>>;
         }>(apiRoutes.feed.posts, {
@@ -2551,6 +3029,23 @@ export function createFeedRepository(): FeedRepository {
           ...(afterPostId ? { after_post_id: afterPostId } : {}),
         });
 
+        const publicVideosPromise = afterPostId
+          ? Promise.resolve({ data: [] as Array<Record<string, unknown>> })
+          : backendApi
+              .post<{
+                api_status: number | string;
+                data?: Array<Record<string, unknown>>;
+              }>(apiRoutes.feed.posts, {
+                type: 'get_random_videos',
+                limit: 50,
+              })
+              .catch(() => ({ data: [] as Array<Record<string, unknown>> }));
+
+        const [response, publicVideoResponse] = await Promise.all([
+          ownPostsPromise,
+          publicVideosPromise,
+        ]);
+
         const ownRaw = response.data ?? [];
         const oldestOwnPostId = Math.min(
           ...ownRaw
@@ -2558,25 +3053,13 @@ export function createFeedRepository(): FeedRepository {
             .filter(id => Number.isFinite(id) && id > 0),
         );
 
-        const publicVideoRaw = afterPostId
-          ? []
-          : (
-              await backendApi
-                .post<{
-                  api_status: number | string;
-                  data?: Array<Record<string, unknown>>;
-                }>(apiRoutes.feed.posts, {
-                  type: 'get_random_videos',
-                  limit: 50,
-                })
-                .catch(() => ({ data: [] as Array<Record<string, unknown>> }))
-            ).data?.filter(item => {
-              const postId = Number(readString(item, 'id', 'post_id'));
-              return (
-                String(readPostOwnerId(item)) === String(userId) &&
-                (!Number.isFinite(oldestOwnPostId) || postId >= oldestOwnPostId)
-              );
-            }) ?? [];
+        const publicVideoRaw = (publicVideoResponse.data ?? []).filter(item => {
+          const postId = Number(readString(item, 'id', 'post_id'));
+          return (
+            String(readPostOwnerId(item)) === String(userId) &&
+            (!Number.isFinite(oldestOwnPostId) || postId >= oldestOwnPostId)
+          );
+        });
 
         const rawMap = new Map<string, Record<string, unknown>>();
         for (const item of [...ownRaw, ...publicVideoRaw]) {
@@ -3018,6 +3501,8 @@ export function createFeedRepository(): FeedRepository {
         post_id?: number | string;
         reactions?: Array<Record<string, unknown>>;
         users?: Array<Record<string, unknown>>;
+        next_offset?: number | string | null;
+        reached_end?: boolean | number | string;
         errors?: { error_text?: string };
         message?: string;
       }>(
@@ -3026,7 +3511,7 @@ export function createFeedRepository(): FeedRepository {
         {
           params: {
             post_id: postId,
-            ...(reaction ? { reaction } : {}),
+            ...(reaction ? { reaction: REACTION_TO_WIRE[reaction] } : {}),
             limit,
             offset,
           },
@@ -3049,12 +3534,17 @@ export function createFeedRepository(): FeedRepository {
         .map(mapPostReactionUser)
         .filter((u): u is PostReactionUser => u !== null);
 
-      // Offset-based pagination: if the server returned a full page,
-      // there might be more. We treat `users.length < limit` as the
-      // explicit end-of-list signal so we don't request a second page
-      // that would return zero rows.
-      const reachedEnd = users.length < limit;
-      const nextOffset = reachedEnd ? undefined : String(offset + users.length);
+      const responseRecord = response as Record<string, unknown>;
+      const explicitReachedEnd = readOptionalBool(
+        responseRecord,
+        'reached_end',
+      );
+      const rawUserCount = response.users?.length ?? users.length;
+      const reachedEnd = explicitReachedEnd ?? rawUserCount < limit;
+      const explicitNextOffset = readString(responseRecord, 'next_offset');
+      const nextOffset = reachedEnd
+        ? undefined
+        : explicitNextOffset || String(offset + rawUserCount);
 
       return {
         users,
@@ -3075,9 +3565,15 @@ export function createFeedRepository(): FeedRepository {
 // `kind` discriminator.
 export function mapFeedPost(
   raw: Record<string, unknown>,
-): FeedTextPost | FeedVideoPost | FeedPollPost {
+): FeedPost {
   if (readSharedInfo(raw)) {
     return mapSharedOuterPost(raw);
+  }
+  if (looksLikeProductPost(raw)) {
+    return mapProductPost(raw);
+  }
+  if (looksLikeJobPost(raw)) {
+    return mapJobPost(raw);
   }
   if (looksLikePoll(raw)) {
     return mapPollPost(raw);

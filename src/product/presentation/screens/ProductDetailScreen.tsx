@@ -29,6 +29,7 @@ import {
   Truck,
   Info,
   Pencil,
+  Share2,
 } from 'lucide-react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -41,6 +42,8 @@ import { findRequestedProduct } from '../../application/findRequestedProduct';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { formatProductPrice } from '../components/ProductCurrency';
+import { ProductShareBottomSheet } from '../components/ProductShareBottomSheet';
+import { getProductSharePostId } from '../../application/sharing/productPostShare';
 
 type ProductDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.PRODUCT_DETAIL>;
 type ProductDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -553,6 +556,8 @@ function ProductDetailContent({
   const insets = useSafeAreaInsets();
   const [relatedProducts, setRelatedProducts] = useState<ProductItem[]>([]);
   const [isRelatedLoading, setIsRelatedLoading] = useState(false);
+  const [shareVisible, setShareVisible] = useState(false);
+  const canShareProduct = Boolean(getProductSharePostId(product));
 
   const images = useMemo(() => productImages(product), [product]);
   const postedAgo = useMemo(() => formatRelativeTime(product.time), [product.time]);
@@ -648,7 +653,22 @@ function ProductDetailContent({
             Chi tiết sản phẩm
           </Text>
         </View>
-        <View className="h-10 w-10" />
+        <TouchableOpacity
+          activeOpacity={0.82}
+          disabled={!canShareProduct}
+          onPress={() => setShareVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Chia sẻ sản phẩm"
+          className={`z-10 h-10 w-10 items-center justify-center rounded-full ${
+            canShareProduct ? 'bg-brand-subtle' : 'bg-slate-100'
+          }`}
+        >
+          <Share2
+            size={20}
+            color={canShareProduct ? APP_BRAND_COLOR : '#CBD5E1'}
+            strokeWidth={2.4}
+          />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -695,22 +715,33 @@ function ProductDetailContent({
         {product.is_owner ? (
           <TouchableOpacity
             activeOpacity={0.8}
-            className="mx-4 flex-row items-center rounded-full bg-slate-100 px-4 py-2 mt-3"
+            accessibilityRole="button"
+            accessibilityLabel="Chỉnh sửa sản phẩm"
+            className="mx-4 mt-4 flex-row items-center justify-center rounded-2xl bg-brand px-5 py-4"
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              backgroundColor: '#f1f5f9',
-              borderRadius: 9999,
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-              alignSelf: 'flex-start',
-              marginTop: 12,
-              marginLeft: 16,
+              justifyContent: 'center',
+              minHeight: 54,
+              backgroundColor: APP_BRAND_COLOR,
+              borderRadius: 16,
+              paddingHorizontal: 20,
+              paddingVertical: 14,
+              marginTop: 16,
+              marginHorizontal: 16,
+              shadowColor: APP_BRAND_COLOR,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.24,
+              shadowRadius: 8,
+              elevation: 5,
             }}
             onPress={() => navigation.navigate(ROUTES.EDIT_PRODUCT, { product })}
           >
-            <Pencil size={14} color="#1E293B" style={{ marginRight: 6 }} />
-            <Text className="text-sm font-bold text-slate-800" style={{ color: '#1E293B' }}>
+            <Pencil size={20} color="#FFFFFF" strokeWidth={2.5} />
+            <Text
+              className="ml-2.5 text-base font-extrabold text-white"
+              style={{ color: '#FFFFFF', marginLeft: 10, fontSize: 16 }}
+            >
               Chỉnh sửa sản phẩm
             </Text>
           </TouchableOpacity>
@@ -829,6 +860,12 @@ function ProductDetailContent({
           </TouchableOpacity>
         </View>
       ) : null}
+
+      <ProductShareBottomSheet
+        visible={shareVisible}
+        product={product}
+        onClose={() => setShareVisible(false)}
+      />
 
     </SafeAreaView>
   );

@@ -94,6 +94,7 @@ describe('shared post messages', () => {
       post({
         kind: 'product',
         product: {
+          id: 2,
           name: 'San pham',
           description: 'Mo ta',
           images: [{ id: 1, image: 'https://cdn.vnseea.vn/product.jpg', product_id: 2 }],
@@ -115,7 +116,12 @@ describe('shared post messages', () => {
       'job',
       post({
         kind: 'job',
-        job: { title: 'Viec lam', description: 'Mo ta', image: 'https://cdn.vnseea.vn/job.jpg' },
+        job: {
+          id: '31',
+          title: 'Viec lam',
+          description: 'Mo ta',
+          image: 'https://cdn.vnseea.vn/job.jpg',
+        },
       } as Partial<FeedPost>),
       'https://cdn.vnseea.vn/job.jpg',
       false,
@@ -140,6 +146,13 @@ describe('shared post messages', () => {
     expect(model.imageUrl).toBe(imageUrl);
     expect(model.isVideo).toBe(isVideo);
     expect(model.title).toBeTruthy();
+    if (_kind === 'product') {
+      expect(model.productId).toBe(2);
+    }
+    if (_kind === 'job') {
+      expect(model.jobId).toBe('31');
+      expect(model.job?.id).toBe('31');
+    }
   });
 
   it('deduplicates in-flight preview requests and evicts the oldest entry', async () => {

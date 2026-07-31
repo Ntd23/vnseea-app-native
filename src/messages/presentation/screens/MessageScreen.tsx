@@ -151,6 +151,10 @@ import {
   subscribeToMessageInvalidations,
   subscribeToMessageRealtimeConnection,
 } from '../../infrastructure/realtime/messageRealtimeRuntime';
+import {
+  getBoundedFallbackPollDelay,
+  MESSAGE_LIST_FALLBACK_POLL_DELAYS_MS,
+} from '../../application/polling/messageFallbackPolling';
 import Svg, {
   Circle as SvgCircle,
   Defs,
@@ -345,7 +349,7 @@ const MESSAGE_COPY: Record<
 
     createGroupChat: 'Tạo nhóm chat',
 
-    openLabels: 'Gắn nhãn khách hàng',
+    openLabels: 'Gắn thẻ khách hàng',
 
     retry: 'Thử lại',
 
@@ -433,17 +437,17 @@ const MESSAGE_COPY: Record<
 
     mePrefix: 'Bạn',
 
-    broadcastLabel: 'Nhãn',
+    broadcastLabel: 'Thẻ',
 
-    selectLabelPlaceholder: 'Chọn nhãn',
+    selectLabelPlaceholder: 'Chọn thẻ',
 
-    noLabelsYet: 'Chưa có nhãn nào',
+    noLabelsYet: 'Chưa có thẻ nào',
 
     sendTo: 'Gửi tới',
 
     selectAll: 'Chọn tất cả',
 
-    selectLabelToLoadRecipients: 'Chọn nhãn để tải người nhận',
+    selectLabelToLoadRecipients: 'Chọn thẻ để tải người nhận',
 
     noRecipientsSelected: 'Chưa chọn người nhận',
 
@@ -459,13 +463,13 @@ const MESSAGE_COPY: Record<
 
     sendMessageButton: 'Gửi tin nhắn',
 
-    createLabelBtn: 'Tạo nhãn',
+    createLabelBtn: 'Tạo thẻ',
 
-    createNewLabelTitle: 'Tạo nhãn mới',
+    createNewLabelTitle: 'Tạo thẻ mới',
 
-    labelNameTitle: 'Tên nhãn',
+    labelNameTitle: 'Tên thẻ',
 
-    labelNamePlaceholder: 'Nhập tên nhãn...',
+    labelNamePlaceholder: 'Nhập tên thẻ...',
 
     labelColorTitle: 'Màu sắc',
 
@@ -487,15 +491,15 @@ const MESSAGE_COPY: Record<
 
     createButton: 'Tạo',
 
-    manageLabels: 'Quản lý nhãn',
+    manageLabels: 'Quản lý thẻ',
 
-    assignLabels: 'Gán nhãn',
+    assignLabels: 'Gán thẻ',
 
-    yourLabelList: 'Danh sách nhãn của bạn',
+    yourLabelList: 'Danh sách thẻ của bạn',
 
-    manageYourLabels: 'Quản lý nhãn của bạn',
+    manageYourLabels: 'Quản lý thẻ của bạn',
 
-    manageTip: 'Dùng nút Gán / Gỡ để áp dụng nhãn cho người liên hệ hiện tại.',
+    manageTip: 'Dùng nút Gán / Gỡ để áp dụng thẻ cho người liên hệ hiện tại.',
 
     attach: 'Gán',
 
@@ -2497,6 +2501,14 @@ function MessageScreen() {
       let realtimeRefreshRunning = false;
       let realtimeRefreshDirty = false;
       let realtimeRefreshCancelled = false;
+      let completedFallbackPollCount = 0;
+      let fallbackPollTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearFallbackPollTimer = () => {
+        if (!fallbackPollTimer) return;
+        clearTimeout(fallbackPollTimer);
+        fallbackPollTimer = null;
+      };
 
       const flushRealtimeRefresh = async () => {
         if (realtimeRefreshRunning || realtimeRefreshCancelled) return;
@@ -2542,15 +2554,49 @@ function MessageScreen() {
         };
       }
 
-      const interval = setInterval(() => {
-        if (AppState.currentState !== 'active') return;
-        syncLatestChats().catch(() => undefined);
-      }, 5000);
+      const scheduleFallbackPoll = () => {
+        if (
+          realtimeRefreshCancelled ||
+          AppState.currentState !== 'active'
+        ) {
+          return;
+        }
+        clearFallbackPollTimer();
+        fallbackPollTimer = setTimeout(() => {
+          fallbackPollTimer = null;
+          realtimeRefreshDirty = true;
+          flushRealtimeRefresh()
+            .catch(() => undefined)
+            .finally(() => {
+              if (realtimeRefreshCancelled) return;
+              completedFallbackPollCount += 1;
+              scheduleFallbackPoll();
+            });
+        }, getBoundedFallbackPollDelay(
+          MESSAGE_LIST_FALLBACK_POLL_DELAYS_MS,
+          completedFallbackPollCount,
+        ));
+      };
+
+      const appStateSubscription = AppState.addEventListener(
+        'change',
+        nextState => {
+          if (nextState !== 'active') {
+            clearFallbackPollTimer();
+            return;
+          }
+          completedFallbackPollCount = 0;
+          scheduleFallbackPoll();
+        },
+      );
+
+      scheduleFallbackPoll();
 
       return () => {
         realtimeRefreshCancelled = true;
         unsubscribeRealtime();
-        clearInterval(interval);
+        clearFallbackPollTimer();
+        appStateSubscription.remove();
       };
 
     }, [

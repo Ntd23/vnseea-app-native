@@ -5,6 +5,7 @@ import type {
 } from '../../../foundation/domain/types/foundation.types';
 import {
   asBoolean,
+  asNumber,
   asRecord,
   asString,
   firstBoolean,
@@ -67,6 +68,11 @@ function positiveEntityId(record: RawRecord, keys: string[]) {
   return value && /^[1-9][0-9]*$/.test(value) ? value : undefined;
 }
 
+function profileCount(record: RawRecord, key: string) {
+  const details = asRecord(record.details);
+  return asNumber(details?.[key] ?? record[key]);
+}
+
 function mapPrivacy(record: RawRecord): UserProfile['privacy'] {
   return {
     message: primitiveValue(record.message_privacy),
@@ -114,6 +120,9 @@ export function mapUserProfile(
     coverUrl: normalizeRawUrl(firstString(record, ['cover']), webBaseUrl),
     avatarPostId: positiveEntityId(record, ['avatar_post_id', 'avatarPostId']),
     coverPostId: positiveEntityId(record, ['cover_post_id', 'coverPostId']),
+    postCount: profileCount(record, 'post_count'),
+    followersCount: profileCount(record, 'followers_count'),
+    followingCount: profileCount(record, 'following_count'),
     facebook: firstString(record, ['facebook']),
     twitter: firstString(record, ['twitter']),
     linkedin: firstString(record, ['linkedin']),

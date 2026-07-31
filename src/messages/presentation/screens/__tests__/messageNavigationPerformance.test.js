@@ -61,7 +61,9 @@ describe('Home and Messages navigation performance', () => {
 
     expect(messages).not.toContain('useNotificationBadgeViewModel();');
     expect(messages).toContain('await syncLatestChats();');
-    expect(messages).toContain('syncLatestChats().catch(() => undefined);');
+    expect(messages).toContain('MESSAGE_LIST_FALLBACK_POLL_DELAYS_MS');
+    expect(messages).toContain('getBoundedFallbackPollDelay(');
+    expect(messages).not.toContain('const interval = setInterval(() => {');
     expect(messages).not.toContain("forceRefresh: true,\n              includeDiscovery: false");
   });
 

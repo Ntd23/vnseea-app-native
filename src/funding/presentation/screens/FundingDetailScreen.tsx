@@ -10,7 +10,6 @@ import {
   Animated,
   Image,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -37,6 +36,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { useEarningsViewModel } from '../../../wallet';
 
 type DetailNav = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, 'FundingDetail'>;
@@ -61,7 +61,7 @@ function formatDate(timestamp?: any, fallback?: string) {
       month: 'short',
       year: 'numeric',
     });
-  } catch (err) {
+  } catch {
     return fallback || String(timestamp);
   }
 }
@@ -85,6 +85,9 @@ const DETAIL_COPY = {
     modalDesc: 'Nhập số tiền bạn muốn ủng hộ.',
     modalConfirm: 'Xác nhận ủng hộ',
     modalErrorAmount: 'Vui lòng nhập số tiền hợp lệ',
+    availableBalance: 'Số dư ví khả dụng',
+    insufficientBalance: 'Số dư ví VNSEEA không đủ để ủng hộ số tiền này.',
+    donationFailed: 'Ủng hộ thất bại, vui lòng thử lại.',
     alertSuccessTitle: 'Cảm ơn',
     alertSuccessMsg: 'Ủng hộ của bạn đã được gửi thành công.',
     loading: 'Đang tải...',
@@ -115,6 +118,9 @@ const DETAIL_COPY = {
     modalDesc: 'Enter the amount you wish to donate.',
     modalConfirm: 'Confirm Donation',
     modalErrorAmount: 'Please enter a valid amount',
+    availableBalance: 'Available wallet balance',
+    insufficientBalance: 'Your VNSEEA wallet balance is not enough for this donation.',
+    donationFailed: 'Donation failed. Please try again.',
     alertSuccessTitle: 'Thank You',
     alertSuccessMsg: 'Your support has been successfully sent.',
     loading: 'Loading...',
@@ -253,6 +259,8 @@ interface DonateModalProps {
   onConfirm: (amount: number) => Promise<boolean>;
   isSubmitting: boolean;
   currencySymbol: string;
+  walletBalance: number | null;
+  isBalanceLoading: boolean;
   copy: typeof DETAIL_COPY.vi;
 }
 
@@ -262,6 +270,8 @@ function DonateModal({
   onConfirm,
   isSubmitting,
   currencySymbol,
+  walletBalance,
+  isBalanceLoading,
   copy,
 }: DonateModalProps) {
   const [amount, setAmount] = useState('');
@@ -270,6 +280,10 @@ function DonateModal({
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) {
       Alert.alert(copy.errorTitle, copy.modalErrorAmount);
+      return;
+    }
+    if (walletBalance !== null && value > walletBalance) {
+      Alert.alert(copy.errorTitle, copy.insufficientBalance);
       return;
     }
     const ok = await onConfirm(value);
@@ -328,6 +342,27 @@ function DonateModal({
             </View>
           </View>
 
+          <View className="mb-5 flex-row items-center justify-between rounded-2xl bg-[#F8FAFC] px-4 py-3">
+            <Text className="text-[12px] font-bold text-[#64748B]">
+              {copy.availableBalance}
+            </Text>
+            {isBalanceLoading && walletBalance === null ? (
+              <ActivityIndicator size="small" color={BRAND_COLOR} />
+            ) : walletBalance === null ? (
+              <Text className="ml-3 text-[13px] font-extrabold text-[#94A3B8]">—</Text>
+            ) : (
+              <Text
+                className="ml-3 flex-1 text-right text-[13px] font-extrabold"
+                style={{ color: BRAND_COLOR }}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+              >
+                {formatMoney(walletBalance, currencySymbol)}
+              </Text>
+            )}
+          </View>
+
           <TouchableOpacity
             className="min-h-[54px] items-center justify-center rounded-full shadow-sm"
             style={{ backgroundColor: BRAND_COLOR }}
@@ -360,6 +395,11 @@ function FundingDetailScreen() {
 
   const { user } = useCurrentUserViewModel();
   const currentUserId = user?.userId;
+  const {
+    walletOverview,
+    isLoading: isWalletLoading,
+    reload: reloadWallet,
+  } = useEarningsViewModel();
 
   const {
     campaign,
@@ -474,13 +514,27 @@ function FundingDetailScreen() {
 
   const handleDonate = useCallback(
     async (amount: number) => {
-      const ok = await donate(amount);
-      if (ok) {
-        Alert.alert(copy.alertSuccessTitle, copy.alertSuccessMsg);
+      const freshWallet = await reloadWallet();
+      const availableBalance =
+        freshWallet?.walletBalance ?? walletOverview?.walletBalance;
+
+      if (availableBalance !== undefined && amount > availableBalance) {
+        Alert.alert(copy.errorTitle, copy.insufficientBalance);
+        return false;
       }
-      return ok;
+
+      const result = await donate(amount);
+      if (result.ok) {
+        await reloadWallet();
+        Alert.alert(copy.alertSuccessTitle, copy.alertSuccessMsg);
+      } else if (result.errorId === '9') {
+        Alert.alert(copy.errorTitle, copy.insufficientBalance);
+      } else {
+        Alert.alert(copy.errorTitle, result.error || copy.donationFailed);
+      }
+      return result.ok;
     },
-    [donate, copy],
+    [copy, donate, reloadWallet, walletOverview?.walletBalance],
   );
 
   if (isLoading && !campaign) {
@@ -686,19 +740,30 @@ function FundingDetailScreen() {
           {/* Financial Progress Area */}
           <View className="bg-[#F8FAFC] border border-[#F1F5F9] mt-4 p-4 rounded-[20px]">
             <View className="flex-row items-end justify-between">
-              <View>
+              <View style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
                 <Text className="text-[11px] font-extrabold text-[#94A3B8] uppercase tracking-wider">
                   {copy.raisedLabel}
                 </Text>
-                <Text className="text-[20px] font-extrabold mt-0.5" style={{ color: BRAND_COLOR }}>
+                <Text
+                  className="text-[20px] font-extrabold mt-0.5"
+                  style={{ color: BRAND_COLOR }}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
                   {formatMoney(raised, currencySymbol)}
                 </Text>
               </View>
-              <View className="items-end">
+              <View style={{ alignItems: 'flex-end', flexShrink: 1, maxWidth: '44%' }}>
                 <Text className="text-[11px] font-extrabold text-[#94A3B8] uppercase tracking-wider">
                   {copy.goalLabel}
                 </Text>
-                <Text className="text-[14px] font-extrabold text-[#0F172A] mt-1">
+                <Text
+                  className="text-[14px] font-extrabold text-[#0F172A] mt-1"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.65}
+                >
                   {formatMoney(goal, currencySymbol)}
                 </Text>
               </View>
@@ -819,7 +884,12 @@ function FundingDetailScreen() {
           <>
             <View className="flex-1 pl-3 justify-center">
               <Text className="text-[11px] font-bold text-[#94A3B8]">{copy.askDonate}</Text>
-              <Text className="text-[13px] font-extrabold text-[#0F172A] mt-0.5" numberOfLines={1}>
+              <Text
+                className="text-[13px] font-extrabold text-[#0F172A] mt-0.5"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.65}
+              >
                 {formatMoney(raised, currencySymbol)} / {formatMoney(goal, currencySymbol)}
               </Text>
             </View>
@@ -830,7 +900,10 @@ function FundingDetailScreen() {
                 activeOpacity={0.85}
                 onPressIn={handleCtaPressIn}
                 onPressOut={handleCtaPressOut}
-                onPress={() => setDonateModalVisible(true)}
+                onPress={() => {
+                  setDonateModalVisible(true);
+                  reloadWallet();
+                }}
               >
                 <HeartHandshake size={16} color="#ffffff" />
                 <Text className="ml-2 text-[14px] font-bold text-white">
@@ -849,6 +922,8 @@ function FundingDetailScreen() {
         onConfirm={handleDonate}
         isSubmitting={isDonating}
         currencySymbol={currencySymbol}
+        walletBalance={walletOverview?.walletBalance ?? null}
+        isBalanceLoading={isWalletLoading}
         copy={copy}
       />
     </SafeAreaView>

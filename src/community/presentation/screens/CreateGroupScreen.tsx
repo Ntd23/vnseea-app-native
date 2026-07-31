@@ -38,6 +38,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import {
+  isSelfGroupMemberRemoval,
+  SELF_GROUP_MEMBER_REMOVAL_MESSAGE,
+} from '../../../shared-kernel/application/utils/groupMemberRemoval';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -453,6 +457,7 @@ function CreateGroupScreen() {
   const editingGroup = route.params && 'group' in route.params ? route.params.group : undefined;
   const editingGroupId = getGroupEditId(editingGroup);
   const isEditing = Boolean(editingGroup && editingGroupId);
+  const currentUserId = sessionStorage.getSession()?.userId ?? '';
 
   const {
     createGroup,
@@ -800,6 +805,13 @@ function CreateGroupScreen() {
   const handleRemoveMember = useCallback(
     (member: GroupMember) => {
       if (!editingGroupId || !member.userId) return;
+      if (isSelfGroupMemberRemoval(currentUserId, member.userId)) {
+        Alert.alert(
+          'Không thể xóa chính mình',
+          SELF_GROUP_MEMBER_REMOVAL_MESSAGE,
+        );
+        return;
+      }
 
       Alert.alert(
         'Xóa thành viên',
@@ -833,7 +845,7 @@ function CreateGroupScreen() {
         ],
       );
     },
-    [clearError, editingGroupId, removeGroupMember],
+    [clearError, currentUserId, editingGroupId, removeGroupMember],
   );
 
   const handleDeleteGroup = useCallback(() => {
@@ -1105,6 +1117,10 @@ function CreateGroupScreen() {
                   <View className="overflow-hidden rounded-lg border border-slate-100">
                     {members.map(member => {
                       const isRemoving = removingMemberId === member.userId;
+                      const isCurrentUser = isSelfGroupMemberRemoval(
+                        currentUserId,
+                        member.userId,
+                      );
 
                       return (
                         <View
@@ -1137,18 +1153,33 @@ function CreateGroupScreen() {
                             ) : null}
                           </View>
 
-                          <TouchableOpacity
-                            activeOpacity={0.86}
-                            disabled={!member.userId || isRemoving || isLoading}
-                            onPress={() => handleRemoveMember(member)}
-                            className="min-h-[36px] min-w-[64px] items-center justify-center rounded-lg bg-red-50 px-3"
-                          >
-                            {isRemoving ? (
-                              <ActivityIndicator size="small" color="#DC2626" />
-                            ) : (
-                              <Text className="text-caption-primary text-red-600">Xóa</Text>
-                            )}
-                          </TouchableOpacity>
+                          {isCurrentUser ? (
+                            <View className="min-h-[36px] min-w-[64px] items-center justify-center rounded-lg bg-slate-100 px-3">
+                              <Text className="text-caption-primary text-slate-500">
+                                Bạn
+                              </Text>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              activeOpacity={0.86}
+                              disabled={
+                                !member.userId || isRemoving || isLoading
+                              }
+                              onPress={() => handleRemoveMember(member)}
+                              className="min-h-[36px] min-w-[64px] items-center justify-center rounded-lg bg-red-50 px-3"
+                            >
+                              {isRemoving ? (
+                                <ActivityIndicator
+                                  size="small"
+                                  color="#DC2626"
+                                />
+                              ) : (
+                                <Text className="text-caption-primary text-red-600">
+                                  Xóa
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          )}
                         </View>
                       );
                     })}

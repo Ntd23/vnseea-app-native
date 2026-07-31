@@ -27,6 +27,7 @@ import {
   ThumbsUp,
   MessageSquare,
   Heart,
+  Pencil,
   Trash2,
 } from 'lucide-react-native';
 import type { ProductItem } from '../../domain/types/product.types';
@@ -119,6 +120,7 @@ interface ProductPostCardProps {
   onOrderRequest?: (product: ProductItem) => void;
   isOrderRequesting?: boolean;
   onShare?: (product: ProductItem) => void;
+  onEdit?: (product: ProductItem) => void;
   onDelete?: (product: ProductItem) => void;
   isDeleting?: boolean;
   compact?: boolean;
@@ -148,6 +150,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onOrderRequest,
   isOrderRequesting = false,
   onShare,
+  onEdit,
   onDelete,
   isDeleting = false,
   compact,
@@ -215,7 +218,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
     [isOrderRequesting, onOrderRequest, product],
   );
 
-  const handleSharePress = useCallback(() => {
+  const handleSharePress = useCallback((event?: GestureResponderEvent) => {
+    event?.stopPropagation();
     onShare?.(product);
   }, [onShare, product]);
 
@@ -225,6 +229,14 @@ const ProductPostCard = React.memo(function ProductPostCard({
       onDelete?.(product);
     },
     [onDelete, product],
+  );
+
+  const handleEditPress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      onEdit?.(product);
+    },
+    [onEdit, product],
   );
 
   // Compact layout (used inside the horizontal carousel and marketplace grids)
@@ -253,21 +265,54 @@ const ProductPostCard = React.memo(function ProductPostCard({
           </View>
         )}
 
-        {product.is_owner && onDelete ? (
+        {product.is_owner && (onEdit || onDelete) ? (
+          <View style={styles.compactOwnerActions}>
+            {onEdit ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleEditPress}
+                accessibilityRole="button"
+                accessibilityLabel="Chỉnh sửa sản phẩm"
+                style={[
+                  styles.compactOwnerActionButton,
+                  styles.compactEditButton,
+                ]}
+              >
+                <Pencil size={18} color="#FFFFFF" strokeWidth={2.5} />
+              </TouchableOpacity>
+            ) : null}
+
+            {onDelete ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={isDeleting}
+                onPress={handleDeletePress}
+                accessibilityRole="button"
+                accessibilityLabel="Xóa sản phẩm"
+                style={[
+                  styles.compactOwnerActionButton,
+                  styles.compactDeleteButton,
+                ]}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Trash2 size={18} color="#FFFFFF" strokeWidth={2.5} />
+                )}
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        {onShare ? (
           <TouchableOpacity
-            activeOpacity={0.8}
-            disabled={isDeleting}
-            onPress={handleDeletePress}
+            activeOpacity={0.82}
+            onPress={handleSharePress}
             accessibilityRole="button"
-            accessibilityLabel="Xóa sản phẩm"
-            className="absolute right-2 top-2 h-9 w-9 items-center justify-center rounded-full bg-[#7765ff]"
-            style={{ zIndex: 2 }}
+            accessibilityLabel="Chia sẻ sản phẩm"
+            style={styles.compactShareButton}
           >
-            {isDeleting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Trash2 size={17} color="#FFFFFF" strokeWidth={2.4} />
-            )}
+            <Share2 size={18} color="#FFFFFF" strokeWidth={2.5} />
           </TouchableOpacity>
         ) : null}
 
@@ -631,6 +676,27 @@ const ProductPostCard = React.memo(function ProductPostCard({
           </Text>
         </View>
 
+        {!postId && onShare ? (
+          <View
+            className="mt-4 border-t border-slate-100 pt-1"
+            style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}
+          >
+            <TouchableOpacity
+              onPress={handleSharePress}
+              activeOpacity={0.7}
+              className="flex-row items-center justify-center py-2.5"
+            >
+              <Share2 size={18} color="#64748B" strokeWidth={2.4} />
+              <Text
+                className="ml-2 text-[13px] font-bold text-slate-500"
+                style={{ color: '#64748B', marginLeft: 8 }}
+              >
+                Chia sẻ
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Social interactions footer */}
         {postId ? (
           <View
@@ -784,6 +850,54 @@ export default ProductPostCard;
 const styles = StyleSheet.create({
   hiddenIdentityHeader: {
     display: 'none',
+  },
+  compactOwnerActions: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    zIndex: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  compactShareButton: {
+    position: 'absolute',
+    left: 8,
+    top: 8,
+    zIndex: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: APP_BRAND_COLOR,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  compactOwnerActionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  compactEditButton: {
+    backgroundColor: APP_BRAND_COLOR,
+  },
+  compactDeleteButton: {
+    backgroundColor: '#7765FF',
   },
   marketplaceCompactContent: {
     position: 'relative',

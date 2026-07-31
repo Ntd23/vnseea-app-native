@@ -407,7 +407,7 @@ export function useMessagesViewModel() {
         return newLabel ? newLabel.id : null;
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message : 'Khong tao duoc nhan';
+          err instanceof Error ? err.message : 'Không tạo được thẻ';
         setState(prev => ({
           ...prev,
           error: errorMessage,
@@ -431,7 +431,7 @@ export function useMessagesViewModel() {
         return true;
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message : 'Khong xoa duoc nhan';
+          err instanceof Error ? err.message : 'Không xóa được thẻ';
         setState(prev => ({
           ...prev,
           error: errorMessage,
@@ -455,7 +455,7 @@ export function useMessagesViewModel() {
         return true;
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message : 'Khong gan duoc nhan';
+          err instanceof Error ? err.message : 'Không gắn được thẻ';
         setState(prev => ({
           ...prev,
           error: errorMessage,
@@ -479,7 +479,7 @@ export function useMessagesViewModel() {
         return true;
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message : 'Khong go duoc nhan';
+          err instanceof Error ? err.message : 'Không gỡ được thẻ';
         setState(prev => ({
           ...prev,
           error: errorMessage,

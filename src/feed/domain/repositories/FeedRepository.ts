@@ -128,6 +128,13 @@ export interface FeedRepository {
   ): Promise<FeedPost[]>;
 
   /**
+   * Lightweight newest-page probe for Home's "new posts" affordance.
+   * This deliberately avoids the legacy multi-author fallback fan-out so a
+   * periodic background check cannot contend with active pagination.
+   */
+  getLatestPosts(limit?: number, source?: FeedSource): Promise<FeedPost[]>;
+
+  /**
    * Fetch only lightweight feed posts (text/photo/poll/ad). Home uses this
    * first so the user sees content before heavier video/media pages finish.
    */

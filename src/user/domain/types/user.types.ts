@@ -32,6 +32,9 @@ export type UserProfile = UserSummary & {
   coverUrl?: string;
   avatarPostId?: string;
   coverPostId?: string;
+  postCount?: number;
+  followersCount?: number;
+  followingCount?: number;
   facebook?: string;
   twitter?: string;
   linkedin?: string;

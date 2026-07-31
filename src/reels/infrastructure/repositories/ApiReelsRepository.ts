@@ -232,6 +232,12 @@ function cleanCommentMentionSource(raw: string): string {
     .trim();
 }
 
+function hasCommentMentionToken(text: string) {
+  return /(^|[^\p{L}\p{M}\p{N}_.%+-])@(?:\[[0-9]+\]|[\p{L}\p{M}\p{N}_])/u.test(
+    text,
+  );
+}
+
 function mapCommentMentions(raw: Record<string, unknown>): CommentMention[] {
   const records = [
     raw.mentions,
@@ -460,9 +466,21 @@ function mapComment(raw: Record<string, unknown>): ReelComment {
   const storedMentionText = cleanCommentMentionSource(
     readString(raw, 'mention_text') || readString(raw, 'mentionText'),
   );
-  const displayText = storedMentionText
-    ? hydrateCommentMentionText(storedMentionText, mentions)
-    : cleanCaption(readString(raw, 'text', 'comment_text'));
+  const legacyOriginalText = cleanCommentMentionSource(
+    readString(raw, 'Orginaltext', 'original_text', 'originalText'),
+  );
+  const rawCommentText = readString(raw, 'text', 'comment_text');
+  const mentionAwareText =
+    storedMentionText ||
+    (hasCommentMentionToken(legacyOriginalText) ? legacyOriginalText : '');
+  const displayText = mentionAwareText
+    ? hydrateCommentMentionText(mentionAwareText, mentions)
+    : mentions.length > 0
+    ? hydrateCommentMentionText(
+        cleanCommentMentionSource(rawCommentText),
+        mentions,
+      )
+    : cleanCaption(rawCommentText);
 
   // Reaction state. Same logic as for posts: prefer the backend's
   // `reaction.type` when it's there, fall back to the local MMKV cache so

@@ -36,13 +36,18 @@ describe('native iOS label color picker', () => {
     expect(iosSource).not.toContain(
       'disabled={isPicking || !nativeColorPicker}',
     );
-    expect(iosSource).toMatch(
-      /pickColor\(\s*value,\s*label \?\? '',\s*\)/,
-    );
+    expect(iosSource).toMatch(/pickColor\(\s*value,\s*label \?\? '',\s*\)/);
     expect(iosSource).toContain('onChange(selectedColor)');
     expect(iosSource).not.toContain('ColorCustomizeModal');
     expect(androidSource).toContain('ColorCustomizeModal');
     expect(androidSource).toContain('PRESET_COLORS');
+    expect(androidSource).toContain(
+      'const [isExpanded, setIsExpanded] = useState(false);',
+    );
+    expect(androidSource).toContain('{isExpanded ? (');
+    expect(androidSource).toContain(
+      'onPress={() => setIsExpanded(current => !current)}',
+    );
   });
 
   it('keeps message label management wired to the selected color', () => {

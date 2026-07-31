@@ -7,55 +7,153 @@ import type { ProductItem } from '../../../product/domain/types/product.types';
 import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import type { FundingItem } from '../../../funding/domain/types/funding.types';
+import { sessionStorage } from './sessionStorage';
 
 const storage = createMMKV({ id: 'vnseea-feed-cache' });
 
 import type { EventsItem } from '../../../events/domain/types/events.types';
 
-const POSTS_CACHE_KEY = 'feed.posts.page1';
-const VIDEOS_CACHE_KEY = 'feed.videos.page1';
+const LEGACY_POSTS_CACHE_KEY = 'feed.posts.page1';
+const LEGACY_VIDEOS_CACHE_KEY = 'feed.videos.page1';
+const POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v2';
+const VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v2';
 const PRODUCTS_CACHE_KEY = 'feed.products.page1';
 const JOBS_CACHE_KEY = 'feed.jobs.page1';
 const EVENTS_CACHE_KEY = 'feed.events.page1';
 const PAGES_CACHE_KEY = 'feed.pages.page1';
 const FUNDING_CACHE_KEY = 'feed.funding.page1';
+const MAX_CACHED_POSTS = 100;
+const MAX_CACHED_VIDEOS = 30;
+
+export type FeedPostsCacheSnapshot = {
+  posts: FeedPost[];
+  nextCursor?: string;
+  reachedEnd: boolean;
+  updatedAt: number;
+};
+
+function getFeedCacheOwner(userId?: string) {
+  return (
+    userId?.trim() ||
+    sessionStorage.getSession()?.userId?.trim() ||
+    'guest'
+  );
+}
+
+function getPostsCacheKey(userId?: string) {
+  return `${POSTS_CACHE_KEY_PREFIX}:${getFeedCacheOwner(userId)}`;
+}
+
+function getVideosCacheKey(userId?: string) {
+  return `${VIDEOS_CACHE_KEY_PREFIX}:${getFeedCacheOwner(userId)}`;
+}
+
+function isPoisonedAdCursor(posts: FeedPost[], cursor?: string) {
+  if (!cursor) return false;
+  return posts.some(
+    post =>
+      post.kind === 'ad' &&
+      (post.id === `ad:${cursor}` || String(post.adId ?? '') === cursor),
+  );
+}
 
 export const feedCacheStorage = {
-  getCachedPosts(): FeedPost[] {
+  getCachedPostsSnapshot(userId?: string): FeedPostsCacheSnapshot | null {
     try {
-      const json = storage.getString(POSTS_CACHE_KEY);
-      if (!json) return [];
-      return JSON.parse(json) as FeedPost[];
+      const json = storage.getString(getPostsCacheKey(userId));
+      if (!json) return null;
+      const parsed = JSON.parse(json) as Partial<FeedPostsCacheSnapshot>;
+      if (!Array.isArray(parsed.posts)) return null;
+
+      const cachedPosts = parsed.posts.slice(0, MAX_CACHED_POSTS);
+      const parsedNextCursor =
+        typeof parsed.nextCursor === 'string' && parsed.nextCursor.trim()
+          ? parsed.nextCursor.trim()
+          : undefined;
+      const poisonedCursor = isPoisonedAdCursor(
+        cachedPosts,
+        parsedNextCursor,
+      );
+
+      return {
+        posts: cachedPosts,
+        nextCursor: poisonedCursor ? undefined : parsedNextCursor,
+        // Old app versions could persist ad id 18 as both the cursor and an
+        // end-of-feed verdict. Keep the warm rows, but force pagination to
+        // re-anchor from real posts after upgrading.
+        reachedEnd: poisonedCursor ? false : parsed.reachedEnd === true,
+        updatedAt: Math.max(0, Number(parsed.updatedAt) || 0),
+      };
     } catch (err) {
-      console.warn('Failed to parse cached posts:', err);
-      return [];
+      console.warn('Failed to parse cached feed snapshot:', err);
+      return null;
     }
   },
 
-  setCachedPosts(posts: FeedPost[]) {
+  setCachedPostsSnapshot(
+    snapshot: Omit<FeedPostsCacheSnapshot, 'updatedAt'>,
+    userId?: string,
+  ) {
     try {
-      // Save the first 50 posts so cold-start has a generous scroll buffer.
-      // 50 posts ≈ 100–150 KB JSON — well within MMKV perf budget.
-      storage.set(POSTS_CACHE_KEY, JSON.stringify(posts.slice(0, 50)));
+      storage.set(
+        getPostsCacheKey(userId),
+        JSON.stringify({
+          posts: snapshot.posts.slice(0, MAX_CACHED_POSTS),
+          nextCursor: snapshot.nextCursor,
+          reachedEnd: snapshot.reachedEnd,
+          updatedAt: Date.now(),
+        }),
+      );
+      // The legacy key was shared by every signed-in account. Remove it
+      // instead of migrating possibly-private data to the current user.
+      storage.remove(LEGACY_POSTS_CACHE_KEY);
+    } catch (err) {
+      console.warn('Failed to set cached feed snapshot:', err);
+    }
+  },
+
+  getCachedPosts(userId?: string): FeedPost[] {
+    return this.getCachedPostsSnapshot(userId)?.posts ?? [];
+  },
+
+  setCachedPosts(posts: FeedPost[], userId?: string) {
+    try {
+      // Preserve cursor metadata when a legacy caller only replaces the rows.
+      const previous = this.getCachedPostsSnapshot(userId);
+      this.setCachedPostsSnapshot(
+        {
+          posts,
+          nextCursor: previous?.nextCursor,
+          reachedEnd: previous?.reachedEnd ?? false,
+        },
+        userId,
+      );
     } catch (err) {
       console.warn('Failed to set cached posts:', err);
     }
   },
 
-  getCachedVideoPosts(): FeedVideoPost[] {
+  getCachedVideoPosts(userId?: string): FeedVideoPost[] {
     try {
-      const json = storage.getString(VIDEOS_CACHE_KEY);
+      const json = storage.getString(getVideosCacheKey(userId));
       if (!json) return [];
-      return JSON.parse(json) as FeedVideoPost[];
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed)
+        ? (parsed.slice(0, MAX_CACHED_VIDEOS) as FeedVideoPost[])
+        : [];
     } catch (err) {
       console.warn('Failed to parse cached feed videos:', err);
       return [];
     }
   },
 
-  setCachedVideoPosts(posts: FeedVideoPost[]) {
+  setCachedVideoPosts(posts: FeedVideoPost[], userId?: string) {
     try {
-      storage.set(VIDEOS_CACHE_KEY, JSON.stringify(posts.slice(0, 30)));
+      storage.set(
+        getVideosCacheKey(userId),
+        JSON.stringify(posts.slice(0, MAX_CACHED_VIDEOS)),
+      );
+      storage.remove(LEGACY_VIDEOS_CACHE_KEY);
     } catch (err) {
       console.warn('Failed to set cached feed videos:', err);
     }
@@ -159,8 +257,10 @@ export const feedCacheStorage = {
   },
 
   clearAllCache() {
-    storage.remove(POSTS_CACHE_KEY);
-    storage.remove(VIDEOS_CACHE_KEY);
+    storage.remove(getPostsCacheKey());
+    storage.remove(getVideosCacheKey());
+    storage.remove(LEGACY_POSTS_CACHE_KEY);
+    storage.remove(LEGACY_VIDEOS_CACHE_KEY);
     storage.remove(PRODUCTS_CACHE_KEY);
     storage.remove(JOBS_CACHE_KEY);
     storage.remove(EVENTS_CACHE_KEY);

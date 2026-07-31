@@ -103,6 +103,7 @@ export function createWalletRepository(): WalletRepository {
 
       return {
         balance: toNumber(response.points ?? response.balance),
+        walletBalance: toNumber(response.wallet),
         withdrawableBalance: response.withdrawable_balance,
         currency: response.currency,
         currencySymbol: response.currency_symbol,

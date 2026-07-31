@@ -14,6 +14,7 @@ import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/
 const PROFILE_PRODUCTS_LIMIT = 60;
 const PROFILE_OWNED_PAGES_LIMIT = 100;
 const PROFILE_JOBS_PER_PAGE_LIMIT = 20;
+const PROFILE_COMMERCE_STALE_MS = 5 * 60_000;
 
 const productRepository = createProductRepository();
 const jobsRepository = createJobsRepository();
@@ -26,7 +27,16 @@ type LoadProfileCommercePostsInput = {
   includeOwnedPageJobs: boolean;
   sellerFallback: string;
   employerFallback: string;
+  force?: boolean;
 };
+
+type ProfileCommerceCacheEntry = {
+  posts: ProfileCommercePost[];
+  fetchedAt: number;
+  inFlight: Promise<ProfileCommercePost[]> | null;
+};
+
+const profileCommerceCache = new Map<string, ProfileCommerceCacheEntry>();
 
 function positiveId(value: unknown) {
   const normalized = String(value ?? '').trim();
@@ -262,7 +272,7 @@ async function loadOwnedPageJobs(
   );
 }
 
-export async function loadProfileCommercePosts({
+async function fetchProfileCommercePosts({
   userId,
   includeOwnedPageJobs,
   sellerFallback,
@@ -280,4 +290,60 @@ export async function loadProfileCommercePosts({
   const jobs = jobsResult.status === 'fulfilled' ? jobsResult.value : [];
 
   return [...products, ...jobs];
+}
+
+function profileCommerceCacheKey({
+  userId,
+  includeOwnedPageJobs,
+  sellerFallback,
+  employerFallback,
+}: LoadProfileCommercePostsInput) {
+  return [
+    String(userId),
+    includeOwnedPageJobs ? 'owned-jobs' : 'products-only',
+    sellerFallback,
+    employerFallback,
+  ].join(':');
+}
+
+export function loadProfileCommercePosts(
+  input: LoadProfileCommercePostsInput,
+): Promise<ProfileCommercePost[]> {
+  const key = profileCommerceCacheKey(input);
+  const current = profileCommerceCache.get(key);
+  if (
+    !input.force &&
+    current?.fetchedAt &&
+    Date.now() - current.fetchedAt < PROFILE_COMMERCE_STALE_MS
+  ) {
+    return Promise.resolve(current.posts);
+  }
+  if (current?.inFlight) return current.inFlight;
+
+  const entry: ProfileCommerceCacheEntry = current ?? {
+    posts: [],
+    fetchedAt: 0,
+    inFlight: null,
+  };
+  const request = fetchProfileCommercePosts(input)
+    .then(posts => {
+      entry.posts = posts;
+      entry.fetchedAt = Date.now();
+      return posts;
+    })
+    .catch(error => {
+      if (entry.fetchedAt > 0) return entry.posts;
+      throw error;
+    })
+    .finally(() => {
+      if (entry.inFlight === request) entry.inFlight = null;
+    });
+
+  entry.inFlight = request;
+  profileCommerceCache.set(key, entry);
+  return request;
+}
+
+export function clearProfileCommercePostsCache() {
+  profileCommerceCache.clear();
 }

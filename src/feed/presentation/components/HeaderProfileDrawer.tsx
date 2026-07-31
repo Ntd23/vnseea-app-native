@@ -50,7 +50,6 @@ import {
   UserPlus,
   Pointer,
   Images,
-  Video,
   Bookmark,
   Users,
   Flag,
@@ -93,7 +92,7 @@ import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppThem
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
 import { useEarningsViewModel } from '../../../wallet';
-import { useMyInfoViewModel, useSettingsViewModel } from '../../../settings';
+import { useSettingsViewModel } from '../../../settings';
 import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -304,8 +303,11 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
   const copy = DRAWER_COPY[language] || DRAWER_COPY.vi;
   const { logout } = useAuthViewModel();
   const { walletOverview } = useEarningsViewModel();
-  const { profile: fullProfile } = useMyInfoViewModel();
-  const { language: currentLanguage, setLanguage } = useSettingsViewModel();
+  const {
+    fullProfile,
+    language: currentLanguage,
+    setLanguage,
+  } = useSettingsViewModel();
   const { theme: currentTheme, setTheme } = useAppTheme();
 
   const [shouldRender, setShouldRender] = useState(visible);
@@ -811,11 +813,6 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              title={copy.featPhotos}
              icon={<Tv size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'photos' })}
-            />
-            <MenuRow
-             title={copy.featReels}
-             icon={<Video size={18} color="#64748b" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'reels' })}
             />
             <MenuRow
              title={copy.featSaved}

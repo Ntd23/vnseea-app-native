@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Check, Sliders, X } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, Sliders, X } from 'lucide-react-native';
 import { APP_BRAND_COLOR } from '../theme/appColors';
 import { useSafeBottomPadding } from '../layout/useSafeBottomLayout';
 
@@ -341,8 +341,9 @@ export interface ColorPickerProps {
   label?: string;
 }
 
-export function ColorPicker({ value, onChange }: ColorPickerProps) {
+export function ColorPicker({ value, onChange, label }: ColorPickerProps) {
   const [showCustomize, setShowCustomize] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [tempColor, setTempColor] = useState(value);
 
   useEffect(() => {
@@ -352,6 +353,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
   const handleColorSelect = useCallback((color: string) => {
     setTempColor(color);
     onChange(color);
+    setIsExpanded(false);
   }, [onChange]);
 
   const isSelected = useCallback((c: string) => {
@@ -360,7 +362,14 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.previewRow}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={label ?? 'Màu thẻ'}
+        accessibilityState={{ expanded: isExpanded }}
+        activeOpacity={0.75}
+        style={styles.previewRow}
+        onPress={() => setIsExpanded(current => !current)}
+      >
         <View style={[styles.previewColor, { backgroundColor: tempColor }]}>
           <Text style={styles.previewHash}>#</Text>
         </View>
@@ -368,45 +377,58 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
           <Text style={styles.previewHex}>{tempColor.replace('#', '').toUpperCase()}</Text>
           <Text style={styles.previewHint}>Đã chọn</Text>
         </View>
-        <TouchableOpacity style={styles.customizeBtn} onPress={() => setShowCustomize(true)}>
-          <Sliders size={14} color="#64748b" />
-          <Text style={styles.customizeBtnText}>Tùy chỉnh</Text>
-        </TouchableOpacity>
-      </View>
+        {isExpanded ? (
+          <ChevronUp size={20} color="#64748b" />
+        ) : (
+          <ChevronDown size={20} color="#64748b" />
+        )}
+      </TouchableOpacity>
 
-      <Text style={styles.sectionTitle}>Phổ biến</Text>
-      <View style={styles.popularRow}>
-        {POPULAR_COLORS.map((color) => (
+      {isExpanded ? (
+        <View style={styles.pickerOptions}>
           <TouchableOpacity
-            key={color}
-            style={[
-              styles.colorCircle,
-              { backgroundColor: color },
-              isSelected(color) && styles.colorCircleSelected,
-            ]}
-            onPress={() => handleColorSelect(color)}
+            style={styles.customizeBtn}
+            onPress={() => setShowCustomize(true)}
           >
-            {isSelected(color) && <Check size={16} color="#ffffff" strokeWidth={3} />}
+            <Sliders size={14} color="#64748b" />
+            <Text style={styles.customizeBtnText}>Tùy chỉnh</Text>
           </TouchableOpacity>
-        ))}
-      </View>
 
-      <Text style={styles.sectionTitle}>Tất cả màu</Text>
-      <View style={styles.paletteGrid}>
-        {PRESET_COLORS.map((color) => (
-          <TouchableOpacity
-            key={color}
-            style={[
-              styles.colorCircleSmall,
-              { backgroundColor: color },
-              isSelected(color) && styles.colorCircleSelected,
-            ]}
-            onPress={() => handleColorSelect(color)}
-          >
-            {isSelected(color) && <Check size={12} color="#ffffff" strokeWidth={3} />}
-          </TouchableOpacity>
-        ))}
-      </View>
+          <Text style={styles.sectionTitle}>Phổ biến</Text>
+          <View style={styles.popularRow}>
+            {POPULAR_COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={[
+                  styles.colorCircle,
+                  { backgroundColor: color },
+                  isSelected(color) && styles.colorCircleSelected,
+                ]}
+                onPress={() => handleColorSelect(color)}
+              >
+                {isSelected(color) && <Check size={16} color="#ffffff" strokeWidth={3} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.sectionTitle}>Tất cả màu</Text>
+          <View style={styles.paletteGrid}>
+            {PRESET_COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={[
+                  styles.colorCircleSmall,
+                  { backgroundColor: color },
+                  isSelected(color) && styles.colorCircleSelected,
+                ]}
+                onPress={() => handleColorSelect(color)}
+              >
+                {isSelected(color) && <Check size={12} color="#ffffff" strokeWidth={3} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       <ColorCustomizeModal
         visible={showCustomize}
@@ -415,7 +437,10 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
           setTempColor(c);
           onChange(c);
         }}
-        onClose={() => setShowCustomize(false)}
+        onClose={() => {
+          setShowCustomize(false);
+          setIsExpanded(false);
+        }}
       />
     </View>
   );
@@ -431,9 +456,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderRadius: 12,
     padding: 12,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+  },
+  pickerOptions: {
+    marginTop: 12,
   },
   previewColor: {
     width: 48,
@@ -467,6 +494,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   customizeBtn: {
+    alignSelf: 'flex-end',
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',

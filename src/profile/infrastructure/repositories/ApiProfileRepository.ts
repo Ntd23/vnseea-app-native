@@ -39,12 +39,13 @@ export function createProfileRepository(): ProfileRepository {
         // Viewing current user's profile - use get-user-data with userId for full data
         // (get-current-user doesn't return followers/following)
         if (currentUserId) {
+          const includeFriends = input?.includeFriends !== false;
           return userRepository.getUserProfile({
             userId: currentUserId,
             fetch: {
               userData: true,
-              followers: true,
-              following: true,
+              followers: includeFriends,
+              following: includeFriends,
               likedPages: false,
               joinedGroups: false,
               family: false,
@@ -68,6 +69,14 @@ export function createProfileRepository(): ProfileRepository {
           family: false,
         },
         sendVisitNotification: true,
+      });
+    },
+
+    async loadConnections(userId, limit = 3) {
+      return userRepository.getFriends({
+        userId: String(userId),
+        type: ['following', 'followers'],
+        limit,
       });
     },
 
