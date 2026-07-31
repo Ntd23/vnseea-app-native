@@ -36,9 +36,12 @@ import {
   createEmptyMessageReactionSummary,
 } from '../../domain/reactions/messageReactions';
 import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
+import {
+  CHAT_FALLBACK_POLL_DELAYS_MS,
+  getBoundedFallbackPollDelay,
+} from '../polling/messageFallbackPolling';
 
 const PAGE_SIZE = 30;
-const POLL_INTERVAL_MS = 7000; // Poll every 7 seconds to reduce network/CPU load
 const TYPING_EMIT_THROTTLE_MS = 1200;
 const TYPING_IDLE_DONE_MS = 1800;
 const TYPING_REMOTE_IDLE_MS = 2600;
@@ -841,36 +844,87 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   }, [chat, stopTyping]);
 
   useEffect(() => {
-    if (chat.chatType !== 'group' || !typingRecipientId) return undefined;
+    if (
+      chat.chatType !== 'group' ||
+      !typingRecipientId ||
+      isRealtimeConnected ||
+      !isScreenFocused
+    ) {
+      return undefined;
+    }
 
     let isMounted = true;
-    const syncWebGroupTypingState = async () => {
-      const status = await getWebTypingState(typingRecipientId).catch(
-        () => null,
-      );
-      if (!isMounted || !status?.enabled || !status.typing) return;
+    let isSyncing = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-      setIsTyping(true);
-      if (remoteTypingTimeoutRef.current) {
-        clearTimeout(remoteTypingTimeoutRef.current);
-      }
-      remoteTypingTimeoutRef.current = setTimeout(() => {
-        setIsTyping(false);
-        remoteTypingTimeoutRef.current = null;
-      }, TYPING_REMOTE_IDLE_MS);
+    const clearTimer = () => {
+      if (!timer) return;
+      clearTimeout(timer);
+      timer = null;
     };
 
-    syncWebGroupTypingState().catch(() => undefined);
-    const interval = setInterval(
-      () => syncWebGroupTypingState().catch(() => undefined),
-      WEB_GROUP_TYPING_STATUS_SYNC_MS,
+    const scheduleNextSync = () => {
+      if (!isMounted || AppState.currentState !== 'active') return;
+      clearTimer();
+      timer = setTimeout(() => {
+        timer = null;
+        syncWebGroupTypingState().catch(() => undefined);
+      }, WEB_GROUP_TYPING_STATUS_SYNC_MS);
+    };
+
+    const syncWebGroupTypingState = async () => {
+      if (
+        !isMounted ||
+        isSyncing ||
+        AppState.currentState !== 'active'
+      ) {
+        return;
+      }
+      isSyncing = true;
+      try {
+        const status = await getWebTypingState(typingRecipientId).catch(
+          () => null,
+        );
+        if (!isMounted || !status?.enabled || !status.typing) return;
+
+        setIsTyping(true);
+        if (remoteTypingTimeoutRef.current) {
+          clearTimeout(remoteTypingTimeoutRef.current);
+        }
+        remoteTypingTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+          remoteTypingTimeoutRef.current = null;
+        }, TYPING_REMOTE_IDLE_MS);
+      } finally {
+        isSyncing = false;
+        scheduleNextSync();
+      }
+    };
+
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      nextState => {
+        if (nextState !== 'active') {
+          clearTimer();
+          return;
+        }
+        syncWebGroupTypingState().catch(() => undefined);
+      },
     );
+
+    syncWebGroupTypingState().catch(() => undefined);
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      clearTimer();
+      appStateSubscription.remove();
     };
-  }, [chat.chatType, typingRecipientId]);
+  }, [
+    chat.chatType,
+    isRealtimeConnected,
+    isScreenFocused,
+    typingRecipientId,
+  ]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -897,13 +951,64 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
 
   useEffect(() => {
     if (isRealtimeConnected || !isScreenFocused) return undefined;
-    const interval = setInterval(() => {
-      if (AppState.currentState !== 'active') return;
-      refreshLatest(false).catch(() => undefined);
-      loadPinnedMessages(false).catch(() => undefined);
-    }, POLL_INTERVAL_MS);
 
-    return () => clearInterval(interval);
+    let cancelled = false;
+    let running = false;
+    let completedPollCount = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimer = () => {
+      if (!timer) return;
+      clearTimeout(timer);
+      timer = null;
+    };
+
+    const scheduleNextPoll = () => {
+      if (cancelled || AppState.currentState !== 'active') return;
+      clearTimer();
+      timer = setTimeout(() => {
+        timer = null;
+        poll().catch(() => undefined);
+      }, getBoundedFallbackPollDelay(
+        CHAT_FALLBACK_POLL_DELAYS_MS,
+        completedPollCount,
+      ));
+    };
+
+    const poll = async () => {
+      if (cancelled || running || AppState.currentState !== 'active') return;
+      running = true;
+      try {
+        const refreshed = await refreshLatest(false);
+        if (refreshed && !cancelled) {
+          await loadPinnedMessages(false).catch(() => undefined);
+          completedPollCount += 1;
+        }
+      } finally {
+        running = false;
+        scheduleNextPoll();
+      }
+    };
+
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      nextState => {
+        if (nextState !== 'active') {
+          clearTimer();
+          return;
+        }
+        completedPollCount = 0;
+        scheduleNextPoll();
+      },
+    );
+
+    scheduleNextPoll();
+
+    return () => {
+      cancelled = true;
+      clearTimer();
+      appStateSubscription.remove();
+    };
   }, [isRealtimeConnected, isScreenFocused, loadPinnedMessages, refreshLatest]);
 
   // Build shared assets from loaded messages

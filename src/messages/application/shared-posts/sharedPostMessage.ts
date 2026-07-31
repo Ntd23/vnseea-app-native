@@ -1,5 +1,6 @@
 import type { FeedRepository } from '../../../feed/domain/repositories/FeedRepository';
 import type { FeedPost } from '../../../feed/domain/types/feed.types';
+import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import type { SharedPostMessageReference } from '../../domain/types/messages.types';
 
 const SHARED_POST_URL_PATTERN = /(?:https?:\/\/|vnseea:\/\/)[^\s<>()]+/gi;
@@ -8,12 +9,30 @@ const TRAILING_URL_PUNCTUATION = /[.,!?;:\])]+$/;
 export type SharedPostPreviewModel = {
   postId: string;
   kind: FeedPost['kind'];
+  productId?: number;
+  jobId?: string;
+  job?: JobsItem;
   publisherName: string;
   publisherAvatar?: string;
+  companyName?: string;
+  companyAvatar?: string;
+  category?: string;
+  eyebrow?: string;
   title: string;
   description?: string;
   imageUrl?: string;
+  price?: string;
+  points?: string;
+  location?: string;
   isVideo: boolean;
+};
+
+export type SharedPostOpenTarget = {
+  postId: string;
+  kind?: FeedPost['kind'];
+  productId?: number;
+  jobId?: string;
+  job?: JobsItem;
 };
 
 type SharedPostPreviewRepository = Pick<FeedRepository, 'getPostById'>;
@@ -93,6 +112,42 @@ function firstText(...values: Array<string | undefined | null>) {
   return values.map(value => value?.trim()).find(Boolean) || undefined;
 }
 
+function formatProductPrice(post: Extract<FeedPost, { kind: 'product' }>) {
+  const formatted = firstText(post.product.price_format, post.product.price);
+  if (!formatted) return undefined;
+  const currency = firstText(
+    post.product.currency_code,
+    post.product.currency_symbol,
+    post.product.currency,
+  );
+  return currency && !formatted.toUpperCase().includes(currency.toUpperCase())
+    ? `${formatted} ${currency}`
+    : formatted;
+}
+
+function formatProductPoints(post: Extract<FeedPost, { kind: 'product' }>) {
+  const rawPoints = String(post.product.points ?? '').trim();
+  if (!rawPoints) return undefined;
+  const points = Number(rawPoints.replace(/[^0-9.-]/g, ''));
+  if (!Number.isFinite(points) || points <= 0) return undefined;
+  return `${points.toLocaleString('vi-VN', {
+    maximumFractionDigits: 2,
+  })} VNSEEA`;
+}
+
+function formatJobSalary(post: Extract<FeedPost, { kind: 'job' }>) {
+  const minimum = Number(post.job.minimum ?? 0);
+  const maximum = Number(post.job.maximum ?? 0);
+  if (minimum <= 0 && maximum <= 0) return undefined;
+  const currency = firstText(post.job.currency_symbol, post.job.currency) || '';
+  const period = firstText(post.job.salary_date_label, post.job.salary_date);
+  const range =
+    minimum > 0 && maximum > 0
+      ? `${currency}${minimum.toLocaleString('vi-VN')} - ${currency}${maximum.toLocaleString('vi-VN')}`
+      : `${currency}${Math.max(minimum, maximum).toLocaleString('vi-VN')}`;
+  return period ? `${range} / ${period}` : range;
+}
+
 export function buildSharedPostPreviewModel(
   post: FeedPost,
 ): SharedPostPreviewModel {
@@ -125,12 +180,15 @@ export function buildSharedPostPreviewModel(
     case 'product':
       return {
         ...base,
+        productId:
+          Number(post.product.id) > 0 ? Number(post.product.id) : undefined,
         title: firstText(post.product.name) || 'Sản phẩm',
-        description: firstText(
-          post.product.price_format,
-          post.product.description,
-        ),
+        eyebrow: 'PRODUCT',
+        description: firstText(post.product.description),
         imageUrl: firstText(post.product.images?.[0]?.image),
+        price: formatProductPrice(post),
+        points: formatProductPoints(post),
+        location: firstText(post.product.location),
       };
     case 'event':
       return {
@@ -148,9 +206,25 @@ export function buildSharedPostPreviewModel(
     case 'job':
       return {
         ...base,
+        jobId: String(post.job.id || '').trim() || undefined,
+        job: post.job,
+        companyName: firstText(
+          post.job.page?.page_title,
+          post.job.page?.page_name,
+          base.publisherName,
+        ),
+        companyAvatar: firstText(
+          post.job.page?.avatar,
+          base.publisherAvatar,
+        ),
+        category: firstText(post.job.category_label, post.job.category),
         title: firstText(post.job.title) || 'Việc làm',
-        description: firstText(post.job.location, post.job.description),
+        eyebrow: 'VIỆC LÀM',
+        description: firstText(post.job.description),
         imageUrl: firstText(post.job.image),
+        price: formatJobSalary(post),
+        points: firstText(post.job.job_type_label, post.job.job_type),
+        location: firstText(post.job.location),
       };
     case 'ad':
       return {

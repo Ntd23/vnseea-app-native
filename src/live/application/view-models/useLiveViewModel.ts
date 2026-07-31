@@ -16,6 +16,12 @@ import {
   endedLivePostsStorage,
   LOCAL_LIVE_ENDED_EVENT,
 } from '../../infrastructure/storage/endedLivePostsStorage';
+import {
+  invalidateLiveDiscoverySnapshot,
+  invalidateLivePostSnapshot,
+  loadLiveDiscoverySnapshot,
+  loadLivePostSnapshot,
+} from '../state/liveRequestResource';
 
 const LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 
@@ -133,6 +139,9 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
   const loadInFlightGenerationRef = useRef<number | null>(null);
   const localOwnerId = sessionStorage.getSession()?.userId;
   const localOwnerIdRef = useRef(localOwnerId);
+  const discoveryResourceKey = `${localOwnerId || 'guest'}:${
+    userId ? `user:${userId}` : 'global'
+  }`;
   enabledRef.current = enabled;
   localOwnerIdRef.current = localOwnerId;
 
@@ -160,54 +169,63 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
       }
 
       try {
-        if (userId) {
-          const streams = await repository.getUserLiveStreams(userId);
-          if (
-            !enabledRef.current ||
-            localOwnerIdRef.current !== localOwnerId ||
-            loadGenerationRef.current !== loadGeneration
-          ) {
-            return;
-          }
-          setLiveStreams(
-            endedLivePostsStorage.filterActiveStreams(streams, localOwnerId),
-          );
-          setFriendsLive([]);
-        } else {
-          const [streamsResult, friendsResult] = await Promise.allSettled([
-            repository.getLiveStreams(),
-            repository.getLiveFriends(),
-          ]);
-          if (
-            !enabledRef.current ||
-            localOwnerIdRef.current !== localOwnerId ||
-            loadGenerationRef.current !== loadGeneration
-          ) {
-            return;
-          }
+        const snapshot = await loadLiveDiscoverySnapshot(
+          discoveryResourceKey,
+          async () => {
+            if (userId) {
+              return {
+                liveStreams: await repository.getUserLiveStreams(userId),
+                friendsLive: [],
+              };
+            }
 
-          if (streamsResult.status === 'fulfilled') {
-            setLiveStreams(
-              endedLivePostsStorage.filterActiveStreams(
-                streamsResult.value,
-                localOwnerId,
-              ),
-            );
-          }
-          if (friendsResult.status === 'fulfilled') {
-            setFriendsLive(
-              endedLivePostsStorage.filterActiveStreams(
-                friendsResult.value,
-                localOwnerId,
-              ),
-            );
-          }
-          if (
-            streamsResult.status === 'rejected' &&
-            friendsResult.status === 'rejected'
-          ) {
-            throw streamsResult.reason;
-          }
+            const [streamsResult, friendsResult] = await Promise.allSettled([
+              repository.getLiveStreams(),
+              repository.getLiveFriends(),
+            ]);
+            if (
+              streamsResult.status === 'rejected' &&
+              friendsResult.status === 'rejected'
+            ) {
+              throw streamsResult.reason;
+            }
+
+            return {
+              liveStreams:
+                streamsResult.status === 'fulfilled'
+                  ? streamsResult.value
+                  : undefined,
+              friendsLive:
+                friendsResult.status === 'fulfilled'
+                  ? friendsResult.value
+                  : undefined,
+            };
+          },
+          { force: mode === 'refresh' },
+        );
+        if (
+          !enabledRef.current ||
+          localOwnerIdRef.current !== localOwnerId ||
+          loadGenerationRef.current !== loadGeneration
+        ) {
+          return;
+        }
+
+        if (snapshot.liveStreams) {
+          setLiveStreams(
+            endedLivePostsStorage.filterActiveStreams(
+              snapshot.liveStreams,
+              localOwnerId,
+            ),
+          );
+        }
+        if (snapshot.friendsLive) {
+          setFriendsLive(
+            endedLivePostsStorage.filterActiveStreams(
+              snapshot.friendsLive,
+              localOwnerId,
+            ),
+          );
         }
       } catch (err) {
         if (
@@ -234,7 +252,7 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
         }
       }
     },
-    [localOwnerId, repository, userId],
+    [discoveryResourceKey, localOwnerId, repository, userId],
   );
 
   useEffect(() => {
@@ -274,6 +292,8 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
         activeProbeInFlightGenerationRef.current = null;
         loadGenerationRef.current += 1;
         loadInFlightGenerationRef.current = null;
+        invalidateLivePostSnapshot(Number(endedPostId));
+        invalidateLiveDiscoverySnapshot(discoveryResourceKey);
 
         setLiveStreams(current =>
           current.filter(item => String(item.postId) !== endedPostId),
@@ -285,7 +305,7 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
     );
 
     return () => subscription.remove();
-  }, [localOwnerId]);
+  }, [discoveryResourceKey, localOwnerId]);
 
   useEffect(() => {
     if (!autoLoad || !enabled) return;
@@ -326,7 +346,9 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
       const probeResults = await Promise.all(
         postIds.map(async postId => {
           try {
-            const snapshot = await repository.getLivePost(postId);
+            const snapshot = await loadLivePostSnapshot(postId, () =>
+              repository.getLivePost(postId),
+            );
             return [postId, snapshot] as const;
           } catch (err) {
             console.log('[Live] active stream probe skipped:', { postId, err });

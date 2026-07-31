@@ -13,8 +13,10 @@ import {
   resolveGroupMembershipStatus,
 } from '../../application/groupDetailState';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { assertNotSelfGroupMemberRemoval } from '../../../shared-kernel/application/utils/groupMemberRemoval';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 type RawGroup = Record<string, unknown>;
 
@@ -403,6 +405,11 @@ export function createCommunityRepository(): CommunityRepository {
     },
 
     async removeGroupMember(groupId, userId) {
+      assertNotSelfGroupMemberRemoval(
+        sessionStorage.getSession()?.userId,
+        userId,
+      );
+
       const response = await apiBridge.post<UpdateGroupResponse>(
         apiRoutes.groups.removeMember,
         {

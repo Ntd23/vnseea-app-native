@@ -49,7 +49,12 @@ import {
   mergeFeedPrefetchQueue,
   takeFeedPrefetchBatch,
 } from './feedPaginationBuffer';
+import { canAppendFeedPageWithoutResort } from './feedPageOrdering';
 import { createFeedNetworkPolicy } from './feedNetworkPolicy';
+import {
+  mergePendingVideoSnapshots,
+  resolveDeferredFeedCommit,
+} from './feedDeferredCommit';
 import { markFeedMediaLoaded } from '../state/feedMediaLoadState';
 import {
   createCachedVideoPosterThumbnail,
@@ -74,8 +79,11 @@ function filterLocallyHiddenPosts<T extends { id: string }>(posts: T[]): T[] {
 // skipping older posts that live in the same raw API window.
 const PAGE_SIZE = 10;
 const HOME_VISIBLE_WARM_TARGET = 20;
-const PAGINATION_SCAN_PAGES = 3;
-const PREFETCH_REFILL_DELAY_MS = 30;
+// A load-more page must resolve quickly. Sparse cursor windows are walked by
+// the background refill loop instead of holding one visible footer through
+// several sequential repository scans.
+const PAGINATION_SCAN_PAGES = 1;
+const PREFETCH_REFILL_DELAY_MS = 120;
 const WARM_VISIBLE_FILL_DELAY_MS = 80;
 const PREFETCH_RETRY_DELAY_MS = 900;
 const EMPTY_PAGE_RETRY_DELAY_MS = 180;
@@ -86,8 +94,6 @@ const VIDEO_READY_POOL_LIMIT = 8;
 const VIDEO_CANDIDATE_QUEUE_LIMIT = 48;
 const VIDEO_PREPARE_MAX_RETRIES = 1;
 const PREPARED_VIDEO_POSTER_KEY_LIMIT = 40;
-const LOAD_MORE_FRESH_POST_LIMIT = 3;
-const LOAD_MORE_FRESH_POST_FETCH_LIMIT = 8;
 const FEED_VM_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
 // Stop paging only after this many consecutive empty pages. Each
 // empty page retries with a different cursor source; 3 was empirically
@@ -150,49 +156,6 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   return Array.from(map.values());
 }
 
-function getFeedPostTimestamp(post?: FeedPost | null) {
-  const value = Number(post?.postedAt);
-  return Number.isFinite(value) ? value : 0;
-}
-
-function getFeedPostNumericId(post?: FeedPost | null) {
-  const value = Number(post?.id);
-  return Number.isFinite(value) ? value : 0;
-}
-
-function isPostNewerThanFeedTop(
-  post: FeedPost,
-  currentPosts: readonly FeedPost[],
-) {
-  const topPost = currentPosts[0];
-  if (!topPost) return false;
-
-  const postTime = getFeedPostTimestamp(post);
-  const topTime = getFeedPostTimestamp(topPost);
-
-  if (postTime > 0 && topTime > 0 && postTime !== topTime) {
-    return postTime > topTime;
-  }
-
-  const postId = getFeedPostNumericId(post);
-  const topId = getFeedPostNumericId(topPost);
-  return postId > 0 && topId > 0 && postId > topId;
-}
-
-function pickFreshPostsForLoadMore(
-  candidates: FeedPost[],
-  existingIds: Set<string>,
-  currentPosts: readonly FeedPost[],
-  limit = LOAD_MORE_FRESH_POST_LIMIT,
-) {
-  return sortByTime(uniqueById(candidates))
-    .filter(post => {
-      if (!post?.id || existingIds.has(post.id)) return false;
-      return isPostNewerThanFeedTop(post, currentPosts);
-    })
-    .slice(0, limit);
-}
-
 function debugFeedVm(label: string, payload: Record<string, unknown>) {
   if (!FEED_VM_DEBUG) return;
   console.log(`[feed.vm] ${label}`, payload);
@@ -244,11 +207,22 @@ function pickAppendablePage(
   return picked;
 }
 
-function cacheLightPostsAfterInteractions(posts: FeedPost[]) {
-  const snapshot = posts.slice(0, 50);
+function cacheLightPostsAfterInteractions(
+  posts: FeedPost[],
+  pagination: { nextCursor?: string; reachedEnd: boolean },
+) {
+  const snapshot = posts.slice(0, 100);
+  const ownerId = sessionStorage.getSession()?.userId;
   pendingLightCacheTask?.cancel();
   pendingLightCacheTask = InteractionManager.runAfterInteractions(() => {
-    feedCacheStorage.setCachedPosts(snapshot);
+    feedCacheStorage.setCachedPostsSnapshot(
+      {
+        posts: snapshot,
+        nextCursor: pagination.nextCursor,
+        reachedEnd: pagination.reachedEnd,
+      },
+      ownerId,
+    );
     pendingLightCacheTask = null;
   });
 }
@@ -257,9 +231,10 @@ function cacheVideoPostsAfterInteractions(posts: FeedVideoPost[]) {
   const snapshot = posts
     .filter(isFeedVideoReadyForDisplay)
     .slice(0, VIDEO_READY_POOL_LIMIT);
+  const ownerId = sessionStorage.getSession()?.userId;
   pendingVideoCacheTask?.cancel();
   pendingVideoCacheTask = InteractionManager.runAfterInteractions(() => {
-    feedCacheStorage.setCachedVideoPosts(snapshot);
+    feedCacheStorage.setCachedVideoPosts(snapshot, ownerId);
     pendingVideoCacheTask = null;
   });
 }
@@ -380,16 +355,28 @@ export function useFeedViewModel() {
   const [feedSource, setFeedSourceState] = useState<FeedSource | 'photos'>(
     'all',
   );
+  const initialPostsCache = useMemo(
+    () => feedCacheStorage.getCachedPostsSnapshot(),
+    [],
+  );
+  const initialCachedLightPosts = useMemo(
+    () =>
+      filterLocallyHiddenPosts(initialPostsCache?.posts ?? []).filter(
+        isLightFeedPost,
+      ),
+    [initialPostsCache],
+  );
+  const initialCachedVideoPosts = useMemo(
+    () =>
+      getReadyFeedVideos(
+        filterLocallyHiddenPosts(feedCacheStorage.getCachedVideoPosts()),
+      ),
+    [],
+  );
   const [posts, setPosts] = useState<FeedPost[]>(() => {
-    const cachedLightPosts = filterLocallyHiddenPosts(
-      feedCacheStorage.getCachedPosts(),
-    ).filter(isLightFeedPost);
-    const cachedVideoPosts = getReadyFeedVideos(
-      filterLocallyHiddenPosts(feedCacheStorage.getCachedVideoPosts()),
-    );
     return mergeFeedContentWithVideos(
-      sortByTime(cachedLightPosts),
-      sortByTime(cachedVideoPosts) as FeedVideoPost[],
+      sortByTime(initialCachedLightPosts),
+      sortByTime(initialCachedVideoPosts) as FeedVideoPost[],
       { videoReadiness: isFeedVideoReadyForDisplay },
     );
   });
@@ -405,16 +392,8 @@ export function useFeedViewModel() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const lightPostsRef = useRef<FeedPost[]>(
-    filterLocallyHiddenPosts(feedCacheStorage.getCachedPosts()).filter(
-      isLightFeedPost,
-    ),
-  );
-  const videoPostsRef = useRef<FeedVideoPost[]>(
-    getReadyFeedVideos(
-      filterLocallyHiddenPosts(feedCacheStorage.getCachedVideoPosts()),
-    ),
-  );
+  const lightPostsRef = useRef<FeedPost[]>(initialCachedLightPosts);
+  const videoPostsRef = useRef<FeedVideoPost[]>(initialCachedVideoPosts);
 
   // Ready queue of prefetched older posts. Unlike the old single-page buffer,
   // this can stay 2-3 small pages ahead and is drained in short render batches.
@@ -426,6 +405,9 @@ export function useFeedViewModel() {
   const prefetchPromiseRef = useRef<Promise<void> | null>(null);
   const prefetchCursorRef = useRef<string | undefined>(undefined);
   const prefetchNextPageRef = useRef<() => Promise<void> | null>(() => null);
+  const schedulePrefetchRefillRef = useRef<(delayMs?: number) => void>(
+    () => undefined,
+  );
   const prefetchRefillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -442,7 +424,6 @@ export function useFeedViewModel() {
   const paginationGenerationRef = useRef(0);
   const isFetchingVideosRef = useRef(false);
   const videoBufferTaskRef = useRef<InteractionTask | null>(null);
-  const freshHeadMergeTaskRef = useRef<InteractionTask | null>(null);
   const videoFetchCursorRef = useRef<string | undefined>(
     videoPostsRef.current[videoPostsRef.current.length - 1]?.id,
   );
@@ -453,7 +434,6 @@ export function useFeedViewModel() {
   const videoPrepareRetryCountRef = useRef<Map<string, number>>(new Map());
   const isScrollBusyRef = useRef(false);
   const pendingCommitRef = useRef<{
-    lightPosts: FeedPost[];
     videoPosts: FeedVideoPost[];
     preserveRenderedOrder?: boolean;
     preserveExistingPosts?: readonly FeedPost[];
@@ -467,8 +447,12 @@ export function useFeedViewModel() {
   const impressionFlushTaskRef = useRef<InteractionTask | null>(null);
 
   // Network pagination guard
-  const hasReachedNetworkEndRef = useRef(false);
-  const nextPageCursorRef = useRef<string | undefined>(undefined);
+  const hasReachedNetworkEndRef = useRef(
+    initialPostsCache?.reachedEnd ?? false,
+  );
+  const nextPageCursorRef = useRef<string | undefined>(
+    initialPostsCache?.nextCursor,
+  );
   const emptyPageStrikeRef = useRef(0);
 
   const fetchLightPostsPage = useCallback(
@@ -590,7 +574,10 @@ export function useFeedViewModel() {
       mergedPostsRef.current = mergedPosts;
       setPosts(mergedPosts);
       if (feedSourceRef.current === 'all') {
-        cacheLightPostsAfterInteractions(cleanLightPosts);
+        cacheLightPostsAfterInteractions(cleanLightPosts, {
+          nextCursor: nextPageCursorRef.current,
+          reachedEnd: hasReachedNetworkEndRef.current,
+        });
         cacheVideoPostsAfterInteractions(cleanVideoPosts);
       }
 
@@ -623,9 +610,13 @@ export function useFeedViewModel() {
       },
     ) => {
       if (options?.deferDuringScroll && isScrollBusyRef.current) {
+        const previousPendingVideos =
+          pendingCommitRef.current?.videoPosts ?? videoPostsRef.current;
         pendingCommitRef.current = {
-          lightPosts: nextLightPosts,
-          videoPosts: nextVideoPosts,
+          videoPosts: mergePendingVideoSnapshots(
+            previousPendingVideos,
+            nextVideoPosts,
+          ),
           preserveRenderedOrder: options.preserveRenderedOrder,
           preserveExistingPosts: options.preserveExistingPosts,
         };
@@ -639,13 +630,82 @@ export function useFeedViewModel() {
     [applyFeedSources],
   );
 
+  const appendLightPosts = useCallback(
+    (candidates: FeedPost[]) => {
+      const existingLightIds = new Set(
+        lightPostsRef.current.map(post => post.id),
+      );
+      const appendablePosts = sortByTime(
+        uniqueById(
+          filterLocallyHiddenPosts(candidates).filter(isLightFeedPost),
+        ).filter(post => !existingLightIds.has(post.id)),
+      );
+      if (appendablePosts.length === 0) return [];
+
+      if (
+        !canAppendFeedPageWithoutResort(
+          lightPostsRef.current,
+          appendablePosts,
+        )
+      ) {
+        // A legacy/public row can be much older than the recommendation
+        // cursor. If a later recommended page is newer than that tail row,
+        // fall back to the chronological merge instead of appending it out of
+        // order. The common strictly-older path below remains allocation-light.
+        applyFeedSources(
+          [...lightPostsRef.current, ...appendablePosts],
+          videoPostsRef.current,
+        );
+        return appendablePosts;
+      }
+
+      // Cursor pages that are proven older can be appended directly. This
+      // avoids sorting and rebuilding the complete merged feed on every
+      // fling-time reveal while keeping stable item keys.
+      lightPostsRef.current = [
+        ...lightPostsRef.current,
+        ...appendablePosts,
+      ];
+
+      const renderedIds = new Set(
+        mergedPostsRef.current.map(post => post.id),
+      );
+      const appendableRenderedPosts = appendablePosts.filter(
+        post => !renderedIds.has(post.id),
+      );
+      if (appendableRenderedPosts.length > 0) {
+        const nextMergedPosts = [
+          ...mergedPostsRef.current,
+          ...appendableRenderedPosts,
+        ];
+        mergedPostsRef.current = nextMergedPosts;
+        setPosts(nextMergedPosts);
+      }
+
+      if (feedSourceRef.current === 'all') {
+        cacheLightPostsAfterInteractions(lightPostsRef.current, {
+          nextCursor: nextPageCursorRef.current,
+          reachedEnd: hasReachedNetworkEndRef.current,
+        });
+      }
+      return appendablePosts;
+    },
+    [applyFeedSources],
+  );
+
   const flushPendingCommit = useCallback(() => {
     const pending = pendingCommitRef.current;
     if (!pending) return;
     pendingCommitRef.current = null;
-    applyFeedSources(pending.lightPosts, pending.videoPosts, {
+    const resolved = resolveDeferredFeedCommit({
+      latestLightPosts: lightPostsRef.current,
+      latestVideoPosts: videoPostsRef.current,
+      pendingVideoPosts: pending.videoPosts,
+    });
+    applyFeedSources(resolved.lightPosts, resolved.videoPosts, {
       preserveRenderedOrder: pending.preserveRenderedOrder,
-      preserveExistingPosts: pending.preserveExistingPosts,
+      preserveExistingPosts:
+        pending.preserveExistingPosts ?? mergedPostsRef.current,
     });
   }, [applyFeedSources]);
 
@@ -685,9 +745,15 @@ export function useFeedViewModel() {
       if (!busy) {
         flushPendingCommit();
         scheduleImpressionFlush(150);
+        scheduleWarmVisibleFill();
+        schedulePrefetchRefillRef.current();
       }
     },
-    [flushPendingCommit, scheduleImpressionFlush],
+    [
+      flushPendingCommit,
+      scheduleImpressionFlush,
+      scheduleWarmVisibleFill,
+    ],
   );
 
   const updatePostEverywhere = useCallback(
@@ -707,7 +773,10 @@ export function useFeedViewModel() {
         return nextPosts;
       });
       if (feedSourceRef.current === 'all') {
-        cacheLightPostsAfterInteractions(lightPostsRef.current);
+        cacheLightPostsAfterInteractions(lightPostsRef.current, {
+          nextCursor: nextPageCursorRef.current,
+          reachedEnd: hasReachedNetworkEndRef.current,
+        });
         cacheVideoPostsAfterInteractions(videoPostsRef.current);
       }
     },
@@ -783,7 +852,10 @@ export function useFeedViewModel() {
       return nextPosts;
     });
     if (feedSourceRef.current === 'all') {
-      cacheLightPostsAfterInteractions(lightPostsRef.current);
+      cacheLightPostsAfterInteractions(lightPostsRef.current, {
+        nextCursor: nextPageCursorRef.current,
+        reachedEnd: hasReachedNetworkEndRef.current,
+      });
       cacheVideoPostsAfterInteractions(videoPostsRef.current);
     }
   }, []);
@@ -973,6 +1045,7 @@ export function useFeedViewModel() {
           lightPostsRef.current,
           [...videoPostsRef.current, ...readyVideos],
           {
+            deferDuringScroll: true,
             preserveRenderedOrder: true,
           },
         );
@@ -1035,6 +1108,8 @@ export function useFeedViewModel() {
     },
     [],
   );
+
+  schedulePrefetchRefillRef.current = schedulePrefetchRefill;
 
   const prefetchNextPage = useCallback(() => {
     // Return the existing promise so callers can await the exact request
@@ -1125,13 +1200,19 @@ export function useFeedViewModel() {
         });
 
         if (newPosts.length === 0) {
-          emptyPageStrikeRef.current += 1;
-          if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
-            hasReachedNetworkEndRef.current = true;
+          if (advancedCursor) {
+            // A cursor that still moves means this was only a sparse raw
+            // window. Keep walking in the background without counting it as
+            // evidence that Home has exhausted all eligible posts.
+            emptyPageStrikeRef.current = 0;
+            refillDelayAfterRequest = EMPTY_PAGE_RETRY_DELAY_MS;
           } else {
-            refillDelayAfterRequest = advancedCursor
-              ? PREFETCH_REFILL_DELAY_MS
-              : EMPTY_PAGE_RETRY_DELAY_MS;
+            emptyPageStrikeRef.current += 1;
+            if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+              hasReachedNetworkEndRef.current = true;
+            } else {
+              refillDelayAfterRequest = EMPTY_PAGE_RETRY_DELAY_MS;
+            }
           }
         } else {
           emptyPageStrikeRef.current = 0;
@@ -1202,8 +1283,6 @@ export function useFeedViewModel() {
       const sourceAtLoad = feedSourceRef.current;
       prefetchPromiseRef.current = null;
       prefetchCursorRef.current = undefined;
-      freshHeadMergeTaskRef.current?.cancel();
-      freshHeadMergeTaskRef.current = null;
       if (prefetchRefillTimerRef.current) {
         clearTimeout(prefetchRefillTimerRef.current);
         prefetchRefillTimerRef.current = null;
@@ -1225,7 +1304,6 @@ export function useFeedViewModel() {
         prefetchBufferRef.current = []; // Clear stale buffer on cold/source load.
         setIsAllLoaded(false); // Reset pagination on first load/source change.
         hasReachedNetworkEndRef.current = false;
-        nextPageCursorRef.current = undefined;
         emptyPageStrikeRef.current = 0;
       }
       videoFetchCursorRef.current = undefined;
@@ -1301,10 +1379,9 @@ export function useFeedViewModel() {
         const prefetchedPosts = (page.prefetchedPosts ?? []).filter(
           isLightFeedPost,
         );
-        const cachedFallbackPosts = lightPostsRef.current.slice(
-          0,
-          HOME_VISIBLE_WARM_TARGET,
-        );
+        // Keep the complete persisted runway visible while the fresh cursor
+        // catches up through duplicate pages in the background.
+        const cachedFallbackPosts = lightPostsRef.current;
         const initialPosts = sortByTime(
           uniqueById([...freshPosts, ...cachedFallbackPosts]),
         );
@@ -1373,160 +1450,25 @@ export function useFeedViewModel() {
   );
 
   const peekLatestPosts = useCallback(async (limit = PAGE_SIZE) => {
-    const posts = await repository.getAllPosts(
+    const posts = await repository.getLatestPosts(
       limit,
-      undefined,
       feedSourceRef.current,
     );
     return sortByTime(filterLocallyHiddenPosts(posts)).slice(0, limit);
   }, []);
 
-  const loadFreshPostsForNextBatch = useCallback(
-    async (batchPosts: FeedPost[] = []) => {
-      try {
-        const currentPosts = mergedPostsRef.current;
-        const existingIds = new Set(currentPosts.map(post => post.id));
-        batchPosts.forEach(post => {
-          if (post?.id) existingIds.add(post.id);
-        });
-
-        const latestPosts = await repository.getAllPosts(
-          LOAD_MORE_FRESH_POST_FETCH_LIMIT,
-          undefined,
-          feedSourceRef.current,
-        );
-        const freshPosts = pickFreshPostsForLoadMore(
-          latestPosts,
-          existingIds,
-          currentPosts,
-        );
-
-        debugFeedVm('load-more fresh head', {
-          fetched: latestPosts.length,
-          usable: freshPosts.length,
-          ids: freshPosts.map(post => post.id),
-        });
-
-        return freshPosts;
-      } catch (caught) {
-        debugFeedVm('load-more fresh head failed', {
-          error: caught instanceof Error ? caught.message : String(caught),
-        });
-        return [];
-      }
-    },
-    [],
-  );
-
-  /**
-   * Refresh the head of the feed after a page has already been appended.
-   * This is intentionally fire-and-forget: a slow recommendation request or
-   * video poster must never keep the older page hidden behind the footer
-   * spinner. The generation check also prevents a late result from an old
-   * source/refresh from being merged into the current feed.
-   */
-  const mergeFreshHead = useCallback(
-    (batchPosts: FeedPost[], visiblePostsBeforeAppend: readonly FeedPost[]) => {
-      const sourceAtSchedule = feedSourceRef.current;
-      const generationAtSchedule = paginationGenerationRef.current;
-
-      void loadFreshPostsForNextBatch(batchPosts)
-        .then(async freshHeadPosts => {
-          if (
-            freshHeadPosts.length === 0 ||
-            feedSourceRef.current !== sourceAtSchedule ||
-            paginationGenerationRef.current !== generationAtSchedule
-          ) {
-            return;
-          }
-
-          const freshLight = freshHeadPosts.filter(isLightFeedPost);
-          const freshVideoCandidates = freshHeadPosts.filter(
-            (post): post is FeedVideoPost => post.kind === 'video',
-          );
-          freshVideoCandidates.forEach(post => {
-            videoCandidateIdsRef.current.add(post.id);
-          });
-
-          const freshVideo = await prepareFeedVideosForDisplay(
-            freshVideoCandidates,
-            LOAD_MORE_FRESH_POST_LIMIT,
-          );
-
-          if (
-            feedSourceRef.current !== sourceAtSchedule ||
-            paginationGenerationRef.current !== generationAtSchedule
-          ) {
-            return;
-          }
-
-          const readyFreshVideoIds = new Set(freshVideo.map(post => post.id));
-          const renderableFreshHeadPosts = freshHeadPosts.filter(
-            post =>
-              isLightFeedPost(post) ||
-              (post.kind === 'video' && readyFreshVideoIds.has(post.id)),
-          );
-          if (renderableFreshHeadPosts.length === 0) return;
-
-          const currentLightIds = new Set(
-            lightPostsRef.current.map(post => post.id),
-          );
-          const currentVideoIds = new Set(
-            videoPostsRef.current.map(post => post.id),
-          );
-
-          commitFeedSources(
-            [
-              ...lightPostsRef.current,
-              ...freshLight.filter(post => !currentLightIds.has(post.id)),
-            ],
-            [
-              ...videoPostsRef.current,
-              ...freshVideo.filter(post => !currentVideoIds.has(post.id)),
-            ],
-            {
-              deferDuringScroll: true,
-              preserveRenderedOrder: true,
-              preserveExistingPosts: [
-                ...visiblePostsBeforeAppend,
-                ...renderableFreshHeadPosts,
-                ...batchPosts,
-              ],
-            },
-          );
-        })
-        .catch(caught => {
-          // A supplemental head refresh is optional; never surface its error
-          // as a failure of the page that was already rendered.
-          debugFeedVm('load-more fresh head merge failed', {
-            error: caught instanceof Error ? caught.message : String(caught),
-          });
-        });
-    },
-    [commitFeedSources, loadFreshPostsForNextBatch],
-  );
-
-  // Head probing is useful, but it must never compete with the older-page
-  // request while the user is flinging. Keep only the latest probe and run it
-  // after interactions settle.
-  const scheduleFreshHeadMerge = useCallback(
-    (batchPosts: FeedPost[], visiblePostsBeforeAppend: readonly FeedPost[]) => {
-      freshHeadMergeTaskRef.current?.cancel();
-      freshHeadMergeTaskRef.current = InteractionManager.runAfterInteractions(
-        () => {
-          freshHeadMergeTaskRef.current = null;
-          mergeFreshHead(batchPosts, visiblePostsBeforeAppend);
-        },
-      );
-    },
-    [mergeFreshHead],
-  );
-
   const selectFeedSource = useCallback(
     (nextSource: FeedSource | 'photos') => {
       const nextApiSource = nextSource === 'photos' ? 'all' : nextSource;
-      if (feedSourceRef.current === nextApiSource && feedSource === nextSource)
+      if (feedSourceRef.current === nextApiSource) {
+        if (feedSource !== nextSource) {
+          // `photos` is a local projection of the already-loaded `all` feed.
+          // Switching All <-> Photos must not clear the list, reconnect media,
+          // or restart pagination.
+          setFeedSourceState(nextSource);
+        }
         return;
+      }
 
       feedSourceRef.current = nextApiSource;
       setFeedSourceState(nextSource);
@@ -1553,10 +1495,14 @@ export function useFeedViewModel() {
 
   const consumePrefetchBatch = useCallback(() => {
     const visibleIds = new Set(lightPostsRef.current.map(post => post.id));
+    const policy = paginationNetworkPolicyRef.current.getPolicy();
     const { batch, remaining } = takeFeedPrefetchBatch(
       prefetchBufferRef.current,
       visibleIds,
-      paginationNetworkPolicyRef.current.getPolicy().revealBatchSize,
+      // Keep the network page together even during a fling. FlashList only
+      // mounts its render window, so splitting ten ready rows into 3+3+3+1
+      // adds four list-data/layout commits without reducing native work.
+      policy.revealBatchSize,
     );
     prefetchBufferRef.current = remaining;
     return batch;
@@ -1573,14 +1519,17 @@ export function useFeedViewModel() {
       return;
     }
 
-    progressiveRevealTimerRef.current = setTimeout(() => {
-      progressiveRevealTimerRef.current = null;
-      if (isLoadingMoreRef.current) {
-        scheduleProgressiveRevealRef.current();
-        return;
-      }
-      void loadMorePostsRef.current();
-    }, CONSTRAINED_REVEAL_DELAY_MS);
+    progressiveRevealTimerRef.current = setTimeout(
+      () => {
+        progressiveRevealTimerRef.current = null;
+        if (isLoadingMoreRef.current) {
+          scheduleProgressiveRevealRef.current();
+          return;
+        }
+        void loadMorePostsRef.current();
+      },
+      CONSTRAINED_REVEAL_DELAY_MS,
+    );
   }, []);
 
   scheduleProgressiveRevealRef.current = scheduleProgressiveReveal;
@@ -1608,12 +1557,17 @@ export function useFeedViewModel() {
 
   const loadMorePosts = useCallback(async () => {
     let currentLightPosts = lightPostsRef.current;
+    const hasAnyFeedRows =
+      currentLightPosts.length > 0 ||
+      videoPostsRef.current.length > 0 ||
+      mergedPostsRef.current.length > 0 ||
+      Boolean(nextPageCursorRef.current);
     if (
       isLoading ||
       isLoadingMore ||
       isLoadingMoreRef.current ||
       isAllLoaded ||
-      currentLightPosts.length === 0
+      !hasAnyFeedRows
     ) {
       return;
     }
@@ -1632,11 +1586,17 @@ export function useFeedViewModel() {
       const inFlightPrefetch = prefetchPromiseRef.current;
       const inFlightCursor = prefetchCursorRef.current;
       const requestedCursor = nextPageCursorRef.current;
-      if (
+      const hasMatchingInFlightPrefetch = Boolean(
         buffered.length === 0 &&
-        inFlightPrefetch &&
-        inFlightCursor === requestedCursor
-      ) {
+          inFlightPrefetch &&
+          inFlightCursor === requestedCursor,
+      );
+      if (hasMatchingInFlightPrefetch) {
+        // Awaiting a promise does not block the JS scroll thread. More
+        // importantly, this continuation consumes and appends the page as
+        // soon as it arrives; returning while momentum is active stranded the
+        // finished page in the invisible buffer until a later viewability or
+        // onEndReached callback happened to fire.
         await inFlightPrefetch;
         if (
           paginationGenerationRef.current !== generationAtLoad ||
@@ -1666,18 +1626,15 @@ export function useFeedViewModel() {
           }
           return;
         } else {
-          const visiblePostsBeforeAppend = mergedPostsRef.current;
           // The prefetch buffer is built from `getLightPostsPage`, so these
           // are light posts by construction. Append them immediately and keep
           // the optional fresh-head/video work off the critical path.
-          const mergedLight = [...currentLightPosts, ...newPosts];
-
-          // Append paged posts immediately so fast scrolling never reaches a
-          // visible end gap while waiting for scroll-idle commit flushing.
-          commitFeedSources(mergedLight, videoPostsRef.current, {
-            preserveRenderedOrder: true,
-          });
-          scheduleVideoBuffer(mergedLight.length);
+          const appendedPosts = appendLightPosts(newPosts);
+          if (appendedPosts.length === 0) {
+            prefetchNextPage();
+            return;
+          }
+          scheduleVideoBuffer(lightPostsRef.current.length);
           prefetchNextPage();
           if (
             prefetchBufferRef.current.length === 0 &&
@@ -1685,8 +1642,7 @@ export function useFeedViewModel() {
           ) {
             setIsAllLoaded(true);
           }
-          scheduleFreshHeadMerge(newPosts, visiblePostsBeforeAppend);
-          continueProgressiveReveal(newPosts.length);
+          continueProgressiveReveal(appendedPosts.length);
           return;
         }
       }
@@ -1761,19 +1717,22 @@ export function useFeedViewModel() {
       });
 
       if (newPosts.length === 0) {
-        emptyPageStrikeRef.current += 1;
-        if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
-          hasReachedNetworkEndRef.current = true;
-          setIsAllLoaded(true);
-        } else {
-          // A sparse page, a stalled cursor, or a transient backend empty is
-          // not enough evidence to terminate Home. The background refill
-          // retries and only commits end-of-feed after consecutive strikes.
+        if (advancedCursor) {
+          emptyPageStrikeRef.current = 0;
           prefetchNextPage();
+        } else {
+          emptyPageStrikeRef.current += 1;
+          if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+            hasReachedNetworkEndRef.current = true;
+            setIsAllLoaded(true);
+          } else {
+            // A stalled cursor or transient empty response is retried before
+            // Home commits an end-of-feed verdict.
+            prefetchNextPage();
+          }
         }
       } else {
         emptyPageStrikeRef.current = 0;
-        const visiblePostsBeforeAppend = mergedPostsRef.current;
         const { batch: revealPosts, remaining } = takeFeedPrefetchBatch(
           newPosts,
           new Set(currentLightPosts.map(post => post.id)),
@@ -1784,16 +1743,12 @@ export function useFeedViewModel() {
           remaining,
           new Set(currentLightPosts.map(post => post.id)),
         );
-        const mergedLight = [...currentLightPosts, ...revealPosts];
-
-        // The older page is the content the user asked for, so commit it
-        // immediately. Fresh-head discovery and video poster preparation are
-        // supplemental work and must not hold this append behind another
-        // network request.
-        commitFeedSources(mergedLight, videoPostsRef.current, {
-          preserveRenderedOrder: true,
-        });
-        scheduleVideoBuffer(mergedLight.length);
+        const appendedPosts = appendLightPosts(revealPosts);
+        if (appendedPosts.length === 0) {
+          prefetchNextPage();
+          return;
+        }
+        scheduleVideoBuffer(lightPostsRef.current.length);
         if (page.reachedEnd && (!page.nextCursor || !advancedCursor)) {
           hasReachedNetworkEndRef.current = true;
         }
@@ -1804,8 +1759,7 @@ export function useFeedViewModel() {
         ) {
           setIsAllLoaded(true);
         }
-        scheduleFreshHeadMerge(revealPosts, visiblePostsBeforeAppend);
-        continueProgressiveReveal(revealPosts.length);
+        continueProgressiveReveal(appendedPosts.length);
       }
     } catch (caught) {
       clearProgressiveReveal();
@@ -1830,7 +1784,7 @@ export function useFeedViewModel() {
       }
     }
   }, [
-    commitFeedSources,
+    appendLightPosts,
     clearProgressiveReveal,
     consumePrefetchBatch,
     continueProgressiveReveal,
@@ -1839,7 +1793,6 @@ export function useFeedViewModel() {
     isLoadingMore,
     isAllLoaded,
     prefetchNextPage,
-    scheduleFreshHeadMerge,
     scheduleWarmVisibleFill,
     scheduleVideoBuffer,
   ]);
@@ -1864,7 +1817,6 @@ export function useFeedViewModel() {
   useEffect(() => {
     return () => {
       videoBufferTaskRef.current?.cancel();
-      freshHeadMergeTaskRef.current?.cancel();
       if (prefetchRefillTimerRef.current) {
         clearTimeout(prefetchRefillTimerRef.current);
         prefetchRefillTimerRef.current = null;
@@ -1984,7 +1936,10 @@ export function useFeedViewModel() {
     insertPostAtTop();
 
     if (feedSourceRef.current === 'all') {
-      cacheLightPostsAfterInteractions(lightPostsRef.current);
+      cacheLightPostsAfterInteractions(lightPostsRef.current, {
+        nextCursor: nextPageCursorRef.current,
+        reachedEnd: hasReachedNetworkEndRef.current,
+      });
       cacheVideoPostsAfterInteractions(videoPostsRef.current);
     }
   }, []);

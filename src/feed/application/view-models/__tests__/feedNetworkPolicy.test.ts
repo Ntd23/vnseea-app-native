@@ -16,7 +16,7 @@ describe('feed network policy', () => {
     expect(policy.getPolicy()).toMatchObject({
       mode: 'constrained',
       pageSize: 10,
-      revealBatchSize: 5,
+      revealBatchSize: 10,
       bufferTarget: 20,
     });
   });

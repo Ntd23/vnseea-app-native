@@ -971,6 +971,13 @@ function MyProductsScreen() {
     [navigation],
   );
 
+  const handleEditProduct = useCallback(
+    (product: ProductItem) => {
+      navigation.navigate(ROUTES.EDIT_PRODUCT, { product });
+    },
+    [navigation],
+  );
+
   const handleDeleteProduct = useCallback(
     (product: ProductItem) => {
       Alert.alert(
@@ -1007,12 +1014,18 @@ function MyProductsScreen() {
           compact
           product={item}
           onPress={handleProductPress}
+          onEdit={item.is_owner ? handleEditProduct : undefined}
           onDelete={item.is_owner ? handleDeleteProduct : undefined}
           isDeleting={vm.deletingProductId === item.id}
         />
       </View>
     ),
-    [handleDeleteProduct, handleProductPress, vm.deletingProductId],
+    [
+      handleDeleteProduct,
+      handleEditProduct,
+      handleProductPress,
+      vm.deletingProductId,
+    ],
   );
 
   const renderOrder = useCallback(

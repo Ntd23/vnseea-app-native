@@ -12,6 +12,7 @@ import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedR
 import type { PostReactionUser } from '../../domain/types/reactions.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { PostReactionTab } from '../i18n/feedCopy';
+import { ALL_REACTION_TYPES } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 
 const PAGE_SIZE = 20;
 
@@ -43,6 +44,49 @@ function createEmptyTabMap(): TabMap {
   };
 }
 
+function createEmptyCounts(): Record<ReactionType, number> {
+  return {
+    like: 0,
+    love: 0,
+    haha: 0,
+    wow: 0,
+    sad: 0,
+    angry: 0,
+  };
+}
+
+function cacheCompleteReactionTabs(
+  current: TabMap,
+  users: PostReactionUser[],
+): TabMap {
+  const next: TabMap = {
+    ...current,
+    all: {
+      users,
+      offset: users.length,
+      reachedEnd: true,
+      isLoadingMore: false,
+    },
+  };
+
+  for (const reaction of ALL_REACTION_TYPES) {
+    const filteredUsers = users.filter(user => user.reaction === reaction);
+    next[reaction] = {
+      users: filteredUsers,
+      offset: filteredUsers.length,
+      reachedEnd: true,
+      isLoadingMore: false,
+    };
+  }
+
+  return next;
+}
+
+function resolveNextOffset(nextOffset: string | undefined, fallback: number) {
+  const parsed = Number(nextOffset);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 export function usePostReactionsViewModel(postId: string) {
   const repository = useMemo(() => createFeedRepository(), []);
 
@@ -54,15 +98,9 @@ export function usePostReactionsViewModel(postId: string) {
    * `reactions` array regardless of the slice we asked for). Used to
    * badge each tab with a count and to compute the header total.
    */
-  const [counts, setCounts] = useState<Record<ReactionType, number>>({
-    like: 0,
-    love: 0,
-    haha: 0,
-    wow: 0,
-    sad: 0,
-    angry: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  const [counts, setCounts] =
+    useState<Record<ReactionType, number>>(createEmptyCounts);
+  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +112,8 @@ export function usePostReactionsViewModel(postId: string) {
 
   const loadTab = useCallback(
     async (tab: PostReactionTab, refreshing: boolean) => {
+      if (!postId) return;
+
       const requestId = ++latestRequestRef.current;
       refreshing ? setIsRefreshing(true) : setIsLoading(true);
       setError(null);
@@ -91,18 +131,6 @@ export function usePostReactionsViewModel(postId: string) {
         if (latestRequestRef.current !== requestId) return;
 
         setCounts(prev => {
-          // The `'all'` fetch is the authoritative source of per-type
-          // totals — server returns them regardless of slice. When the
-          // user switches to a specific tab, the response contains
-          // counts for that single type only, so we merge rather than
-          // overwrite.
-          if (tab === 'all') {
-            const next = { ...prev };
-            for (const c of result.reactions) {
-              next[c.reaction] = c.count;
-            }
-            return next;
-          }
           const next = { ...prev };
           for (const c of result.reactions) {
             next[c.reaction] = c.count;
@@ -110,15 +138,23 @@ export function usePostReactionsViewModel(postId: string) {
           return next;
         });
 
-        setTabState(prev => ({
-          ...prev,
-          [tab]: {
-            users: result.users,
-            offset: result.users.length,
-            reachedEnd: result.reachedEnd,
-            isLoadingMore: false,
-          },
-        }));
+        setTabState(prev => {
+          if (tab === 'all' && result.reachedEnd) {
+            // The complete "all" page already contains every reaction user,
+            // so all filtered tabs can be served instantly from memory.
+            return cacheCompleteReactionTabs(prev, result.users);
+          }
+
+          return {
+            ...prev,
+            [tab]: {
+              users: result.users,
+              offset: resolveNextOffset(result.nextOffset, result.users.length),
+              reachedEnd: result.reachedEnd,
+              isLoadingMore: false,
+            },
+          };
+        });
       } catch (caught) {
         if (latestRequestRef.current !== requestId) return;
         setTabState(prev => ({
@@ -139,33 +175,36 @@ export function usePostReactionsViewModel(postId: string) {
     [postId, repository],
   );
 
-  // Initial load: fetch the 'all' tab once so we get both the merged
-  // user list AND the per-type counts to badge every tab.
+  // Reset when a different post is selected. An empty post id is the normal
+  // hidden-sheet state and must not trigger a failing request on feed mount.
   useEffect(() => {
-    loadTab('all', false);
-  }, [loadTab]);
+    ++latestRequestRef.current;
+    setActiveTab('all');
+    setTabState(createEmptyTabMap());
+    setCounts(createEmptyCounts());
+    setError(null);
+    setIsLoading(false);
+    setIsRefreshing(false);
+
+    if (postId) {
+      loadTab('all', false);
+    }
+  }, [loadTab, postId]);
 
   const switchTab = useCallback(
     (tab: PostReactionTab) => {
       setActiveTab(tab);
-      // If this tab has never been loaded, kick off the request. The
-      // empty user list means we haven't fetched it yet — fall through
-      // to loadTab. We do NOT auto-refresh tabs that already have
-      // cached data so switching back and forth feels instant.
-      setTabState(prev => {
-        if (prev[tab].users.length === 0 && !prev[tab].reachedEnd) {
-          // Schedule the fetch on the next tick so we don't update
-          // tabState and trigger loadTab mid-render.
-          setTimeout(() => loadTab(tab, false), 0);
-        }
-        return prev;
-      });
+      const cached = tabState[tab];
+      if (postId && cached.users.length === 0 && !cached.reachedEnd) {
+        loadTab(tab, false);
+      }
     },
-    [loadTab],
+    [loadTab, postId, tabState],
   );
 
   const refresh = useCallback(() => {
     setTabState(createEmptyTabMap());
+    setCounts(createEmptyCounts());
     loadTab(activeTab, true);
   }, [activeTab, loadTab]);
 
@@ -206,7 +245,10 @@ export function usePostReactionsViewModel(postId: string) {
           ...prev,
           [activeTab]: {
             users: [...existing, ...fresh],
-            offset: prev[activeTab].offset + result.users.length,
+            offset: resolveNextOffset(
+              result.nextOffset,
+              prev[activeTab].offset + result.users.length,
+            ),
             reachedEnd: result.reachedEnd,
             isLoadingMore: false,
           },
@@ -228,7 +270,7 @@ export function usePostReactionsViewModel(postId: string) {
 
   const retry = useCallback(() => {
     setTabState(createEmptyTabMap());
-    void loadTab(activeTab, false);
+    loadTab(activeTab, false);
   }, [activeTab, loadTab]);
 
   const current = tabState[activeTab];

@@ -1,6 +1,7 @@
 // Description: Implements the Messages API repository through the WoWonder mobile API bridge.
 import CryptoJS from 'crypto-js';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { assertNotSelfGroupMemberRemoval } from '../../../shared-kernel/application/utils/groupMemberRemoval';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -1486,7 +1487,7 @@ function mapAddableUser(raw: RawRecord): GroupAddableUser {
 function mapMessageLabel(raw: RawRecord): MessageLabel {
   return {
     id: readString(raw, 'id', 'label_id', 'tag_id'),
-    name: readString(raw, 'name', 'label_name') || 'Label',
+    name: readString(raw, 'name', 'label_name') || 'Thẻ',
     color: readString(raw, 'color', 'label_color') || APP_BRAND_COLOR,
   };
 }
@@ -2084,6 +2085,11 @@ export function createMessagesRepository(): MessagesRepository {
       });
     },
     async removeGroupUser(groupId: string, userId: string) {
+      assertNotSelfGroupMemberRemoval(
+        sessionStorage.getSession()?.userId,
+        userId,
+      );
+
       await apiBridge.post(apiRoutes.messages.groupChat, {
         type: 'remove_user',
         id: groupId,
@@ -2159,6 +2165,19 @@ export function createMessagesRepository(): MessagesRepository {
         apiRoutes.messages.labels,
         {
           s: 'create_label',
+          label_name: name,
+          label_color: color,
+        },
+      );
+      assertTagsResponse(response);
+    },
+
+    async updateLabel(labelId: string, name: string, color: string) {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'update_label',
+          label_id: labelId,
           label_name: name,
           label_color: color,
         },

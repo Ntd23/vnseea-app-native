@@ -19,6 +19,27 @@ export function createFeedChromeCollapseState(): FeedChromeCollapseState {
   };
 }
 
+/**
+ * Rehydrates the collapse state when Home is focused again.
+ *
+ * A mounted tab can receive a transient `onScroll` event while another
+ * screen is being dismissed. Starting from a state that reflects the last
+ * known offset prevents that event from briefly reopening the whole Home
+ * chrome before the list restores its real position.
+ */
+export function createFeedChromeCollapseStateAtScrollY(
+  rawY: number,
+): FeedChromeCollapseState {
+  const y = Math.max(0, Number.isFinite(rawY) ? rawY : 0);
+  return {
+    hidden:
+      y > FEED_CHROME_HIDE_MIN_Y + FEED_CHROME_HIDE_SCROLL_DELTA,
+    lastY: y,
+    downwardDelta: 0,
+    upwardDelta: 0,
+  };
+}
+
 export function resetFeedChromeScrollIntent(
   state: FeedChromeCollapseState,
 ): FeedChromeCollapseState {

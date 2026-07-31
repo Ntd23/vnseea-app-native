@@ -8,7 +8,7 @@ function read(relativePath) {
 }
 
 describe('ChatScreen shared post preview', () => {
-  it('renders shared posts as a dedicated list item and opens Post Detail', () => {
+  it('renders shared posts and opens the matching detail screen', () => {
     const source = read('src/messages/presentation/screens/ChatScreen.tsx');
 
     expect(source).toContain('SharedPostMessageCard');
@@ -18,6 +18,13 @@ describe('ChatScreen shared post preview', () => {
     );
     expect(source).toContain('message.sharedPost');
     expect(source).toContain('ROUTES.POST_DETAIL');
+    expect(source).toContain('ROUTES.PRODUCT_DETAIL');
+    expect(source).toContain("target.kind === 'product'");
+    expect(source).toContain('productId: target.productId');
+    expect(source).toContain('ROUTES.JOB_DETAIL');
+    expect(source).toContain("target.kind === 'job'");
+    expect(source).toContain('jobId: target.jobId');
+    expect(source).toContain('job: target.job');
     expect(source).toContain('postId');
     expect(source).toContain('onOpenSharedPost');
   });

@@ -17,13 +17,17 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useSyncExternalStore,
   type SetStateAction,
 } from 'react';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
+import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { storyReactedEvents } from '../events/storyReactedEvents';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { FeedAdPost } from '../../../feed/domain/types/feed.types';
+import { canAdAppearInStoryViewer } from '../../../advertising/application/services/adPlacement';
 import type { StoryItem, StoryMedia } from '../../domain/types/stories.types';
 import {
   filterActiveStories,
@@ -34,8 +38,53 @@ import {
   storiesResource,
   type StoriesResourceLoadOptions,
 } from '../state/storiesResource';
+import { loadStoryAdFeedPosts } from '../services/storyAdFeedResource';
 
 const repository = createStoriesRepository();
+const feedRepository = createFeedRepository();
+
+function mapFeedAdToStory(ad: FeedAdPost, now: number): StoryItem | null {
+  const mediaUrl = ad.mediaUrl?.trim();
+  if (!mediaUrl) return null;
+
+  const adKey = String(ad.adId || ad.id).replace(/[^a-zA-Z0-9:_-]/g, '-');
+  const postedAt = ad.postedAt && ad.postedAt > 0 ? ad.postedAt : now;
+
+  return {
+    id: `ad-story:${adKey}`,
+    publisher: {
+      userId: `ad:${adKey}`,
+      username: 'sponsored',
+      name: ad.publisher.name || 'Quảng cáo',
+      avatarUrl: ad.publisher.avatarUrl,
+    },
+    title: ad.title,
+    description: ad.description,
+    postedAt,
+    expiresAt: 0,
+    thumbnailUrl: mediaUrl,
+    media: [
+      {
+        id: `ad-media:${adKey}`,
+        type: ad.isVideo ? 'video' : 'image',
+        url: mediaUrl,
+        storyId: `ad-story:${adKey}`,
+        postedAt,
+        title: ad.title,
+        description: ad.description,
+      },
+    ],
+    isOwner: false,
+    isViewed: false,
+    hasUnseen: true,
+    myReaction: null,
+    reactionCount: 0,
+    isAd: true,
+    adId: ad.adId,
+    adTargetUrl: ad.targetUrl,
+    adAppears: ad.appears,
+  };
+}
 
 export type StoriesReloadOptions = StoriesResourceLoadOptions;
 
@@ -61,8 +110,16 @@ export function useStoriesViewModel() {
     getSnapshot,
     getSnapshot,
   );
-  const stories = resourceState.stories;
-  const isLoading = resourceState.isFetching && stories.length === 0;
+  const allStories = resourceState.stories;
+  const stories = useMemo(
+    () => allStories.filter(story => !story.isAd),
+    [allStories],
+  );
+  const storyAds = useMemo(
+    () => allStories.filter(story => story.isAd),
+    [allStories],
+  );
+  const isLoading = resourceState.isFetching && allStories.length === 0;
   const error = resourceState.error;
   const setStories = useCallback(
     (action: SetStateAction<StoryItem[]>) => {
@@ -88,9 +145,14 @@ export function useStoriesViewModel() {
       await storiesResource.load(
         resourceKey,
         async () => {
-          const [friendsStories, allUserStories] = await Promise.all([
+          const [friendsStories, allUserStories, feedPosts] = await Promise.all([
             repository.getStories(),
             repository.getUserStories(),
+            loadStoryAdFeedPosts(
+              resourceKey,
+              () => feedRepository.getAllPosts(30),
+              { force: options.force },
+            ).catch(() => []),
           ]);
 
           const sessionUserId = sessionStorage.getSession()?.userId;
@@ -196,7 +258,16 @@ export function useStoriesViewModel() {
             return (b.postedAt || 0) - (a.postedAt || 0);
           });
 
-          return filterActiveStories(grouped, now);
+          const mappedStoryAds = feedPosts
+            .filter(
+              (post): post is FeedAdPost =>
+                post.kind === 'ad' &&
+                canAdAppearInStoryViewer(post.appears),
+            )
+            .map(ad => mapFeedAdToStory(ad as FeedAdPost, now))
+            .filter((story): story is StoryItem => Boolean(story));
+
+          return filterActiveStories([...grouped, ...mappedStoryAds], now);
         },
         options,
       );
@@ -483,6 +554,7 @@ export function useStoriesViewModel() {
 
   return {
     stories,
+    storyAds,
     isLoading,
     error,
     reloadStories: loadStories,

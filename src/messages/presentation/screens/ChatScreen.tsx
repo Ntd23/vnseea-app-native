@@ -77,6 +77,7 @@ import { useChatViewModel } from '../../application/view-models/useChatViewModel
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
+import type { SharedPostOpenTarget } from '../../application/shared-posts/sharedPostMessage';
 import { StoryReplyMessageCard } from '../components/StoryReplyMessageCard';
 import { MessageLinkPreviewCard } from '../components/MessageLinkPreviewCard';
 import { PinnedMessagesBanner } from '../components/PinnedMessagesBanner';
@@ -1608,7 +1609,7 @@ function MessageBubble({
   onRecallCall?: (callType: 'audio' | 'video') => void;
   onPressReply?: (originalMessageId: string) => void;
   onQuickRecord?: () => void;
-  onOpenSharedPost?: (postId: string) => void;
+  onOpenSharedPost?: (target: SharedPostOpenTarget) => void;
   onDoubleTap?: (message: MessageItem) => void;
 }) {
   const isSentByMe = message.callEvent
@@ -1872,7 +1873,7 @@ function MessageBubble({
             <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}>
               <SharedPostMessageCard
                 reference={sharedPost}
-                onOpenPost={postId => onOpenSharedPost?.(postId)}
+                onOpenPost={target => onOpenSharedPost?.(target)}
                 onLongPress={() => onLongPress?.(message)}
                 onDoubleTap={() => onDoubleTap?.(message)}
               />
@@ -3045,8 +3046,27 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, []);
 
   const handleOpenSharedPost = useCallback(
-    (postId: string) => {
-      navigation.navigate(ROUTES.POST_DETAIL, { postId });
+    (target: SharedPostOpenTarget) => {
+      if (
+        target.kind === 'product' &&
+        target.productId !== undefined &&
+        target.productId > 0
+      ) {
+        navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+          productId: target.productId,
+        });
+        return;
+      }
+
+      if (target.kind === 'job' && target.jobId && target.job) {
+        navigation.navigate(ROUTES.JOB_DETAIL, {
+          jobId: target.jobId,
+          job: target.job,
+        });
+        return;
+      }
+
+      navigation.navigate(ROUTES.POST_DETAIL, { postId: target.postId });
     },
     [navigation],
   );

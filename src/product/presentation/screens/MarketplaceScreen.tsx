@@ -44,6 +44,7 @@ import { useMarketplaceViewModel } from '../../application/view-models/useMarket
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
+import { ProductShareBottomSheet } from '../components/ProductShareBottomSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
@@ -431,6 +432,7 @@ function MarketplaceScreen() {
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [distanceModalVisible, setDistanceModalVisible] = useState(false);
   const [orderingProductId, setOrderingProductId] = useState<number | null>(null);
+  const [sharingProduct, setSharingProduct] = useState<ProductItem | undefined>();
  // Collapsible filter panel state. When the user scrolls down past
  // COLLAPSE_THRESHOLD we collapse the filter chip bar (search + sort
  // + category + distance + nearby + reset) and keep only the top app
@@ -743,6 +745,10 @@ function MarketplaceScreen() {
     [navigate],
   );
 
+  const handleShareProduct = useCallback((product: ProductItem) => {
+    setSharingProduct(product);
+  }, []);
+
   const ensureProductInCart = useCallback(
     async (product: ProductItem) => {
       if (!product.can_add_to_cart || orderingProductId !== null) return;
@@ -782,6 +788,7 @@ function MarketplaceScreen() {
           onPress={handleProductPress}
           onContactSeller={handleContactSeller}
           onOrderRequest={ensureProductInCart}
+          onShare={Number(item.post_id) > 0 ? handleShareProduct : undefined}
           isOrderRequesting={orderingProductId === item.id}
         />
       </View>
@@ -790,6 +797,7 @@ function MarketplaceScreen() {
       ensureProductInCart,
       handleProductPress,
       handleContactSeller,
+      handleShareProduct,
       orderingProductId,
       vm.distance,
       vm.distanceFilterError,
@@ -1266,6 +1274,11 @@ function MarketplaceScreen() {
         error={vm.distanceFilterError ?? vm.distanceFilterStatus}
         onChange={vm.setDistance}
         onClose={() => setDistanceModalVisible(false)}
+      />
+      <ProductShareBottomSheet
+        visible={Boolean(sharingProduct)}
+        product={sharingProduct}
+        onClose={() => setSharingProduct(undefined)}
       />
     </SafeAreaView>
   );

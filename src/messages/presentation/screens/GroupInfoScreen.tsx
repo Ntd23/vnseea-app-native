@@ -48,6 +48,11 @@ import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppTheme';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import {
+  isSelfGroupMemberRemoval,
+  SELF_GROUP_MEMBER_REMOVAL_MESSAGE,
+} from '../../../shared-kernel/application/utils/groupMemberRemoval';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import { subscribeToMessageInvalidations } from '../../infrastructure/realtime/messageRealtimeRuntime';
 import type {
@@ -296,6 +301,7 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
   const [addableUsers, setAddableUsers] = useState<GroupAddableUser[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const groupId = chat.groupId || chat.chatId || chat.userId;
+  const currentUserId = sessionStorage.getSession()?.userId ?? '';
 
   const loadGroupInfo = useCallback(async (showLoader = false) => {
     if (!groupId) return;
@@ -427,6 +433,16 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
   }, [copy.addMembers, copy.retry, groupId, loadGroupInfo, selectedIds]);
 
   const removeMember = useCallback((member: GroupChatMember) => {
+    if (isSelfGroupMemberRemoval(currentUserId, member.id)) {
+      Alert.alert(
+        copy.membersTitle,
+        language === 'vi'
+          ? SELF_GROUP_MEMBER_REMOVAL_MESSAGE
+          : 'You cannot remove yourself from the group. Use Leave group instead.',
+      );
+      return;
+    }
+
     Alert.alert(copy.removeTitle(member.name), '', [
       { text: copy.cancel, style: 'cancel' },
       {
@@ -445,7 +461,7 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
         },
       },
     ]);
-  }, [copy, groupId, language, loadGroupInfo]);
+  }, [copy, currentUserId, groupId, language, loadGroupInfo]);
 
   const clearGroupHistory = useCallback(() => {
     Alert.alert(copy.clearTitle, copy.clearMessage, [
@@ -591,7 +607,11 @@ export default function GroupInfoScreen({ navigation, route }: Props) {
               <MemberRow
                 key={member.id}
                 member={member}
-                canRemove={Boolean(groupInfo?.isOwner) && !member.isOwner}
+                canRemove={
+                  Boolean(groupInfo?.isOwner) &&
+                  !member.isOwner &&
+                  !isSelfGroupMemberRemoval(currentUserId, member.id)
+                }
                 onOpen={() => navigateToUserProfile(navigation, member.id)}
                 onRemove={() => removeMember(member)}
               />

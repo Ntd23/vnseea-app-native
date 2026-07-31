@@ -233,43 +233,78 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     $error_message = 'campaign owner can not donate to their own campaign';
                 }
                 else {
-
-
-                    $notes = "Donated to ".mb_substr($fund->title, 0, 100, "UTF-8");
-
-                    $create_payment_log = mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`) VALUES ({$wo['user']['user_id']}, 'DONATE', {$amount}, '{$notes}')");
-
+                    $donor_id = (int) $wo['user']['user_id'];
+                    $recipient_id = (int) $fund->user_id;
+                    $gross_amount = (float) $amount;
                     $admin_com = 0;
                     if (!empty($wo['config']['donate_percentage']) && is_numeric($wo['config']['donate_percentage']) && $wo['config']['donate_percentage'] > 0) {
-                        $admin_com = ($wo['config']['donate_percentage'] * $amount) / 100;
-                        $amount = $amount - $admin_com;
+                        $admin_com = ($wo['config']['donate_percentage'] * $gross_amount) / 100;
                     }
-                    $user_data = Wo_UserData($fund->user_id);
-                    $db->where('user_id',$fund->user_id)->update(T_USERS,array('balance' => $user_data['balance'] + $amount));
-                    cache($fund->user_id, 'users', 'delete');
-                    $fund_raise_id = $db->insert(T_FUNDING_RAISE,array('user_id' => $wo['user']['user_id'],
-                                                      'funding_id' => $fund_id,
-                                                      'amount' => $amount,
-                                                      'time' => time()));
-                    $post_data = array(
-                        'user_id' => Wo_Secure($wo['user']['user_id']),
-                        'fund_raise_id' => $fund_raise_id,
-                        'time' => time(),
-                        'multi_image_post' => 0
-                    );
+                    $received_amount = max(0, $gross_amount - $admin_com);
+                    $gross_amount_sql = number_format($gross_amount, 8, '.', '');
+                    $received_amount_sql = number_format($received_amount, 8, '.', '');
+                    $notes = "Donated to ".mb_substr($fund->title, 0, 100, "UTF-8");
+                    $safe_notes = mysqli_real_escape_string($sqlConnect, $notes);
+                    $donated_at = time();
 
-                    $id = Wo_RegisterPost($post_data);
+                    mysqli_begin_transaction($sqlConnect);
 
-                    $notification_data_array = array(
-                        'recipient_id' => $fund->user_id,
-                        'type' => 'fund_donate',
-                        'url' => 'index.php?link1=show_fund&id=' . $fund->hashed_id
-                    );
-                    Wo_RegisterNotification($notification_data_array);
-                    $response_data = array(
-                                        'api_status' => 200,
-                                        'message' => 'donated'
-                                    );
+                    // Conditional debit is the authoritative balance check and prevents
+                    // concurrent requests from spending the same wallet balance twice.
+                    $debit_donor = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `wallet` = `wallet` - {$gross_amount_sql} WHERE `user_id` = {$donor_id} AND `wallet` >= {$gross_amount_sql}");
+                    $donor_debited = $debit_donor && mysqli_affected_rows($sqlConnect) === 1;
+
+                    if (!$donor_debited) {
+                        mysqli_rollback($sqlConnect);
+                        if ($debit_donor) {
+                            $error_code = 9;
+                            $error_message = 'Insufficient VNSEEA wallet balance';
+                        }
+                        else {
+                            $error_code = 10;
+                            $error_message = 'Unable to process donation';
+                        }
+                    }
+                    else {
+                        $credit_recipient = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `balance` = `balance` + {$received_amount_sql} WHERE `user_id` = {$recipient_id}");
+                        $create_payment_log = $credit_recipient
+                            ? mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`) VALUES ({$donor_id}, 'DONATE', {$gross_amount_sql}, '{$safe_notes}')")
+                            : false;
+                        $create_fund_raise = $create_payment_log
+                            ? mysqli_query($sqlConnect, "INSERT INTO " . T_FUNDING_RAISE . " (`user_id`, `funding_id`, `amount`, `time`) VALUES ({$donor_id}, {$fund_id}, {$received_amount_sql}, {$donated_at})")
+                            : false;
+                        $fund_raise_id = $create_fund_raise ? (int) mysqli_insert_id($sqlConnect) : 0;
+
+                        if (!$credit_recipient || !$create_payment_log || !$create_fund_raise || $fund_raise_id <= 0) {
+                            mysqli_rollback($sqlConnect);
+                            $error_code = 10;
+                            $error_message = 'Unable to process donation';
+                        }
+                        else {
+                            mysqli_commit($sqlConnect);
+                            cache($donor_id, 'users', 'delete');
+                            cache($recipient_id, 'users', 'delete');
+
+                            $post_data = array(
+                                'user_id' => Wo_Secure($donor_id),
+                                'fund_raise_id' => $fund_raise_id,
+                                'time' => $donated_at,
+                                'multi_image_post' => 0
+                            );
+                            Wo_RegisterPost($post_data);
+
+                            $notification_data_array = array(
+                                'recipient_id' => $recipient_id,
+                                'type' => 'fund_donate',
+                                'url' => 'index.php?link1=show_fund&id=' . $fund->hashed_id
+                            );
+                            Wo_RegisterNotification($notification_data_array);
+                            $response_data = array(
+                                'api_status' => 200,
+                                'message' => 'donated'
+                            );
+                        }
+                    }
                 }
             }
             else{

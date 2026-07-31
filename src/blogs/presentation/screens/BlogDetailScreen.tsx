@@ -42,6 +42,7 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getBlogsCopy } from '../../application/i18n/blogsCopy';
+import { normalizeBlogWebUrl } from '../../application/utils/normalizeBlogWebUrl';
 import type { BlogCategoryOption, BlogsItem } from '../../domain/types/blogs.types';
 import { CommentMentionText } from '../../../reels/presentation/components/CommentMentionText';
 
@@ -203,6 +204,10 @@ function BlogDetailScreen() {
 
   const article = vm.article;
   const articleBlocks = useMemo(() => (article ? textBlocksOf(article) : []), [article]);
+  const articleWebUrl = useMemo(
+    () => normalizeBlogWebUrl(article?.url),
+    [article?.url],
+  );
 
   const openArticle = useCallback(
     (item: BlogsItem) => {
@@ -212,13 +217,13 @@ function BlogDetailScreen() {
   );
 
   const handleShare = useCallback(async () => {
-    if (!article?.url) return;
+    if (!article || !articleWebUrl) return;
     await Share.share({
       title: article.title,
-      message: article.url,
-      url: article.url,
+      message: articleWebUrl,
+      url: articleWebUrl,
     });
-  }, [article]);
+  }, [article, articleWebUrl]);
 
   const submitComment = useCallback(async () => {
     const ok = await vm.submitComment(commentText);
@@ -399,9 +404,9 @@ function BlogDetailScreen() {
           <CategoriesCloud categories={vm.categories} copy={copy} />
         </View>
 
-        {article.url ? (
+        {articleWebUrl ? (
           <View style={{ marginHorizontal: 18, marginTop: 16 }}>
-            <TouchableOpacity activeOpacity={0.85} onPress={() => void Linking.openURL(article.url!)} style={{ minHeight: 44, borderRadius: 12, backgroundColor: APP_COLORS.brand.soft, alignItems: 'center', justifyContent: 'center' }}>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => void Linking.openURL(articleWebUrl)} style={{ minHeight: 44, borderRadius: 12, backgroundColor: APP_COLORS.brand.soft, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: BRAND, fontSize: 14, fontWeight: '800' }}>{'Xem tr\u00ean website'}</Text>
             </TouchableOpacity>
           </View>

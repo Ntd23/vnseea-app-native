@@ -15,6 +15,12 @@ export interface FundingDetailMeta {
   currencySymbol: string;
 }
 
+export interface FundingDonationResult {
+  ok: boolean;
+  error?: string;
+  errorId?: string;
+}
+
 export function useFundingDetailViewModel(fundId: string) {
   const [campaign, setCampaign] = useState<FundingItem | null>(null);
   const [donationsList, setDonationsList] = useState<FundingDonation[]>([]);
@@ -73,11 +79,12 @@ export function useFundingDetailViewModel(fundId: string) {
   }, [load]);
 
   const donate = useCallback(
-    async (amount: number): Promise<boolean> => {
-      if (!campaign) return false;
+    async (amount: number): Promise<FundingDonationResult> => {
+      if (!campaign) return { ok: false };
       if (!Number.isFinite(amount) || amount <= 0) {
-        setError('Số tiền ủng hộ phải lớn hơn 0');
-        return false;
+        const validationError = 'Số tiền ủng hộ phải lớn hơn 0';
+        setError(validationError);
+        return { ok: false, error: validationError };
       }
       setIsDonating(true);
       setError(null);
@@ -85,14 +92,20 @@ export function useFundingDetailViewModel(fundId: string) {
         await repository.donate(campaign.id, amount);
         // Reload detail so raised/percentage update
         await load();
-        return true;
+        return { ok: true };
       } catch (caughtError) {
-        setError(
+        const donationError =
           caughtError instanceof Error
             ? caughtError.message
-            : 'Ủng hộ thất bại, vui lòng thử lại',
-        );
-        return false;
+            : 'Ủng hộ thất bại, vui lòng thử lại';
+        const errorId =
+          caughtError &&
+          typeof caughtError === 'object' &&
+          'errorId' in caughtError
+            ? String(caughtError.errorId ?? '')
+            : undefined;
+        setError(donationError);
+        return { ok: false, error: donationError, errorId };
       } finally {
         setIsDonating(false);
       }

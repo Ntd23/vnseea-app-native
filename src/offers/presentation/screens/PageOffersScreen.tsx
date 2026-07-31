@@ -1,20 +1,17 @@
 // Description: Page offers list screen - shows all offers for a specific page.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback } from 'react';
-import {
-  FlatList,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Linking, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Plus, Tag } from 'lucide-react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
+import type { RootStackParamList } from '../../../navigation/types';
 import { useOffersViewModel } from '../../application/view-models/useOfferViewModel';
 import OfferCard from '../components/OfferCard';
 import type { OfferWithDisplay } from '../../domain/types/offer.types';
+import { resolveOfferNavigationDestination } from '../../application/navigation/offerNavigation';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type PageOffersRouteParams = {
@@ -24,9 +21,15 @@ type PageOffersRouteParams = {
 };
 
 export default function PageOffersScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const route = useRoute<RouteProp<{ params: PageOffersRouteParams }, 'params'>>();
-  const { pageId, pageName = 'Page', isOwner = false } = route.params || {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route =
+    useRoute<RouteProp<{ params: PageOffersRouteParams }, 'params'>>();
+  const {
+    pageId,
+    pageName = 'Page',
+    isOwner = false,
+  } = route.params || {
     pageId: 0,
     pageName: 'Page',
     isOwner: false,
@@ -44,10 +47,28 @@ export default function PageOffersScreen() {
 
   const handleOfferPress = useCallback(
     (offer: OfferWithDisplay) => {
-      console.log('[PageOffers] offer pressed:', offer.id);
-      // TODO: navigate to offer detail
+      const destination = resolveOfferNavigationDestination(offer);
+      if (destination.kind === 'product') {
+        navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+          productId: destination.productId,
+        });
+        return;
+      }
+      if (destination.kind === 'post') {
+        navigation.navigate(ROUTES.POST_DETAIL, {
+          postId: destination.postId,
+        });
+        return;
+      }
+      if (destination.kind === 'external') {
+        Linking.openURL(destination.url).catch(() => {
+          navigation.navigate(ROUTES.MARKETPLACE);
+        });
+        return;
+      }
+      navigation.navigate(ROUTES.MARKETPLACE);
     },
-    [],
+    [navigation],
   );
 
   const renderHeader = () => (
@@ -88,7 +109,9 @@ export default function PageOffersScreen() {
           <ChevronLeft size={24} color="#1A1C1E" />
         </TouchableOpacity>
         <View className="flex-1 items-center">
-          <Text className="text-[15px] font-semibold text-[#1A1C1E]">Ưu đãi</Text>
+          <Text className="text-[15px] font-semibold text-[#1A1C1E]">
+            Ưu đãi
+          </Text>
           <Text className="text-[11px] text-[#64748B]" numberOfLines={1}>
             {pageName}
           </Text>

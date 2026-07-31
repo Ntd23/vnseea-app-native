@@ -80,6 +80,27 @@ if ($action == 'create_label') {
     return;
 }
 
+if ($action == 'update_label') {
+    $label_id = Wo_ApiTagsPostInt('label_id');
+    $name = Wo_ApiTagsPostString('label_name');
+    $color = Wo_ApiTagsPostString('label_color', '#999999');
+
+    if (empty($label_id)) {
+        Wo_ApiTagsError('Id can not be empty');
+        return;
+    }
+    if ($name === '') {
+        Wo_ApiTagsError('Name can not be empty');
+        return;
+    }
+
+    Wo_ApiTagsResponse(Wo_UpdateTagLabel($label_id, array(
+        'name' => $name,
+        'color' => $color
+    )));
+    return;
+}
+
 if ($action == 'delete_label') {
     $label_id = Wo_ApiTagsPostInt('label_id');
     if (empty($label_id)) {

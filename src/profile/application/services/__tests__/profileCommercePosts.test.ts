@@ -43,6 +43,7 @@ jest.mock(
 );
 
 const {
+  clearProfileCommercePostsCache,
   loadProfileCommercePosts,
   profileProductBelongsToUser,
 } = require('../profileCommercePosts') as typeof import('../profileCommercePosts');
@@ -108,6 +109,7 @@ function job(overrides: Partial<JobsItem> = {}): JobsItem {
 describe('profileCommercePosts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearProfileCommercePostsCache();
     mockGetCachedProducts.mockReturnValue([]);
     mockGetCachedJobs.mockReturnValue([]);
     mockGetProducts.mockResolvedValue({ products: [] });
@@ -166,5 +168,45 @@ describe('profileCommercePosts', () => {
         99,
       ),
     ).toBe(false);
+  });
+
+  it('shares commerce requests and reuses the fresh result across profile mounts', async () => {
+    let resolveProducts!: (value: { products: ProductItem[] }) => void;
+    mockGetProducts.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveProducts = resolve;
+        }),
+    );
+    const input = {
+      userId: 42,
+      includeOwnedPageJobs: false,
+      sellerFallback: 'Seller',
+      employerFallback: 'Employer',
+    };
+
+    const first = loadProfileCommercePosts(input);
+    const second = loadProfileCommercePosts(input);
+    expect(mockGetProducts).toHaveBeenCalledTimes(1);
+
+    resolveProducts({ products: [product()] });
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+
+    await loadProfileCommercePosts(input);
+    expect(mockGetProducts).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows pull-to-refresh to bypass the commerce cache', async () => {
+    const input = {
+      userId: 42,
+      includeOwnedPageJobs: false,
+      sellerFallback: 'Seller',
+      employerFallback: 'Employer',
+    };
+
+    await loadProfileCommercePosts(input);
+    await loadProfileCommercePosts({ ...input, force: true });
+
+    expect(mockGetProducts).toHaveBeenCalledTimes(2);
   });
 });

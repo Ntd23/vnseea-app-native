@@ -54,6 +54,10 @@ describe('inline live feed playback', () => {
     expect(player).toContain('objectFit="contain"');
     expect(player).toContain('onVideoDimensionsChange={onVideoDimensionsChange}');
     expect(player).toContain('posterOpacity');
+    expect(player).toContain('connectionReady && videoReady');
+    expect(player).toContain('connectionReadyRef.current = true');
+    expect(player).not.toContain('ActivityIndicator');
+    expect(player).not.toContain('loadingBadge');
     expect(defaultLiveKit).toContain('LIVE_VIDEO_ONLY_CONNECT_OPTIONS');
     expect(defaultLiveKit).not.toContain('autoSubscribe: false');
     expect(defaultLiveKit).toContain('publication.setSubscribed(shouldSubscribe)');

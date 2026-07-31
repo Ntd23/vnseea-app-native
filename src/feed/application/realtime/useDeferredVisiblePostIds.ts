@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const DEFAULT_VISIBLE_POST_SETTLE_MS = 180;
+const MAX_VISIBLE_POST_IDS = 8;
 
 function arePostIdListsEqual(left: string[], right: string[]) {
   return (
@@ -16,7 +17,7 @@ function normalizeVisiblePostIds(values: Array<string | number>) {
         .map(value => String(value).trim())
         .filter(value => /^[1-9][0-9]*$/.test(value)),
     ),
-  ).slice(0, 50);
+  ).slice(0, MAX_VISIBLE_POST_IDS);
 }
 
 /**

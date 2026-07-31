@@ -54,5 +54,12 @@ describe('message realtime runtime', () => {
     expect(chatViewModelSource).toContain(
       'if (isRealtimeConnected || !isScreenFocused) return undefined;',
     );
+    expect(chatViewModelSource).toContain(
+      'CHAT_FALLBACK_POLL_DELAYS_MS',
+    );
+    expect(chatViewModelSource).toContain(
+      'isRealtimeConnected ||\n      !isScreenFocused',
+    );
+    expect(chatViewModelSource).not.toContain('setInterval(');
   });
 });
