@@ -430,19 +430,14 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
         return;
       }
 
-      const existingIds = new Set(labels.map(label => label.id));
-      await repository.createLabel(normalizedName, normalizedColor);
-      const refreshedLabels = await repository.listLabels();
-      setLabels(refreshedLabels);
-      const createdLabel =
-        refreshedLabels.find(label => !existingIds.has(label.id)) ??
-        refreshedLabels.find(
-          label =>
-            label.name.trim().toLocaleLowerCase() ===
-            normalizedName.toLocaleLowerCase(),
-        );
-
-      if (!createdLabel) throw new Error('created_label_not_found');
+      const createdLabel = await repository.createLabel(
+        normalizedName,
+        normalizedColor,
+      );
+      setLabels(current => [
+        createdLabel,
+        ...current.filter(label => label.id !== createdLabel.id),
+      ]);
 
       let attached = false;
       if (selectedTarget) {
@@ -480,7 +475,6 @@ export default function MessageLabelsScreen({ navigation, route }: Props) {
     isSaving,
     labelColor,
     labelName,
-    labels,
     resetLabelForm,
     selectedTarget,
   ]);

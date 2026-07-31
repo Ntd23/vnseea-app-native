@@ -68,15 +68,23 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 // react-native-image-picker tolerates some MIME-less Android assets, so
 // we provide sensible defaults the same way CreatePostScreen does.
+function normalizePickerAssetUri(uri: string) {
+  if (
+    Platform.OS === 'android' &&
+    !uri.startsWith('file://') &&
+    !uri.startsWith('content://')
+  ) {
+    return `file://${uri}`;
+  }
+  return uri;
+}
+
 function assetToUpload(
   asset: Asset,
   fileType: 'image' | 'video',
 ): StoryMediaUpload | null {
   if (!asset.uri) return null;
-  const uri =
-    Platform.OS === 'android' && !asset.uri.startsWith('file://')
-      ? `file://${asset.uri}`
-      : asset.uri;
+  const uri = normalizePickerAssetUri(asset.uri);
   const defaultExt = fileType === 'video' ? 'mp4' : 'jpg';
   const defaultMime = fileType === 'video' ? 'video/mp4' : 'image/jpeg';
   return {

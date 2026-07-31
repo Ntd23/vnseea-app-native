@@ -20,6 +20,14 @@ describe('marketplace order notification badges', () => {
     expect(marketplace).toContain('Thông báo đơn hàng');
     expect(marketplace).toContain('useOrderNotificationBadges');
     expect(marketplace).toContain(
+      'className="w-full flex-row items-center justify-between"',
+    );
+    expect(marketplace).toContain('const MARKETPLACE_HEADER_ACTION_STYLE = {');
+    expect(marketplace).toContain("width: '49%'");
+    expect(
+      marketplace.match(/style=\{MARKETPLACE_HEADER_ACTION_STYLE\}/g),
+    ).toHaveLength(2);
+    expect(marketplace).toContain(
       "orderBadges.preferredMode === 'seller' ? 'orders' : 'purchased'",
     );
   });

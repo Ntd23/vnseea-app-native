@@ -20,10 +20,10 @@ describe('Feed and profile list performance contracts', () => {
   );
 
   it('keeps rich cards in a bounded render window without unsafe Android clipping', () => {
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2');
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.4');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.8');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.8');
     expect(feedSource).toContain(
-      'const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28',
+      'const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 18 : 32',
     );
     expect(feedSource).toContain(
       'const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 18 : 14',
@@ -32,12 +32,36 @@ describe('Feed and profile list performance contracts', () => {
     expect(feedSource).toContain('removeClippedSubviews={false}');
     expect(feedSource).not.toContain('FEED_SCREEN_HEIGHT * 6');
 
-    expect(profileSource).toContain('SCREEN_HEIGHT * 1.8');
     expect(profileSource).toContain('SCREEN_HEIGHT * 2.6');
+    expect(profileSource).toContain('SCREEN_HEIGHT * 3.2');
     expect(profileSource).toContain(
-      'removeClippedSubviews={PROFILE_IS_ANDROID}',
+      'const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 14 : 22',
     );
+    expect(profileSource).toContain('removeClippedSubviews={false}');
     expect(profileSource).not.toContain('SCREEN_HEIGHT * 5.5');
+  });
+
+  it('shortens fling momentum and loads profile posts before the tail is visible', () => {
+    expect(feedSource).toContain(
+      'const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.94 : 0.992',
+    );
+    expect(feedSource).toContain(
+      'decelerationRate={FEED_SCROLL_DECELERATION_RATE}',
+    );
+    expect(profileSource).toContain(
+      'const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.94 : 0.992',
+    );
+    expect(profileSource).toContain(
+      'decelerationRate={PROFILE_SCROLL_DECELERATION_RATE}',
+    );
+    expect(profileSource).toContain(
+      'PROFILE_POST_EARLY_LOAD_DISTANCE_MULTIPLIER',
+    );
+    expect(profileSource).toContain(
+      'PROFILE_POST_EARLY_LOAD_MIN_DISTANCE',
+    );
+    expect(profileSource).toContain('onEndReachedThreshold={1.2}');
+    expect(profileSource).not.toContain('onEndReachedThreshold={0.35}');
   });
 
   it('settles visible post ids before rebuilding realtime scopes while scrolling', () => {

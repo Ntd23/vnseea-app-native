@@ -127,6 +127,7 @@ import { CommentMentionText } from './CommentMentionText';
 import {
   applyCommentMentionSuggestion,
   getActiveCommentMentionToken,
+  getRenderedCommentMentionLabel,
   mergeCommentMention,
   pruneCommentMentions,
   serializeCommentMentions,
@@ -498,6 +499,32 @@ function splitLeadingReplyMention(text: string, mentionName?: string) {
   };
 }
 
+function normalizeMentionIdentity(value?: string) {
+  return (value ?? '').trim().replace(/^@+/, '').toLocaleLowerCase();
+}
+
+function findThreadMentionUserId(
+  label: string,
+  comments: ReelComment[],
+  repliesById: Record<string, ReelComment[]>,
+) {
+  const normalizedLabel = normalizeMentionIdentity(label);
+  if (!normalizedLabel) return '';
+
+  const threadComments = [
+    ...comments,
+    ...Object.values(repliesById).flat(),
+  ];
+  const target = threadComments.find(item => {
+    const publisher = item.publisher;
+    return [publisher.username, publisher.name].some(
+      value => normalizeMentionIdentity(value) === normalizedLabel,
+    );
+  });
+
+  return target?.publisher.userId ?? '';
+}
+
 function formatRelativeTime(timestamp?: number, language: 'vi' | 'en' = 'vi') {
   if (!timestamp) return '';
   const now = Math.floor(Date.now() / 1000);
@@ -613,6 +640,45 @@ function ReelCommentsSheetBase({
       navigateToUserProfile(navigation, userId);
     },
     [navigation],
+  );
+  const handlePressUnresolvedMention = useCallback(
+    async (label: string) => {
+      const threadUserId = findThreadMentionUserId(
+        label,
+        comments,
+        repliesById,
+      );
+      if (threadUserId) {
+        handlePressProfile(threadUserId);
+        return;
+      }
+
+      const normalizedLabel = normalizeMentionIdentity(label);
+      if (!normalizedLabel) return;
+
+      try {
+        const suggestions = await onSearchMentions(normalizedLabel);
+        const target = suggestions.find(suggestion =>
+          [
+            suggestion.label,
+            suggestion.value,
+            suggestion.backendValue,
+            suggestion.subtitle,
+          ].some(
+            value => normalizeMentionIdentity(value) === normalizedLabel,
+          ),
+        );
+        if (target?.id) {
+          handlePressProfile(String(target.id));
+        }
+      } catch (caught) {
+        console.warn(
+          '[ReelCommentsSheet] resolve mention profile failed',
+          caught,
+        );
+      }
+    },
+    [comments, handlePressProfile, onSearchMentions, repliesById],
   );
   const insets = useSafeAreaInsets();
   // Keyboard events expose screen coordinates, while measureInWindow returns
@@ -1934,6 +2000,7 @@ function ReelCommentsSheetBase({
             replyingTo?.targetCommentId ?? replyingTo?.commentId
           }
           onPressProfile={handlePressProfile}
+          onPressUnresolvedMention={handlePressUnresolvedMention}
           inlineDeleteCommentId={inlineDeleteCommentId}
           deletingCommentIds={deletingCommentIds}
           onInlineDelete={handleInlineDeleteComment}
@@ -1944,6 +2011,7 @@ function ReelCommentsSheetBase({
       handleCommentLongPress,
       handleOpenImage,
       handleOpenPicker,
+      handlePressUnresolvedMention,
       handleInlineDeleteComment,
       inlineDeleteCommentId,
       deletingCommentIds,
@@ -3367,6 +3435,7 @@ interface ThreadProps {
   onOpenImage: (uri: string) => void;
   replyingToCommentId?: string | null;
   onPressProfile: (userId: string) => void;
+  onPressUnresolvedMention: (label: string) => void;
   inlineDeleteCommentId: string | null;
   deletingCommentIds: Set<string>;
   onInlineDelete: (commentId: string) => void;
@@ -3386,6 +3455,7 @@ function CommentThreadBase({
   onOpenImage,
   replyingToCommentId,
   onPressProfile,
+  onPressUnresolvedMention,
   inlineDeleteCommentId,
   deletingCommentIds,
   onInlineDelete,
@@ -3434,6 +3504,7 @@ function CommentThreadBase({
         onOpenImage={onOpenImage}
         isReplyingToThis={replyingToCommentId === comment.id}
         onPressProfile={onPressProfile}
+        onPressUnresolvedMention={onPressUnresolvedMention}
         showInlineDelete={inlineDeleteCommentId === comment.id}
         isDeleting={deletingCommentIds.has(comment.id)}
         onInlineDelete={onInlineDelete}
@@ -3488,6 +3559,7 @@ function CommentThreadBase({
               onOpenImage={onOpenImage}
               isReplyingToThis={replyingToCommentId === reply.id}
               onPressProfile={onPressProfile}
+              onPressUnresolvedMention={onPressUnresolvedMention}
               showInlineDelete={inlineDeleteCommentId === reply.id}
               isDeleting={deletingCommentIds.has(reply.id)}
               onInlineDelete={onInlineDelete}
@@ -3522,6 +3594,7 @@ interface RowProps {
   onOpenImage: (uri: string) => void;
   isReplyingToThis?: boolean;
   onPressProfile: (userId: string) => void;
+  onPressUnresolvedMention: (label: string) => void;
   showInlineDelete: boolean;
   isDeleting: boolean;
   onInlineDelete: (commentId: string) => void;
@@ -3537,6 +3610,7 @@ function CommentRow({
   onOpenImage,
   isReplyingToThis,
   onPressProfile,
+  onPressUnresolvedMention,
   showInlineDelete,
   isDeleting,
   onInlineDelete,
@@ -3634,6 +3708,12 @@ function CommentRow({
       onPressProfile(comment.publisher.userId);
     }
   }, [comment.publisher.userId, onPressProfile]);
+
+  const handleReplyMentionProfilePress = useCallback(() => {
+    if (comment.replyMentionUserId) {
+      onPressProfile(comment.replyMentionUserId);
+    }
+  }, [comment.replyMentionUserId, onPressProfile]);
 
   // Pulse highlight animation when this comment is being replied to
   const highlightAnim = useRef(new Animated.Value(0)).current;
@@ -3781,11 +3861,29 @@ function CommentRow({
                   style={styles.commentText}
                   mentionStyle={styles.commentMentionText}
                   onPressMention={mention => onPressProfile(mention.userId)}
+                  onPressUnresolvedMention={onPressUnresolvedMention}
                 />
               ) : replyMentionParts ? (
                 <Text style={styles.commentText}>
-                  <Text style={styles.commentMentionText}>
-                    {replyMentionParts.mention}
+                  <Text
+                    style={styles.commentMentionText}
+                    accessibilityRole={
+                      comment.replyMentionUserId ? 'link' : undefined
+                    }
+                    onPress={
+                      comment.replyMentionUserId
+                        ? handleReplyMentionProfilePress
+                        : () =>
+                            onPressUnresolvedMention(
+                              getRenderedCommentMentionLabel(
+                                replyMentionParts.mention,
+                              ),
+                            )
+                    }
+                  >
+                    {getRenderedCommentMentionLabel(
+                      replyMentionParts.mention,
+                    )}
                   </Text>
                   {replyMentionParts.rest}
                 </Text>
@@ -3794,6 +3892,7 @@ function CommentRow({
                   text={comment.text}
                   style={styles.commentText}
                   mentionStyle={styles.commentMentionText}
+                  onPressUnresolvedMention={onPressUnresolvedMention}
                 />
               )
             ) : null}
@@ -4334,7 +4433,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   commentMentionText: {
-    color: '#1877f2',
+    color: APP_BRAND_COLOR,
     fontWeight: '700',
   },
   commentImageWrap: {

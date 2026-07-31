@@ -42,9 +42,23 @@ if ($f == 'tags') {
             'name' => $name,
             'color' => $color
         ]);
-        if ($data) {
-            echo json_encode(['status' => 200, 'message' => 'Label created successfully']);
+        if (!is_array($data) || (int)($data['status'] ?? 0) !== 200 || empty($data['id'])) {
+            echo json_encode(is_array($data) ? $data : [
+                'status' => 500,
+                'message' => 'Could not create label'
+            ]);
+            exit();
         }
+        $label_id = (int)$data['id'];
+        echo json_encode([
+            'status' => 200,
+            'id' => $label_id,
+            'label' => [
+                'id' => $label_id,
+                'name' => $name,
+                'color' => $color
+            ]
+        ]);
         exit();
     }
 

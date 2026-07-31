@@ -61,3 +61,15 @@ export const notificationsCacheStorage = {
     storage.remove(getCacheKey(userId));
   },
 };
+
+export function getLocallySeenSyntheticNotificationIds(userId?: string) {
+  const snapshot = notificationsCacheStorage.getSnapshot(userId);
+  return new Set(
+    (snapshot?.items ?? [])
+      .filter(
+        item =>
+          item.seen && item.id.startsWith('group-chat-request:'),
+      )
+      .map(item => item.id),
+  );
+}

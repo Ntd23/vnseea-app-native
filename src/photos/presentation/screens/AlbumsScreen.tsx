@@ -1,267 +1,145 @@
-// Description: Renders the VNSEEA albums screen with real album data from API.
-import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useEffect } from 'react';
+// Description: Renders the current user's albums in a modern two-column gallery.
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
+  Platform,
+  RefreshControl,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  ActivityIndicator,
-  Alert,
-  RefreshControl,
 } from 'react-native';
-import { ArrowLeft, Images, Plus, Search } from 'lucide-react-native';
+import { Globe2, Images, Lock, Plus, Users } from 'lucide-react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
-import { useAlbumsViewModel } from '../../application/view-models/useAlbumsViewModel';
-import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  APP_BRAND_COLOR,
+  APP_COLORS,
+} from '../../../shared-kernel/presentation/theme/appColors';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
+import { useAlbumsViewModel } from '../../application/view-models/useAlbumsViewModel';
+import type { AlbumItem } from '../../domain/types/photos.types';
 
 type AlbumsNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = APP_BRAND_COLOR;
+const HEADER_SAFE_AREA_COLOR =
+  Platform.OS === 'android' ? BRAND : APP_COLORS.neutral.surface;
 
-function mapPrivacyToText(privacy: string): string {
-  switch (privacy) {
-    case 'public':
-      return 'Công khai';
-    case 'friends':
-      return 'Bạn bè';
-    case 'followers':
-      return 'Người theo dõi';
-    case 'only_me':
-      return 'Chỉ mình tôi';
-    default:
-      return privacy;
-  }
+function getPrivacyLabel(privacy: ContentAudience, isVi: boolean): string {
+  const labels = isVi
+    ? {
+        public: 'Công khai',
+        friends: 'Bạn bè',
+        followers: 'Người theo dõi',
+        only_me: 'Chỉ mình tôi',
+      }
+    : {
+        public: 'Public',
+        friends: 'Friends',
+        followers: 'Followers',
+        only_me: 'Only me',
+      };
+
+  return labels[privacy];
 }
 
-function LegacyAlbumsScreen() {
-  const navigation = useNavigation<AlbumsNav>();
-  const {
-    albums,
-    error,
-    isLoading,
-    isRefreshing,
-    hasMore,
-    isLoadingMore,
-    loadFirstPage,
-    refresh,
-    loadMore,
-    retry,
-  } = useAlbumsViewModel();
+function AlbumCard({
+  album,
+  isVi,
+  onPress,
+}: {
+  album: AlbumItem;
+  isVi: boolean;
+  onPress: () => void;
+}) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  const albumName =
+    album.albumName.trim() || (isVi ? 'Album không tên' : 'Untitled album');
+  const PrivacyIcon =
+    album.privacy === 'public'
+      ? Globe2
+      : album.privacy === 'only_me'
+      ? Lock
+      : Users;
 
-  // Load first page on mount
   useEffect(() => {
-    loadFirstPage();
-  }, [loadFirstPage]);
-
-  // Handle empty state
-  if (!isLoading && !error && albums.length === 0) {
-    return (
-      <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
-
-        <View className="surface-brand h-14 flex-row items-center justify-between px-4">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text className="text-title-primary text-inverse">Album</Text>
-          <View className="flex-row items-center">
-            <TouchableOpacity
-              className="h-10 w-10 items-center justify-center rounded-full"
-              activeOpacity={0.8}
-            >
-              <Search size={21} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="h-10 w-10 items-center justify-center rounded-full"
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate(ROUTES.CREATE_ALBUM)}
-            >
-              <Plus size={22} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View className="flex-1 items-center justify-center px-8">
-          <Images size={64} color="#CBD5E1" />
-          <Text className="mt-4 text-center text-[16px] font-medium text-[#64748B]">
-            Chưa có album nào
-          </Text>
-          <Text className="mt-2 text-center text-[13px] text-[#94A3B8]">
-            Tạo album đầu tiên để chia sẻ khoảnh khắc với cộng đồng
-          </Text>
-          <TouchableOpacity
-            className="mt-6 min-w-[200px] rounded-lg bg-brand py-3"
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate(ROUTES.CREATE_ALBUM)}
-          >
-            <Text className="text-center text-[15px] font-semibold text-white">
-              Tạo album ngay
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
+    setCoverFailed(false);
+  }, [album.coverUrl]);
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
+    <TouchableOpacity
+      activeOpacity={0.88}
+      accessibilityRole="button"
+      accessibilityLabel={
+        isVi ? `Mở album ${albumName}` : `Open album ${albumName}`
+      }
+      style={styles.albumCard}
+      onPress={onPress}
+    >
+      <View style={styles.coverContainer}>
+        {album.coverUrl && !coverFailed ? (
+          <Image
+            source={{ uri: album.coverUrl }}
+            style={styles.coverImage}
+            resizeMode="cover"
+            onError={() => setCoverFailed(true)}
+          />
+        ) : (
+          <View style={styles.coverPlaceholder}>
+            <View style={styles.placeholderIcon}>
+              <Images size={27} color={APP_COLORS.neutral.iconMuted} />
+            </View>
+            <Text style={styles.placeholderText}>
+              {isVi ? 'Chưa có ảnh bìa' : 'No cover photo'}
+            </Text>
+          </View>
+        )}
 
-      {/* Header */}
-      <View className="surface-brand h-14 flex-row items-center justify-between px-4">
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
-        >
-          <ArrowLeft size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text className="text-title-primary text-inverse">Album</Text>
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-          >
-            <Search size={21} color="#FFFFFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate(ROUTES.CREATE_ALBUM)}
-          >
-            <Plus size={22} color="#FFFFFF" />
-          </TouchableOpacity>
+        <View style={styles.photoCountBadge}>
+          <Images size={13} color="#FFFFFF" />
+          <Text style={styles.photoCountText}>
+            {album.photoCount} {isVi ? 'ảnh' : 'photos'}
+          </Text>
         </View>
       </View>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-4 pb-10 pt-4"
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={refresh}
-            colors={[BRAND]}
-          />
-        }
-      >
-        {/* Info Card */}
-        <View className="surface-card mb-5 flex-row items-center p-4">
-          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-brand/10">
-            <Images size={28} color={BRAND} />
-          </View>
-          <View className="ml-4 flex-1">
-            <Text className="text-heading">Album của tôi</Text>
-            <Text className="mt-1 text-body-secondary">
-              Quản lý các bộ ảnh đã tạo và chia sẻ với cộng đồng.
-            </Text>
+      <View style={styles.albumInfo}>
+        <Text numberOfLines={2} style={styles.albumName}>
+          {albumName}
+        </Text>
+        <View style={styles.privacyRow}>
+          <PrivacyIcon size={14} color={APP_COLORS.neutral.textMuted} />
+          <Text numberOfLines={1} style={styles.privacyText}>
+            {getPrivacyLabel(album.privacy, isVi)}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function AlbumGridSkeleton() {
+  return (
+    <View style={styles.grid}>
+      {[0, 1, 2, 3].map(item => (
+        <View key={item} style={[styles.albumCard, styles.skeletonCard]}>
+          <View style={[styles.coverContainer, styles.skeletonCover]} />
+          <View style={styles.albumInfo}>
+            <View style={styles.skeletonTitle} />
+            <View style={styles.skeletonMeta} />
           </View>
         </View>
-
-        {/* Albums Grid */}
-        {isLoading && albums.length === 0 ? (
-          /* Skeleton Loading */
-          <View className="flex-row flex-wrap justify-between">
-            {[...Array(4)].map((_, index) => (
-              <View
-                key={`skeleton-${index}`}
-                className="surface-card mb-4 w-[48%] overflow-hidden"
-              >
-                <View className="h-36 w-full bg-[#E2E8F0]" />
-                <View className="p-3 space-y-2">
-                  <View className="h-5 w-3/4 bg-[#E2E8F0] rounded" />
-                  <View className="h-4 w-1/2 bg-[#E2E8F0] rounded" />
-                  <View className="h-4 w-1/3 bg-[#E2E8F0] rounded" />
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : error ? (
-          /* Error State */
-          <View className="items-center justify-center py-10">
-            <Images size={48} color="#EF4444" />
-            <Text className="mt-4 text-center text-[15px] font-medium text-[#EF4444]">
-              Không thể tải albums
-            </Text>
-            <Text className="mt-2 text-center text-[13px] text-[#64748B]">
-              {error}
-            </Text>
-            <TouchableOpacity
-              className="mt-6 min-w-[150px] rounded-lg border border-brand bg-transparent py-3"
-              activeOpacity={0.85}
-              onPress={retry}
-            >
-              <Text className="text-center text-[14px] font-semibold text-brand">
-                Thử lại
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          /* Album List */
-          <>
-            <View className="flex-row flex-wrap justify-between">
-              {albums.map(album => (
-                <TouchableOpacity
-                  key={album.id}
-                  className="surface-card mb-4 w-[48%] overflow-hidden"
-                  activeOpacity={0.86}
-                >
-                  <Image
-                    source={{ uri: album.coverUrl }}
-                    className="h-36 w-full"
-                    resizeMode="cover"
-                    onError={() => {
-                      console.log(
-                        '[AlbumsScreen] Image load error:',
-                        album.coverUrl,
-                      );
-                    }}
-                  />
-                  <View className="p-3">
-                    <Text
-                      className="text-title-primary"
-                      numberOfLines={2}
-                      adjustsFontSizeToFit
-                    >
-                      {album.albumName || 'Album không tên'}
-                    </Text>
-                    <Text className="mt-1 text-caption-secondary">
-                      {album.photoCount} {'ảnh'}
-                    </Text>
-                    <Text className="mt-1 text-caption-primary text-brand">
-                      {mapPrivacyToText(album.privacy)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Loading More Indicator */}
-            {isLoadingMore && (
-              <View className="my-6 items-center justify-center">
-                <ActivityIndicator size="small" color={BRAND} />
-                <Text className="mt-2 text-caption-secondary text-[#64748B]">
-                  Đang tải thêm...
-                </Text>
-              </View>
-            )}
-          </>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+      ))}
+    </View>
   );
 }
 
@@ -283,94 +161,413 @@ function AlbumsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadFirstPage();
+      loadFirstPage().catch(() => undefined);
     }, [loadFirstPage]),
   );
 
-  return (
-    <View className="flex-1 bg-[#eaf0ff]">
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+  const handleCreateAlbum = useCallback(() => {
+    navigation.navigate(ROUTES.CREATE_ALBUM);
+  }, [navigation]);
 
-      <View className="bg-[#eaf0ff]" />
-      <View className="h-[58px] flex-row items-end border-b border-slate-200 bg-white px-3">
-        <View className="h-full justify-end px-2">
-          <Text className="pb-3 text-sm font-bold text-slate-700">
+  const albumCountText = isLoading
+    ? isVi
+      ? 'Đang tải bộ sưu tập...'
+      : 'Loading your collection...'
+    : albums.length > 0
+    ? isVi
+      ? `${albums.length} album trong bộ sưu tập`
+      : `${albums.length} ${
+          albums.length === 1 ? 'album' : 'albums'
+        } in your collection`
+    : isVi
+    ? 'Lưu giữ những khoảnh khắc đáng nhớ'
+    : 'Keep your favorite moments together';
+
+  return (
+    <View style={styles.screen}>
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={HEADER_SAFE_AREA_COLOR}
+        translucent={false}
+      />
+      <SafeAreaFeedHeader safeAreaBackgroundColor={HEADER_SAFE_AREA_COLOR} />
+
+      <View style={styles.sectionHeader}>
+        <View style={styles.headingCopy}>
+          <Text style={styles.heading}>
             {isVi ? 'Album của tôi' : 'My albums'}
           </Text>
-          <View className="h-2 bg-brand" />
+          <Text numberOfLines={1} style={styles.subheading}>
+            {albumCountText}
+          </Text>
         </View>
         <TouchableOpacity
-          activeOpacity={0.84}
-          className="mb-2 ml-auto h-9 flex-row items-center rounded-[6px] bg-brand px-3"
-          onPress={() => navigation.navigate(ROUTES.CREATE_ALBUM)}
+          activeOpacity={0.86}
+          accessibilityRole="button"
+          accessibilityLabel={isVi ? 'Tạo album mới' : 'Create a new album'}
+          style={styles.createButton}
+          onPress={handleCreateAlbum}
         >
-          <Plus size={17} color="#FFFFFF" />
-          <Text className="ml-1 text-sm font-semibold text-white">
-            {isVi ? 'Tạo ra' : 'Create'}
+          <Plus size={18} strokeWidth={2.5} color="#FFFFFF" />
+          <Text style={styles.createButtonText}>
+            {isVi ? 'Tạo album' : 'Create'}
           </Text>
         </TouchableOpacity>
       </View>
 
       {isLoading && albums.length === 0 ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={BRAND} />
-        </View>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <AlbumGridSkeleton />
+        </ScrollView>
       ) : error ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Images size={42} color="#ef4444" />
-          <Text className="mt-4 text-center text-sm text-red-500">{error}</Text>
-          <TouchableOpacity className="mt-5 rounded-[5px] border border-brand px-6 py-2.5" onPress={retry}>
-            <Text className="font-semibold text-brand">{isVi ? 'Thử lại' : 'Retry'}</Text>
+        <View style={styles.stateContainer}>
+          <View style={[styles.stateIcon, styles.errorIcon]}>
+            <Images size={31} color={APP_COLORS.status.error} />
+          </View>
+          <Text style={styles.stateTitle}>
+            {isVi ? 'Không thể tải album' : 'Could not load albums'}
+          </Text>
+          <Text style={styles.stateDescription}>{error}</Text>
+          <TouchableOpacity
+            activeOpacity={0.86}
+            style={styles.retryButton}
+            onPress={retry}
+          >
+            <Text style={styles.retryButtonText}>
+              {isVi ? 'Thử lại' : 'Retry'}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : albums.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-8 pb-20">
-          <View className="h-14 w-14 items-center justify-center rounded-full bg-[#91aab5]">
-            <Images size={27} color="#FFFFFF" />
+        <View style={styles.stateContainer}>
+          <View style={styles.stateIcon}>
+            <Images size={33} color={BRAND} />
           </View>
-          <Text className="mt-4 text-center text-sm text-slate-500">
-            {isVi ? 'Bạn chưa tạo bất kỳ an bom nào.' : 'You have not created any albums yet.'}
+          <Text style={styles.stateTitle}>
+            {isVi ? 'Bộ sưu tập đang trống' : 'Your collection is empty'}
           </Text>
+          <Text style={styles.stateDescription}>
+            {isVi
+              ? 'Tạo album đầu tiên để sắp xếp và chia sẻ những bức ảnh bạn yêu thích.'
+              : 'Create your first album to organize and share the photos you love.'}
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.86}
+            style={styles.emptyCreateButton}
+            onPress={handleCreateAlbum}
+          >
+            <Plus size={18} strokeWidth={2.5} color="#FFFFFF" />
+            <Text style={styles.emptyCreateButtonText}>
+              {isVi ? 'Tạo album đầu tiên' : 'Create your first album'}
+            </Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ padding: 12, paddingBottom: 32 }}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} colors={[BRAND]} />}
+          style={styles.content}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={refresh}
+              colors={[BRAND]}
+              tintColor={BRAND}
+            />
+          }
           onScroll={({ nativeEvent }) => {
-            const remaining = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y;
-            if (remaining < 180) void loadMore();
+            const remaining =
+              nativeEvent.contentSize.height -
+              nativeEvent.layoutMeasurement.height -
+              nativeEvent.contentOffset.y;
+            if (remaining < 180) {
+              loadMore().catch(() => undefined);
+            }
           }}
           scrollEventThrottle={200}
         >
-          <View className="flex-row flex-wrap justify-between">
+          <View style={styles.grid}>
             {albums.map(album => (
-              <TouchableOpacity
+              <AlbumCard
                 key={album.id}
-                activeOpacity={0.86}
-                className="mb-3 w-[49%] overflow-hidden rounded-[4px] bg-white"
-                style={{ elevation: 2 }}
+                album={album}
+                isVi={isVi}
                 onPress={() => {
                   const postId = album.postId || album.id;
                   if (postId) {
                     navigation.navigate(ROUTES.POST_DETAIL, { postId });
                   }
                 }}
-              >
-                <Image
-                  source={{ uri: album.coverUrl }}
-                  className="aspect-square w-full bg-slate-200"
-                  resizeMode="cover"
-                />
-              </TouchableOpacity>
+              />
             ))}
           </View>
-          {isLoadingMore && <ActivityIndicator className="my-4" color={BRAND} />}
+
+          {isLoadingMore ? (
+            <View style={styles.loadingMore}>
+              <ActivityIndicator size="small" color={BRAND} />
+              <Text style={styles.loadingMoreText}>
+                {isVi ? 'Đang tải thêm album...' : 'Loading more albums...'}
+              </Text>
+            </View>
+          ) : null}
         </ScrollView>
       )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: APP_COLORS.neutral.base,
+  },
+  sectionHeader: {
+    minHeight: 82,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: APP_COLORS.neutral.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: APP_COLORS.neutral.border,
+  },
+  headingCopy: {
+    flex: 1,
+  },
+  heading: {
+    color: APP_COLORS.neutral.text,
+    fontSize: 21,
+    fontWeight: '800',
+    letterSpacing: -0.35,
+  },
+  subheading: {
+    marginTop: 4,
+    color: APP_COLORS.neutral.textMuted,
+    fontSize: 12.5,
+    fontWeight: '500',
+  },
+  createButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 14,
+    borderRadius: 13,
+    backgroundColor: BRAND,
+    shadowColor: APP_COLORS.brand.shadow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 9,
+    elevation: 4,
+  },
+  createButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  content: {
+    flex: 1,
+  },
+  listContent: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 36,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 14,
+  },
+  albumCard: {
+    width: '48.35%',
+    overflow: 'hidden',
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#E6EAF1',
+    backgroundColor: APP_COLORS.neutral.surface,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  coverContainer: {
+    width: '100%',
+    aspectRatio: 1.08,
+    overflow: 'hidden',
+    backgroundColor: APP_COLORS.neutral.muted,
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  coverPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2F7',
+  },
+  placeholderIcon: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    backgroundColor: '#E2E8F0',
+  },
+  placeholderText: {
+    marginTop: 8,
+    color: APP_COLORS.neutral.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  photoCountBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    minHeight: 27,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.76)',
+  },
+  photoCountText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  albumInfo: {
+    minHeight: 82,
+    paddingHorizontal: 12,
+    paddingTop: 11,
+    paddingBottom: 12,
+  },
+  albumName: {
+    minHeight: 38,
+    color: APP_COLORS.neutral.text,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 19,
+  },
+  privacyRow: {
+    marginTop: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  privacyText: {
+    flex: 1,
+    color: APP_COLORS.neutral.textMuted,
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  skeletonCard: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  skeletonCover: {
+    backgroundColor: '#E7ECF3',
+  },
+  skeletonTitle: {
+    width: '82%',
+    height: 15,
+    borderRadius: 7,
+    backgroundColor: '#E7ECF3',
+  },
+  skeletonMeta: {
+    width: '55%',
+    height: 11,
+    marginTop: 13,
+    borderRadius: 6,
+    backgroundColor: '#EEF2F7',
+  },
+  stateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 34,
+    paddingBottom: 72,
+  },
+  stateIcon: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 38,
+    backgroundColor: APP_COLORS.brand.soft,
+  },
+  errorIcon: {
+    backgroundColor: '#FEF2F2',
+  },
+  stateTitle: {
+    marginTop: 18,
+    color: APP_COLORS.neutral.text,
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  stateDescription: {
+    maxWidth: 330,
+    marginTop: 8,
+    color: APP_COLORS.neutral.textMuted,
+    fontSize: 13.5,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  retryButton: {
+    minWidth: 130,
+    marginTop: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderWidth: 1.5,
+    borderColor: BRAND,
+    borderRadius: 12,
+    backgroundColor: APP_COLORS.neutral.surface,
+  },
+  retryButtonText: {
+    color: BRAND,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  emptyCreateButton: {
+    minHeight: 44,
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    borderRadius: 13,
+    backgroundColor: BRAND,
+  },
+  emptyCreateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  loadingMore: {
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingMoreText: {
+    color: APP_COLORS.neutral.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+});
 
 export default AlbumsScreen;

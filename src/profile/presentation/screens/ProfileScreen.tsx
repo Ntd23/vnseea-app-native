@@ -112,6 +112,7 @@ import {
 } from '../../application/utils/profileStoryAvatarBehavior';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { profilePostsChangedEvents } from '../../../feed/application/events/profilePostsChangedEvents';
+import { isPageFeedPublisher } from '../../../feed/domain/policies/feedPublisherIdentity';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import {
@@ -242,10 +243,17 @@ const PROFILE_POST_MEDIA_HEIGHT = Math.min(
 );
 const PROFILE_POST_PAGE_SIZE = 20;
 const PROFILE_IS_ANDROID = Platform.OS === 'android';
+// Keep fast swipes native and fluid, but shorten their momentum so FlashList
+// never outruns the rich post cards and media prepared ahead of the viewport.
+const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.94 : 0.992;
 const PROFILE_POST_DRAW_DISTANCE = PROFILE_IS_ANDROID
-  ? Math.max(1400, Math.round(SCREEN_HEIGHT * 1.8))
-  : Math.max(2200, Math.round(SCREEN_HEIGHT * 2.6));
-const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 8 : 14;
+  ? Math.max(2200, Math.round(SCREEN_HEIGHT * 2.6))
+  : Math.max(2800, Math.round(SCREEN_HEIGHT * 3.2));
+const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 14 : 22;
+const PROFILE_POST_EARLY_LOAD_DISTANCE_MULTIPLIER = PROFILE_IS_ANDROID
+  ? 2.5
+  : 2.2;
+const PROFILE_POST_EARLY_LOAD_MIN_DISTANCE = PROFILE_IS_ANDROID ? 2200 : 1800;
 const PROFILE_POST_MAINTAIN_VISIBLE_CONTENT_POSITION = { disabled: true };
 const PROFILE_POST_MEDIA_PREFETCH_BEHIND = 2;
 const PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD = PROFILE_IS_ANDROID ? 8 : 12;
@@ -419,6 +427,7 @@ function getCachedProfilePosts(userId?: string | number) {
   return feedCacheStorage
     .getCachedPosts()
     .filter(isProfileFeedPost)
+    .filter(post => !isPageFeedPublisher(post.publisher))
     .filter(post => String(post.publisher?.id ?? '') === targetId)
     .slice(0, PROFILE_POST_PAGE_SIZE);
 }
@@ -1652,10 +1661,13 @@ function ProfileScreen() {
       const feedPosts = (await feedRepo.getUserPosts(
         String(userId),
         PROFILE_POST_PAGE_SIZE,
-      )).filter(isProfileFeedPost);
+      ))
+        .filter(isProfileFeedPost)
+        .filter(post => !isPageFeedPublisher(post.publisher));
       const pendingPosts = profilePostsChangedEvents
         .getPendingPosts()
         .filter(isProfileFeedPost)
+        .filter(post => !isPageFeedPublisher(post.publisher))
         .filter(post => String(post.publisher.id) === String(userId));
       const mergedPosts = mergeProfileCommercePosts(
         [...feedPosts, ...pendingPosts],
@@ -1821,6 +1833,7 @@ function ProfileScreen() {
 
     return postCreatedEvents.subscribe(post => {
       if (!isProfileFeedPost(post)) return;
+      if (isPageFeedPublisher(post.publisher)) return;
       if (String(post.publisher.id) !== String(profileUserId)) return;
 
       setPosts(prev => [
@@ -1844,6 +1857,7 @@ function ProfileScreen() {
         let changed = false;
         const nextPosts = previousPosts.map(post => {
           if (
+            isPageFeedPublisher(post.publisher) ||
             String(post.publisher?.id) !== String(currentUserId) ||
             post.publisher.avatarUrl === avatarUrl
           ) {
@@ -3668,10 +3682,13 @@ function ProfileScreen() {
           contentOffset.y,
         );
       }
-      if (
-        contentSize.height - (contentOffset.y + layoutMeasurement.height) <
-        480
-      ) {
+      const earlyLoadDistance = Math.max(
+        layoutMeasurement.height * PROFILE_POST_EARLY_LOAD_DISTANCE_MULTIPLIER,
+        PROFILE_POST_EARLY_LOAD_MIN_DISTANCE,
+      );
+      const distanceFromEnd =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      if (distanceFromEnd <= earlyLoadDistance) {
         handleLoadMorePosts();
       }
     },
@@ -5400,9 +5417,10 @@ function ProfileScreen() {
       onMomentumScrollBegin={handleProfileMomentumScrollBegin}
       onMomentumScrollEnd={finishProfileScroll}
       onScrollEndDrag={handleProfileScrollEndDrag}
+      decelerationRate={PROFILE_SCROLL_DECELERATION_RATE}
       scrollEventThrottle={16}
       onEndReached={handleLoadMorePosts}
-      onEndReachedThreshold={0.35}
+      onEndReachedThreshold={1.2}
       onViewableItemsChanged={onProfilePostViewableItemsChanged}
       viewabilityConfig={profilePostsViewabilityConfigRef.current}
       drawDistance={PROFILE_POST_DRAW_DISTANCE}
@@ -5410,7 +5428,7 @@ function ProfileScreen() {
       maintainVisibleContentPosition={
         PROFILE_POST_MAINTAIN_VISIBLE_CONTENT_POSITION
       }
-      removeClippedSubviews={PROFILE_IS_ANDROID}
+      removeClippedSubviews={false}
     />
   );
 

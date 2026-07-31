@@ -13,6 +13,7 @@ import {
   markFeedMediaLoaded,
   useFeedMediaLoaded,
 } from '../../application/state/feedMediaLoadState';
+import { parseSharedPageMessage } from '../../../messages/application/shared-pages/sharedPageMessage';
 
 type Props = {
   preview: PostLinkPreview;
@@ -27,21 +28,8 @@ function normalizeHandle(value?: string) {
 }
 
 export function parseVnseeaPageSlug(rawUrl: string): string | null {
-  try {
-    const parsed = new URL(rawUrl);
-    if (!/(^|\.)vnseea\.vn$/i.test(parsed.hostname)) return null;
-
-    const decodedUrl = decodeURIComponent(rawUrl);
-    if (!/(?:^|[/?=&])timeline(?:[/?=&]|$)/i.test(decodedUrl)) return null;
-
-    const slug =
-      parsed.searchParams.get('u') ??
-      decodedUrl.match(/[?&]u=([^&#/]+)/i)?.[1] ??
-      null;
-    return slug ? slug.trim().replace(/^@/, '') : null;
-  } catch {
-    return null;
-  }
+  const page = parseSharedPageMessage(rawUrl);
+  return page?.explicit ? page.pageName : null;
 }
 
 export function isVnseeaPageLink(rawUrl: string) {

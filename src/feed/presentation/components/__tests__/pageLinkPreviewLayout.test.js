@@ -22,6 +22,8 @@ describe('VNSEEA Page link preview in feed posts', () => {
   it('creates internal Page shares with rich Page metadata instead of raw URL text', () => {
     expect(pageShareSheet).toContain('text: note.trim()');
     expect(pageShareSheet).toContain('linkPreview: {');
+    expect(pageShareSheet).toContain('url: internalPreviewUrl');
+    expect(pageShareSheet).toContain('buildSharedPageUrl(publicUrl)');
     expect(pageShareSheet).toContain('title: pageTitle');
     expect(pageShareSheet).toContain('description: pagePreviewDescription');
     expect(pageShareSheet).toContain('image: page.cover || page.avatar');
@@ -31,6 +33,16 @@ describe('VNSEEA Page link preview in feed posts', () => {
     expect(postCards).toContain('isVnseeaPageLink(preview.url)');
     expect(postCards).toContain('<VnseeaPageLinkPreviewCard');
     expect(postCards).toContain('cleanVnseeaPageShareCaption');
+  });
+
+  it('opens shared VNSEEA Pages inside PageDetail before falling back externally', () => {
+    expect(postCards).toContain('parseSharedPageMessage(preview.url)');
+    expect(postCards).toContain('feedPageLinkRepository.getPageDetail({');
+    expect(postCards).toContain('pageName: pageLink.pageName');
+    expect(postCards).toContain(
+      'navigation.navigate(ROUTES.PAGE_DETAIL, { page })',
+    );
+    expect(postCards).toContain('Linking.openURL(pageLink.publicUrl)');
   });
 
   it('shows Page identity and CTA without login-page metadata chrome', () => {

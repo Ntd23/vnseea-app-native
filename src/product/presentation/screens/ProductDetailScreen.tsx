@@ -23,6 +23,7 @@ import {
   Package,
   ShieldCheck,
   ShoppingBag,
+  ShoppingCart,
   Star,
   Store,
   Tag,
@@ -44,6 +45,8 @@ import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { formatProductPrice } from '../components/ProductCurrency';
 import { ProductShareBottomSheet } from '../components/ProductShareBottomSheet';
 import { getProductSharePostId } from '../../application/sharing/productPostShare';
+import { setSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 
 type ProductDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.PRODUCT_DETAIL>;
 type ProductDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -52,6 +55,13 @@ const BRAND = APP_BRAND_COLOR;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const HERO_HEIGHT = Math.min(SCREEN_WIDTH, 430);
 const repository = createProductRepository();
+const BUY_ACTION_SHADOW_STYLE = {
+  shadowColor: APP_BRAND_COLOR,
+  shadowOffset: { width: 0, height: 5 },
+  shadowOpacity: 0.25,
+  shadowRadius: 10,
+  elevation: 5,
+} as const;
 
 function numberValue(value: string | number | undefined | null) {
   const parsed = Number(value);
@@ -557,10 +567,22 @@ function ProductDetailContent({
   const [relatedProducts, setRelatedProducts] = useState<ProductItem[]>([]);
   const [isRelatedLoading, setIsRelatedLoading] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
+  const [isBuying, setIsBuying] = useState(false);
   const canShareProduct = Boolean(getProductSharePostId(product));
 
   const images = useMemo(() => productImages(product), [product]);
   const postedAgo = useMemo(() => formatRelativeTime(product.time), [product.time]);
+  const actionBarStyle = useMemo(
+    () => ({
+      paddingBottom: Math.max(insets.bottom, 12),
+      shadowColor: '#0F172A',
+      shadowOffset: { width: 0, height: -6 },
+      shadowOpacity: 0.08,
+      shadowRadius: 18,
+      elevation: 18,
+    }),
+    [insets.bottom],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -623,6 +645,30 @@ function ProductDetailContent({
       product.can_contact_seller &&
       product.seller?.user_id,
   );
+  const canBuyProduct = Boolean(!product.is_owner && product.can_add_to_cart);
+
+  const handleBuyProduct = useCallback(async () => {
+    if (!canBuyProduct || isBuying) return;
+
+    setIsBuying(true);
+    try {
+      const result = await repository.ensureProductInCart(product.id);
+      setSyncedCartCount(result.count, result.type === 'added' ? 1 : 0);
+      navigation.navigate(ROUTES.CHECKOUT, {
+        selectedProductIds: [product.id],
+      });
+    } catch (error) {
+      showSnackbar({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Không thể mở màn đặt hàng cho sản phẩm này.',
+      });
+    } finally {
+      setIsBuying(false);
+    }
+  }, [canBuyProduct, isBuying, navigation, product.id]);
 
   const handleOpenRelated = useCallback(
     (nextProduct: ProductItem) => {
@@ -674,7 +720,7 @@ function ProductDetailContent({
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
-          paddingBottom: product.is_owner ? 32 : 112 + insets.bottom,
+          paddingBottom: product.is_owner ? 32 : 120 + insets.bottom,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -832,32 +878,82 @@ function ProductDetailContent({
 
       {!product.is_owner ? (
         <View
-          className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pt-3"
-          style={{ paddingBottom: Math.max(insets.bottom, 12) }}
+          className="absolute bottom-0 left-0 right-0 border-t border-slate-100 bg-white px-4 pt-3"
+          style={actionBarStyle}
         >
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={!canContactSeller}
-            onPress={handleContactSeller}
-            accessibilityRole="button"
-            accessibilityLabel="Nhắn tin cho người bán"
-            className={`h-12 flex-row items-center justify-center rounded-2xl ${
-              canContactSeller ? 'bg-brand' : 'bg-slate-200'
-            }`}
-          >
-            <MessageCircle
-              size={20}
-              color={canContactSeller ? '#FFFFFF' : '#94A3B8'}
-              strokeWidth={2.4}
-            />
-            <Text
-              className={`ml-2 text-sm font-extrabold ${
-                canContactSeller ? 'text-white' : 'text-slate-400'
+          <View className="flex-row items-center gap-3">
+            <TouchableOpacity
+              activeOpacity={0.8}
+              disabled={!canContactSeller}
+              onPress={handleContactSeller}
+              accessibilityRole="button"
+              accessibilityLabel="Nhắn tin cho người bán"
+              className={`h-14 w-14 items-center justify-center rounded-2xl border ${
+                canContactSeller
+                  ? 'border-brand-border bg-brand-subtle'
+                  : 'border-slate-200 bg-slate-100'
               }`}
             >
-              Nhắn tin cho người bán
-            </Text>
-          </TouchableOpacity>
+              <MessageCircle
+                size={22}
+                color={canContactSeller ? APP_BRAND_COLOR : '#94A3B8'}
+                strokeWidth={2.5}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              disabled={!canBuyProduct || isBuying}
+              onPress={handleBuyProduct}
+              accessibilityRole="button"
+              accessibilityLabel="Mua sản phẩm"
+              accessibilityState={{ disabled: !canBuyProduct, busy: isBuying }}
+              className={`h-14 flex-1 flex-row items-center justify-center rounded-2xl px-4 ${
+                canBuyProduct ? 'bg-brand' : 'bg-slate-200'
+              }`}
+              style={canBuyProduct ? BUY_ACTION_SHADOW_STYLE : undefined}
+            >
+              {isBuying ? (
+                <>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text className="ml-2.5 text-sm font-extrabold text-white">
+                    Đang xử lý...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <View
+                    className={`h-9 w-9 items-center justify-center rounded-full ${
+                      canBuyProduct ? 'bg-white/15' : 'bg-slate-300'
+                    }`}
+                  >
+                    <ShoppingCart
+                      size={20}
+                      color={canBuyProduct ? '#FFFFFF' : '#94A3B8'}
+                      strokeWidth={2.5}
+                    />
+                  </View>
+                  <View className="ml-3 flex-1">
+                    <Text
+                      className={`text-sm font-extrabold ${
+                        canBuyProduct ? 'text-white' : 'text-slate-500'
+                      }`}
+                    >
+                      {canBuyProduct ? 'Mua ngay' : 'Chưa thể mua'}
+                    </Text>
+                    {canBuyProduct ? (
+                      <Text className="mt-0.5 text-[11px] font-semibold text-white/75">
+                        Đến trang thanh toán
+                      </Text>
+                    ) : null}
+                  </View>
+                  {canBuyProduct ? (
+                    <ChevronRight size={20} color="#FFFFFF" strokeWidth={2.5} />
+                  ) : null}
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 

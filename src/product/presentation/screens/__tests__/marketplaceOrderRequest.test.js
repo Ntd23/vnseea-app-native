@@ -23,6 +23,7 @@ describe('Marketplace mobile order request flow', () => {
   const checkoutScreen = read(
     'src/checkout/presentation/screens/CheckoutScreen.tsx',
   );
+  const marketEndpoint = read('phtml/api/v2/endpoints/market.php');
 
   it('shows a dedicated cart action for available products owned by another user', () => {
     expect(card).toContain('ShoppingCart');
@@ -95,5 +96,18 @@ describe('Marketplace mobile order request flow', () => {
     expect(checkoutRepository).not.toContain("shouldConvert ? 'VNSEEA'");
     expect(checkoutScreen).toContain('summary.currencyTotals');
     expect(checkoutScreen).not.toContain("summary?.currencySymbol || 'VNSEEA'");
+  });
+
+  it('sends one canonical order notification instead of duplicate system pushes', () => {
+    expect(marketEndpoint).toContain("'type' => 'new_orders'");
+    expect(marketEndpoint).toContain(
+      "VNSEEA_EnqueueNotificationPush($event['notification_id'])",
+    );
+    expect(marketEndpoint).not.toContain(
+      "VNSEEA_EnqueueMessagePush($event['message_id'])",
+    );
+    expect(marketEndpoint).toContain(
+      "VNSEEA_PublishRealtimeMessageChange($event['message_id'])",
+    );
   });
 });

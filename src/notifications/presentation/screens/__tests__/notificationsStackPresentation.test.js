@@ -71,4 +71,36 @@ describe('Notifications stack presentation on iOS', () => {
     expect(modal).toContain('<Trash2');
     expect(modal).toContain('onPress={onConfirm}');
   });
+
+  it('shows a polished read-all action and clears the shared notification badge', () => {
+    const screen = read(
+      'src/notifications/presentation/screens/NotificationsScreen.tsx',
+    );
+    const header = read(
+      'src/notifications/presentation/components/NotificationsHeader.tsx',
+    );
+    const viewModel = read(
+      'src/notifications/application/view-models/useNotificationsViewModel.ts',
+    );
+    const badgeViewModel = read(
+      'src/notifications/application/view-models/useNotificationBadgeViewModel.ts',
+    );
+
+    expect(header).toContain('<CheckCheck');
+    expect(header).toContain('isMarkingAllRead');
+    expect(header).toContain('markAllReadDisabled');
+    expect(screen).toContain('handleMarkAllRead');
+    expect(screen).toContain('markAllReadLabel={copy.markAllRead}');
+    expect(screen).toContain('showSnackbar');
+    expect(viewModel).toContain('setUnreadCount(0)');
+    expect(viewModel).toContain(
+      'setUnreadBadgeCounts({ notificationCount: 0 })',
+    );
+    expect(viewModel).toContain('Promise.allSettled');
+    expect(viewModel).toContain('failedCount: failedIds.size');
+    expect(viewModel).toContain('getLocallySeenSyntheticNotificationIds');
+    expect(badgeViewModel).toContain(
+      'counts.notificationCount - locallySeenSyntheticCount',
+    );
+  });
 });

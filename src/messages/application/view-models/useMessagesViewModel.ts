@@ -398,13 +398,16 @@ export function useMessagesViewModel() {
       setState(prev => ({ ...prev, isLoadingLabels: true, error: null }));
 
       try {
-        await repository.createLabel(normalizedName, color);
-        const labelsList = await repository.listLabels();
-        const newLabel = labelsList.find(
-          l => l.name.trim().toLowerCase() === normalizedName.toLowerCase()
-        );
-        await loadLabels();
-        return newLabel ? newLabel.id : null;
+        const newLabel = await repository.createLabel(normalizedName, color);
+        setState(prev => ({
+          ...prev,
+          labels: [
+            newLabel,
+            ...prev.labels.filter(label => label.id !== newLabel.id),
+          ],
+          isLoadingLabels: false,
+        }));
+        return newLabel.id;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : 'Không tạo được thẻ';
@@ -416,7 +419,7 @@ export function useMessagesViewModel() {
         return null;
       }
     },
-    [loadLabels],
+    [],
   );
 
   const deleteLabel = useCallback(

@@ -28,7 +28,11 @@ import {
 } from 'lucide-react-native';
 import { useMyGroupsViewModel } from '../../../community';
 import { createFeedRepository } from '../../../feed';
-import { useMessagesViewModel } from '../../../messages';
+import {
+  buildSharedPageMessage,
+  buildSharedPageUrl,
+  useMessagesViewModel,
+} from '../../../messages';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useShareViewModel } from '../../../shared-kernel/application/view-models/useShareViewModel';
 import { useMyPagesViewModel } from '../../application/view-models/useMyPagesViewModel';
@@ -84,10 +88,17 @@ export function PageShareActionSheet({
   const [error, setError] = useState<string | null>(null);
 
   const publicUrl = page?.url ?? '';
+  const internalPreviewUrl = useMemo(
+    () => buildSharedPageUrl(publicUrl),
+    [publicUrl],
+  );
   const pageTitle = page?.pageTitle || page?.pageName || 'Trang';
   const shareText = useMemo(() => {
-    const body = [pageTitle, publicUrl].filter(Boolean).join('\n');
-    return note.trim() ? `${note.trim()}\n\n${body}` : body;
+    return buildSharedPageMessage({
+      url: publicUrl,
+      pageTitle,
+      note,
+    });
   }, [note, pageTitle, publicUrl]);
   const pagePreviewDescription = useMemo(() => {
     const description = page?.pageDescription?.trim();
@@ -243,7 +254,7 @@ export function PageShareActionSheet({
           photos: [],
           privacy: 'public' as const,
           linkPreview: {
-            url: publicUrl,
+            url: internalPreviewUrl,
             title: pageTitle,
             description: pagePreviewDescription,
             image: page.cover || page.avatar,
@@ -279,6 +290,7 @@ export function PageShareActionSheet({
     }
   }, [
     destination,
+    internalPreviewUrl,
     messagesVm,
     onClose,
     page,

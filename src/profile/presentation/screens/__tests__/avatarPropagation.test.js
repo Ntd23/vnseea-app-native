@@ -14,6 +14,7 @@ describe('avatar propagation to existing posts', () => {
     expect(source).toContain('import { sessionStorage }');
     expect(source).toContain('subscribeToUserProfile(syncCurrentUserAvatar)');
     expect(source).toContain('updatePostEverywhere(post => {');
+    expect(source).toContain('isPageFeedPublisher(post.publisher)');
     expect(source).toContain('post.publisher.avatarUrl === avatarUrl');
   });
 
@@ -22,6 +23,7 @@ describe('avatar propagation to existing posts', () => {
 
     expect(source).toContain('subscribeToUserProfile(syncCurrentUserAvatar)');
     expect(source).toContain('profilePostsRef.current = nextPosts;');
+    expect(source).toContain('isPageFeedPublisher(post.publisher)');
     expect(source).toContain('post.publisher.avatarUrl === avatarUrl');
   });
 });

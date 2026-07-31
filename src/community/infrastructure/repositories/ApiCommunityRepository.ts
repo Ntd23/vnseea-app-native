@@ -83,6 +83,10 @@ type UpdateGroupResponse = {
 };
 
 const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
+const MY_GROUPS_REQUEST_TIMEOUT_MS = Math.max(
+  apiConfig.requestTimeoutMs,
+  30_000,
+);
 
 function readString(raw: RawGroup | undefined, key: string): string {
   const value = raw?.[key];
@@ -303,6 +307,9 @@ export function createCommunityRepository(): CommunityRepository {
             type: 'my_groups',
             limit,
             offset,
+          },
+          {
+            timeout: MY_GROUPS_REQUEST_TIMEOUT_MS,
           },
         );
 

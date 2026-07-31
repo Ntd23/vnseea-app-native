@@ -115,6 +115,7 @@ import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 import { hiddenPostsStorage } from '../../infrastructure/storage/hiddenPostsStorage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
+import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -839,8 +840,12 @@ function PostDetailScreen() {
   );
 
   const handleProfilePress = useCallback(() => {
-    navigateToProfile(activePost?.publisher?.id ?? '');
-  }, [navigateToProfile, activePost]);
+    const publisher = activePost?.publisher;
+    if (!publisher) return;
+    if (!navigateToFeedPublisherPage(navigation, publisher)) {
+      navigateToProfile(publisher.id);
+    }
+  }, [activePost?.publisher, navigateToProfile, navigation]);
 
   const handlePhotoPress = useCallback(
     (photoPost: FeedTextPost, photoIndex: number) => {
@@ -1263,7 +1268,7 @@ function PostDetailScreen() {
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
           onShare={handleOpenShare}
-          onProfilePress={navigateToProfile}
+          onProfilePress={handleProfilePress}
           showIdentityHeader={false}
           language={language}
           gestureX={gestureX}
@@ -1284,7 +1289,7 @@ function PostDetailScreen() {
           commentNavigationMode="callback"
           onOpenReactions={handleOpenReactions}
           onShare={handleOpenShare}
-          onProfilePress={navigateToProfile}
+          onProfilePress={handleProfilePress}
           showIdentityHeader={false}
         />
       ) : (

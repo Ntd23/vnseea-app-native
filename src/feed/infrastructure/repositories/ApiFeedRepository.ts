@@ -50,7 +50,9 @@ import type {
 import type {
   CreatePostDraft,
   CreatePostResult,
+  FeedGroupContext,
   FeedPost,
+  FeedPublisher,
   FeedAdPost,
   FeedTextPost,
   FeedVideoPost,
@@ -227,16 +229,66 @@ function readPostPermissions(
   };
 }
 
+function readPositiveEntityId(
+  raw: Record<string, unknown>,
+  ...keys: string[]
+) {
+  const value = readString(raw, ...keys).trim();
+  if (!value) return '';
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? value : '';
+}
+
+function readPagePublisherRecord(
+  raw: Record<string, unknown>,
+  fallbackPublisher: Record<string, unknown>,
+) {
+  const pageId = readPositiveEntityId(raw, 'page_id', 'pageId');
+  if (!pageId) return null;
+
+  for (const key of ['page_info', 'page_data']) {
+    const candidate = raw[key];
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      continue;
+    }
+    const pageRecord = candidate as Record<string, unknown>;
+    if (
+      readPositiveEntityId(pageRecord, 'page_id', 'pageId') ||
+      readString(pageRecord, 'page_name', 'page_title')
+    ) {
+      return pageRecord;
+    }
+  }
+
+  const publisherPageId = readPositiveEntityId(
+    fallbackPublisher,
+    'page_id',
+    'pageId',
+  );
+  const publisherLooksLikePage = Boolean(
+    publisherPageId ||
+      readString(fallbackPublisher, 'page_name', 'page_title'),
+  );
+  return publisherLooksLikePage ? fallbackPublisher : null;
+}
+
 function readPostPresentation(raw: Record<string, unknown>) {
   const privacy = readPostPrivacy(raw);
   const permissions = readPostPermissions(raw, privacy);
-  const realPublisher =
+  const accountPublisher =
     (raw.publisher as Record<string, unknown> | undefined) ??
     (raw.user_data as Record<string, unknown> | undefined) ??
     {};
+  const pageId = readPositiveEntityId(raw, 'page_id', 'pageId');
+  const pagePublisher = readPagePublisherRecord(raw, accountPublisher);
+  const realPublisher = pagePublisher ?? accountPublisher;
   const viewerId = sessionStorage.getSession()?.userId;
-  const ownerId =
-    readString(raw, 'user_id') || readString(realPublisher, 'user_id', 'id');
+  const rawOwnerId = readString(raw, 'user_id');
+  const ownerId = pageId
+    ? readString(pagePublisher ?? {}, 'user_id') ||
+      (rawOwnerId !== '0' ? rawOwnerId : '') ||
+      readString(accountPublisher, 'user_id')
+    : rawOwnerId || readString(accountPublisher, 'user_id', 'id');
   const isOwner =
     readBool(raw, 'is_owner', 'isOwner') ||
     Boolean(viewerId && ownerId && String(viewerId) === ownerId);
@@ -248,6 +300,9 @@ function readPostPresentation(raw: Record<string, unknown>) {
       privacy.isAnonymous && !isOwner
         ? ({} as Record<string, unknown>)
         : realPublisher,
+    publisherEntityType: pageId ? ('page' as const) : ('user' as const),
+    pageId: pageId || undefined,
+    ownerId: ownerId || undefined,
     isIdentityRedacted: privacy.isAnonymous && !isOwner,
   };
 }
@@ -307,16 +362,7 @@ function getPollTotalVotes(
 
 function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
   const presentation = readPostPresentation(raw);
-  const publisher = presentation.publisher;
-  const firstName = readString(publisher, 'first_name');
-  const lastName = readString(publisher, 'last_name');
-  const username = readString(publisher, 'username', 'user_name');
-  const name = presentation.isIdentityRedacted
-    ? ''
-    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
-      readString(publisher, 'name', 'full_name') ||
-      username ||
-      'Người dùng';
+  const publisher = mapPostPublisher(raw, presentation, 'Người dùng', true);
 
   const postId = readString(raw, 'id', 'post_id');
 
@@ -357,6 +403,7 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
     kind: 'poll',
     id: postId,
     permissions: presentation.permissions,
+    groupContext: mapPostGroupContext(raw),
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
     feeling: extractFeeling(raw),
@@ -376,24 +423,7 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
     privacyContract: privacyResult.contract,
     isAnonymous:
       privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
-    publisher: presentation.isIdentityRedacted
-      ? { id: '', name: '', username: '' }
-      : {
-          id: readString(publisher, 'user_id', 'id'),
-          name,
-          username,
-          avatarUrl:
-            readString(publisher, 'avatar', 'profile_picture') || undefined,
-          isFollowing:
-            publisher['is_following'] === 1 ||
-            publisher['is_following'] === 'yes' ||
-            publisher['is_following'] === '1' ||
-            publisher['is_following'] === true ||
-            raw['is_following'] === 1 ||
-            raw['is_following'] === 'yes' ||
-            raw['is_following'] === '1' ||
-            raw['is_following'] === true,
-        },
+    publisher,
   };
 }
 
@@ -404,6 +434,75 @@ function readString(raw: Record<string, unknown>, ...keys: string[]) {
     if (typeof value === 'number') return String(value);
   }
   return '';
+}
+
+function mapPostPublisher(
+  raw: Record<string, unknown>,
+  presentation: ReturnType<typeof readPostPresentation>,
+  fallbackName: string,
+  includeFollowing = false,
+): FeedPublisher {
+  const publisher = presentation.publisher;
+  const isPage = presentation.publisherEntityType === 'page';
+  const firstName = readString(publisher, 'first_name');
+  const lastName = readString(publisher, 'last_name');
+  const username = isPage
+    ? readString(publisher, 'page_name', 'username', 'user_name')
+    : readString(publisher, 'username', 'user_name');
+  const name = presentation.isIdentityRedacted
+    ? ''
+    : isPage
+    ? readString(publisher, 'page_title', 'name', 'full_name') ||
+      username ||
+      fallbackName
+    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
+      readString(publisher, 'name', 'full_name') ||
+      username ||
+      fallbackName;
+
+  if (presentation.isIdentityRedacted) {
+    const redacted: FeedPublisher = {
+      id: '',
+      name: '',
+      username: '',
+    };
+    if (isPage && presentation.pageId) {
+      redacted.entityType = 'page';
+      redacted.pageId = presentation.pageId;
+      redacted.ownerId = presentation.ownerId;
+    }
+    return redacted;
+  }
+
+  const mapped: FeedPublisher = {
+    id: isPage
+      ? presentation.pageId || readString(publisher, 'page_id', 'id')
+      : readString(publisher, 'user_id', 'id'),
+    name,
+    username,
+    avatarUrl:
+      readString(publisher, 'avatar', 'profile_picture') || undefined,
+  };
+
+  if (isPage && presentation.pageId) {
+    mapped.entityType = 'page';
+    mapped.pageId = presentation.pageId;
+    mapped.ownerId = presentation.ownerId;
+  }
+
+  if (includeFollowing) {
+    mapped.isFollowing =
+      publisher['is_following'] === 1 ||
+      publisher['is_following'] === 'yes' ||
+      publisher['is_following'] === '1' ||
+      publisher['is_following'] === true ||
+      raw['is_following'] === 1 ||
+      raw['is_following'] === 'yes' ||
+      raw['is_following'] === '1' ||
+      raw['is_following'] === true;
+  }
+
+  return mapped;
 }
 
 // ── URL normalizer (for photo album items only) ──────────────────────────
@@ -426,6 +525,42 @@ const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeMediaUrl(url: string | undefined): string | undefined {
   return normalizeHostedMediaUrl(url, _siteRoot) || undefined;
+}
+
+function mapPostGroupContext(
+  raw: Record<string, unknown>,
+): FeedGroupContext | undefined {
+  const groupId = readString(raw, 'group_id', 'groupId');
+  if (!groupId || groupId === '0') return undefined;
+
+  const group =
+    readNestedRecord(
+      raw,
+      'group_recipient',
+      'group_info',
+      'group_data',
+      'group',
+    ) ?? {};
+  const username =
+    readString(group, 'group_name', 'username') ||
+    readString(raw, 'group_name');
+  const title =
+    cleanCaption(readString(group, 'group_title', 'name', 'title')) ||
+    cleanCaption(readString(raw, 'group_title')) ||
+    username ||
+    'Nhóm';
+
+  return {
+    id: readString(group, 'group_id', 'id') || groupId,
+    title,
+    username,
+    avatarUrl: normalizeMediaUrl(
+      readString(group, 'avatar', 'group_avatar', 'profile_picture'),
+    ),
+    coverUrl: normalizeMediaUrl(readString(group, 'cover', 'group_cover')),
+    url: readString(group, 'url') || undefined,
+    privacy: readString(group, 'privacy') === '2' ? 'private' : 'public',
+  };
 }
 
 function mapFollowingMention(
@@ -590,16 +725,7 @@ function extractPostLocation(
 
 function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   const presentation = readPostPresentation(raw);
-  const publisher = presentation.publisher;
-  const firstName = readString(publisher, 'first_name');
-  const lastName = readString(publisher, 'last_name');
-  const username = readString(publisher, 'username', 'user_name');
-  const name = presentation.isIdentityRedacted
-    ? ''
-    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
-      readString(publisher, 'name', 'full_name') ||
-      username ||
-      'Người dùng';
+  const publisher = mapPostPublisher(raw, presentation, 'Người dùng', true);
 
   const postId = readString(raw, 'id', 'post_id');
 
@@ -635,7 +761,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
 
   const videoUrl = normalizePlayableMediaUrl(readString(raw, 'postFile')) ?? '';
   const publisherAvatarUrl =
-    readString(publisher, 'avatar', 'profile_picture') || undefined;
+    publisher.avatarUrl || undefined;
   const normalizedPublisherAvatarUrl =
     normalizePlayableMediaUrl(publisherAvatarUrl);
   const rawThumbnailUrl =
@@ -661,6 +787,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     kind: 'video',
     id: postId,
     permissions: presentation.permissions,
+    groupContext: mapPostGroupContext(raw),
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
     feeling: extractFeeling(raw),
@@ -681,23 +808,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     isAnonymous:
       privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
     linkPreview: extractLinkPreview(raw),
-    publisher: presentation.isIdentityRedacted
-      ? { id: '', name: '', username: '' }
-      : {
-          id: readString(publisher, 'user_id', 'id'),
-          name,
-          username,
-          avatarUrl: publisherAvatarUrl,
-          isFollowing:
-            publisher['is_following'] === 1 ||
-            publisher['is_following'] === 'yes' ||
-            publisher['is_following'] === '1' ||
-            publisher['is_following'] === true ||
-            raw['is_following'] === 1 ||
-            raw['is_following'] === 'yes' ||
-            raw['is_following'] === '1' ||
-            raw['is_following'] === true,
-        },
+    publisher,
   };
 }
 
@@ -960,25 +1071,15 @@ function mapSharedFrom(raw: Record<string, unknown>) {
   if (!shared) return undefined;
 
   const presentation = readPostPresentation(shared);
-  const publisher = presentation.publisher;
-  const firstName = readString(publisher, 'first_name');
-  const lastName = readString(publisher, 'last_name');
-  const username = readString(publisher, 'username', 'user_name');
-  const publisherName = presentation.isIdentityRedacted
-    ? ''
-    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
-      readString(publisher, 'name', 'full_name') ||
-      username ||
-      'Người dùng';
+  const publisher = mapPostPublisher(shared, presentation, 'Người dùng');
 
   return {
     id: readString(shared, 'id', 'post_id'),
     caption: readPostCaption(shared) || undefined,
     mentionNames: readPostMentionNames(shared),
     isAnonymous: presentation.isIdentityRedacted,
-    publisherName,
-    publisherAvatar:
-      readString(publisher, 'avatar', 'profile_picture') || undefined,
+    publisherName: publisher.name,
+    publisherAvatar: publisher.avatarUrl,
     postedAt: readNumber(shared, 'time') || undefined,
     photos: extractPhotoUrls(shared),
   };
@@ -1025,16 +1126,7 @@ function mapProfilePost(
 
 function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
   const presentation = readPostPresentation(raw);
-  const publisher = presentation.publisher;
-  const firstName = readString(publisher, 'first_name');
-  const lastName = readString(publisher, 'last_name');
-  const username = readString(publisher, 'username', 'user_name');
-  const name = presentation.isIdentityRedacted
-    ? ''
-    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
-      readString(publisher, 'name', 'full_name') ||
-      username ||
-      'Người dùng';
+  const publisher = mapPostPublisher(raw, presentation, 'Người dùng');
 
   const postId = readString(raw, 'id', 'post_id');
 
@@ -1069,6 +1161,7 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     kind: 'text',
     id: postId,
     permissions: presentation.permissions,
+    groupContext: mapPostGroupContext(raw),
     activity: mapProfileMediaActivity(readString(raw, 'postType', 'post_type')),
     caption,
     mentionNames: readPostMentionNames(raw),
@@ -1090,17 +1183,7 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     isAnonymous:
       privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
     linkPreview: extractLinkPreview(raw),
-    publisher: presentation.isIdentityRedacted
-      ? { id: '', name: '', username: '' }
-      : {
-          id: readString(publisher, 'user_id', 'id'),
-          name,
-          username,
-          // Avatar is pre-normalized by Wo_GetMedia in posts.php — full URL
-          // already. Don't double-prepend the host here.
-          avatarUrl:
-            readString(publisher, 'avatar', 'profile_picture') || undefined,
-        },
+    publisher,
     sharedFrom: mapSharedFrom(raw),
   };
 }
@@ -1355,10 +1438,17 @@ function mapJobPost(raw: Record<string, unknown>): FeedJobPost {
     job: mappedJob,
     publisher: mappedJob.page
       ? {
-          id: String(mappedJob.page.user_id || base.publisher.id),
+          id: String(mappedJob.page.page_id || base.publisher.pageId || ''),
           name: mappedJob.page.page_title || base.publisher.name,
           username: mappedJob.page.page_name || base.publisher.username,
           avatarUrl: mappedJob.page.avatar || base.publisher.avatarUrl,
+          entityType: 'page',
+          pageId: String(
+            mappedJob.page.page_id || base.publisher.pageId || '',
+          ),
+          ownerId: String(
+            mappedJob.page.user_id || base.publisher.ownerId || '',
+          ),
         }
       : base.publisher,
   };
@@ -2415,10 +2505,6 @@ function buildTaggableUsersPayload(input: GetTaggableUsersInput) {
   return payload;
 }
 
-function isGroupRawPost(raw: Record<string, unknown>): boolean {
-  return readNumber(raw, 'group_id', 'groupId') > 0;
-}
-
 function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
   const posts: FeedPost[] = [];
   // Per-classifier counters. Tells us which branch a row went down
@@ -2433,11 +2519,6 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
     dropped: 0,
   };
   for (const item of raw) {
-    if (isGroupRawPost(item)) {
-      buckets.dropped += 1;
-      continue;
-    }
-
     if (looksLikeLive(item)) {
       buckets.live += 1;
       continue;
@@ -2499,7 +2580,7 @@ export function createFeedRepository(): FeedRepository {
       );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
-        if (isGroupRawPost(item) || looksLikeLive(item)) {
+        if (looksLikeLive(item)) {
           continue;
         }
 
@@ -2539,7 +2620,7 @@ export function createFeedRepository(): FeedRepository {
       }
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
-        if (isGroupRawPost(item) || looksLikeLive(item)) continue;
+        if (looksLikeLive(item)) continue;
 
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
@@ -2566,7 +2647,7 @@ export function createFeedRepository(): FeedRepository {
       );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
-        if (isGroupRawPost(item) || looksLikeLive(item)) {
+        if (looksLikeLive(item)) {
           continue;
         }
 
@@ -2701,7 +2782,6 @@ export function createFeedRepository(): FeedRepository {
         source,
       );
       return page.posts
-        .filter(item => !isGroupRawPost(item))
         .filter(looksLikeVideo)
         .map(mapVideoPost)
         .slice(0, limit);
@@ -2714,7 +2794,6 @@ export function createFeedRepository(): FeedRepository {
     ) {
       const page = await fetchRawFeedPosts(limit, afterPostId, source);
       return page.posts
-        .filter(item => !isGroupRawPost(item))
         .filter(looksLikeTextOrPhoto)
         .map(mapTextPostBase);
     },

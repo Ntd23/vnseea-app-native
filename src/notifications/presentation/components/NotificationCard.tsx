@@ -26,6 +26,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   Share2,
+  ShoppingBag,
   UserCheck,
   UserPlus,
   Users,
@@ -145,6 +146,11 @@ const STYLE_BY_TYPE: Record<string, NotificationStyle> = {
     iconColor: '#EF4444',
     borderColor: '#EF4444',
   },
+  new_orders: {
+    Icon: ShoppingBag,
+    iconColor: '#F97316',
+    borderColor: '#F97316',
+  },
 };
 
 function getNotificationStyle(type: string): NotificationStyle {
@@ -162,24 +168,24 @@ function formatRelativeTime(
   language: AppLanguage,
 ): string {
   if (!createdAt) {
-    return language === 'vi' ? 'V?a xong' : 'Just now';
+    return language === 'vi' ? 'Vừa xong' : 'Just now';
   }
   const now = Date.now();
   const diff = Math.max(0, Math.floor((now - createdAt) / 1000));
   if (diff < 60) {
-    return language === 'vi' ? 'V?a xong' : 'Just now';
+    return language === 'vi' ? 'Vừa xong' : 'Just now';
   }
   if (diff < 3600) {
     const m = Math.floor(diff / 60);
-    return language === 'vi' ? `${m} ph?t tr??c` : `${m} min ago`;
+    return language === 'vi' ? `${m} phút trước` : `${m} min ago`;
   }
   if (diff < 86400) {
     const h = Math.floor(diff / 3600);
-    return language === 'vi' ? `${h} gi? tr??c` : `${h}h ago`;
+    return language === 'vi' ? `${h} giờ trước` : `${h}h ago`;
   }
   if (diff < 86400 * 7) {
     const d = Math.floor(diff / 86400);
-    return language === 'vi' ? `${d} ng?y tr??c` : `${d}d ago`;
+    return language === 'vi' ? `${d} ngày trước` : `${d}d ago`;
   }
   try {
     const date = new Date(createdAt);
@@ -187,7 +193,7 @@ function formatRelativeTime(
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     return `${dd}/${mm}`;
   } catch {
-    return language === 'vi' ? 'V?a xong' : 'Just now';
+    return language === 'vi' ? 'Vừa xong' : 'Just now';
   }
 }
 

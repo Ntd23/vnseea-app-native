@@ -11,7 +11,7 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     back: 'Quay lại',
     tabAll: 'Tất cả',
     tabUnread: 'Chưa đọc',
-    markAllRead: 'Đánh dấu tất cả đã đọc',
+    markAllRead: 'Đọc tất cả',
     filter: 'Lọc',
     emptyTitle: 'Chưa có thông báo nào',
     emptyDescription: 'Khi có thông báo mới, chúng sẽ xuất hiện ở đây.',
@@ -49,7 +49,7 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     back: 'Back',
     tabAll: 'All',
     tabUnread: 'Unread',
-    markAllRead: 'Mark all as read',
+    markAllRead: 'Read all',
     filter: 'Filter',
     emptyTitle: 'No notifications yet',
     emptyDescription:
@@ -274,6 +274,7 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     accepted_request: '{name} đã chấp nhận lời mời kết bạn',
     interested_event: '{name} quan tâm đến sự kiện của bạn',
     going_event: '{name} sẽ tham dự sự kiện của bạn',
+    new_orders: '{name} đã gửi cho bạn một yêu cầu mua mới',
     default: '{name} có thông báo mới',
   },
   en: {
@@ -296,6 +297,7 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     accepted_request: '{name} accepted your friend request',
     interested_event: '{name} is interested in your event',
     going_event: '{name} is going to your event',
+    new_orders: '{name} sent you a new purchase request',
     default: '{name} has a new notification',
   },
 };

@@ -1663,6 +1663,9 @@ function readMediaType(
 type TagsApiResponse = {
   status?: number | string;
   message?: string;
+  id?: number | string;
+  label_id?: number | string;
+  label?: unknown;
   data?: unknown[];
   labels?: unknown[];
   tags?: unknown[];
@@ -2170,6 +2173,21 @@ export function createMessagesRepository(): MessagesRepository {
         },
       );
       assertTagsResponse(response);
+
+      const responseLabel = asRecord(response.label);
+      const createdLabel = responseLabel
+        ? mapMessageLabel(responseLabel)
+        : {
+            id: readString(asRecord(response) ?? {}, 'id', 'label_id'),
+            name,
+            color,
+          };
+
+      if (!createdLabel.id) {
+        throw new Error('Khong doc duoc id the vua tao');
+      }
+
+      return createdLabel;
     },
 
     async updateLabel(labelId: string, name: string, color: string) {

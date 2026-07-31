@@ -7,18 +7,25 @@ jest.mock('react-native-config', () => ({
 jest.mock('../../../../shared-kernel/infrastructure/api/backendApi', () => ({
   backendApi: { post: jest.fn() },
 }));
-jest.mock('../../../../shared-kernel/infrastructure/storage/sessionStorage', () => ({
-  sessionStorage: { getSession: () => null },
-}));
-jest.mock('../../../../reels/infrastructure/storage/reelsReactionsStorage', () => ({
-  reelsReactionsStorage: { get: () => null },
-}));
+jest.mock(
+  '../../../../shared-kernel/infrastructure/storage/sessionStorage',
+  () => ({
+    sessionStorage: { getSession: () => null },
+  }),
+);
+jest.mock(
+  '../../../../reels/infrastructure/storage/reelsReactionsStorage',
+  () => ({
+    reelsReactionsStorage: { get: () => null },
+  }),
+);
 
 import { mapFeedPost } from '../../../infrastructure/repositories/ApiFeedRepository';
 import { isFeedPostShareable } from '../../../domain/policies/feedPostPrivacy';
 import {
   applySharedPostSourceSnapshot,
   buildSharedPostPreviewModel,
+  getSharedPostPreviewAssetUrls,
   getPostRealtimeWatchIds,
 } from '../sharedPostPreview';
 import type { FeedPost } from '../../../domain/types/feed.types';
@@ -106,6 +113,39 @@ describe('shared post preview mapping', () => {
     });
   });
 
+  it('keeps the source group identity inside a shared-post card', () => {
+    const post = mapFeedPost(
+      rawPost({
+        parent_id: '104',
+        shared_info: rawPost({
+          id: '104',
+          group_id: '27',
+          group_recipient: {
+            group_id: '27',
+            group_name: 'hoi-anh-em-chau-phi',
+            group_title: 'Hội anh em châu phi',
+            avatar: 'upload/photos/group-27.jpg',
+            privacy: '1',
+          },
+          postText: 'Bài viết nguồn trong nhóm',
+        }),
+      }),
+    );
+
+    expect(post.sharedPost?.groupContext).toEqual({
+      id: '27',
+      title: 'Hội anh em châu phi',
+      username: 'hoi-anh-em-chau-phi',
+      avatarUrl: 'https://demo.vnseea.vn/upload/photos/group-27.jpg',
+      coverUrl: undefined,
+      url: undefined,
+      privacy: 'public',
+    });
+    expect(getSharedPostPreviewAssetUrls(post.sharedPost!)).toContain(
+      'https://demo.vnseea.vn/upload/photos/group-27.jpg',
+    );
+  });
+
   it('keeps source attachment metadata inside the nested preview', () => {
     const post = mapFeedPost(
       rawPost({
@@ -144,7 +184,9 @@ describe('shared post preview mapping', () => {
           price: '2000000',
           price_format: '2.000.000',
           currency_code: 'VND',
-          images: [{ id: '1', product_id: '17', image: 'upload/photos/product.jpg' }],
+          images: [
+            { id: '1', product_id: '17', image: 'upload/photos/product.jpg' },
+          ],
           seller: publisher,
         },
       }),
@@ -241,7 +283,10 @@ describe('shared post preview mapping', () => {
       }),
     );
 
-    expect(getPostRealtimeWatchIds([outer], [outer.id])).toEqual(['500', '101']);
+    expect(getPostRealtimeWatchIds([outer], [outer.id])).toEqual([
+      '500',
+      '101',
+    ]);
     const updated = applySharedPostSourceSnapshot(outer, source);
     expect(updated).toMatchObject({
       id: '500',
@@ -297,15 +342,18 @@ describe('shared post preview mapping', () => {
         imageUrl: 'https://cdn.vnseea.test/event.jpg',
       },
     ],
-  ])('builds the common preview model for %s posts', (_kind, fields, expected) => {
-    const post = {
-      id: 'source-1',
-      publisher: { id: '10', name: 'Duong', username: 'duong' },
-      postedAt: 1700000000,
-      privacy: 'public',
-      ...fields,
-    } as unknown as FeedPost;
+  ])(
+    'builds the common preview model for %s posts',
+    (_kind, fields, expected) => {
+      const post = {
+        id: 'source-1',
+        publisher: { id: '10', name: 'Duong', username: 'duong' },
+        postedAt: 1700000000,
+        privacy: 'public',
+        ...fields,
+      } as unknown as FeedPost;
 
-    expect(buildSharedPostPreviewModel(post).content).toEqual(expected);
-  });
+      expect(buildSharedPostPreviewModel(post).content).toEqual(expected);
+    },
+  );
 });

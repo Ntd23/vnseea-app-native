@@ -22,6 +22,22 @@ export interface FeedPublisher {
   username: string;
   avatarUrl?: string;
   isFollowing?: boolean;
+  /** The public identity that owns the post, not necessarily a user account. */
+  entityType?: 'user' | 'page';
+  /** Canonical page id when the post was published as a Page. */
+  pageId?: string;
+  /** Account that manages the Page; never use this as the public post target. */
+  ownerId?: string;
+}
+
+export interface FeedGroupContext {
+  id: string;
+  title: string;
+  username: string;
+  avatarUrl?: string;
+  coverUrl?: string;
+  url?: string;
+  privacy: 'public' | 'private';
 }
 
 export interface FeedPostPermissions {
@@ -35,6 +51,8 @@ export type ProfileMediaActivity =
 
 export interface FeedPostPermissionCarrier {
   permissions?: FeedPostPermissions;
+  /** Group identity shown above the member publisher on Home feed cards. */
+  groupContext?: FeedGroupContext;
   isAnonymous?: boolean;
   privacyContract?: ContentAudienceWireContract;
   sharedPostId?: string;
@@ -80,6 +98,8 @@ export type SharedPostPreviewContent =
 export interface SharedPostPreviewModel {
   postId: string;
   publisher: FeedPublisher;
+  /** Group that owns the source post when a group post is shared elsewhere. */
+  groupContext?: FeedGroupContext;
   postedAt?: number;
   privacy: PostPrivacy;
   caption?: string;
@@ -417,4 +437,5 @@ export type FeedPost = (
   | FeedJobPost
   | FeedPollPost
   | FeedAdPost
-) & FeedPostPermissionCarrier;
+) &
+  FeedPostPermissionCarrier;

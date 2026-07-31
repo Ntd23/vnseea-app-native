@@ -31,6 +31,7 @@ import type {
   ReportPostInput,
 } from '../../domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import { isPageFeedPublisher } from '../../domain/policies/feedPublisherIdentity';
 import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import {
@@ -787,7 +788,12 @@ export function useFeedViewModel() {
     (publisherId: string, isFollowing: boolean) => {
       if (!publisherId) return;
       updatePostEverywhere(post => {
-        if (String(post.publisher?.id) !== String(publisherId)) return post;
+        if (
+          isPageFeedPublisher(post.publisher) ||
+          String(post.publisher?.id) !== String(publisherId)
+        ) {
+          return post;
+        }
         return {
           ...post,
           publisher: {
@@ -816,6 +822,7 @@ export function useFeedViewModel() {
 
       updatePostEverywhere(post => {
         if (
+          isPageFeedPublisher(post.publisher) ||
           String(post.publisher?.id) !== String(currentUserId) ||
           post.publisher.avatarUrl === avatarUrl
         ) {

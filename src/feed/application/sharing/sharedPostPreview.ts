@@ -31,6 +31,7 @@ export function buildSharedPostPreviewModel(
   const base = {
     postId: String(post.id),
     publisher: post.publisher,
+    groupContext: post.groupContext,
     postedAt: post.postedAt,
     privacy: 'privacy' in post ? post.privacy : ('public' as const),
     feeling: post.feeling,
@@ -82,12 +83,8 @@ export function buildSharedPostPreviewModel(
         content: {
           kind: 'attachment',
           attachmentKind: 'event',
-          title:
-            firstText(post.event.name, post.event.event_name) ?? 'Sự kiện',
-          subtitle: firstText(
-            post.event.location,
-            post.event.event_location,
-          ),
+          title: firstText(post.event.name, post.event.event_name) ?? 'Sự kiện',
+          subtitle: firstText(post.event.location, post.event.event_location),
           imageUrl: firstText(post.event.cover, post.event.event_cover),
         },
       };
@@ -132,7 +129,7 @@ export function buildSharedPostPreviewModel(
 export function getSharedPostPreviewAssetUrls(
   model: SharedPostPreviewModel,
 ): string[] {
-  const urls = [model.publisher.avatarUrl];
+  const urls = [model.groupContext?.avatarUrl, model.publisher.avatarUrl];
   switch (model.content.kind) {
     case 'text':
       urls.push(...model.content.photos.slice(0, 4));

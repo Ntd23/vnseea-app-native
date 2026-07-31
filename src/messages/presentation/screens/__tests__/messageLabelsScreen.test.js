@@ -23,7 +23,11 @@ describe('message labels native-stack screen', () => {
   const repository = read(
     'src/messages/infrastructure/repositories/ApiMessagesRepository.ts',
   );
+  const viewModel = read(
+    'src/messages/application/view-models/useMessagesViewModel.ts',
+  );
   const tagsEndpoint = read('phtml/api/v2/endpoints/tags.php');
+  const xhrTagsEndpoint = read('phtml/xhr/tags.php');
   const tagFunctions = read('phtml/assets/includes/functions_one.php');
 
   it('registers a typed route with assign and create entry modes', () => {
@@ -120,6 +124,31 @@ describe('message labels native-stack screen', () => {
     expect(screen).toContain('const startEditingLabel = useCallback(');
     expect(screen).toContain('<Pencil');
     expect(screen).toContain('editingLabel ? copy.update : copy.create');
+  });
+
+  it('keeps labels with duplicate names distinct by their returned id', () => {
+    expect(repositoryContract).toContain(
+      'createLabel(name: string, color: string): Promise<MessageLabel>;',
+    );
+    expect(repository).toContain('const createdLabel = responseLabel');
+    expect(repository).toContain('return createdLabel;');
+    expect(screen).toContain(
+      'const createdLabel = await repository.createLabel(',
+    );
+    expect(screen).toContain(
+      'current.filter(label => label.id !== createdLabel.id)',
+    );
+    expect(viewModel).toContain(
+      'const newLabel = await repository.createLabel(normalizedName, color);',
+    );
+    expect(viewModel).not.toContain(
+      "l.name.trim().toLowerCase() === normalizedName.toLowerCase()",
+    );
+    [tagsEndpoint, xhrTagsEndpoint].forEach(source => {
+      expect(source).toContain("'id' => $label_id");
+      expect(source).toContain("'label' =>");
+      expect(source).toContain("'color' => $color");
+    });
   });
 
   it('allows selecting a one-to-one target before assigning labels', () => {

@@ -18,6 +18,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import type {
   CreateStoryDraft,
@@ -166,15 +167,18 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       return null;
     }
 
-    const draft: CreateStoryDraft = {
-      media,
-      audience,
-      title: title.trim() || undefined,
-      description: description.trim() || undefined,
-    };
-
     setPhase({ type: 'uploading' });
     try {
+      const preparedMedia =
+        media.fileType === 'video' ? await prepareVideoForUpload(media) : media;
+
+      const draft: CreateStoryDraft = {
+        media: preparedMedia,
+        audience,
+        title: title.trim() || undefined,
+        description: description.trim() || undefined,
+      };
+
       const result = await repository.createStory(draft);
       setPhase({ type: 'success', result });
       // Notify parent FIRST so the rail updates while we're still in

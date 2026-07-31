@@ -91,6 +91,27 @@ describe('Home feed video autoplay safety', () => {
     );
   });
 
+  it('softens the thumbnail behind contained feed videos', () => {
+    const postCardsSource = read(
+      'src/feed/presentation/components/PostCards.tsx',
+    );
+    const feedMediaImageSource = read(
+      'src/feed/presentation/components/FeedMediaImage.tsx',
+    );
+
+    expect(postCardsSource).toContain('const FeedVideoBackdrop = React.memo');
+    expect(postCardsSource).toContain(
+      'blurRadius={blurred ? FEED_VIDEO_BACKDROP_BLUR_RADIUS : undefined}',
+    );
+    expect(postCardsSource).toContain('styles.feedVideoBlurredBackdropScrim');
+    expect(postCardsSource).toContain('blurred={shouldMountVideo}');
+    expect(postCardsSource).toContain('resizeMode="contain"');
+    expect(feedMediaImageSource).toContain(
+      "blurRadius?: ImageProps['blurRadius'];",
+    );
+    expect(feedMediaImageSource).toContain('blurRadius={blurRadius}');
+  });
+
   it('uses SurfaceView for Android feed playback compatibility', () => {
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',

@@ -1780,6 +1780,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const vm = usePageDetailViewModel(route.params.page);
   const isFocused = useIsFocused();
   const didFocusRef = useRef(false);
+  const createPostNavigationInFlightRef = useRef(false);
   const [inviteVisible, setInviteVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   // Page-share modal — separate from `inviteVisible` so the offers
@@ -1802,6 +1803,12 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     x: number;
     y: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (isFocused) {
+      createPostNavigationInFlightRef.current = false;
+    }
+  }, [isFocused]);
   const [activeVideoPostId, setActiveVideoPostId] = useState<string | null>(
     null,
   );
@@ -2029,15 +2036,31 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       return;
     }
 
+    if (createPostNavigationInFlightRef.current) return;
+    createPostNavigationInFlightRef.current = true;
+
     navigation.navigate(ROUTES.CREATE_POST, {
-      page: vm.page,
+      page: {
+        id: vm.page.id,
+        pageId: String(vm.page.pageId),
+        pageName: vm.page.pageName,
+        pageTitle: vm.page.pageTitle,
+        avatar: vm.page.avatar,
+      },
       initialAction: cleanAction as
         | 'photo'
         | 'video'
         | 'poll'
         | undefined,
     });
-  }, [navigation, vm.page]);
+  }, [
+    navigation,
+    vm.page.avatar,
+    vm.page.id,
+    vm.page.pageId,
+    vm.page.pageName,
+    vm.page.pageTitle,
+  ]);
 
   const handleCreateJob = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_JOB, {
@@ -2398,6 +2421,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             post={item}
             copy={postCardCopy}
             isActive={activeVideoPostId === item.id}
+            isScreenFocused={isFocused}
             onReact={vm.togglePostReaction}
             onOpenPicker={handleOpenReactionPicker}
             onCommentTap={handleOpenComments}
@@ -2455,6 +2479,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       handleOpenReactionPicker,
       handlePhotoPress,
       hasDragged,
+      isFocused,
       language,
       postCardCopy,
       vm.togglePostReaction,

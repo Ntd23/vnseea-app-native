@@ -23,8 +23,8 @@ describe('Create Post screen navigation', () => {
   );
 
   it('opens the Create Post stack route from the Feed composer', () => {
-    expect(feedSource).toContain(
-      "const initialAction = typeof action === 'string'",
+    expect(feedSource).toMatch(
+      /const initialAction\s*=\s*typeof action === 'string'/,
     );
     expect(feedSource).toMatch(
       /\(navigation as any\)\.navigate\(\s*ROUTES\.CREATE_POST/,
@@ -44,7 +44,11 @@ describe('Create Post screen navigation', () => {
       expect(source).toContain('navigation.navigate(ROUTES.CREATE_POST');
       expect(source).not.toContain('<CreatePostModal');
     }
-    expect(pageSource).toContain('page: vm.page');
+    expect(pageSource).toMatch(
+      /navigation\.navigate\(ROUTES\.CREATE_POST,\s*\{\s*page:\s*\{/,
+    );
+    expect(pageSource).toContain('pageId: String(vm.page.pageId)');
+    expect(pageSource).toContain('avatar: vm.page.avatar');
     expect(groupSource).toContain('groupId: targetGroupId');
     expect(eventSource).toContain('eventId');
   });
