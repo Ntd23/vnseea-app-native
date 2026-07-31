@@ -50,6 +50,7 @@ import NotificationDeleteConfirmModal from '../components/NotificationDeleteConf
 import NotificationsEmptyState from '../components/NotificationsEmptyState';
 import NotificationsSkeleton from '../components/NotificationsSkeleton';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 import {
   createNativeTabScrollPublisherState,
   publishNativeTabScrollBehavior,
@@ -149,6 +150,7 @@ function NotificationsScreen() {
   const {
     notifications,
     filteredNotifications,
+    unreadCount,
     error,
     isLoading,
     isRefreshing,
@@ -163,12 +165,14 @@ function NotificationsScreen() {
     refresh,
     loadMore,
     markAsSeen,
+    markAllAsSeen,
     deleteNotification,
     acceptGroupChatInvitation,
     rejectGroupChatInvitation,
   } = useNotificationsViewModel();
 
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [notificationPendingDelete, setNotificationPendingDelete] =
     useState<NotificationsItem | null>(null);
   const hasNotifications = notifications.length > 0;
@@ -268,6 +272,34 @@ function NotificationsScreen() {
     deleteNotification(target.id).catch(() => undefined);
   }, [deleteNotification, notificationPendingDelete]);
 
+  const handleMarkAllRead = useCallback(async () => {
+    if (unreadCount <= 0 || isMarkingAllRead) return;
+
+    setIsMarkingAllRead(true);
+    try {
+      const result = await markAllAsSeen();
+      if (result.failedCount > 0) {
+        showSnackbar({
+          type: 'warning',
+          message:
+            language === 'vi'
+              ? `Đã đọc ${result.markedCount} thông báo, còn ${result.failedCount} thông báo chưa cập nhật được.`
+              : `${result.markedCount} notifications read, ${result.failedCount} could not be updated.`,
+        });
+      } else if (result.markedCount > 0) {
+        showSnackbar({ type: 'success', message: copy.markAllSeenToast });
+      }
+    } finally {
+      setIsMarkingAllRead(false);
+    }
+  }, [
+    copy.markAllSeenToast,
+    isMarkingAllRead,
+    language,
+    markAllAsSeen,
+    unreadCount,
+  ]);
+
   const handleAcceptGroupChat = useCallback(
     async (groupChatId: string) => {
       const success = await acceptGroupChatInvitation(groupChatId);
@@ -300,6 +332,10 @@ function NotificationsScreen() {
       backAccessibilityLabel={copy.back}
       onFilterPress={() => setFilterSheetVisible(true)}
       filterActive={activeFilter !== 'all'}
+      onMarkAllRead={handleMarkAllRead}
+      markAllReadLabel={copy.markAllRead}
+      markAllReadDisabled={unreadCount <= 0}
+      isMarkingAllRead={isMarkingAllRead}
     />
   );
 
@@ -444,6 +480,10 @@ function NotificationsScreen() {
         backAccessibilityLabel={copy.back}
         onFilterPress={() => setFilterSheetVisible(true)}
         filterActive={activeFilter !== 'all'}
+        onMarkAllRead={handleMarkAllRead}
+        markAllReadLabel={copy.markAllRead}
+        markAllReadDisabled={unreadCount <= 0}
+        isMarkingAllRead={isMarkingAllRead}
       />
 
       <View className="flex-1">

@@ -99,6 +99,7 @@ import type {
   MessageSystemEvent,
 } from '../../domain/types/messages.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
+import type { PagesItem } from '../../../pages';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
@@ -952,6 +953,14 @@ function ChatMessagesSkeleton() {
                 />
               );
             })}
+            <View
+              style={[
+                styles.messageSkeletonTime,
+                row.sentByMe
+                  ? styles.messageSkeletonLineSent
+                  : styles.messageSkeletonLineReceived,
+              ]}
+            />
           </View>
         </View>
       ))}
@@ -1597,6 +1606,7 @@ function MessageBubble({
   onPressReply,
   onQuickRecord,
   onOpenSharedPost,
+  onOpenSharedPage,
   onDoubleTap,
 }: {
   message: MessageItem;
@@ -1610,6 +1620,7 @@ function MessageBubble({
   onPressReply?: (originalMessageId: string) => void;
   onQuickRecord?: () => void;
   onOpenSharedPost?: (target: SharedPostOpenTarget) => void;
+  onOpenSharedPage?: (page: PagesItem) => void;
   onDoubleTap?: (message: MessageItem) => void;
 }) {
   const isSentByMe = message.callEvent
@@ -1923,6 +1934,7 @@ function MessageBubble({
                 isSentByMe={Boolean(isSentByMe)}
                 onLongPress={() => onLongPress?.(message)}
                 onDoubleTap={() => onDoubleTap?.(message)}
+                onOpenPage={onOpenSharedPage}
               />
               <Text
                 className={`mt-1 text-[9.5px] text-gray-400 ${
@@ -3071,6 +3083,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     [navigation],
   );
 
+  const handleOpenSharedPage = useCallback(
+    (page: PagesItem) => {
+      navigation.navigate(ROUTES.PAGE_DETAIL, { page });
+    },
+    [navigation],
+  );
+
   const handleChangeText = useCallback(
     (nextText: string) => {
       setText(nextText);
@@ -3514,6 +3533,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             onPressReply={handlePressReply}
             onQuickRecord={handleQuickRecord}
             onOpenSharedPost={handleOpenSharedPost}
+            onOpenSharedPage={handleOpenSharedPage}
             onDoubleTap={handleDoubleTapMessage}
           />
         </View>
@@ -3529,6 +3549,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       handlePressReply,
       handleQuickRecord,
       handleOpenSharedPost,
+      handleOpenSharedPage,
       handleDoubleTapMessage,
       handleOpenPinnedMessage,
       language,
@@ -4277,42 +4298,45 @@ const styles = StyleSheet.create({
     maxWidth: IMAGE_GALLERY_WIDTH,
   },
   messageSkeletonAvatar: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
     marginRight: 8,
-    borderRadius: 16,
+    marginBottom: 4,
+    borderRadius: 14,
     backgroundColor: '#E2E8F0',
   },
   messageSkeletonBubble: {
     maxWidth: '78%',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 24,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
   },
   messageSkeletonBubbleReceived: {
-    borderBottomLeftRadius: 6,
+    borderBottomLeftRadius: 4,
     backgroundColor: '#F1F5F9',
   },
   messageSkeletonBubbleSent: {
-    borderBottomRightRadius: 6,
-        backgroundColor: APP_COLORS.brand.soft,
+    borderBottomRightRadius: 4,
+    backgroundColor: APP_COLORS.brand.soft,
   },
   messageSkeletonBubbleSmall: {
-    width: 176,
+    width: '42%',
   },
   messageSkeletonBubbleMedium: {
-    width: 188,
+    width: '55%',
   },
   messageSkeletonBubbleLarge: {
-    width: 224,
+    width: '66%',
   },
   messageSkeletonBubbleXLarge: {
-    width: 252,
+    width: '78%',
   },
   messageSkeletonContainer: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
     backgroundColor: '#FFFFFF',
   },
   messageSkeletonLine: {
@@ -4327,15 +4351,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
   messageSkeletonLineSent: {
-        backgroundColor: APP_COLORS.brand.softPressed,
+    backgroundColor: APP_COLORS.brand.softPressed,
   },
   messageSkeletonLineShort: {
     width: '68%',
   },
+  messageSkeletonTime: {
+    width: 30,
+    height: 6,
+    marginTop: 7,
+    alignSelf: 'flex-end',
+    borderRadius: 999,
+    opacity: 0.72,
+  },
   messageSkeletonRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   messageSkeletonRowReceived: {
     justifyContent: 'flex-start',

@@ -24,7 +24,9 @@ describe('Home feed retained media loading', () => {
     expect(postCardsSource).toContain(
       'const mediaEnabled = !deferMediaUntilVisible || trackedMediaVisible;',
     );
-    expect(feedScreenSource).toContain('decelerationRate="normal"');
+    expect(feedScreenSource).toContain(
+      'decelerationRate={FEED_SCROLL_DECELERATION_RATE}',
+    );
   });
 
   it('keeps only completed images mounted across short recycling loops', () => {

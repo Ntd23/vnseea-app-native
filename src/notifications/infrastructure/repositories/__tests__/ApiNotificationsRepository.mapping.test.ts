@@ -14,11 +14,14 @@ jest.mock('../../../../shared-kernel/infrastructure/api/apiBridge', () => ({
 
 import {
   createNotificationsRepository,
+  mapForegroundPushNotification,
   mapGroupChatRequestRecord,
   mapNotificationRecord,
+  normalizeNotificationTimestamp,
   shouldExcludeFromNotificationCenter,
 } from '../ApiNotificationsRepository';
 import { apiBridge } from '../../../../shared-kernel/infrastructure/api/apiBridge';
+import { formatNotificationText } from '../../../application/i18n/notificationCopy';
 
 const mockedApiPost = apiBridge.post as jest.Mock;
 
@@ -61,6 +64,28 @@ describe('ApiNotificationsRepository notification mapping', () => {
 
     expect(item.productId).toBe('123');
     expect(item.postId).toBe('');
+  });
+
+  it('uses the article URL when a legacy blog comment stores a comment ID', () => {
+    const item = mapNotificationRecord({
+      id: 'blog-comment',
+      type: 'blog_commented',
+      blog_id: 9876,
+      url: 'index.php?link1=read-blog&id=42',
+    });
+
+    expect(item.blogId).toBe('42');
+  });
+
+  it('extracts the numeric article ID from a friendly blog URL', () => {
+    const item = mapNotificationRecord({
+      id: 'approved-blog',
+      type: 'admin_notification',
+      type2: 'approve_blog',
+      url: 'https://v2.vnseea.test/read-blog/84_ten-bai-viet.html',
+    });
+
+    expect(item.blogId).toBe('84');
   });
 
   it('preserves event and group-chat identifiers from the API', () => {
@@ -147,6 +172,63 @@ describe('ApiNotificationsRepository notification mapping', () => {
     });
   });
 
+  it('normalizes backend epoch seconds and presents new orders explicitly', () => {
+    const item = mapNotificationRecord({
+      id: 4229,
+      type: 'new_orders',
+      time: 1_785_469_094,
+      seen_at: 1_785_469_100,
+      notifier: { user_id: 1699, name: 'nguyễn' },
+    });
+
+    expect(normalizeNotificationTimestamp(1_785_469_094)).toBe(
+      1_785_469_094_000,
+    );
+    expect(item.createdAt).toBe(1_785_469_094_000);
+    expect(item.seenAt).toBe(1_785_469_100_000);
+    expect(formatNotificationText(item, 'vi')).toBe(
+      'nguyễn đã gửi cho bạn một yêu cầu mua mới',
+    );
+  });
+
+  it('maps foreground social pushes immediately and excludes message pushes', () => {
+    const social = mapForegroundPushNotification({
+      id: 'onesignal-social',
+      title: 'nguyễn',
+      body: 'Bạn có đơn hàng mới',
+      receivedAt: 1_785_469_094_678,
+      additionalData: {
+        notification_id: '4229',
+        notification_type: 'new_orders',
+        notifier_id: '1699',
+        name: 'nguyễn',
+        avatar: 'https://v2.vnseea.test/avatar.jpg',
+        url: 'index.php?link1=orders',
+      },
+    });
+    const message = mapForegroundPushNotification({
+      id: 'onesignal-message',
+      title: 'nguyễn',
+      body: 'Yêu cầu mua mới',
+      receivedAt: 1_785_469_094_000,
+      additionalData: {
+        notification_id: 'message-3332',
+        notification_type: 'message',
+        message_id: '3332',
+      },
+    });
+
+    expect(social).toMatchObject({
+      id: '4229',
+      type: 'new_orders',
+      createdAt: 1_785_469_094_678,
+      orderMode: 'seller',
+      seen: false,
+      notifier: { id: '1699', name: 'nguyễn' },
+    });
+    expect(message).toBeNull();
+  });
+
   it('hides profile-visit notifications from the center and unread badge', async () => {
     expect(shouldExcludeFromNotificationCenter('visited_profile')).toBe(true);
 
@@ -208,7 +290,7 @@ describe('ApiNotificationsRepository notification mapping', () => {
       id: 'group-chat-request:91',
       type: 'group_chat_invite',
       groupChatId: '91',
-      createdAt: 123,
+      createdAt: 123_000,
     });
     expect(result.unreadCount).toBe(1);
   });

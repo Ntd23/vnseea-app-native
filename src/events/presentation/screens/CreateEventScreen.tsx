@@ -630,8 +630,18 @@ function CreateEventScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={
+          Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF'
+        }
+        translucent={false}
+      />
+      <SafeAreaFeedHeader
+        safeAreaBackgroundColor={
+          Platform.OS === 'android' ? APP_BRAND_COLOR : '#FFFFFF'
+        }
+      />
 
       <ScrollView
         style={{ flex: 1 }}

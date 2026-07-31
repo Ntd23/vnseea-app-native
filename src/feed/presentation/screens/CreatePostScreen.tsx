@@ -123,6 +123,9 @@ const CAPTION_LINE_HEIGHT = 24;
 const CAPTION_MAX_LINES = 12;
 const PHOTO_GRID_GAP = 2;
 const MAX_TAGGED_USERS = 20;
+// react-native-image-picker owns a single mutable native callback. Keep this
+// lock module-wide so two composer instances cannot open the picker together.
+let isNativeMediaPickerActive = false;
 const createPostMoreExcludedActionKeys = new Set<string>(
   CREATE_POST_MORE_EXCLUDED_ACTION_KEYS,
 );
@@ -313,12 +316,20 @@ const FEELING_OPTIONS: PostFeeling[] = [
   { type: 'feelings', value: 'expressionless', emoji: '😑', label: 'vô cảm' },
 ];
 
+function normalizePickerAssetUri(uri: string) {
+  if (
+    Platform.OS === 'android' &&
+    !uri.startsWith('file://') &&
+    !uri.startsWith('content://')
+  ) {
+    return `file://${uri}`;
+  }
+  return uri;
+}
+
 function assetToAttachment(asset: Asset): PostPhotoAttachment | null {
   if (!asset.uri) return null;
-  const uri =
-    Platform.OS === 'android' && !asset.uri.startsWith('file://')
-      ? `file://${asset.uri}`
-      : asset.uri;
+  const uri = normalizePickerAssetUri(asset.uri);
   const name = asset.fileName ?? `photo-${Date.now()}.jpg`;
   const type = asset.type ?? 'image/jpeg';
   return {
@@ -338,10 +349,7 @@ function assetToAttachment(asset: Asset): PostPhotoAttachment | null {
  */
 function assetToVideoAttachment(asset: Asset): PostVideoAttachment | null {
   if (!asset.uri) return null;
-  const uri =
-    Platform.OS === 'android' && !asset.uri.startsWith('file://')
-      ? `file://${asset.uri}`
-      : asset.uri;
+  const uri = normalizePickerAssetUri(asset.uri);
   // RN's image picker reports the duration in seconds under
   // `duration` (only for video picks). The composer doesn't
   // display it yet but the server may want it as a hint.
@@ -1852,7 +1860,7 @@ const VideoPreviewCard = React.memo(({
   isKeyboardActive,
   embedded = false,
 }: VideoPreviewCardProps) => {
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const aspectRatio =
     video.width && video.height
@@ -2163,6 +2171,7 @@ interface ComposerActionTrayProps {
   onPickVideo: () => void;
   onNavigate: (route: string) => void;
   insetsBottom: number;
+  mediaPickerBusy: boolean;
 }
 
 interface ComposerShortcutButton {
@@ -2176,6 +2185,7 @@ interface ComposerShortcutButton {
   }>;
   iconBg: string;
   iconColor: string;
+  disabled?: boolean;
 }
 
 const ComposerActionTray = React.memo(({
@@ -2185,6 +2195,7 @@ const ComposerActionTray = React.memo(({
   onPickVideo,
   onNavigate,
   insetsBottom,
+  mediaPickerBusy,
 }: ComposerActionTrayProps) => {
   const allButtons = useMemo<ComposerShortcutButton[]>(() => {
     const createRouteButton = (
@@ -2213,6 +2224,7 @@ const ComposerActionTray = React.memo(({
         Icon: ImageIcon,
         iconBg: '#f0fdf4',
         iconColor: '#22c55e',
+        disabled: mediaPickerBusy,
       },
       {
         key: 'video',
@@ -2221,6 +2233,7 @@ const ComposerActionTray = React.memo(({
         Icon: VideoIcon,
         iconBg: APP_COLORS.brand.soft,
         iconColor: APP_BRAND_COLOR,
+        disabled: mediaPickerBusy,
       },
       createRouteButton('product', copy.product, ROUTES.CREATE_PRODUCT),
       createRouteButton('job', copy.job, ROUTES.CREATE_JOB),
@@ -2250,6 +2263,7 @@ const ComposerActionTray = React.memo(({
     onNavigate,
     onPickPhotos,
     onPickVideo,
+    mediaPickerBusy,
   ]);
 
   const visibleButtons = useMemo(() => {
@@ -2278,6 +2292,7 @@ const ComposerActionTray = React.memo(({
       <TouchableOpacity
         key={button.key}
         onPress={button.onPress}
+        disabled={button.disabled}
         activeOpacity={0.7}
         style={{
           alignItems: 'center',
@@ -2286,6 +2301,7 @@ const ComposerActionTray = React.memo(({
           width: isFloating ? undefined : '25%',
           paddingHorizontal: 2,
           marginBottom: isFloating ? 0 : 14,
+          opacity: button.disabled ? 0.45 : 1,
         }}
       >
         <View
@@ -2535,8 +2551,18 @@ export function CreatePostModal({
   const textInputRef = useRef<TextInput | null>(null);
   const scrollViewRef = useRef<ScrollView | null>(null);
   const appliedInitialTextRef = useRef('');
+  const consumedInitialActionRef = useRef(false);
+  const mediaPickerInFlightRef = useRef(false);
+  const isMountedRef = useRef(true);
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [isContentDragging, setIsContentDragging] = useState(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -2581,13 +2607,19 @@ export function CreatePostModal({
   vmRef.current = vm;
 
   const handlePickPhotos = useCallback(async () => {
+    if (mediaPickerInFlightRef.current || isNativeMediaPickerActive) return;
+
     const maxPhotos = Math.min(vmRef.current.maxPhotos, COMPOSER_PHOTO_LIMIT);
     const remaining = maxPhotos - vmRef.current.draft.photos.length;
     if (remaining <= 0) {
       Alert.alert(copy.limitTitle, copy.limitMsg.replace('{max}', String(maxPhotos)));
       return;
     }
+
+    mediaPickerInFlightRef.current = true;
+    isNativeMediaPickerActive = true;
     setIsProcessingPhotos(true);
+    Keyboard.dismiss();
     try {
       const result = await launchImageLibrary({
         mediaType: 'photo' as MediaType,
@@ -2609,13 +2641,29 @@ export function CreatePostModal({
       if (attachments.length > 0) {
         vmRef.current.addPhotos(attachments.slice(0, remaining));
       }
+    } catch (caught) {
+      if (isMountedRef.current) {
+        Alert.alert(
+          copy.libraryError,
+          caught instanceof Error ? caught.message : '',
+        );
+      }
     } finally {
-      setIsProcessingPhotos(false);
+      mediaPickerInFlightRef.current = false;
+      isNativeMediaPickerActive = false;
+      if (isMountedRef.current) {
+        setIsProcessingPhotos(false);
+      }
     }
   }, [copy]);
 
   const handlePickVideo = useCallback(async () => {
+    if (mediaPickerInFlightRef.current || isNativeMediaPickerActive) return;
+
+    mediaPickerInFlightRef.current = true;
+    isNativeMediaPickerActive = true;
     setIsProcessingPhotos(true);
+    Keyboard.dismiss();
     try {
       const result = await launchImageLibrary({
         mediaType: 'video' as MediaType,
@@ -2640,8 +2688,19 @@ export function CreatePostModal({
           thumbnailType: thumbnail?.type,
         });
       }
+    } catch (caught) {
+      if (isMountedRef.current) {
+        Alert.alert(
+          copy.videoError,
+          caught instanceof Error ? caught.message : copy.videoErrorTip,
+        );
+      }
     } finally {
-      setIsProcessingPhotos(false);
+      mediaPickerInFlightRef.current = false;
+      isNativeMediaPickerActive = false;
+      if (isMountedRef.current) {
+        setIsProcessingPhotos(false);
+      }
     }
   }, [copy]);
 
@@ -2811,22 +2870,26 @@ export function CreatePostModal({
   }, [initialTextValue, navigation, route.params?.initialText, visible]);
 
   useEffect(() => {
-    if (initialActionVal) {
+    if (!visible || !initialActionVal || consumedInitialActionRef.current) return;
+
+    const timer = setTimeout(() => {
+      if (consumedInitialActionRef.current) return;
+      consumedInitialActionRef.current = true;
       if (route.params?.initialAction) {
         navigation.setParams({ initialAction: undefined } as any);
       }
-      setTimeout(() => {
-        if (initialActionVal === 'photo') {
-          handlePickPhotos().catch(() => undefined);
-        } else if (initialActionVal === 'video') {
-          handlePickVideo().catch(() => undefined);
-        } else if (initialActionVal === 'product') {
-          handleCreateProduct();
-        } else if (initialActionVal === 'poll') {
-          handleCreatePoll();
-        }
-      }, 300);
-    }
+      if (initialActionVal === 'photo') {
+        handlePickPhotos().catch(() => undefined);
+      } else if (initialActionVal === 'video') {
+        handlePickVideo().catch(() => undefined);
+      } else if (initialActionVal === 'product') {
+        handleCreateProduct();
+      } else if (initialActionVal === 'poll') {
+        handleCreatePoll();
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
   }, [
     initialActionVal,
     handlePickPhotos,
@@ -2835,17 +2898,8 @@ export function CreatePostModal({
     handleCreatePoll,
     navigation,
     route.params?.initialAction,
+    visible,
   ]);
-
-  useEffect(() => {
-    if (visible) {
-      const timer = setTimeout(() => {
-        textInputRef.current?.blur();
-        textInputRef.current?.focus();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [visible]);
 
   if (presentation === 'screen') {
     return (
@@ -2980,6 +3034,7 @@ export function CreatePostModal({
                     onPickVideo={handlePickVideo}
                     onNavigate={handleActionNavigate}
                     insetsBottom={0}
+                    mediaPickerBusy={isProcessingPhotos}
                   />
                 ) : null}
             </ScrollView>
@@ -2993,6 +3048,7 @@ export function CreatePostModal({
               onPickVideo={handlePickVideo}
               onNavigate={handleActionNavigate}
               insetsBottom={insets.bottom}
+              mediaPickerBusy={isProcessingPhotos}
             />
           ) : null}
 

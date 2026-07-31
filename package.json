@@ -40,6 +40,7 @@
     "react-native-blob-util": "^0.24.10",
     "react-native-callkeep": "^4.3.16",
     "react-native-camera-kit": "^18.0.0",
+    "react-native-compressor": "2.0.3",
     "react-native-config": "^1.6.1",
     "react-native-create-thumbnail": "^2.2.0",
     "react-native-css-interop": "0.2.3",

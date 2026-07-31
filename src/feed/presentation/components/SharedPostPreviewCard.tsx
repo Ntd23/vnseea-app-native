@@ -5,10 +5,14 @@ import {
   BarChart3,
   BriefcaseBusiness,
   CalendarDays,
+  ChevronRight,
   Globe2,
+  Lock,
+  MapPin,
   Megaphone,
   Package,
   Play,
+  Users,
 } from 'lucide-react-native';
 import type { SharedPostPreviewModel } from '../../domain/types/feed.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -42,6 +46,8 @@ const attachmentIcons = {
   job: BriefcaseBusiness,
   ad: Megaphone,
 } as const;
+
+const JOB_ACCENT_COLOR = '#0F766E';
 
 function formatSourceTime(timestamp?: number) {
   if (!timestamp) return privacyLabels.public;
@@ -140,6 +146,27 @@ export function SharedPostPreviewCard({
   const content = model.content;
   const storyMode = mode === 'story';
   const language = useAppLanguage();
+  const productLabel = language === 'vi' ? 'Sản phẩm' : 'Product';
+  const viewProductLabel = language === 'vi' ? 'Xem sản phẩm' : 'View product';
+  const jobLabel = language === 'vi' ? 'Việc làm' : 'Job';
+  const viewJobLabel = language === 'vi' ? 'Xem việc làm' : 'View job';
+  const missingJobLocationLabel =
+    language === 'vi' ? 'Chưa cập nhật địa điểm' : 'Location not updated';
+  const isProductAttachment =
+    content.kind === 'attachment' && content.attachmentKind === 'product';
+  const isJobAttachment =
+    content.kind === 'attachment' && content.attachmentKind === 'job';
+  const isCompactAttachment = isProductAttachment || isJobAttachment;
+  const compactAttachmentLabel = isJobAttachment ? jobLabel : productLabel;
+  const compactAttachmentActionLabel = isJobAttachment
+    ? viewJobLabel
+    : viewProductLabel;
+  const CompactAttachmentIcon = isJobAttachment ? BriefcaseBusiness : Package;
+  const compactAttachmentColor = isJobAttachment
+    ? JOB_ACCENT_COLOR
+    : APP_BRAND_COLOR;
+  const groupContext = model.groupContext;
+  const GroupPrivacyIcon = groupContext?.privacy === 'private' ? Lock : Globe2;
   const activity = buildPostActivityContext({
     language,
     feeling: model.feeling,
@@ -157,7 +184,37 @@ export function SharedPostPreviewCard({
         onPress={() => onOpenPost?.(model.postId)}
         style={styles.header}
       >
-        {model.publisher.avatarUrl && !forceMediaFallback ? (
+        {groupContext ? (
+          <View style={styles.groupAvatarWrap}>
+            {groupContext.avatarUrl && !forceMediaFallback ? (
+              <Image
+                source={{ uri: groupContext.avatarUrl }}
+                style={styles.groupAvatar}
+                onLoad={() => {
+                  markFeedMediaLoaded(groupContext.avatarUrl);
+                  onAssetSettled?.(groupContext.avatarUrl!);
+                }}
+                onError={() => onAssetSettled?.(groupContext.avatarUrl!)}
+              />
+            ) : (
+              <View style={[styles.groupAvatar, styles.groupAvatarFallback]}>
+                <Users size={20} color="#B91C1C" />
+              </View>
+            )}
+
+            {model.publisher.avatarUrl && !forceMediaFallback ? (
+              <Image
+                source={{ uri: model.publisher.avatarUrl }}
+                style={styles.publisherAvatarOverlay}
+                onLoad={() => {
+                  markFeedMediaLoaded(model.publisher.avatarUrl);
+                  onAssetSettled?.(model.publisher.avatarUrl!);
+                }}
+                onError={() => onAssetSettled?.(model.publisher.avatarUrl!)}
+              />
+            ) : null}
+          </View>
+        ) : model.publisher.avatarUrl && !forceMediaFallback ? (
           <Image
             source={{ uri: model.publisher.avatarUrl }}
             style={styles.avatar}
@@ -175,45 +232,69 @@ export function SharedPostPreviewCard({
           </View>
         )}
         <View style={styles.headerCopy}>
-          <Text
-            style={styles.publisherName}
-            numberOfLines={activity.fullText ? 2 : 1}
-          >
-            <Text style={styles.publisherNameStrong}>
-              {model.publisher.name || 'VNSEEA'}
-            </Text>
-            {activity.fullText ? (
-              <>
-                {' '}
-                {activity.segments.map((segment, index) => {
-                  const isEmphasized =
-                    segment.kind === 'feeling' ||
-                    segment.kind === 'location' ||
-                    segment.kind === 'tagged_users';
-                  return (
-                    <Text
-                      key={`${segment.kind}:${index}`}
-                      style={
-                        isEmphasized
-                          ? styles.publisherActivityStrong
-                          : styles.publisherActivity
-                      }
-                    >
-                      {segment.text}
-                    </Text>
-                  );
-                })}
-              </>
-            ) : null}
-          </Text>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaText}>
-              {formatSourceTime(model.postedAt)}
-            </Text>
-            <Text style={styles.metaDot}> · </Text>
-            <Globe2 size={12} color="#64748B" />
-            <Text style={styles.metaText}> {privacyLabels[model.privacy]}</Text>
-          </View>
+          {groupContext ? (
+            <>
+              <Text style={styles.groupTitle} numberOfLines={1}>
+                {groupContext.title}
+              </Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.groupPublisherName} numberOfLines={1}>
+                  {model.publisher.name || 'VNSEEA'}
+                </Text>
+                <Text style={styles.metaDot}> · </Text>
+                <Text style={styles.metaText}>
+                  {formatSourceTime(model.postedAt)}
+                </Text>
+                <Text style={styles.metaDot}> · </Text>
+                <GroupPrivacyIcon size={12} color="#64748B" />
+              </View>
+            </>
+          ) : (
+            <>
+              <Text
+                style={styles.publisherName}
+                numberOfLines={activity.fullText ? 2 : 1}
+              >
+                <Text style={styles.publisherNameStrong}>
+                  {model.publisher.name || 'VNSEEA'}
+                </Text>
+                {activity.fullText ? (
+                  <>
+                    {' '}
+                    {activity.segments.map((segment, index) => {
+                      const isEmphasized =
+                        segment.kind === 'feeling' ||
+                        segment.kind === 'location' ||
+                        segment.kind === 'tagged_users';
+                      return (
+                        <Text
+                          key={`${segment.kind}:${index}`}
+                          style={
+                            isEmphasized
+                              ? styles.publisherActivityStrong
+                              : styles.publisherActivity
+                          }
+                        >
+                          {segment.text}
+                        </Text>
+                      );
+                    })}
+                  </>
+                ) : null}
+              </Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaText}>
+                  {formatSourceTime(model.postedAt)}
+                </Text>
+                <Text style={styles.metaDot}> · </Text>
+                <Globe2 size={12} color="#64748B" />
+                <Text style={styles.metaText}>
+                  {' '}
+                  {privacyLabels[model.privacy]}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </Pressable>
 
@@ -308,33 +389,113 @@ export function SharedPostPreviewCard({
         <Pressable
           disabled={!onOpenPost}
           onPress={() => onOpenPost?.(model.postId)}
-          style={styles.attachment}
+          style={[
+            styles.attachment,
+            isCompactAttachment ? styles.productAttachment : null,
+          ]}
         >
-          {content.imageUrl ? (
-            <RetainedSharedPreviewImage
-              uri={content.imageUrl}
-              style={styles.attachmentImage}
-              mediaEnabled={mediaEnabled}
-              forceMediaFallback={forceMediaFallback}
-              onAssetSettled={onAssetSettled}
-            />
-          ) : null}
-          <View style={styles.attachmentCopy}>
-            <View style={styles.attachmentHeading}>
-              {React.createElement(attachmentIcons[content.attachmentKind], {
-                size: 17,
-                color: APP_BRAND_COLOR,
-              })}
-              <Text style={styles.attachmentTitle} numberOfLines={2}>
-                {content.title}
-              </Text>
-            </View>
-            {content.subtitle ? (
-              <Text style={styles.attachmentSubtitle} numberOfLines={2}>
-                {content.subtitle}
-              </Text>
-            ) : null}
-          </View>
+          {isCompactAttachment ? (
+            <>
+              <View style={styles.productMedia}>
+                <View style={styles.productMediaFallback}>
+                  <CompactAttachmentIcon size={34} color="#94A3B8" />
+                </View>
+                {content.imageUrl ? (
+                  <RetainedSharedPreviewImage
+                    uri={content.imageUrl}
+                    style={styles.productImage}
+                    mediaEnabled={mediaEnabled}
+                    forceMediaFallback={forceMediaFallback}
+                    onAssetSettled={onAssetSettled}
+                  />
+                ) : null}
+              </View>
+              <View style={styles.productCopy}>
+                <View
+                  style={[
+                    styles.productBadge,
+                    isJobAttachment ? styles.jobBadge : null,
+                  ]}
+                >
+                  <CompactAttachmentIcon
+                    size={13}
+                    color={compactAttachmentColor}
+                  />
+                  <Text
+                    style={[
+                      styles.productBadgeText,
+                      isJobAttachment ? styles.jobAccentText : null,
+                    ]}
+                  >
+                    {compactAttachmentLabel}
+                  </Text>
+                </View>
+                <Text style={styles.productTitle} numberOfLines={2}>
+                  {content.title}
+                </Text>
+                {isJobAttachment ? (
+                  <View style={styles.jobLocation}>
+                    <MapPin size={14} color="#64748B" />
+                    <Text style={styles.jobLocationText} numberOfLines={2}>
+                      {content.subtitle || missingJobLocationLabel}
+                    </Text>
+                  </View>
+                ) : content.subtitle ? (
+                  <Text
+                    style={styles.productPrice}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
+                    {content.subtitle}
+                  </Text>
+                ) : null}
+                <View style={styles.productAction}>
+                  <Text
+                    style={[
+                      styles.productActionText,
+                      isJobAttachment ? styles.jobAccentText : null,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {compactAttachmentActionLabel}
+                  </Text>
+                  <ChevronRight size={15} color={compactAttachmentColor} />
+                </View>
+              </View>
+            </>
+          ) : (
+            <>
+              {content.imageUrl ? (
+                <RetainedSharedPreviewImage
+                  uri={content.imageUrl}
+                  style={styles.attachmentImage}
+                  mediaEnabled={mediaEnabled}
+                  forceMediaFallback={forceMediaFallback}
+                  onAssetSettled={onAssetSettled}
+                />
+              ) : null}
+              <View style={styles.attachmentCopy}>
+                <View style={styles.attachmentHeading}>
+                  {React.createElement(
+                    attachmentIcons[content.attachmentKind],
+                    {
+                      size: 17,
+                      color: APP_BRAND_COLOR,
+                    },
+                  )}
+                  <Text style={styles.attachmentTitle} numberOfLines={2}>
+                    {content.title}
+                  </Text>
+                </View>
+                {content.subtitle ? (
+                  <Text style={styles.attachmentSubtitle} numberOfLines={2}>
+                    {content.subtitle}
+                  </Text>
+                ) : null}
+              </View>
+            </>
+          )}
         </Pressable>
       ) : null}
     </View>
@@ -375,9 +536,48 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
+  groupAvatarWrap: {
+    position: 'relative',
+    width: 46,
+    height: 46,
+  },
+  groupAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+  },
+  groupAvatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+  },
+  publisherAvatarOverlay: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#E2E8F0',
+  },
   headerCopy: {
     flex: 1,
     marginLeft: 10,
+  },
+  groupTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  groupPublisherName: {
+    maxWidth: '48%',
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
   },
   publisherName: {
     color: '#0F172A',
@@ -498,8 +698,116 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   attachment: {
+    width: '100%',
+    minWidth: 0,
+    overflow: 'hidden',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#E2E8F0',
+  },
+  productAttachment: {
+    minHeight: 146,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 12,
+    padding: 10,
+    backgroundColor: '#F8FAFC',
+  },
+  productMedia: {
+    width: 126,
+    minHeight: 126,
+    overflow: 'hidden',
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+  },
+  productMediaFallback: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productImage: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: '#E2E8F0',
+  },
+  productCopy: {
+    minWidth: 0,
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  productBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#FEF2F2',
+  },
+  productBadgeText: {
+    color: APP_BRAND_COLOR,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
+  },
+  jobBadge: {
+    backgroundColor: '#ECFDF5',
+  },
+  jobAccentText: {
+    color: JOB_ACCENT_COLOR,
+  },
+  productTitle: {
+    flexShrink: 1,
+    marginTop: 8,
+    color: '#0F172A',
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '800',
+  },
+  jobLocation: {
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 6,
+  },
+  jobLocationText: {
+    flex: 1,
+    minWidth: 0,
+    color: '#64748B',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  productPrice: {
+    flexShrink: 1,
+    marginTop: 5,
+    color: APP_BRAND_COLOR,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  productAction: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 8,
+  },
+  productActionText: {
+    flexShrink: 1,
+    color: APP_BRAND_COLOR,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
   },
   attachmentImage: {
     width: '100%',

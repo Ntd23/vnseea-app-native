@@ -13,6 +13,7 @@ import {
 } from '../../domain/types/notifications.types';
 import { asRecord } from '../../../foundation/application/normalizers/resolveValue';
 import type { EventsItem } from '../../../events/domain/types/events.types';
+import type { ForegroundPushPayload } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
 
 type NotificationRecord = Record<string, unknown>;
 type NotificationsResponse = {
@@ -101,6 +102,15 @@ function readNumber(
   return undefined;
 }
 
+export function normalizeNotificationTimestamp(
+  value: number | undefined,
+): number | undefined {
+  if (!Number.isFinite(value) || !value || value <= 0) return undefined;
+
+  // WoWonder sends Unix seconds while React Native Date APIs use milliseconds.
+  return value < 100_000_000_000 ? Math.round(value * 1000) : value;
+}
+
 function readBool(
   record: NotificationRecord | undefined,
   key: string,
@@ -138,6 +148,13 @@ function readAnyUrlTargetId(urls: string[], patterns: RegExp[]): string {
     if (id) return id;
   }
   return '';
+}
+
+function normalizeBlogTargetId(value: string): string {
+  const normalized = value.trim();
+  const match = normalized.match(/^([0-9]+)(?:_|\.html(?:$|[?#])|$)/i);
+  const id = match?.[1] ?? '';
+  return id !== '0' ? id : '';
 }
 
 function readLastPathSegment(url: string): string {
@@ -217,13 +234,22 @@ export function mapNotificationRecord(
       /[?&]link1=show_fund[^#]*[?&]id=([^&#]+)/i,
       /\/(?:funding|show_fund|fund)\/([^/?#]+)/i,
     ]);
-  const blogId =
-    readTargetString(raw, 'blog_id', 'blogId') ||
+  const directBlogId = normalizeBlogTargetId(
+    readTargetString(raw, 'blog_id', 'blogId'),
+  );
+  const urlBlogId = normalizeBlogTargetId(
     readAnyUrlTargetId(targetUrls, [
       /[?&]blog_id=([^&#]+)/i,
       /[?&]link1=read-blog[^#]*[?&]id=([^&#]+)/i,
       /\/(?:read-blog|blog)\/([^/?#]+)/i,
-    ]);
+    ]),
+  );
+  // Older blog-comment notifications stored the comment ID in blog_id while
+  // keeping the real article ID in their URL. Prefer that URL for legacy rows.
+  const blogId =
+    notificationType === 'blog_commented'
+      ? urlBlogId || directBlogId
+      : directBlogId || urlBlogId;
   const jobId =
     readTargetString(raw, 'job_id', 'jobId') ||
     readTargetString(jobRaw, 'job_id', 'id') ||
@@ -341,8 +367,13 @@ export function mapNotificationRecord(
     messageConversationId: messageConversationId || undefined,
     focusComments: readBool(raw, 'focus_comments'),
     seen: readBool(raw, 'seen'),
-    seenAt: readNumber(raw, 'seen_at', 'seenAt'),
-    createdAt: readNumber(raw, 'time', 'created_at', 'posted_at') ?? 0,
+    seenAt: normalizeNotificationTimestamp(
+      readNumber(raw, 'seen_at', 'seenAt'),
+    ),
+    createdAt:
+      normalizeNotificationTimestamp(
+        readNumber(raw, 'time', 'created_at', 'posted_at'),
+      ) ?? 0,
     timeText: readString(raw, 'time_text', 'time_ago'),
     notifier: {
       id: notifierId,
@@ -354,6 +385,41 @@ export function mapNotificationRecord(
       isFollowed: readBool(notifierRaw, 'followers'),
     },
   };
+}
+
+export function mapForegroundPushNotification(
+  payload: ForegroundPushPayload,
+): NotificationsItem | null {
+  const additionalData = payload.additionalData ?? {};
+  const nestedData =
+    asRecord(additionalData.notification_data) ??
+    asRecord(additionalData.data) ??
+    {};
+  const raw: NotificationRecord = { ...nestedData, ...additionalData };
+  const notificationId = readTargetString(raw, 'notification_id', 'notif_id');
+  const notificationType = readString(
+    raw,
+    'notification_type',
+    'event_type',
+    'type',
+  ).toLowerCase();
+
+  // Message pushes belong to the Messages surface. Only locally insert pushes
+  // backed by a server notification record so read/delete actions stay valid.
+  if (!notificationId || !notificationType) return null;
+
+  const mapped = mapNotificationRecord({
+    ...raw,
+    id: notificationId,
+    notification_id: notificationId,
+    type: notificationType,
+    time: payload.receivedAt,
+    seen: 0,
+    name: readString(raw, 'name', 'sender_name') || payload.title || '',
+    avatar: readString(raw, 'avatar', 'sender_avatar', 'profile_picture'),
+  });
+
+  return shouldExcludeFromNotificationCenter(mapped.type) ? null : mapped;
 }
 
 export function mapGroupChatRequestRecord(
@@ -371,8 +437,10 @@ export function mapGroupChatRequestRecord(
   const ownerId = readString(groupTab, 'user_id');
   const avatar = normalizeUrl(readString(groupTab, 'avatar'));
   const createdAt =
-    readNumber(raw, 'time', 'created_at') ??
-    readNumber(groupTab, 'time', 'created_at') ??
+    normalizeNotificationTimestamp(readNumber(raw, 'time', 'created_at')) ??
+    normalizeNotificationTimestamp(
+      readNumber(groupTab, 'time', 'created_at'),
+    ) ??
     0;
 
   return {

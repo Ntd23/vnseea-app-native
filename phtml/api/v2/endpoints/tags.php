@@ -73,9 +73,24 @@ if ($action == 'create_label') {
         'name' => $name,
         'color' => $color
     ));
-    Wo_ApiTagsResponse(is_array($result) ? $result : array(
+
+    if (!is_array($result) || (int)($result['status'] ?? 0) !== 200 || empty($result['id'])) {
+        Wo_ApiTagsResponse(is_array($result) ? $result : array(
+            'status' => 500,
+            'message' => 'Could not create label'
+        ));
+        return;
+    }
+
+    $label_id = (int)$result['id'];
+    Wo_ApiTagsResponse(array(
         'status' => 200,
-        'message' => 'Label created successfully'
+        'id' => $label_id,
+        'label' => array(
+            'id' => $label_id,
+            'name' => $name,
+            'color' => $color
+        )
     ));
     return;
 }

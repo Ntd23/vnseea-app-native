@@ -7,7 +7,6 @@ import {
   Animated,
   Easing,
   FlatList,
-  PanResponder,
   RefreshControl,
   Text,
   TextInput,
@@ -18,6 +17,17 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import Reanimated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { NavigationContext, useIsFocused } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
@@ -65,6 +75,9 @@ const MARKETPLACE_HEADER_ELEVATION_STYLE =
   Platform.OS === 'android'
     ? { zIndex: 30, elevation: 12 }
     : { zIndex: 30 };
+const MARKETPLACE_HEADER_ACTION_STYLE = {
+  width: '49%',
+} as const;
 const FILTER_PANEL_FULL_HEIGHT = 232;
 const FILTER_PANEL_COLLAPSED_HEIGHT = 72;
 const FILTER_COLLAPSE_THRESHOLD = 132;
@@ -87,7 +100,47 @@ const SORT_OPTIONS: Array<{
 
 const MIN_DISTANCE = 1;
 const MAX_DISTANCE = 100;
+const DEFAULT_DISTANCE = 25;
+const DISTANCE_SLIDER_THUMB_SIZE = 24;
+const DISTANCE_SLIDER_TOUCH_STYLE = {
+  height: 32,
+  justifyContent: 'center',
+} as const;
+const DISTANCE_MODAL_GESTURE_ROOT_STYLE = { flex: 1 } as const;
+const DISTANCE_SLIDER_RAIL_STYLE = {
+  height: 6,
+  overflow: 'hidden',
+  borderRadius: 999,
+  backgroundColor: '#E2E8F0',
+} as const;
+const DISTANCE_SLIDER_FILL_STYLE = {
+  height: 6,
+  borderRadius: 999,
+  backgroundColor: APP_BRAND_COLOR,
+} as const;
+const DISTANCE_SLIDER_THUMB_STYLE = {
+  position: 'absolute',
+  top: (32 - DISTANCE_SLIDER_THUMB_SIZE) / 2,
+  left: 0,
+  width: DISTANCE_SLIDER_THUMB_SIZE,
+  height: DISTANCE_SLIDER_THUMB_SIZE,
+  borderRadius: DISTANCE_SLIDER_THUMB_SIZE / 2,
+  borderWidth: 2,
+  borderColor: APP_BRAND_COLOR,
+  backgroundColor: '#FFFFFF',
+} as const;
 const marketplaceOrderRepository = createProductRepository();
+
+function distanceToSliderProgress(distance: number) {
+  return (distance - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE);
+}
+
+function sliderProgressToDistance(progress: number) {
+  'worklet';
+  return Math.round(
+    MIN_DISTANCE + progress * (MAX_DISTANCE - MIN_DISTANCE),
+  );
+}
 
 function MarketplaceSkeleton() {
   return (
@@ -155,62 +208,112 @@ function DistanceSlider({
   error: string | null;
   onChange: (value: number | undefined) => void;
 }) {
-  const [trackWidth, setTrackWidth] = useState(0);
-  const activeValue = value ?? 25;
-  const percent =
-    ((activeValue - MIN_DISTANCE) / (MAX_DISTANCE - MIN_DISTANCE)) * 100;
+  const activeValue = value ?? DEFAULT_DISTANCE;
+  const [displayValue, setDisplayValue] = useState(activeValue);
+  const trackWidth = useSharedValue(0);
+  const sliderProgress = useSharedValue(
+    distanceToSliderProgress(activeValue),
+  );
+  const lastDisplayedValue = useSharedValue(activeValue);
 
-  const updateValueFromX = useCallback(
-    (x: number) => {
-      if (!trackWidth) return;
-      const ratio = Math.max(0, Math.min(1, x / trackWidth));
-      const nextValue = Math.round(
-        MIN_DISTANCE + ratio * (MAX_DISTANCE - MIN_DISTANCE),
-      );
+  const updateDisplayValue = useCallback((nextValue: number) => {
+    setDisplayValue(currentValue =>
+      currentValue === nextValue ? currentValue : nextValue,
+    );
+  }, []);
+
+  const commitDistance = useCallback(
+    (nextValue: number) => {
       onChange(nextValue);
     },
-    [onChange, trackWidth],
+    [onChange],
   );
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: event => {
-          updateValueFromX(event.nativeEvent.locationX);
-        },
-        onPanResponderMove: event => {
-          updateValueFromX(event.nativeEvent.locationX);
-        },
-      }),
-    [updateValueFromX],
+  useEffect(() => {
+    setDisplayValue(activeValue);
+    lastDisplayedValue.value = activeValue;
+    sliderProgress.value = withTiming(distanceToSliderProgress(activeValue), {
+      duration: 150,
+    });
+  }, [activeValue, lastDisplayedValue, sliderProgress]);
+
+  const updateSliderFromX = useCallback(
+    (positionX: number) => {
+      'worklet';
+      if (trackWidth.value <= 0) return;
+
+      const nextProgress = Math.max(
+        0,
+        Math.min(1, positionX / trackWidth.value),
+      );
+      sliderProgress.value = nextProgress;
+
+      const nextValue = sliderProgressToDistance(nextProgress);
+      if (nextValue !== lastDisplayedValue.value) {
+        lastDisplayedValue.value = nextValue;
+        runOnJS(updateDisplayValue)(nextValue);
+      }
+    },
+    [lastDisplayedValue, sliderProgress, trackWidth, updateDisplayValue],
   );
+
+  const sliderGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .shouldCancelWhenOutside(false)
+        .onBegin(event => {
+          updateSliderFromX(event.x);
+        })
+        .onUpdate(event => {
+          updateSliderFromX(event.x);
+        })
+        .onEnd(() => {
+          const nextValue = sliderProgressToDistance(sliderProgress.value);
+          runOnJS(commitDistance)(nextValue);
+        }),
+    [commitDistance, sliderProgress, updateSliderFromX],
+  );
+
+  const fillAnimatedStyle = useAnimatedStyle(() => ({
+    width: trackWidth.value * sliderProgress.value,
+  }));
+
+  const thumbAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX:
+          trackWidth.value * sliderProgress.value -
+          DISTANCE_SLIDER_THUMB_SIZE / 2,
+      },
+    ],
+  }));
 
   return (
     <View>
       <View className="mb-2">
         <Text className="text-caption-secondary font-medium">
-          Tùy chỉnh khoảng cách: {value ? `${value} km` : '25 km (Mặc định)'}
+          Tùy chỉnh khoảng cách: {displayValue} km
         </Text>
       </View>
 
-      <View
-        className="h-8 justify-center"
-        onLayout={event => setTrackWidth(event.nativeEvent.layout.width)}
-        {...panResponder.panHandlers}
-      >
-        <View className="h-1.5 rounded-full bg-slate-200">
-          <View
-            className="h-1.5 rounded-full bg-brand"
-            style={{ width: `${percent}%` }}
+      <GestureDetector gesture={sliderGesture}>
+        <View
+          style={DISTANCE_SLIDER_TOUCH_STYLE}
+          onLayout={event => {
+            trackWidth.value = event.nativeEvent.layout.width;
+          }}
+        >
+          <View style={DISTANCE_SLIDER_RAIL_STYLE}>
+            <Reanimated.View
+              style={[DISTANCE_SLIDER_FILL_STYLE, fillAnimatedStyle]}
+            />
+          </View>
+          <Reanimated.View
+            style={[DISTANCE_SLIDER_THUMB_STYLE, thumbAnimatedStyle]}
           />
         </View>
-        <View
-          className="absolute -ml-3 h-6 w-6 rounded-full border-2 border-brand bg-white"
-          style={{ left: `${percent}%` }}
-        />
-      </View>
+      </GestureDetector>
 
       <View className="mt-1 flex-row justify-between">
         <Text className="text-caption-secondary">{MIN_DISTANCE} km</Text>
@@ -303,15 +406,28 @@ function DistancePickerModal({
   visible,
   value,
   error,
-  onChange,
+  onApply,
   onClose,
 }: {
   visible: boolean;
   value: number | undefined;
   error: string | null;
-  onChange: (value: number | undefined) => void;
+  onApply: (value: number | undefined) => void;
   onClose: () => void;
 }) {
+  const [draftValue, setDraftValue] = useState<number | undefined>(value);
+
+  useEffect(() => {
+    if (visible) {
+      setDraftValue(value);
+    }
+  }, [value, visible]);
+
+  const handleApply = useCallback(() => {
+    onApply(draftValue);
+    onClose();
+  }, [draftValue, onApply, onClose]);
+
   return (
     <Modal
       transparent
@@ -319,86 +435,88 @@ function DistancePickerModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <TouchableOpacity
-        activeOpacity={1}
-        className="flex-1 justify-end bg-black/40"
-        onPress={onClose}
-      >
+      <GestureHandlerRootView style={DISTANCE_MODAL_GESTURE_ROOT_STYLE}>
         <TouchableOpacity
           activeOpacity={1}
-          className="bg-white rounded-t-3xl px-5 pb-8 pt-5"
+          className="flex-1 justify-end bg-black/40"
+          onPress={onClose}
         >
-          <View className="flex-row items-center justify-between pb-4 border-b border-slate-100 mb-5">
-            <Text className="text-lg font-bold text-slate-800">Khoảng cách vị trí</Text>
-            <TouchableOpacity
-              className="h-8 w-8 items-center justify-center rounded-full bg-slate-100"
-              activeOpacity={0.8}
-              onPress={onClose}
-            >
-              <X size={16} color="#64748B" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Quick Select Buttons */}
-          <View className="mb-6">
-            <Text className="text-caption-primary mb-2.5 font-medium">Chọn nhanh</Text>
-            <View className="flex-row flex-wrap gap-2">
-              {[
-                { label: 'Tắt', value: undefined },
-                { label: '5 km', value: 5 },
-                { label: '10 km', value: 10 },
-                { label: '25 km', value: 25 },
-                { label: '50 km', value: 50 },
-                { label: '100 km', value: 100 },
-              ].map((opt, idx) => {
-                const isActive = opt.value === value;
-                return (
-                  <TouchableOpacity
-                    key={idx}
-                    className={`rounded-full border px-4 py-2 ${
-                      isActive
-                        ? 'border-brand bg-brand-subtle'
-                        : 'border-slate-200 bg-white'
-                    }`}
-                    activeOpacity={0.8}
-                    onPress={() => onChange(opt.value)}
-                  >
-                    <Text
-                      className={
-                        isActive
-                          ? 'text-caption-primary font-semibold text-brand'
-                          : 'text-caption-secondary'
-                      }
-                    >
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Custom distance slider */}
-          <View className="border-t border-slate-100 pt-5 mb-4">
-            <DistanceSlider
-              value={value}
-              error={error}
-              onChange={onChange}
-            />
-          </View>
-
-          {/* Apply button */}
           <TouchableOpacity
-            className="btn-primary h-12 w-full items-center justify-center rounded-xl bg-brand mt-4"
-            activeOpacity={0.9}
-            onPress={onClose}
+            activeOpacity={1}
+            className="bg-white rounded-t-3xl px-5 pb-8 pt-5"
           >
-            <Text className="text-caption-primary font-bold text-white">
-              Áp dụng
-            </Text>
+            <View className="flex-row items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <Text className="text-lg font-bold text-slate-800">Khoảng cách vị trí</Text>
+              <TouchableOpacity
+                className="h-8 w-8 items-center justify-center rounded-full bg-slate-100"
+                activeOpacity={0.8}
+                onPress={onClose}
+              >
+                <X size={16} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Select Buttons */}
+            <View className="mb-6">
+              <Text className="text-caption-primary mb-2.5 font-medium">Chọn nhanh</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {[
+                  { label: 'Tắt', value: undefined },
+                  { label: '5 km', value: 5 },
+                  { label: '10 km', value: 10 },
+                  { label: '25 km', value: 25 },
+                  { label: '50 km', value: 50 },
+                  { label: '100 km', value: 100 },
+                ].map((opt, idx) => {
+                  const isActive = opt.value === draftValue;
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      className={`rounded-full border px-4 py-2 ${
+                        isActive
+                          ? 'border-brand bg-brand-subtle'
+                          : 'border-slate-200 bg-white'
+                      }`}
+                      activeOpacity={0.8}
+                      onPress={() => setDraftValue(opt.value)}
+                    >
+                      <Text
+                        className={
+                          isActive
+                            ? 'text-caption-primary font-semibold text-brand'
+                            : 'text-caption-secondary'
+                        }
+                      >
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Custom distance slider */}
+            <View className="border-t border-slate-100 pt-5 mb-4">
+              <DistanceSlider
+                value={draftValue}
+                error={draftValue === value ? error : null}
+                onChange={setDraftValue}
+              />
+            </View>
+
+            {/* Apply button */}
+            <TouchableOpacity
+              className="btn-primary h-12 w-full items-center justify-center rounded-xl bg-brand mt-4"
+              activeOpacity={0.9}
+              onPress={handleApply}
+            >
+              <Text className="text-caption-primary font-bold text-white">
+                Áp dụng
+              </Text>
+            </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
-      </TouchableOpacity>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -1118,23 +1236,30 @@ function MarketplaceScreen() {
         pointerEvents="box-none"
       >
       
-        <View className="flex-row items-center">
+        <View className="w-full flex-row items-center justify-between">
           <TouchableOpacity
-            className="btn-primary h-10 px-4 items-center justify-center rounded-full"
+            className="relative h-10 flex-row items-center justify-center gap-2 rounded-full bg-brand px-2"
+            style={MARKETPLACE_HEADER_ACTION_STYLE}
             activeOpacity={0.9}
-            hitSlop={{ top: 10, right: 5, bottom: 10, left: 15 }}
+            hitSlop={{ top: 10, right: 5, bottom: 10, left: 5 }}
             onPress={handleMyProducts}
           >
             <ShoppingBag size={17} color="#FFFFFF" />
-            <Text className="text-caption-primary text-inverse">
+            <Text
+              className="text-caption-primary text-inverse"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
               Sản phẩm của tôi
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            className="relative ml-2 h-10 w-10 items-center justify-center rounded-full bg-brand"
+            className="relative h-10 flex-row items-center justify-center gap-2 rounded-full bg-brand px-2"
+            style={MARKETPLACE_HEADER_ACTION_STYLE}
             activeOpacity={0.85}
-            hitSlop={{ top: 10, right: 15, bottom: 10, left: 5 }}
+            hitSlop={{ top: 10, right: 5, bottom: 10, left: 5 }}
             accessibilityRole="button"
             accessibilityLabel={
               orderBadges.totalCount > 0
@@ -1143,7 +1268,15 @@ function MarketplaceScreen() {
             }
             onPress={handleOrderNotifications}
           >
-            <Bell size={19} color="#FFFFFF" />
+            <Bell size={17} color="#FFFFFF" />
+            <Text
+              className="text-caption-primary text-inverse"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.78}
+            >
+              Thông báo đơn hàng
+            </Text>
             {orderBadges.totalCount > 0 ? (
               <View className="absolute -right-1 -top-1 min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-red-500 px-1">
                 <Text className="text-[10px] font-bold leading-[14px] text-white">
@@ -1272,7 +1405,7 @@ function MarketplaceScreen() {
         visible={distanceModalVisible}
         value={vm.distance}
         error={vm.distanceFilterError ?? vm.distanceFilterStatus}
-        onChange={vm.setDistance}
+        onApply={vm.setDistance}
         onClose={() => setDistanceModalVisible(false)}
       />
       <ProductShareBottomSheet

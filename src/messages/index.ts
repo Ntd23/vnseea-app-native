@@ -8,6 +8,10 @@ export { createGroupChatRepository } from './infrastructure/repositories/ApiGrou
 export { useMessagesViewModel } from './application/view-models/useMessagesViewModel';
 export { useChatViewModel } from './application/view-models/useChatViewModel';
 export { useGroupChatViewModel } from './application/view-models/useGroupChatViewModel';
+export {
+  buildSharedPageMessage,
+  buildSharedPageUrl,
+} from './application/shared-pages/sharedPageMessage';
 export { default as MessageScreen } from './presentation/screens/MessageScreen';
 export { default as MessageLabelsScreen } from './presentation/screens/MessageLabelsScreen';
 export { default as ChatScreen } from './presentation/screens/ChatScreen';

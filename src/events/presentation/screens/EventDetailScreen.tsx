@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   RefreshControl,
   ScrollView,
   Text,
@@ -354,8 +355,16 @@ function EventDetailScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#eef3ff' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={Platform.OS === 'android' ? BRAND : '#FFFFFF'}
+        translucent={false}
+      />
+      <SafeAreaFeedHeader
+        safeAreaBackgroundColor={
+          Platform.OS === 'android' ? BRAND : '#FFFFFF'
+        }
+      />
 
       <ScrollView
         className="flex-1"

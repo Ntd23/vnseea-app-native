@@ -91,6 +91,13 @@ export interface StoryReplyMessageReference {
 export interface MessageLinkReference {
   url: string;
   host: string;
+  page?: {
+    pageName: string;
+    pageTitle?: string;
+    note?: string;
+    publicUrl: string;
+    explicit: boolean;
+  };
 }
 
 export interface MessageLocationReference {

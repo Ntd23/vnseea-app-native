@@ -109,12 +109,18 @@ import {
 } from './feedVideoSurfaceRecovery';
 import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
 import { FeedMediaImage } from './FeedMediaImage';
+import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
+import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
+import { parseSharedPageMessage } from '../../../messages/application/shared-pages/sharedPageMessage';
+import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
 
 export {
   FEED_CARD_CLASS,
   FEED_CARD_PADDING_CLASS,
   FEED_MEDIA_CLASS,
 } from './FeedCardChrome';
+
+const feedPageLinkRepository = createPagesRepository();
 
 // â”€â”€ Reaction lookup tables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â”€â”€ Picker geometry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -169,6 +175,7 @@ const VIDEO_POSTER_REVEAL_HOLD_MS = 90;
 const VIDEO_POSTER_FADE_MS = 160;
 const VIDEO_WARM_PREVIEW_SECONDS = Platform.OS === 'android' ? 0.35 : 0.6;
 const FEED_VIDEO_BLUR_SURFACE_GRACE_MS = 240;
+const FEED_VIDEO_BACKDROP_BLUR_RADIUS = Platform.OS === 'android' ? 18 : 28;
 const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 5;
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
@@ -250,6 +257,27 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#d7dce5',
+  },
+  feedVideoBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+    backgroundColor: '#050505',
+  },
+  feedVideoBlurredBackdropImage: {
+    opacity: 0.72,
+    transform: [{ scale: 1.08 }],
+  },
+  feedVideoBlurredBackdropScrim: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.36)',
   },
 });
 
@@ -1094,6 +1122,32 @@ const Avatar = React.memo(function Avatar({
   );
 });
 
+const FeedVideoBackdrop = React.memo(function FeedVideoBackdrop({
+  uri,
+  enabled,
+  blurred = false,
+}: {
+  uri: string;
+  enabled: boolean;
+  blurred?: boolean;
+}) {
+  return (
+    <View pointerEvents="none" style={styles.feedVideoBackdrop}>
+      <FeedMediaImage
+        uri={uri}
+        style={[
+          StyleSheet.absoluteFill,
+          blurred ? styles.feedVideoBlurredBackdropImage : null,
+        ]}
+        resizeMode="cover"
+        blurRadius={blurred ? FEED_VIDEO_BACKDROP_BLUR_RADIUS : undefined}
+        enabled={enabled}
+      />
+      {blurred ? <View style={styles.feedVideoBlurredBackdropScrim} /> : null}
+    </View>
+  );
+});
+
 const VideoFallbackPoster = React.memo(function VideoFallbackPoster({
   label,
 }: {
@@ -1751,6 +1805,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   navigateToProfile,
   onOpenPostMenu,
   showIdentityHeader = true,
+  showGroupContext = false,
   keepPreparedVideoMounted = false,
   commentNavigationMode = 'detail',
   deferMediaUntilVisible = false,
@@ -1779,6 +1834,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
   showIdentityHeader?: boolean;
+  showGroupContext?: boolean;
   keepPreparedVideoMounted?: boolean;
   commentNavigationMode?: 'detail' | 'callback';
   deferMediaUntilVisible?: boolean;
@@ -2073,9 +2129,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
     if (!post.isAnonymous && post.publisher.id) {
-      navigateToProfile(post.publisher.id);
+      if (!navigateToFeedPublisherPage(navigation, post.publisher)) {
+        navigateToProfile(post.publisher.id);
+      }
     }
-  }, [navigateToProfile, post.isAnonymous, post.publisher.id]);
+  }, [navigateToProfile, navigation, post.isAnonymous, post.publisher]);
 
   const handleVideoPress = useCallback(() => {
     const resumeFallback = hasUserWatchedRef.current
@@ -2281,6 +2339,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             }
             onMorePress={onOpenPostMenu}
             post={post}
+            showGroupContext={showGroupContext}
           />
         ) : null}
         {post.sharedFrom && !post.sharedPost ? (
@@ -2315,14 +2374,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             >
               {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
               {resolvedThumbnailUrl ? (
-                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                  <FeedMediaImage
-                    uri={resolvedThumbnailUrl}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="cover"
-                    enabled={mediaLoadEnabled}
-                  />
-                </View>
+                <FeedVideoBackdrop
+                  uri={resolvedThumbnailUrl}
+                  enabled={mediaLoadEnabled}
+                  blurred={shouldMountVideo}
+                />
               ) : null}
               {shouldMountVideo ? (
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -2442,11 +2498,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                       pointerEvents="none"
                       style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
                     >
-                      <FeedMediaImage
+                      <FeedVideoBackdrop
                         uri={resolvedThumbnailUrl}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
                         enabled={mediaLoadEnabled}
+                        blurred
                       />
                     </Animated.View>
                   ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
@@ -2587,6 +2642,7 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   onDetailPress,
   post,
   containerClassName = 'mb-4 flex-row items-center justify-between',
+  showGroupContext = false,
 }: {
   avatar?: string;
   name: string;
@@ -2598,6 +2654,7 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   onDetailPress?: (post: FeedPost) => void;
   post?: FeedPost;
   containerClassName?: string;
+  showGroupContext?: boolean;
 }) {
   const handleMorePress = useCallback(() => {
     if (post) {
@@ -2628,6 +2685,22 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
       post.taggedUsers.map(user => user.name).join('\n'),
     );
   }, [copy.language, post?.taggedUsers]);
+
+  if (showGroupContext && post?.groupContext) {
+    return (
+      <GroupPostIdentityHeader
+        group={post.groupContext}
+        publisher={post.publisher}
+        publisherName={name}
+        time={time}
+        privacyLabel={privacyMeta.label}
+        PrivacyIcon={PrivacyIcon}
+        onPublisherPress={onPress}
+        onMorePress={onMorePress ? handleMorePress : undefined}
+        containerClassName={containerClassName}
+      />
+    );
+  }
 
   return (
     <View className={containerClassName}>
@@ -2828,6 +2901,10 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
   mediaEnabled?: boolean;
 }) {
   const navigation = useNavigation<any>();
+  const pageLink = useMemo(
+    () => parseSharedPageMessage(preview.url),
+    [preview.url],
+  );
   const isPagePreview = isVnseeaPageLink(preview.url);
   const hostLabel = useMemo(() => {
     try {
@@ -2837,7 +2914,7 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
     }
   }, [preview.url]);
 
-  const handlePress = useCallback(() => {
+  const handlePress = useCallback(async () => {
     const mapLocation = parseMapShareUrl(preview.url);
     if (mapLocation) {
       navigation.navigate(ROUTES.NEARBY_USERS, {
@@ -2851,8 +2928,36 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
       return;
     }
 
+    if (pageLink) {
+      const fallbackPage = {
+        id: pageLink.pageName,
+        pageId: '',
+        pageName: pageLink.pageName,
+        pageTitle: preview.title || pageLink.pageTitle || pageLink.pageName,
+        pageDescription: preview.description,
+        avatar: preview.image,
+        url: pageLink.publicUrl,
+      };
+
+      if (pageLink.explicit) {
+        navigation.navigate(ROUTES.PAGE_DETAIL, { page: fallbackPage });
+        return;
+      }
+
+      try {
+        const page = await feedPageLinkRepository.getPageDetail({
+          pageName: pageLink.pageName,
+        });
+        navigation.navigate(ROUTES.PAGE_DETAIL, { page });
+        return;
+      } catch {
+        Linking.openURL(pageLink.publicUrl).catch(() => undefined);
+        return;
+      }
+    }
+
     Linking.openURL(preview.url).catch(() => undefined);
-  }, [navigation, preview.url]);
+  }, [navigation, pageLink, preview]);
 
   if (isPagePreview) {
     return (
@@ -2873,16 +2978,16 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
       className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white"
     >
       {preview.image ? (
-          <FeedMediaImage
-            uri={preview.image}
+        <FeedMediaImage
+          uri={preview.image}
           style={{
             width: '100%',
             aspectRatio: 1.91,
             backgroundColor: '#E2E8F0',
-            }}
-            resizeMode="cover"
-            enabled={mediaEnabled}
-          />
+          }}
+          resizeMode="cover"
+          enabled={mediaEnabled}
+        />
       ) : (
         <View className="h-28 items-center justify-center bg-info-soft">
           <View className="h-14 w-14 items-center justify-center rounded-full bg-white">
@@ -3001,7 +3106,10 @@ function arePublishersEqual(
     previous.name === next.name &&
     previous.username === next.username &&
     previous.avatarUrl === next.avatarUrl &&
-    previous.isFollowing === next.isFollowing
+    previous.isFollowing === next.isFollowing &&
+    previous.entityType === next.entityType &&
+    previous.pageId === next.pageId &&
+    previous.ownerId === next.ownerId
   );
 }
 
@@ -3046,6 +3154,24 @@ function arePostLocationsEqual(
   if (previous === next) return true;
   if (!previous || !next) return !previous && !next;
   return previous.label === next.label;
+}
+
+function areGroupContextsEqual(
+  previous?: FeedPost['groupContext'],
+  next?: FeedPost['groupContext'],
+) {
+  if (previous === next) return true;
+  if (!previous || !next) return !previous && !next;
+
+  return (
+    previous.id === next.id &&
+    previous.title === next.title &&
+    previous.username === next.username &&
+    previous.avatarUrl === next.avatarUrl &&
+    previous.coverUrl === next.coverUrl &&
+    previous.url === next.url &&
+    previous.privacy === next.privacy
+  );
 }
 
 function areSharedPostsEqual(
@@ -3105,6 +3231,7 @@ function areFeedPostBaseRenderFieldsEqual(
     areFeelingsEqual(previous.feeling, next.feeling) &&
     areTaggedUsersEqual(previous.taggedUsers, next.taggedUsers) &&
     arePostLocationsEqual(previous.location, next.location) &&
+    areGroupContextsEqual(previous.groupContext, next.groupContext) &&
     arePublishersEqual(previous.publisher, next.publisher) &&
     areScalarArraysEqual(previous.mentionNames, next.mentionNames) &&
     areScalarArraysEqual(previous.topReactions, next.topReactions) &&
@@ -3130,6 +3257,7 @@ function areCommonCardPropsEqual(previous: any, next: any) {
     previous.navigateToProfile === next.navigateToProfile &&
     previous.onOpenPostMenu === next.onOpenPostMenu &&
     previous.showIdentityHeader === next.showIdentityHeader &&
+    previous.showGroupContext === next.showGroupContext &&
     previous.commentNavigationMode === next.commentNavigationMode
   );
 }
@@ -3184,6 +3312,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   onOpenPostMenu,
   onPostPress,
   showIdentityHeader = true,
+  showGroupContext = false,
   commentNavigationMode = 'detail',
   deferMediaUntilVisible = false,
 }: {
@@ -3213,6 +3342,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
   showIdentityHeader?: boolean;
+  showGroupContext?: boolean;
   /**
    * Tapping the post header / body opens the dedicated PostDetail
    * screen. We intentionally keep this separate from `onCommentTap`
@@ -3246,9 +3376,11 @@ export const TextPostCard = React.memo(function TextPostCard({
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
     if (!post.isAnonymous && post.publisher.id) {
-      navigateToProfile(post.publisher.id);
+      if (!navigateToFeedPublisherPage(navigation, post.publisher)) {
+        navigateToProfile(post.publisher.id);
+      }
     }
-  }, [navigateToProfile, post.isAnonymous, post.publisher.id]);
+  }, [navigateToProfile, navigation, post.isAnonymous, post.publisher]);
 
   const handleLikeTap = useCallback(
     () => onReact(post.id, 'like'),
@@ -3344,9 +3476,13 @@ export const TextPostCard = React.memo(function TextPostCard({
                 ? copy.anonymousPrivacyLabel
                 : post.publisher.name
             }
-            time={`${formatPostTime(post.postedAt, copy)} (${copy.photoCount(
-              totalPhotos,
-            )})`}
+            time={
+              post.sharedPost
+                ? formatPostTime(post.postedAt, copy)
+                : `${formatPostTime(post.postedAt, copy)} (${copy.photoCount(
+                    totalPhotos,
+                  )})`
+            }
             copy={copy}
             onPress={
               !post.isAnonymous && post.publisher.id
@@ -3356,6 +3492,7 @@ export const TextPostCard = React.memo(function TextPostCard({
             onMorePress={onOpenPostMenu}
             onDetailPress={onPostPress}
             post={post}
+            showGroupContext={showGroupContext}
           />
         ) : null}
         {post.sharedFrom && !post.sharedPost ? (

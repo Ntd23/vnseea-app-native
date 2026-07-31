@@ -15,8 +15,11 @@ import type { EventsItem } from '../../../events/domain/types/events.types';
 
 const LEGACY_POSTS_CACHE_KEY = 'feed.posts.page1';
 const LEGACY_VIDEOS_CACHE_KEY = 'feed.videos.page1';
-const POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v2';
-const VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v2';
+// v3 invalidates snapshots whose Page posts stored the owner's user identity.
+const POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v3';
+const VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v3';
+const PREVIOUS_POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v2';
+const PREVIOUS_VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v2';
 const PRODUCTS_CACHE_KEY = 'feed.products.page1';
 const JOBS_CACHE_KEY = 'feed.jobs.page1';
 const EVENTS_CACHE_KEY = 'feed.events.page1';
@@ -46,6 +49,14 @@ function getPostsCacheKey(userId?: string) {
 
 function getVideosCacheKey(userId?: string) {
   return `${VIDEOS_CACHE_KEY_PREFIX}:${getFeedCacheOwner(userId)}`;
+}
+
+function getPreviousPostsCacheKey(userId?: string) {
+  return `${PREVIOUS_POSTS_CACHE_KEY_PREFIX}:${getFeedCacheOwner(userId)}`;
+}
+
+function getPreviousVideosCacheKey(userId?: string) {
+  return `${PREVIOUS_VIDEOS_CACHE_KEY_PREFIX}:${getFeedCacheOwner(userId)}`;
 }
 
 function isPoisonedAdCursor(posts: FeedPost[], cursor?: string) {
@@ -107,6 +118,7 @@ export const feedCacheStorage = {
       // The legacy key was shared by every signed-in account. Remove it
       // instead of migrating possibly-private data to the current user.
       storage.remove(LEGACY_POSTS_CACHE_KEY);
+      storage.remove(getPreviousPostsCacheKey(userId));
     } catch (err) {
       console.warn('Failed to set cached feed snapshot:', err);
     }
@@ -154,6 +166,7 @@ export const feedCacheStorage = {
         JSON.stringify(posts.slice(0, MAX_CACHED_VIDEOS)),
       );
       storage.remove(LEGACY_VIDEOS_CACHE_KEY);
+      storage.remove(getPreviousVideosCacheKey(userId));
     } catch (err) {
       console.warn('Failed to set cached feed videos:', err);
     }
@@ -259,6 +272,8 @@ export const feedCacheStorage = {
   clearAllCache() {
     storage.remove(getPostsCacheKey());
     storage.remove(getVideosCacheKey());
+    storage.remove(getPreviousPostsCacheKey());
+    storage.remove(getPreviousVideosCacheKey());
     storage.remove(LEGACY_POSTS_CACHE_KEY);
     storage.remove(LEGACY_VIDEOS_CACHE_KEY);
     storage.remove(PRODUCTS_CACHE_KEY);

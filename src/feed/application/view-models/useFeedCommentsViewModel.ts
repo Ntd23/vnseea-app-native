@@ -726,6 +726,10 @@ export function useFeedCommentsViewModel({
         imageWidth: image?.width,
         imageHeight: image?.height,
         replyMentionName: preservedMentionName,
+        replyMentionUserId:
+          replyingTo?.commentId === commentId
+            ? replyingTo.userId
+            : undefined,
         mentions: mentions.length > 0 ? mentions : undefined,
       };
 
@@ -751,6 +755,10 @@ export function useFeedCommentsViewModel({
           text: hydrateCommentMentionText(created.text || trimmed, mentions),
           mentions: mentions.length > 0 ? mentions : created.mentions,
           replyMentionName: preservedMentionName,
+          replyMentionUserId:
+            replyingTo?.commentId === commentId
+              ? replyingTo.userId
+              : created.replyMentionUserId,
           ...(image
             ? {
                 imageWidth: created.imageWidth ?? image.width,

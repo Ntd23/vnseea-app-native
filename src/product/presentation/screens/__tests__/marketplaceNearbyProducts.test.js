@@ -11,9 +11,7 @@ describe('Marketplace nearby products', () => {
   const marketplace = read(
     'src/product/presentation/screens/MarketplaceScreen.tsx',
   );
-  const card = read(
-    'src/product/presentation/components/ProductPostCard.tsx',
-  );
+  const card = read('src/product/presentation/components/ProductPostCard.tsx');
   const viewModel = read(
     'src/product/application/view-models/useMarketplaceViewModel.ts',
   );
@@ -54,5 +52,19 @@ describe('Marketplace nearby products', () => {
     expect(viewModel).toContain('isResolvingDistanceOrigin');
     expect(card).toContain('Cách bạn');
     expect(card).toContain('Trong phạm vi');
+  });
+
+  it('keeps distance-slider movement on the UI thread and applies once', () => {
+    expect(marketplace).toContain('Gesture.Pan()');
+    expect(marketplace).toContain('GestureHandlerRootView');
+    expect(marketplace).toContain(
+      '<GestureHandlerRootView style={DISTANCE_MODAL_GESTURE_ROOT_STYLE}>',
+    );
+    expect(marketplace).toContain('useSharedValue(');
+    expect(marketplace).toContain('const [draftValue, setDraftValue]');
+    expect(marketplace).toContain('onApply(draftValue)');
+    expect(marketplace).toContain('onApply={vm.setDistance}');
+    expect(marketplace).not.toContain('PanResponder.create');
+    expect(marketplace).not.toContain('onChange={vm.setDistance}');
   });
 });

@@ -24,6 +24,7 @@ type FeedMediaImageProps = {
   className?: string;
   style?: StyleProp<ImageStyle>;
   resizeMode?: ImageProps['resizeMode'];
+  blurRadius?: ImageProps['blurRadius'];
   enabled?: boolean;
 };
 
@@ -41,6 +42,7 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
   className,
   style,
   resizeMode = 'cover',
+  blurRadius,
   enabled = true,
 }: FeedMediaImageProps) {
   const loaded = useFeedMediaLoaded(uri);
@@ -91,6 +93,7 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
       className={className}
       style={style}
       resizeMode={resizeMode}
+      blurRadius={blurRadius}
       fadeDuration={0}
       resizeMethod="resize"
       progressiveRenderingEnabled

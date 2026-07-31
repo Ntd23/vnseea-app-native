@@ -62,6 +62,9 @@ describe('iOS comment sheet chrome', () => {
     const modalSource = read(
       'src/reels/presentation/components/ReelCommentComposerModal.tsx',
     );
+    const mentionTextSource = read(
+      'src/reels/presentation/components/CommentMentionText.tsx',
+    );
     const hosts = [
       'src/feed/presentation/screens/FeedScreen.tsx',
       'src/feed/presentation/screens/PostDetailScreen.tsx',
@@ -75,10 +78,12 @@ describe('iOS comment sheet chrome', () => {
     expect(sheetSource).toContain('getActiveCommentMentionToken');
     expect(sheetSource).toContain('applyCommentMentionSuggestion');
     expect(sheetSource).toContain('serializeCommentMentions');
-    expect(sheetSource).toContain('splitCommentMentionSegments');
+    expect(mentionTextSource).toContain('splitCommentMentionSegments');
     expect(sheetSource).toContain('<CommentMentionSuggestions');
     expect(sheetSource).toContain('onSearchMentions(activeToken.query)');
-    expect(sheetSource).toContain('onPressProfile(segment.mention!.userId)');
+    expect(sheetSource).toContain(
+      'onPressMention={mention => onPressProfile(mention.userId)}',
+    );
     expect(modalSource).toContain('<CommentMentionSuggestions');
     expect(modalSource).toContain('onSelectMention');
     hosts.forEach(relativePath => {
@@ -134,7 +139,7 @@ describe('iOS comment sheet chrome', () => {
     expect(screenSource).toContain('onOpenStart={handleCommentsOpenStart}');
   });
 
-  it('uses display names for reply drafts and blue leading reply mentions', () => {
+  it('uses display names with tappable app-red leading reply mentions', () => {
     const source = read(
       'src/reels/presentation/components/ReelCommentsSheet.tsx',
     );
@@ -144,6 +149,11 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toContain('replyMentionName');
     expect(source).toContain('splitLeadingReplyMention');
     expect(source).toContain('styles.commentMentionText');
+    expect(source).toContain('getRenderedCommentMentionLabel');
+    expect(source).toContain('handleReplyMentionProfilePress');
+    expect(source).toContain('handlePressUnresolvedMention');
+    expect(source).toContain('findThreadMentionUserId');
+    expect(source).toContain('color: APP_BRAND_COLOR');
     expect(source).toContain('scheduleReplyTargetReveal(replyTarget)');
     expect(source).toContain('viewPosition: isInline ? 0.76 : 0.58');
     expect(source).toContain('onScrollToIndexFailed');

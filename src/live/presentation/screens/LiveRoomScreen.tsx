@@ -777,7 +777,6 @@ export default function LiveRoomScreen() {
                       <Text className="text-[11px] text-white/85 mt-0.5">
                         <CommentMentionText
                           text={item.message}
-                          mentionStyle={{ color: '#93C5FD' }}
                         />
                       </Text>
                     </View>

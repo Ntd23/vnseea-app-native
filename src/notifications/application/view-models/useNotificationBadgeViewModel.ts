@@ -9,6 +9,7 @@ import { createMessagesRepository } from '../../../messages/infrastructure/repos
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
 import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { getLocallySeenSyntheticNotificationIds } from '../../infrastructure/storage/notificationsCacheStorage';
 import {
   replaceOrderNotificationBadges,
   setOrderNotificationBadgeOwner,
@@ -26,26 +27,40 @@ async function fetchNotificationCountsAndOrderBadges() {
   const ownerId = sessionStorage.getSession()?.userId;
   setOrderNotificationBadgeOwner(ownerId);
 
-  const refreshOrderBadges = ownerId
+  const notificationsPagePromise = ownerId
     ? repository
         .getNotifications({ limit: 100 })
-        .then(page => {
-          if (sessionStorage.getSession()?.userId !== ownerId) return;
-          replaceOrderNotificationBadges(page.items, ownerId);
-        })
         .catch(error => {
           console.warn(
             '[useNotificationBadgeViewModel] order badge refresh failed',
             error,
           );
+          return null;
         })
-    : Promise.resolve();
+    : Promise.resolve(null);
 
-  const [counts] = await Promise.all([
+  const [counts, page] = await Promise.all([
     repository.getUnreadCounts(),
-    refreshOrderBadges,
+    notificationsPagePromise,
   ]);
-  return counts;
+
+  if (page && sessionStorage.getSession()?.userId === ownerId) {
+    replaceOrderNotificationBadges(page.items, ownerId);
+  }
+
+  const locallySeenSyntheticIds =
+    getLocallySeenSyntheticNotificationIds(ownerId);
+  const locallySeenSyntheticCount = (page?.items ?? []).filter(
+    item => !item.seen && locallySeenSyntheticIds.has(item.id),
+  ).length;
+
+  return {
+    ...counts,
+    notificationCount: Math.max(
+      0,
+      counts.notificationCount - locallySeenSyntheticCount,
+    ),
+  };
 }
 
 const notificationBadgeSync = createNotificationBadgeSync({

@@ -195,7 +195,7 @@ export function createPhotosRepository(): PhotosRepository {
         // Map raw albums to AlbumItem
         const albums: AlbumItem[] = rawAlbums.map((raw) => {
           const postId = readString(raw, 'id', 'post_id');
-          const albumName = cleanCaption(readString(raw, 'album_name', 'postText')) || 'Album không tên';
+          const albumName = cleanCaption(readString(raw, 'album_name', 'albumName', 'postText')) || 'Album không tên';
 
           // Wo_GetUserAlbums exposes the same cover used by phtml as first_image.
           const photoAlbum = Array.isArray(raw.photo_album) ? raw.photo_album : [];

@@ -12,6 +12,7 @@ jest.mock(
   () => ({
     apiConfig: {
       webBaseUrl: 'https://demo.vnseea.vn',
+      requestTimeoutMs: 15_000,
     },
   }),
 );

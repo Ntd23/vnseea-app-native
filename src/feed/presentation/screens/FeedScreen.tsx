@@ -234,10 +234,13 @@ const FEED_MEDIA_MOUNT_BEHIND_ITEMS = 1;
 const FEED_MEDIA_MOUNT_AHEAD_ITEMS = FEED_IS_ANDROID ? 1 : 3;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
+// A lower numeric rate sheds fling momentum sooner than React Native's
+// default while preserving direct finger tracking and pull-to-refresh.
+const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.94 : 0.992;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
-  ? Math.max(1800, Math.round(FEED_SCREEN_HEIGHT * 2))
-  : Math.max(2800, Math.round(FEED_SCREEN_HEIGHT * 3.4));
-const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28;
+  ? Math.max(2400, Math.round(FEED_SCREEN_HEIGHT * 2.8))
+  : Math.max(3000, Math.round(FEED_SCREEN_HEIGHT * 3.8));
+const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 18 : 32;
 const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   disabled: false,
   // Preserve the item currently under the user's finger when delayed live,
@@ -2417,6 +2420,8 @@ function FeedScreen() {
     return jobsVm.jobs.map((job, index) => {
       const timestamp = Number(job.time) > 0 ? Number(job.time) : now - index;
       const pageName = job.page?.page_title || copy.employerFallback;
+      const pageId =
+        Number(job.page?.page_id) > 0 ? String(job.page?.page_id) : undefined;
       const sharePostId = String(job.post_id || '').trim();
       const canShare = Number(sharePostId) > 0;
 
@@ -2426,10 +2431,15 @@ function FeedScreen() {
         job,
         postedAt: timestamp,
         publisher: {
-          id: String(job.page?.user_id || job.user_id || ''),
+          id: pageId || String(job.user_id || ''),
           name: pageName,
           username: job.page?.page_name || '',
           avatarUrl: job.page?.avatar || job.image,
+          entityType: pageId ? ('page' as const) : ('user' as const),
+          pageId,
+          ownerId: job.page?.user_id
+            ? String(job.page.user_id)
+            : undefined,
         },
         permissions: {
           canDelete: false,
@@ -3724,6 +3734,7 @@ function FeedScreen() {
           onOpenReactions={openReactionsSheet}
           navigateToProfile={navigateToProfile}
           onOpenPostMenu={handleOpenPostMenu}
+          showGroupContext
           isScreenFocused={isFeedTabFocused}
           keepPreparedVideoMounted={!FEED_IS_ANDROID}
           deferMediaUntilVisible
@@ -3758,6 +3769,7 @@ function FeedScreen() {
         navigateToProfile={navigateToProfile}
         onOpenPostMenu={handleOpenPostMenu}
         onPostPress={handlePostPress}
+        showGroupContext
         deferMediaUntilVisible
       />
     ),
@@ -3829,6 +3841,7 @@ function FeedScreen() {
         onShare={handleOpenSharePost}
         onProfilePress={navigateToProfile}
         onMorePress={handleOpenPostMenu}
+        showGroupContext
         currentUserAvatar={userVm.user?.avatar}
         gestureX={gestureX}
         gestureY={gestureY}
@@ -4136,7 +4149,7 @@ function FeedScreen() {
         FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION
       }
       removeClippedSubviews={false}
-      decelerationRate="normal"
+      decelerationRate={FEED_SCROLL_DECELERATION_RATE}
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled
       onLayout={handleFeedViewportLayout}

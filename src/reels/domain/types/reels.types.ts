@@ -125,9 +125,11 @@ export interface ReelComment {
   mentions?: CommentMention[];
   /**
    * Local reply mention display name. When the reply text starts with this
-   * name, the UI renders that leading name in Facebook-style blue.
+   * name, the UI renders that leading name in the app brand color.
    */
   replyMentionName?: string;
+  /** Local target id used to make a leading reply mention open its profile. */
+  replyMentionUserId?: string;
   /** Optimistic update state: true if comment/reply is currently sending */
   isSending?: boolean;
   /** Optimistic update state: true if sending failed */

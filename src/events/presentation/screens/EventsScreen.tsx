@@ -4,6 +4,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Platform,
   RefreshControl,
   ScrollView,
   Text,
@@ -68,6 +69,7 @@ function EventCard({
   onGoingPress,
   onInterestedPress,
   busyAction,
+  hideGoingAction = false,
   copy,
 }: {
   event: EventsItem;
@@ -76,6 +78,7 @@ function EventCard({
   onGoingPress?: () => void;
   onInterestedPress?: () => void;
   busyAction?: 'going' | 'interested' | null;
+  hideGoingAction?: boolean;
   copy: Record<string, string>;
 }) {
   const dateLabel = formatEventDate(event.start_date ?? event.event_start_date);
@@ -129,23 +132,25 @@ function EventCard({
           </TouchableOpacity>
         ) : (
           <View className="flex-row gap-3">
-            <TouchableOpacity
-              className="min-h-[46px] flex-1 flex-row items-center justify-center rounded-md bg-slate-100 px-3"
-              activeOpacity={0.8}
-              disabled={busyAction !== null}
-              onPress={onGoingPress}
-            >
-              {busyAction === 'going' ? (
-                <ActivityIndicator size="small" color="#0F172A" />
-              ) : (
-                <>
-                  <Footprints size={17} color="#0F172A" />
-                  <Text className="ml-2 text-[12px] font-semibold text-slate-800">
-                    {event.is_going ? copy.joined : copy.join}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {!hideGoingAction ? (
+              <TouchableOpacity
+                className="min-h-[46px] flex-1 flex-row items-center justify-center rounded-md bg-slate-100 px-3"
+                activeOpacity={0.8}
+                disabled={busyAction !== null}
+                onPress={onGoingPress}
+              >
+                {busyAction === 'going' ? (
+                  <ActivityIndicator size="small" color="#0F172A" />
+                ) : (
+                  <>
+                    <Footprints size={17} color="#0F172A" />
+                    <Text className="ml-2 text-[12px] font-semibold text-slate-800">
+                      {event.is_going ? copy.joined : copy.join}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity
               className="min-h-[46px] flex-1 flex-row items-center justify-center rounded-md bg-slate-100 px-3"
@@ -243,8 +248,16 @@ function EventsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <SafeAreaFeedHeader />
+      <FocusAwareStatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'}
+        backgroundColor={Platform.OS === 'android' ? BRAND : '#FFFFFF'}
+        translucent={false}
+      />
+      <SafeAreaFeedHeader
+        safeAreaBackgroundColor={
+          Platform.OS === 'android' ? BRAND : '#FFFFFF'
+        }
+      />
 
       <View className="h-[54px] flex-row items-stretch border-b border-slate-200 bg-white pl-1 pr-2">
         <ScrollView
@@ -333,8 +346,13 @@ function EventsScreen() {
             onEditPress={() => {
               navigation.navigate(ROUTES.EDIT_EVENT, { event });
             }}
-            onGoingPress={() => void handleRsvp(event, 'going')}
+            onGoingPress={
+              activeTab === 'going'
+                ? undefined
+                : () => void handleRsvp(event, 'going')
+            }
             onInterestedPress={() => void handleRsvp(event, 'interested')}
+            hideGoingAction={activeTab === 'going'}
             busyAction={
               busyRsvp?.eventId === String(event.id)
                 ? busyRsvp.action

@@ -130,6 +130,14 @@ export function getCommentMentionBackendValue(mention: CommentMention) {
   return `@${mention.username.trim().replace(/^@+/, '')}`;
 }
 
+export function getRenderedCommentMentionLabel(
+  text: string,
+  mention?: CommentMention,
+) {
+  const displayValue = mention?.displayName?.trim() || text.trim();
+  return displayValue.replace(/^@+/, '');
+}
+
 export function applyCommentMentionSuggestion(
   text: string,
   suggestion: ReelCaptionSuggestion,

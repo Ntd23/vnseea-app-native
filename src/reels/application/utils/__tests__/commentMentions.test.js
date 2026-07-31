@@ -1,6 +1,7 @@
 const {
   applyCommentMentionSuggestion,
   getActiveCommentMentionToken,
+  getRenderedCommentMentionLabel,
   hydrateCommentMentionText,
   pruneCommentMentions,
   serializeCommentMentions,
@@ -76,6 +77,15 @@ describe('comment mentions', () => {
       { text: '@Nguyễn Văn An', mention, isMention: true },
       { text: '!' },
     ]);
+  });
+
+  it('renders tagged display names without a leading @', () => {
+    expect(getRenderedCommentMentionLabel('@Nguyễn Văn An', mention)).toBe(
+      'Nguyễn Văn An',
+    );
+    expect(getRenderedCommentMentionLabel('@giangthangc32')).toBe(
+      'giangthangc32',
+    );
   });
 
   it('styles unknown Unicode mentions without requiring backend metadata', () => {

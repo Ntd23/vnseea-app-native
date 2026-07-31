@@ -1297,6 +1297,13 @@ export function useReelsViewModel(initialVideo?: {
       // Text OR image required.
       if (!commentId || (!trimmed && !image)) return null;
 
+      const replyTarget =
+        replyingTo?.commentId === commentId ? replyingTo : null;
+      const preservedReplyMentionName =
+        _replyMentionName?.trim().replace(/^@+/, '') ||
+        replyTarget?.displayName?.trim();
+      const preservedReplyMentionUserId = replyTarget?.userId;
+
       const tempId = `temp-${Date.now()}`;
       const publisher = getFallbackPublisher();
       const newReply: ReelComment = {
@@ -1314,6 +1321,8 @@ export function useReelsViewModel(initialVideo?: {
         pendingImageUri: image?.uri,
         imageWidth: image?.width,
         imageHeight: image?.height,
+        replyMentionName: preservedReplyMentionName,
+        replyMentionUserId: preservedReplyMentionUserId,
         mentions: mentions.length > 0 ? mentions : undefined,
       };
 
@@ -1340,6 +1349,10 @@ export function useReelsViewModel(initialVideo?: {
           ...created,
           text: hydrateCommentMentionText(created.text || trimmed, mentions),
           mentions: mentions.length > 0 ? mentions : created.mentions,
+          replyMentionName:
+            preservedReplyMentionName ?? created.replyMentionName,
+          replyMentionUserId:
+            preservedReplyMentionUserId ?? created.replyMentionUserId,
           ...(image
             ? {
                 imageWidth: created.imageWidth ?? image.width,
@@ -1385,7 +1398,7 @@ export function useReelsViewModel(initialVideo?: {
         return null;
       }
     },
-    [getFallbackPublisher],
+    [getFallbackPublisher, replyingTo],
   );
 
   const retryFailedComment = useCallback(

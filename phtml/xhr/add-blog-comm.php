@@ -24,7 +24,7 @@ if ($f == "add-blog-comm") {
                 $notification_data_array = array(
                     'recipient_id' => $get_blog['user'],
                     'type' => 'blog_commented',
-                    'blog_id' => $lastId,
+                    'blog_id' => Wo_Secure($get_blog['id']),
                     'text' => '',
                     'url' => 'index.php?link1=read-blog&id=' . $get_blog['id']
                 );

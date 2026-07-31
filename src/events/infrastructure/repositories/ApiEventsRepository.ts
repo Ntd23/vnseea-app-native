@@ -143,7 +143,12 @@ export function createEventsRepository(): EventsRepository {
         );
 
         if (isSuccess(response)) {
-          return extractEventsList(response, 'going');
+          return extractEventsList(response, 'going').map(event => ({
+            ...event,
+            // Membership in the `going` response is authoritative even when
+            // older API deployments omit the per-item RSVP flag.
+            is_going: true,
+          }));
         }
         return [];
       } catch (error) {

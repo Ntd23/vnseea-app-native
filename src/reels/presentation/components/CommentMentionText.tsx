@@ -6,18 +6,23 @@ import {
   type TextProps,
   type TextStyle,
 } from 'react-native';
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import type { CommentMention } from '../../domain/types/reels.types';
-import { splitCommentMentionSegments } from '../../application/utils/commentMentions';
+import {
+  getRenderedCommentMentionLabel,
+  splitCommentMentionSegments,
+} from '../../application/utils/commentMentions';
 
 export interface CommentMentionTextProps extends Omit<TextProps, 'children'> {
   text: string;
   mentions?: CommentMention[];
   mentionStyle?: StyleProp<TextStyle>;
   onPressMention?: (mention: CommentMention) => void;
+  onPressUnresolvedMention?: (label: string) => void;
 }
 
 const DEFAULT_MENTION_STYLE: TextStyle = {
-  color: '#1877F2',
+  color: APP_BRAND_COLOR,
   fontWeight: '700',
 };
 
@@ -26,6 +31,7 @@ export function CommentMentionText({
   mentions,
   mentionStyle,
   onPressMention,
+  onPressUnresolvedMention,
   ...textProps
 }: CommentMentionTextProps) {
   const segments = useMemo(
@@ -39,17 +45,32 @@ export function CommentMentionText({
         if (!segment.isMention) return segment.text;
 
         const mention = segment.mention;
-        const canOpenProfile = Boolean(mention?.userId && onPressMention);
+        const renderedLabel = getRenderedCommentMentionLabel(
+          segment.text,
+          mention,
+        );
+        const canOpenKnownProfile = Boolean(
+          mention?.userId && onPressMention,
+        );
+        const canResolveProfile = Boolean(onPressUnresolvedMention);
+        const canOpenProfile = canOpenKnownProfile || canResolveProfile;
         return (
           <Text
             key={`${segment.text}-${index}`}
             style={[DEFAULT_MENTION_STYLE, mentionStyle]}
             accessibilityRole={canOpenProfile ? 'link' : undefined}
+            accessibilityLabel={
+              canOpenProfile ? `Mở trang cá nhân ${renderedLabel}` : undefined
+            }
             onPress={
-              canOpenProfile ? () => onPressMention!(mention!) : undefined
+              canOpenKnownProfile
+                ? () => onPressMention!(mention!)
+                : canResolveProfile
+                  ? () => onPressUnresolvedMention!(renderedLabel)
+                  : undefined
             }
           >
-            {segment.text}
+            {renderedLabel}
           </Text>
         );
       })}

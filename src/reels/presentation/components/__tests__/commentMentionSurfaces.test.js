@@ -8,6 +8,18 @@ function read(relativePath) {
 }
 
 describe('comment mention renderer coverage', () => {
+  it('renders names without @ in the app brand color and keeps profile links', () => {
+    const source = read(
+      'src/reels/presentation/components/CommentMentionText.tsx',
+    );
+
+    expect(source).toContain('getRenderedCommentMentionLabel');
+    expect(source).toContain('color: APP_BRAND_COLOR');
+    expect(source).toContain("accessibilityRole={canOpenProfile ? 'link'");
+    expect(source).toContain('onPressMention!(mention!)');
+    expect(source).toContain('onPressUnresolvedMention!(renderedLabel)');
+  });
+
   it.each([
     'src/reels/presentation/components/ReelCommentsSheet.tsx',
     'src/explore/presentation/screens/ExploreScreen.tsx',

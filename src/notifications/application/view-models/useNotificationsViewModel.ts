@@ -8,8 +8,14 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
-import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
-import { notificationsCacheStorage } from '../../infrastructure/storage/notificationsCacheStorage';
+import {
+  createNotificationsRepository,
+  mapForegroundPushNotification,
+} from '../../infrastructure/repositories/ApiNotificationsRepository';
+import {
+  getLocallySeenSyntheticNotificationIds,
+  notificationsCacheStorage,
+} from '../../infrastructure/storage/notificationsCacheStorage';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
 import {
   filterNotificationsByType,
@@ -33,9 +39,7 @@ export type NotificationTab = 'all' | 'unread';
 
 export function useNotificationsViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
-  const [cacheOwnerId] = useState(
-    () => sessionStorage.getSession()?.userId,
-  );
+  const [cacheOwnerId] = useState(() => sessionStorage.getSession()?.userId);
   const [initialCache] = useState(() =>
     notificationsCacheStorage.getSnapshot(cacheOwnerId),
   );
@@ -68,6 +72,15 @@ export function useNotificationsViewModel() {
   );
 
   const latestRequestGuardRef = useRef(createLatestRequestGuard());
+  const notificationIdsRef = useRef(
+    new Set((initialCache?.items ?? []).map(item => item.id)),
+  );
+
+  useEffect(() => {
+    notificationIdsRef.current = new Set(
+      notifications.map(notification => notification.id),
+    );
+  }, [notifications]);
 
   const setActiveTab = useCallback((tab: NotificationTab) => {
     setActiveTabState(tab);
@@ -131,10 +144,23 @@ export function useNotificationsViewModel() {
         if (!latestRequestGuardRef.current.isCurrent(requestId)) {
           return;
         }
-        setNotifications(result.items);
+        const locallySeenSyntheticIds =
+          getLocallySeenSyntheticNotificationIds(cacheOwnerId);
+        const locallySeenSyntheticCount = result.items.filter(
+          item => !item.seen && locallySeenSyntheticIds.has(item.id),
+        ).length;
+        setNotifications(
+          result.items.map(item =>
+            locallySeenSyntheticIds.has(item.id)
+              ? { ...item, seen: true }
+              : item,
+          ),
+        );
         setNextOffset(result.nextOffset);
         setHasMore(result.hasMore);
-        setUnreadCount(result.unreadCount);
+        setUnreadCount(
+          Math.max(0, result.unreadCount - locallySeenSyntheticCount),
+        );
       } catch (err) {
         if (!latestRequestGuardRef.current.isCurrent(requestId)) {
           return;
@@ -149,13 +175,28 @@ export function useNotificationsViewModel() {
         }
       }
     },
-    [repository],
+    [cacheOwnerId, repository],
   );
 
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const unsubscribe = foregroundPushEvents.subscribe(() => {
+    const unsubscribe = foregroundPushEvents.subscribe(payload => {
+      const incomingNotification = mapForegroundPushNotification(payload);
+      if (incomingNotification) {
+        const isNew = !notificationIdsRef.current.has(incomingNotification.id);
+        notificationIdsRef.current.add(incomingNotification.id);
+        setNotifications(previous =>
+          [
+            incomingNotification,
+            ...previous.filter(item => item.id !== incomingNotification.id),
+          ].sort((left, right) => right.createdAt - left.createdAt),
+        );
+        if (isNew && !incomingNotification.seen) {
+          setUnreadCount(previous => previous + 1);
+        }
+      }
+
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         loadFirstPage(false, true);
@@ -224,33 +265,32 @@ export function useNotificationsViewModel() {
 
   // Mark all as seen
   const markAllAsSeen = useCallback(async () => {
-    const syntheticUnreadCount = notifications.filter(
-      notification =>
-        !notification.seen && notification.id.startsWith('group-chat-request:'),
-    ).length;
     const unreadNotifications = notifications.filter(
-      notification =>
-        !notification.seen &&
-        !notification.id.startsWith('group-chat-request:'),
+      notification => !notification.seen,
     );
-    if (unreadNotifications.length === 0) return;
+    if (unreadNotifications.length === 0) {
+      setUnreadCount(0);
+      setUnreadBadgeCounts({ notificationCount: 0 });
+      return { markedCount: 0, failedCount: 0 };
+    }
+
+    const apiNotifications = unreadNotifications.filter(
+      notification => !notification.id.startsWith('group-chat-request:'),
+    );
 
     setNotifications(prev =>
-      prev.map(notification =>
-        notification.id.startsWith('group-chat-request:')
-          ? notification
-          : { ...notification, seen: true },
-      ),
+      prev.map(notification => ({ ...notification, seen: true })),
     );
-    setUnreadCount(syntheticUnreadCount);
+    setUnreadCount(0);
+    setUnreadBadgeCounts({ notificationCount: 0 });
 
     const results = await Promise.allSettled(
-      unreadNotifications.map(notification =>
+      apiNotifications.map(notification =>
         repository.markAsSeen(notification.id),
       ),
     );
     const failedIds = new Set(
-      unreadNotifications
+      apiNotifications
         .filter((_, index) => results[index].status === 'rejected')
         .map(notification => notification.id),
     );
@@ -268,6 +308,11 @@ export function useNotificationsViewModel() {
         '[useNotificationsViewModel] markAllAsSeen partially failed',
       );
     }
+
+    return {
+      markedCount: unreadNotifications.length - failedIds.size,
+      failedCount: failedIds.size,
+    };
   }, [notifications, repository]);
 
   // Delete notification

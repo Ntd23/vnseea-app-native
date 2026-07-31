@@ -9,7 +9,10 @@ jest.mock('react-native-mmkv', () => ({
 }));
 
 import type { NotificationsItem } from '../../../domain/types/notifications.types';
-import { notificationsCacheStorage } from '../notificationsCacheStorage';
+import {
+  getLocallySeenSyntheticNotificationIds,
+  notificationsCacheStorage,
+} from '../notificationsCacheStorage';
 
 function createNotification(id: string): NotificationsItem {
   return {
@@ -72,5 +75,28 @@ describe('notificationsCacheStorage', () => {
     expect(notificationsCacheStorage.getSnapshot('user-2')?.items[0].id).toBe(
       'n-2',
     );
+  });
+
+  it('remembers locally read synthetic group invitations for badge refreshes', () => {
+    const readInvite = {
+      ...createNotification('group-chat-request:91'),
+      seen: true,
+    };
+    const unreadInvite = createNotification('group-chat-request:92');
+
+    notificationsCacheStorage.setSnapshot(
+      {
+        items: [readInvite, unreadInvite],
+        nextOffset: null,
+        hasMore: false,
+        unreadCount: 1,
+      },
+      'user-1',
+    );
+
+    expect([
+      ...getLocallySeenSyntheticNotificationIds('user-1'),
+    ]).toEqual(['group-chat-request:91']);
+    expect(getLocallySeenSyntheticNotificationIds('user-2').size).toBe(0);
   });
 });

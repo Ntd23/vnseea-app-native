@@ -58,10 +58,13 @@ import {
 } from './FeedReactionAssets';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { buildPostActivityContext } from '../../application/composer/postActivityContext';
+import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
+import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
 
 interface PollPostCardProps {
   post: FeedPollPost;
   showIdentityHeader?: boolean;
+  showGroupContext?: boolean;
   onVote?: (postId: string, optionId: string) => void;
   onPress?: (post: FeedPollPost) => void;
   onMorePress?: (post: FeedPollPost) => void;
@@ -307,6 +310,7 @@ function PollVoterRow({
 export const PollPostCard = React.memo(function PollPostCard({
   post,
   showIdentityHeader = true,
+  showGroupContext = false,
   onVote,
   onPress,
   onMorePress,
@@ -349,9 +353,11 @@ export const PollPostCard = React.memo(function PollPostCard({
 
   const handleProfilePress = useCallback(() => {
     if (!post.isAnonymous && post.publisher?.id) {
-      onProfilePress?.(post.publisher.id);
+      if (!navigateToFeedPublisherPage(navigation, post.publisher)) {
+        onProfilePress?.(post.publisher.id);
+      }
     }
-  }, [onProfilePress, post.isAnonymous, post.publisher?.id]);
+  }, [navigation, onProfilePress, post.isAnonymous, post.publisher]);
 
   const handleOptionVote = useCallback(
     (optionId: string) => {
@@ -479,89 +485,104 @@ export const PollPostCard = React.memo(function PollPostCard({
   return (
     <FeedCardSurface>
       {/* Publisher Header */}
-      <View
-        className={`flex-row items-center justify-between px-3 py-3 pb-2 ${
-          showIdentityHeader ? '' : 'hidden'
-        }`}
-      >
-        <TouchableOpacity
-          className="flex-row items-center flex-1 mr-2"
-          activeOpacity={0.8}
-          onPress={handleProfilePress}
-        >
-          {post.publisher?.avatarUrl ? (
-            <Image
-              source={{ uri: post.publisher.avatarUrl }}
-              className="h-10 w-10 rounded-full"
-              resizeMode="cover"
-            />
-          ) : (
-            <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
-              <Smile size={20} color="#FFFFFF" />
-            </View>
-          )}
-          <View className="ml-3 flex-1">
-            <Text
-              className="text-title-primary text-[#050505]"
-              numberOfLines={postActivity.fullText ? 2 : 1}
-            >
-              <Text className="font-bold">
-                {post.isAnonymous
-                  ? copy.anonymousPrivacyLabel
-                  : post.publisher?.name || copy.userFallback}
+      {showIdentityHeader && showGroupContext && post.groupContext ? (
+        <GroupPostIdentityHeader
+          group={post.groupContext}
+          publisher={post.publisher}
+          publisherName={
+            post.isAnonymous
+              ? copy.anonymousPrivacyLabel
+              : post.publisher?.name || copy.userFallback
+          }
+          time={formatTimeAgo(post.postedAt, copy)}
+          privacyLabel={privacyMeta.label}
+          PrivacyIcon={PrivacyIcon}
+          onPublisherPress={handleProfilePress}
+          onMorePress={onMorePress ? () => onMorePress(post) : undefined}
+          containerClassName="flex-row items-center justify-between px-3 py-3 pb-2"
+        />
+      ) : null}
+      {showIdentityHeader && (!showGroupContext || !post.groupContext) ? (
+        <View className="flex-row items-center justify-between px-3 py-3 pb-2">
+          <TouchableOpacity
+            className="flex-row items-center flex-1 mr-2"
+            activeOpacity={0.8}
+            onPress={handleProfilePress}
+          >
+            {post.publisher?.avatarUrl ? (
+              <Image
+                source={{ uri: post.publisher.avatarUrl }}
+                className="h-10 w-10 rounded-full"
+                resizeMode="cover"
+              />
+            ) : (
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
+                <Smile size={20} color="#FFFFFF" />
+              </View>
+            )}
+            <View className="ml-3 flex-1">
+              <Text
+                className="text-title-primary text-[#050505]"
+                numberOfLines={postActivity.fullText ? 2 : 1}
+              >
+                <Text className="font-bold">
+                  {post.isAnonymous
+                    ? copy.anonymousPrivacyLabel
+                    : post.publisher?.name || copy.userFallback}
+                </Text>
+                {postActivity.fullText ? (
+                  <>
+                    {' '}
+                    {postActivity.segments.map((segment, index) => {
+                      const isEmphasized =
+                        segment.kind === 'feeling' ||
+                        segment.kind === 'location' ||
+                        segment.kind === 'tagged_users';
+                      return (
+                        <Text
+                          key={`${segment.kind}:${index}`}
+                          className={
+                            isEmphasized
+                              ? 'font-semibold text-[#050505]'
+                              : 'font-normal text-[#65676B]'
+                          }
+                        >
+                          {segment.text}
+                        </Text>
+                      );
+                    })}
+                  </>
+                ) : null}
               </Text>
-              {postActivity.fullText ? (
-                <>
+              <View className="flex-row items-center mt-0.5">
+                <Text className="text-caption-secondary text-[12px] text-[#65676B]">
+                  {formatTimeAgo(post.postedAt, copy)}
+                </Text>
+                <Text className="text-caption-secondary text-[12px] text-[#65676B]">
                   {' '}
-                  {postActivity.segments.map((segment, index) => {
-                    const isEmphasized =
-                      segment.kind === 'feeling' ||
-                      segment.kind === 'location' ||
-                      segment.kind === 'tagged_users';
-                    return (
-                      <Text
-                        key={`${segment.kind}:${index}`}
-                        className={
-                          isEmphasized
-                            ? 'font-semibold text-[#050505]'
-                            : 'font-normal text-[#65676B]'
-                        }
-                      >
-                        {segment.text}
-                      </Text>
-                    );
-                  })}
-                </>
-              ) : null}
-            </Text>
-            <View className="flex-row items-center mt-0.5">
-              <Text className="text-caption-secondary text-[12px] text-[#65676B]">
-                {formatTimeAgo(post.postedAt, copy)}
-              </Text>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B]">
-                {' '}
-                {'\u2022'}{' '}
-              </Text>
-              <PrivacyIcon size={11} color="#65676B" />
-              <Text className="ml-1 text-caption-secondary text-[12px] text-[#65676B]">
-                {privacyMeta.label}
-              </Text>
+                  {'\u2022'}{' '}
+                </Text>
+                <PrivacyIcon size={11} color="#65676B" />
+                <Text className="ml-1 text-caption-secondary text-[12px] text-[#65676B]">
+                  {privacyMeta.label}
+                </Text>
+              </View>
             </View>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
 
-        <View className="flex-row items-center gap-1">
-          {onMorePress && (
-            <TouchableOpacity
-              onPress={() => onMorePress(post)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <MoreHorizontal size={22} color="#94A3B8" />
-            </TouchableOpacity>
-          )}
-          <ChevronDown size={18} color="#65676B" />
+          <View className="flex-row items-center gap-1">
+            {onMorePress && (
+              <TouchableOpacity
+                onPress={() => onMorePress(post)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <MoreHorizontal size={22} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+            <ChevronDown size={18} color="#65676B" />
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {/* Poll Question / Caption */}
       {post.pollQuestion && (

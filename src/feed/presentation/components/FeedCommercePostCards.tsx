@@ -1,6 +1,7 @@
 // Description: Shared Home Feed cards for product and job posts.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useMemo } from 'react';
+import { useNavigation } from '@react-navigation/native';
 import {
   Image,
   Text,
@@ -33,6 +34,7 @@ import {
   FeedTouchableCardSurface,
 } from './FeedCardChrome';
 import { FeedMediaImage } from './FeedMediaImage';
+import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
 
 const FALLBACK_AVATAR =
   'https://cdn-icons-png.flaticon.com/512/847/847969.png';
@@ -64,16 +66,25 @@ export const FeedProductPostCard = React.memo(function FeedProductPostCard({
   onProfilePress: (userId: string) => void;
   onSharePost: (post: FeedPost) => void;
 }) {
+  const navigation = useNavigation<any>();
   const mediaVisible = useFeedPostMediaVisible(post.id);
   const handleShare = useCallback(() => {
     onSharePost(post);
   }, [onSharePost, post]);
+  const handleProfilePress = useCallback(
+    (userId: string) => {
+      if (!navigateToFeedPublisherPage(navigation, post.publisher)) {
+        onProfilePress(userId);
+      }
+    },
+    [navigation, onProfilePress, post.publisher],
+  );
 
   return (
     <ProductPostCard
       product={post.product}
       onPress={onPress}
-      onProfilePress={onProfilePress}
+      onProfilePress={handleProfilePress}
       onShare={post.permissions?.canShare ? handleShare : undefined}
       loadMedia={mediaVisible}
     />

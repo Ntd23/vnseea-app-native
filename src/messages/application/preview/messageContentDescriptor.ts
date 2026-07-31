@@ -6,6 +6,7 @@ import type {
   SharedPostMessageReference,
 } from '../../domain/types/messages.types';
 import { parseSharedPostMessage } from '../shared-posts/sharedPostMessage';
+import { parseSharedPageMessage } from '../shared-pages/sharedPageMessage';
 
 const ABSOLUTE_URL_PATTERN = /(?:https?:\/\/|vnseea:\/\/)[^\s<>"']+/gi;
 const WEB_URL_PATTERN =
@@ -79,6 +80,24 @@ export function describeMessageTextContent(
 
   const location = parseLocationFromText(value);
   if (location) return { kind: 'location', location };
+
+  const sharedPage = parseSharedPageMessage(value);
+  if (sharedPage) {
+    return {
+      kind: 'link',
+      link: {
+        url: sharedPage.url,
+        host: sharedPage.host,
+        page: {
+          pageName: sharedPage.pageName,
+          pageTitle: sharedPage.pageTitle,
+          note: sharedPage.note,
+          publicUrl: sharedPage.publicUrl,
+          explicit: sharedPage.explicit,
+        },
+      },
+    };
+  }
 
   const link = parseLinkReference(value);
   if (link) return { kind: 'link', link };
