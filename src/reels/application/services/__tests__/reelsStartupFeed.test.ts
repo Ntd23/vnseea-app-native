@@ -170,6 +170,100 @@ describe('reels startup feed', () => {
     expect(merged.raw).toBe(snapshot);
   });
 
+  it('preserves a known share permission when a public realtime snapshot omits it', () => {
+    const current = createReel('permission-missing');
+    const snapshot = {
+      ...createFeedVideo('permission-missing'),
+      permissions: {
+        canDelete: false,
+        canShare: false,
+        canShareKnown: false,
+      },
+    };
+
+    const merged = mergeFeedVideoPostSnapshotIntoReel(current, snapshot);
+
+    expect(merged.canShare).toBe(true);
+    expect(merged.canShareKnown).toBe(true);
+  });
+
+  it('applies an explicit false share permission from realtime', () => {
+    const current = createReel('permission-false');
+    const snapshot = {
+      ...createFeedVideo('permission-false'),
+      permissions: {
+        canDelete: false,
+        canShare: false,
+        canShareKnown: true,
+      },
+    };
+
+    const merged = mergeFeedVideoPostSnapshotIntoReel(current, snapshot);
+
+    expect(merged.canShare).toBe(false);
+    expect(merged.canShareKnown).toBe(true);
+  });
+
+  it('applies an explicit true share permission from realtime', () => {
+    const current = {
+      ...createReel('permission-true'),
+      canShare: false,
+      canShareKnown: true,
+    };
+    const snapshot = createFeedVideo('permission-true');
+
+    const merged = mergeFeedVideoPostSnapshotIntoReel(current, snapshot);
+
+    expect(merged.canShare).toBe(true);
+    expect(merged.canShareKnown).toBe(true);
+  });
+
+  it.each([
+    ['restricted privacy', { privacy: 'friends' as const }],
+    ['anonymous post', { isAnonymous: true }],
+    ['shared post', { sharedPostId: 'source-post' }],
+  ])(
+    'revokes sharing for a %s even when permission is missing',
+    (_label, restriction) => {
+      const current = createReel('permission-restricted');
+      const snapshot: FeedVideoPost = {
+        ...createFeedVideo('permission-restricted'),
+        ...restriction,
+        permissions: {
+          canDelete: false,
+          canShare: false,
+          canShareKnown: false,
+        },
+      };
+
+      const merged = mergeFeedVideoPostSnapshotIntoReel(current, snapshot);
+
+      expect(merged.canShare).toBe(false);
+      expect(merged.canShareKnown).toBe(true);
+    },
+  );
+
+  it('keeps sharing hidden when neither current nor incoming snapshots have a permission', () => {
+    const current = {
+      ...createReel('permission-unknown'),
+      canShare: false,
+      canShareKnown: false,
+    };
+    const snapshot = {
+      ...createFeedVideo('permission-unknown'),
+      permissions: {
+        canDelete: false,
+        canShare: false,
+        canShareKnown: false,
+      },
+    };
+
+    const merged = mergeFeedVideoPostSnapshotIntoReel(current, snapshot);
+
+    expect(merged.canShare).toBe(false);
+    expect(merged.canShareKnown).toBe(false);
+  });
+
   it('deduplicates concurrent first-page requests and reuses the warm result', async () => {
     mockFetchReels.mockResolvedValue({
       items: [createReel('remote-1')],

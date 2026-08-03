@@ -367,8 +367,16 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     decodedPrivacy.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous');
   const permissionSource =
     (raw.permissions as Record<string, unknown> | undefined) ?? raw;
+  const nestedCanShare =
+    readOptionalBool(permissionSource.can_share) ??
+    readOptionalBool(permissionSource.canShare);
+  const rootCanShare =
+    permissionSource === raw
+      ? undefined
+      : readOptionalBool(raw.can_share) ?? readOptionalBool(raw.canShare);
+  const backendCanShare = nestedCanShare ?? rootCanShare;
   const canShare =
-    readBool(permissionSource, 'can_share', 'canShare') &&
+    backendCanShare === true &&
     decodedPrivacy.isValid &&
     decodedPrivacy.audience === 'public' &&
     !isAnonymous;
@@ -440,6 +448,7 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     privacyContract,
     isAnonymous,
     canShare,
+    canShareKnown: backendCanShare !== undefined,
     postedAt: readNumber(raw, 'time') || undefined,
     publisher: mapPublisher(publisherRaw),
     likeCount,

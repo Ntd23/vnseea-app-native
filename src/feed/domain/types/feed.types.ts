@@ -43,6 +43,8 @@ export interface FeedGroupContext {
 export interface FeedPostPermissions {
   canDelete: boolean;
   canShare: boolean;
+  /** Set to false when an API snapshot omits both can_share/canShare fields. */
+  canShareKnown?: boolean;
 }
 
 export type ProfileMediaActivity =

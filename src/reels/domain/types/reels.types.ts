@@ -35,6 +35,8 @@ export interface ReelsItem {
   privacyContract: ContentAudienceWireContract;
   isAnonymous: boolean;
   canShare: boolean;
+  /** Set to false when the current snapshot omitted an authoritative permission. */
+  canShareKnown?: boolean;
   /** Unix timestamp (seconds) when posted */
   postedAt?: number;
   /** Publisher (account that posted the reel) */

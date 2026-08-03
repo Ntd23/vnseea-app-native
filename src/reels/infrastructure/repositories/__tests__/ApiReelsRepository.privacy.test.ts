@@ -90,6 +90,31 @@ describe('ApiReelsRepository privacy mapping', () => {
 
     const { items } = await createReelsRepository().fetchReels({ limit: 10 });
     expect(items.map(item => item.canShare)).toEqual([true, false, false]);
+    expect(items.map(item => item.canShareKnown)).toEqual([true, false, true]);
+  });
+
+  it('falls back to a root permission when a nested permission object omits canShare', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: 200,
+      data: [
+        reel('root-fallback', {
+          privacy_contract: 'audience_v2',
+          permissions: { can_delete: '0' },
+        }),
+        reel('explicit-false', {
+          privacy_contract: 'audience_v2',
+          can_share: '0',
+        }),
+      ],
+      has_more: false,
+      next_cursor: null,
+    });
+
+    const { items } = await createReelsRepository().fetchReels({ limit: 10 });
+    expect(items.map(item => [item.canShare, item.canShareKnown])).toEqual([
+      [true, true],
+      [false, true],
+    ]);
   });
 
   it('normalizes relative reel media URLs and encodes spaces before playback', async () => {

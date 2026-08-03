@@ -185,7 +185,11 @@ function mapReelToFeedVideoPost(item: ReelsItem): FeedVideoPost {
     privacy: item.privacy,
     privacyContract: item.privacyContract,
     isAnonymous: item.isAnonymous,
-    permissions: { canDelete: false, canShare: item.canShare },
+    permissions: {
+      canDelete: false,
+      canShare: item.canShare,
+      canShareKnown: item.canShareKnown !== false,
+    },
     publisher: {
       id: item.publisher.userId,
       name: item.publisher.name,

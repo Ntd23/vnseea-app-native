@@ -49,6 +49,9 @@ export function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
     privacyContract: post.privacyContract ?? 'legacy_feed',
     isAnonymous: post.isAnonymous === true,
     canShare: isFeedPostShareable(post),
+    canShareKnown: post.permissions
+      ? post.permissions.canShareKnown !== false
+      : false,
     postedAt: post.postedAt,
     publisher: {
       userId: post.publisher.id,
@@ -67,6 +70,31 @@ export function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
   };
 }
 
+function resolveMergedSharePermission(
+  current: ReelsItem,
+  snapshot: ReelsItem,
+  post: FeedVideoPost,
+): Pick<ReelsItem, 'canShare' | 'canShareKnown'> {
+  const structurallyShareable =
+    post.privacy === 'public' &&
+    post.isAnonymous !== true &&
+    !post.sharedPostId;
+
+  if (!structurallyShareable) {
+    return { canShare: false, canShareKnown: true };
+  }
+
+  if (snapshot.canShareKnown !== false) {
+    return { canShare: snapshot.canShare, canShareKnown: true };
+  }
+
+  if (current.canShareKnown === false) {
+    return { canShare: false, canShareKnown: false };
+  }
+
+  return { canShare: current.canShare, canShareKnown: true };
+}
+
 /**
  * Reconcile the canonical Feed post snapshot into an already-rendered reel.
  *
@@ -81,9 +109,12 @@ export function mergeFeedVideoPostSnapshotIntoReel(
   if (String(current.id) !== String(post.id)) return current;
 
   const snapshot = mapFeedVideoPostToReel(post);
+  const sharePermission = resolveMergedSharePermission(current, snapshot, post);
+
   return {
     ...current,
     ...snapshot,
+    ...sharePermission,
     videoUrl: snapshot.videoUrl || current.videoUrl,
     thumbnailUrl: snapshot.thumbnailUrl ?? current.thumbnailUrl,
     viewCount: post.viewCount ?? current.viewCount,
