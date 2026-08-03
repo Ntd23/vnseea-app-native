@@ -6,7 +6,7 @@ function read(relativePath) {
 }
 
 describe('Home and Messages navigation performance', () => {
-  it('warms the Messages route and startup snapshot from both Home headers', () => {
+  it('warms Messages data without mounting a placeholder route', () => {
     const androidHeader = read(
       'src/feed/presentation/components/FeedHeader.tsx',
     );
@@ -16,7 +16,7 @@ describe('Home and Messages navigation performance', () => {
 
     for (const source of [androidHeader, iosHeader]) {
       expect(source).toContain('preloadMessagesStartupChats()');
-      expect(source).toContain(
+      expect(source).not.toContain(
         "navigation.getParent()?.preload(ROUTES.MESSAGES)",
       );
       expect(source).toContain('useFocusEffect(');

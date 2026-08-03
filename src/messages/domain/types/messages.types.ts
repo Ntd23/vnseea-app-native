@@ -164,6 +164,8 @@ export interface MessageReplyReference {
 
 export interface SendMessageOptions {
   replyTo?: MessageReplyReference;
+  /** Identifier shared by media selected in one send action. */
+  mediaGroupId?: string;
   productInquiry?: {
     productId: string;
     note?: string;
@@ -194,6 +196,8 @@ export interface MessageItem {
   systemEvent?: MessageSystemEvent;
   media?: string;
   mediaType?: MessageMediaType;
+  /** Keeps separately uploaded attachments from the same send action together. */
+  mediaGroupId?: string;
   thumbnail?: string;
   sharedPost?: SharedPostMessageReference;
   contentKind?: ChatPreviewKind;

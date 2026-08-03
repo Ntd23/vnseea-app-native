@@ -33,6 +33,7 @@ import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appCo
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   BackHandler,
   Dimensions,
@@ -70,6 +71,7 @@ import Animated, {
 import {
   ArrowUp,
   ChevronLeft,
+  Pencil,
   RotateCcw,
   ChevronsDown,
   VolumeX,
@@ -105,6 +107,7 @@ import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPriva
 import { isReelShareable } from '../../domain/policies/reelPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import { mapFeedVideoPostToReel } from '../../application/services/reelsStartupFeed';
+import { PostEditModal } from '../../../shared-kernel/presentation/components/PostEditModal';
 
 const VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 70,
@@ -185,7 +188,11 @@ function mapReelToFeedVideoPost(item: ReelsItem): FeedVideoPost {
     privacy: item.privacy,
     privacyContract: item.privacyContract,
     isAnonymous: item.isAnonymous,
-    permissions: { canDelete: false, canShare: item.canShare },
+    permissions: {
+      canDelete: false,
+      canShare: item.canShare,
+      canEdit: item.canEdit,
+    },
     publisher: {
       id: item.publisher.userId,
       name: item.publisher.name,
@@ -207,9 +214,8 @@ export default function ReelsScreen() {
   const [isAppActive, setIsAppActive] = useState(
     () => AppState.currentState === 'active',
   );
-  const [isPlaybackMountReady, setIsPlaybackMountReady] = useState(
-    isFocusedScreen,
-  );
+  const [isPlaybackMountReady, setIsPlaybackMountReady] =
+    useState(isFocusedScreen);
   const [isNeighborPreloadReady, setIsNeighborPreloadReady] = useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
   const isSelectedRoute = useNavigationState(state =>
@@ -302,6 +308,7 @@ export default function ReelsScreen() {
   const loadMoreRef = useRef(vm.loadMore);
   const setReelsActiveIndexRef = useRef(vm.setActiveIndex);
   const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [editingReel, setEditingReel] = useState<ReelsItem | null>(null);
   const [isCommentsPreviewVisible, setIsCommentsPreviewVisible] = useState(
     vm.isCommentsOpen,
   );
@@ -624,14 +631,13 @@ export default function ReelsScreen() {
   // reduce lag, but that caused a black-screen flash because the next video
   // had to rebuffer from scratch after being unmounted.
   const preloadRadius = PRELOAD_RADIUS;
-  const hasActivatedPlayback =
-    isPlaybackMountReady || isPlaybackRouteFocused;
+  const hasActivatedPlayback = isPlaybackMountReady || isPlaybackRouteFocused;
   const shouldKeepPlayersMounted =
     hasActivatedPlayback &&
     isAppActive &&
     (isTabRoute || isPlaybackRouteFocused || isDismissing);
   const shouldPlayActiveReel =
-    isPlaybackRouteFocused && !isDismissing;
+    isPlaybackRouteFocused && !isDismissing && editingReel === null;
   const activePreloadRadius = isNeighborPreloadReady ? preloadRadius : 0;
 
   // Drives the swipe-back gesture's transform. Declared up here (not down
@@ -901,6 +907,34 @@ export default function ReelsScreen() {
     }, 300);
   }, []);
 
+  const handleOpenEditReel = useCallback(() => {
+    const reel = reelsItemsRef.current[activeIndexRef.current];
+    if (!reel || reel.canEdit !== true) return;
+    cancelPendingAutoAdvance();
+    setEditingReel(reel);
+  }, [cancelPendingAutoAdvance]);
+
+  const handleCloseEditReel = useCallback(() => {
+    setEditingReel(null);
+  }, []);
+
+  const handleSubmitEditReel = useCallback(
+    async (text: string) => {
+      if (!editingReel) return;
+      const result = await vm.editReelCaption(editingReel.id, text);
+      if (!result.edited) {
+        throw new Error('Không thể chỉnh sửa video. Vui lòng thử lại.');
+      }
+      if (result.persistence === 'local') {
+        Alert.alert(
+          'Đã lưu tạm',
+          'Bản sửa hiện chỉ được lưu trên thiết bị này vì API server chưa sẵn sàng.',
+        );
+      }
+    },
+    [editingReel, vm],
+  );
+
   const handleInternalSharePost = useCallback(
     (input: SharePostInput) => {
       return vm.sharePost(input);
@@ -1147,12 +1181,7 @@ export default function ReelsScreen() {
         navigateToFeed();
       }
     });
-  }, [
-    isTabRoute,
-    navigation,
-    navigateToFeed,
-    prepareFeedStatusBarForReturn,
-  ]);
+  }, [isTabRoute, navigation, navigateToFeed, prepareFeedStatusBarForReturn]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1184,6 +1213,7 @@ export default function ReelsScreen() {
           !isTabRoute &&
             !vm.isCommentsOpen &&
             !shareModalVisible &&
+            editingReel === null &&
             !isPublisherOverlayOpen,
         )
         .onUpdate(event => {
@@ -1248,6 +1278,7 @@ export default function ReelsScreen() {
       isTabRoute,
       isPublisherOverlayOpen,
       shareModalVisible,
+      editingReel,
       vm.isCommentsOpen,
     ],
   );
@@ -1439,6 +1470,19 @@ export default function ReelsScreen() {
 
           {/* Right: Auto scroll toggle + Mute button */}
           <View pointerEvents="box-none" style={styles.headerRightRow}>
+            {vm.items[vm.activeIndex]?.canEdit === true ? (
+              <TouchableOpacity
+                delayPressIn={0}
+                activeOpacity={0.65}
+                onPress={handleOpenEditReel}
+                style={styles.headerButton}
+                hitSlop={HEADER_ACTION_HIT_SLOP}
+                accessibilityRole="button"
+                accessibilityLabel="Chỉnh sửa video"
+              >
+                <Pencil size={19} color="#fff" />
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               delayPressIn={0}
               activeOpacity={0.65}
@@ -1506,6 +1550,15 @@ export default function ReelsScreen() {
           onClose={handleCloseShareModal}
           post={sharingPost}
           onInternalShare={handleInternalSharePost}
+        />
+
+        <PostEditModal
+          visible={editingReel !== null}
+          initialText={editingReel?.caption ?? ''}
+          maxLength={500}
+          title="Chỉnh sửa video"
+          onClose={handleCloseEditReel}
+          onSubmit={handleSubmitEditReel}
         />
 
         <ReelPublisherOverlay

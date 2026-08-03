@@ -16,7 +16,6 @@ import {
   Image,
   Keyboard,
   Modal,
-  PermissionsAndroid,
   Platform,
   ScrollView,
   Share,
@@ -119,7 +118,10 @@ import MapPlaceDetailSheet, {
   type MapPlaceDetailSheetSuggestion,
   type MapPlaceDetailSheetSnap,
 } from '../components/MapPlaceDetailSheet';
-import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
+import {
+  getCurrentDeviceLocation,
+  requestAndroidLocationPermission,
+} from '../../../shared-kernel/application/utils/currentLocation';
 import {
   readLastMapLocation,
   saveLastMapLocation,
@@ -5227,24 +5229,8 @@ export default function NearbyUsersScreen() {
   useEffect(() => {
     if (Platform.OS !== 'android') return;
 
-    PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-      {
-        title: 'Cho phép truy cập vị trí',
-        message:
-          'VNSEEA cần vị trí của bạn để hiển thị Page gần đây và cập nhật chỉ đường.',
-        buttonPositive: 'Cho phép',
-        buttonNegative: 'Để sau',
-      },
-    )
-      .then(async result => {
-        const hasCoarseLocation = await PermissionsAndroid.check(
-          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-        );
-        setLocationAllowed(
-          result === PermissionsAndroid.RESULTS.GRANTED || hasCoarseLocation,
-        );
-      })
+    requestAndroidLocationPermission()
+      .then(setLocationAllowed)
       .catch(() => setLocationAllowed(false));
   }, []);
 

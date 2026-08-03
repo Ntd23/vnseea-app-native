@@ -128,6 +128,10 @@ import {
   createMessageReplyReference,
   getMessageReplyPreviewText,
 } from '../../application/replies/messageReply';
+import {
+  buildChatMessageListItems,
+  type ChatMessageListItem,
+} from '../../application/utils/messageMediaGrouping';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -163,7 +167,6 @@ type OpenChatMedia = (
 ) => void;
 
 const MAX_MEDIA_ATTACHMENTS = 10;
-const IMAGE_GROUP_WINDOW_SECONDS = 120;
 const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
@@ -440,8 +443,10 @@ function getMessageLinkCaption(text: string) {
   return splitLinkTextSegments(text)
     .filter(segment => !segment.url)
     .map(segment => segment.text)
-    .join(' ')
-    .replace(/\s+/g, ' ')
+    .join('')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
 
@@ -778,66 +783,6 @@ function PinnedMessageSystemRow({
       </Text>
     </TouchableOpacity>
   );
-}
-
-type ChatMessageListItem =
-  | { kind: 'message'; id: string; message: MessageItem }
-  | { kind: 'media-group'; id: string; messages: MessageItem[] };
-
-function isGroupableMediaMessage(message: MessageItem) {
-  return Boolean(
-    !message.systemEvent &&
-      message.media &&
-      message.reactions.total === 0 &&
-      (message.mediaType === 'image' || message.mediaType === 'video'),
-  );
-}
-
-function buildMessageListItems(messages: MessageItem[]): ChatMessageListItem[] {
-  const items: ChatMessageListItem[] = [];
-
-  for (let index = 0; index < messages.length; ) {
-    const message = messages[index];
-    if (!isGroupableMediaMessage(message)) {
-      items.push({ kind: 'message', id: message.id, message });
-      index += 1;
-      continue;
-    }
-
-    const group = [message];
-    let nextIndex = index + 1;
-    while (nextIndex < messages.length) {
-      const nextMessage = messages[nextIndex];
-      const previousMessage = group[group.length - 1];
-      const isNearPrevious =
-        Math.abs(previousMessage.time - nextMessage.time) <=
-        IMAGE_GROUP_WINDOW_SECONDS;
-
-      if (
-        !isGroupableMediaMessage(nextMessage) ||
-        nextMessage.isSentByMe !== message.isSentByMe ||
-        !isNearPrevious
-      ) {
-        break;
-      }
-
-      group.push(nextMessage);
-      nextIndex += 1;
-    }
-
-    items.push(
-      group.length > 1
-        ? {
-            kind: 'media-group',
-            id: `media-group-${group.map(item => item.id).join('-')}`,
-            messages: group,
-          }
-        : { kind: 'message', id: message.id, message },
-    );
-    index = nextIndex;
-  }
-
-  return items;
 }
 
 function getChatListItemType(item: ChatMessageListItem) {
@@ -2011,6 +1956,7 @@ function MessageBubble({
                       <MessageMedia
                         message={message}
                         onOpenMedia={onOpenMedia}
+                        onLongPress={() => onLongPress?.(message)}
                         onDoubleTap={() => onDoubleTap?.(message)}
                       />
                       {replyInfo ? (
@@ -2454,10 +2400,12 @@ function RecordingWaveformBar({
 function MessageMedia({
   message,
   onOpenMedia,
+  onLongPress,
   onDoubleTap,
 }: {
   message: MessageItem;
   onOpenMedia: OpenChatMedia;
+  onLongPress?: () => void;
   onDoubleTap?: () => void;
 }) {
   if (!message.media) return null;
@@ -2466,9 +2414,11 @@ function MessageMedia({
     return (
       <DoubleTapTouchable
         activeOpacity={0.9}
+        delayLongPress={320}
         onSingleTap={() =>
           onOpenMedia({ uri: message.media!, type: 'image' })
         }
+        onLongPress={onLongPress}
         onDoubleTap={onDoubleTap}
       >
         <ChatImage uri={message.media} />
@@ -2480,9 +2430,11 @@ function MessageMedia({
     return (
       <DoubleTapTouchable
         activeOpacity={0.9}
+        delayLongPress={320}
         onSingleTap={() =>
           onOpenMedia({ uri: message.media!, type: 'video' })
         }
+        onLongPress={onLongPress}
         onDoubleTap={onDoubleTap}
       >
         <ChatVideoPreview
@@ -2589,6 +2541,14 @@ function MediaMessageGroup({
                   <Text className="text-2xl font-bold text-white">
                     +{hiddenCount}
                   </Text>
+                </View>
+              ) : null}
+              {message.reactions.total > 0 ? (
+                <View style={styles.imageGalleryReactionBadge}>
+                  <MessageReactionBadge
+                    summary={message.reactions}
+                    isSentByMe={message.isSentByMe}
+                  />
                 </View>
               ) : null}
             </DoubleTapTouchable>
@@ -2771,7 +2731,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     [attachments],
   );
   const messageItems = useMemo(
-    () => buildMessageListItems(messages).reverse(),
+    () => buildChatMessageListItems(messages).reverse(),
     [messages],
   );
   const messageItemsRef = useRef(messageItems);
@@ -3167,6 +3127,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     if (replyingMessage) setReplyingMessage(undefined);
 
     const nextAttachments = pendingAttachments;
+    const groupableAttachmentCount = nextAttachments.filter(
+      attachment =>
+        attachment.mediaType === 'image' || attachment.mediaType === 'video',
+    ).length;
+    const mediaGroupId =
+      groupableAttachmentCount > 1
+        ? `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        : undefined;
     setText('');
     stopTyping();
     setAttachments([]);
@@ -3178,15 +3146,18 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       });
     } else {
       for (const [index, attachment] of nextAttachments.entries()) {
+        const attachmentOptions: SendMessageOptions = {
+          ...(index === 0 && replyTo ? { replyTo } : {}),
+          ...(index === 0 && productInquiry ? { productInquiry } : {}),
+          ...(mediaGroupId &&
+          (attachment.mediaType === 'image' || attachment.mediaType === 'video')
+            ? { mediaGroupId }
+            : {}),
+        };
         await sendMessage(
           index === 0 ? nextText : '',
           attachment,
-          index === 0
-            ? {
-                ...(replyTo ? { replyTo } : {}),
-                ...(productInquiry ? { productInquiry } : {}),
-              }
-            : undefined,
+          attachmentOptions,
         );
       }
     }
@@ -4399,6 +4370,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
+  },
+  imageGalleryReactionBadge: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
   },
   imageGalleryTile: {
     height: IMAGE_GALLERY_TILE_SIZE,

@@ -25,6 +25,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
   FeedPollPost,
+  PostPrivacy,
 } from '../../domain/types/feed.types';
 import type {
   FeedSource,
@@ -61,6 +62,13 @@ import {
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
+import {
+  applyFeedPostCaptionEdit,
+  applyLocalPostCaptionEdit,
+  applyLocalPostCaptionEdits,
+} from '../editing/postCaptionEdit';
+import { editPostWithLocalFallback } from '../editing/editPostWithLocalFallback';
+import { postEditedEvents } from '../events/postEditedEvents';
 
 const repository = createFeedRepository();
 const pollRepository = createPollRepository();
@@ -71,7 +79,13 @@ function filterLocallyHiddenPosts<T extends { id: string }>(posts: T[]): T[] {
     posts,
     currentUserId,
   );
-  return endedLivePostsStorage.filterVisiblePosts(visiblePosts, currentUserId);
+  const activePosts = endedLivePostsStorage.filterVisiblePosts(
+    visiblePosts,
+    currentUserId,
+  );
+  return applyLocalPostCaptionEdits(
+    activePosts as Array<T & { caption?: string; mentionNames?: string[] }>,
+  ) as T[];
 }
 
 // Home pagination is id-cursored: first page = newest posts, every
@@ -644,10 +658,7 @@ export function useFeedViewModel() {
       if (appendablePosts.length === 0) return [];
 
       if (
-        !canAppendFeedPageWithoutResort(
-          lightPostsRef.current,
-          appendablePosts,
-        )
+        !canAppendFeedPageWithoutResort(lightPostsRef.current, appendablePosts)
       ) {
         // A legacy/public row can be much older than the recommendation
         // cursor. If a later recommended page is newer than that tail row,
@@ -663,14 +674,9 @@ export function useFeedViewModel() {
       // Cursor pages that are proven older can be appended directly. This
       // avoids sorting and rebuilding the complete merged feed on every
       // fling-time reveal while keeping stable item keys.
-      lightPostsRef.current = [
-        ...lightPostsRef.current,
-        ...appendablePosts,
-      ];
+      lightPostsRef.current = [...lightPostsRef.current, ...appendablePosts];
 
-      const renderedIds = new Set(
-        mergedPostsRef.current.map(post => post.id),
-      );
+      const renderedIds = new Set(mergedPostsRef.current.map(post => post.id));
       const appendableRenderedPosts = appendablePosts.filter(
         post => !renderedIds.has(post.id),
       );
@@ -750,11 +756,7 @@ export function useFeedViewModel() {
         schedulePrefetchRefillRef.current();
       }
     },
-    [
-      flushPendingCommit,
-      scheduleImpressionFlush,
-      scheduleWarmVisibleFill,
-    ],
+    [flushPendingCommit, scheduleImpressionFlush, scheduleWarmVisibleFill],
   );
 
   const updatePostEverywhere = useCallback(
@@ -782,6 +784,18 @@ export function useFeedViewModel() {
       }
     },
     [],
+  );
+
+  useEffect(
+    () =>
+      postEditedEvents.subscribe(({ postId, text }) => {
+        updatePostEverywhere(post =>
+          String(post.id) === String(postId)
+            ? applyFeedPostCaptionEdit(post, text)
+            : post,
+        );
+      }),
+    [updatePostEverywhere],
   );
 
   const updatePublisherFollowState = useCallback(
@@ -1009,10 +1023,7 @@ export function useFeedViewModel() {
 
         const prepareLimit = forceNewest
           ? VIDEO_PREPARE_BATCH_SIZE
-          : Math.max(
-              1,
-              Math.min(missingVideoCount, VIDEO_PREPARE_BATCH_SIZE),
-            );
+          : Math.max(1, Math.min(missingVideoCount, VIDEO_PREPARE_BATCH_SIZE));
         const videosToPrepare = queuedVideos.slice(0, prepareLimit);
         videoCandidateQueueRef.current = queuedVideos.slice(prepareLimit);
 
@@ -1271,11 +1282,7 @@ export function useFeedViewModel() {
     prefetchCursorRef.current = cursor;
     prefetchPromiseRef.current = request;
     return request;
-  }, [
-    fetchLightPostsPage,
-    schedulePrefetchRefill,
-    scheduleWarmVisibleFill,
-  ]);
+  }, [fetchLightPostsPage, schedulePrefetchRefill, scheduleWarmVisibleFill]);
 
   prefetchNextPageRef.current = prefetchNextPage;
 
@@ -1457,10 +1464,7 @@ export function useFeedViewModel() {
   );
 
   const peekLatestPosts = useCallback(async (limit = PAGE_SIZE) => {
-    const posts = await repository.getLatestPosts(
-      limit,
-      feedSourceRef.current,
-    );
+    const posts = await repository.getLatestPosts(limit, feedSourceRef.current);
     return sortByTime(filterLocallyHiddenPosts(posts)).slice(0, limit);
   }, []);
 
@@ -1526,17 +1530,14 @@ export function useFeedViewModel() {
       return;
     }
 
-    progressiveRevealTimerRef.current = setTimeout(
-      () => {
-        progressiveRevealTimerRef.current = null;
-        if (isLoadingMoreRef.current) {
-          scheduleProgressiveRevealRef.current();
-          return;
-        }
-        void loadMorePostsRef.current();
-      },
-      CONSTRAINED_REVEAL_DELAY_MS,
-    );
+    progressiveRevealTimerRef.current = setTimeout(() => {
+      progressiveRevealTimerRef.current = null;
+      if (isLoadingMoreRef.current) {
+        scheduleProgressiveRevealRef.current();
+        return;
+      }
+      void loadMorePostsRef.current();
+    }, CONSTRAINED_REVEAL_DELAY_MS);
   }, []);
 
   scheduleProgressiveRevealRef.current = scheduleProgressiveReveal;
@@ -2156,6 +2157,13 @@ export function useFeedViewModel() {
     [scheduleImpressionFlush],
   );
 
+  const editPost = useCallback(
+    async (postId: string, input: { text: string; privacy?: PostPrivacy }) => {
+      return editPostWithLocalFallback(repository.editPost, postId, input);
+    },
+    [],
+  );
+
   return {
     feedSource,
     setFeedSource: selectFeedSource,
@@ -2172,11 +2180,13 @@ export function useFeedViewModel() {
     setScrollBusy,
     prependPost,
     updatePublisherFollowState,
-    applyRealtimePost: (nextPost: FeedPost) => {
-      updatePostEverywhere(post =>
-        String(post.id) === String(nextPost.id) ? nextPost : post,
-      );
-    },
+        applyRealtimePost: (nextPost: FeedPost) => {
+          updatePostEverywhere(post =>
+            String(post.id) === String(nextPost.id)
+              ? applyLocalPostCaptionEdit(nextPost)
+              : post,
+          );
+        },
     removeRealtimePost: removePostEverywhere,
     toggleReaction,
     updateCommentCount,
@@ -2204,6 +2214,8 @@ export function useFeedViewModel() {
      * the server confirms the state and the UI refreshes on next visit.
      */
     savePost: (postId: string) => repository.savePost(postId),
+
+    editPost,
 
     /** Report a post with the reason selected by the user. */
     reportPost: (postId: string, input: ReportPostInput) =>

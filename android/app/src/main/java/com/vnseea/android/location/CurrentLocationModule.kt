@@ -23,14 +23,16 @@ class CurrentLocationModule(
 
   @ReactMethod
   fun getCurrentLocation(timeoutMs: Double, promise: Promise) {
-    if (!hasLocationPermission()) {
+    val hasFineLocation = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+    val hasCoarseLocation = hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+    if (!hasFineLocation && !hasCoarseLocation) {
       promise.reject("permission_denied", "Location permission has not been granted.")
       return
     }
 
     val locationManager =
       reactContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    val providers = enabledProviders(locationManager)
+    val providers = enabledProviders(locationManager, hasFineLocation)
     val lastKnownLocation = bestLastKnownLocation(locationManager, providers)
 
     if (isFreshEnough(lastKnownLocation)) {
@@ -108,18 +110,19 @@ class CurrentLocationModule(
     }
   }
 
-  private fun hasLocationPermission(): Boolean {
-    val fine =
-      reactContext.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
-        PackageManager.PERMISSION_GRANTED
-    val coarse =
-      reactContext.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
-        PackageManager.PERMISSION_GRANTED
-    return fine || coarse
-  }
+  private fun hasPermission(permission: String): Boolean =
+    reactContext.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
-  private fun enabledProviders(locationManager: LocationManager): List<String> {
-    return listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+  private fun enabledProviders(
+    locationManager: LocationManager,
+    hasFineLocation: Boolean,
+  ): List<String> {
+    val permittedProviders = buildList {
+      if (hasFineLocation) add(LocationManager.GPS_PROVIDER)
+      add(LocationManager.NETWORK_PROVIDER)
+    }
+
+    return permittedProviders
       .filter { provider ->
         try {
           locationManager.isProviderEnabled(provider)

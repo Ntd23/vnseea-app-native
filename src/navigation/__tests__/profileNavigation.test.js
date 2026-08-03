@@ -1,6 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 
+const mockNavigationRef = {
+  isReady: jest.fn(),
+  navigate: jest.fn(),
+};
+
+jest.mock('../navigationRef', () => ({ navigationRef: mockNavigationRef }));
+
 const projectRoot = process.cwd();
 
 function read(relativePath) {
@@ -66,10 +73,32 @@ describe('profile navigation route separation', () => {
     expect(drawerSource).not.toContain('navigation.navigate(ROUTES.USER_PROFILE)');
   });
 
+  it('bypasses a placeholder screen navigation object when the root ref is ready', () => {
+    const { navigateToOwnProfile } = require('../profileNavigation');
+    mockNavigationRef.isReady.mockReturnValue(true);
+    mockNavigationRef.navigate.mockImplementation(() => undefined);
+    const placeholderNavigation = {
+      navigate: jest.fn(() => {
+        throw new Error('Actions cannot be dispatched from a placeholder screen.');
+      }),
+      getParent: jest.fn(() => undefined),
+    };
+
+    expect(() => navigateToOwnProfile(placeholderNavigation)).not.toThrow();
+    expect(mockNavigationRef.navigate).toHaveBeenCalled();
+    expect(placeholderNavigation.navigate).not.toHaveBeenCalled();
+
+    mockNavigationRef.navigate.mockReset();
+    mockNavigationRef.isReady.mockReset();
+  });
+
   it('opens own profile inside the iOS tab shell while preserving Android routing', () => {
     const helperSource = read('src/navigation/profileNavigation.ts');
 
     expect(helperSource).toContain("import { Platform } from 'react-native'");
+    expect(helperSource).toContain("import { navigationRef } from './navigationRef'");
+    expect(helperSource).toContain('navigationRef.isReady()');
+    expect(helperSource).toContain('navigationRef as unknown as NavigateLike');
     expect(helperSource).toContain("if (Platform.OS !== 'ios')");
     expect(helperSource).toContain('rootNavigator.navigate(ROUTES.PROFILE)');
     expect(helperSource).toContain('rootNavigator.navigate(ROUTES.MAIN_TABS, {');

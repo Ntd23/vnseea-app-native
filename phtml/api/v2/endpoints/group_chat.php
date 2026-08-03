@@ -759,6 +759,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if ($is_audio_message) {
                 $message_data['type_two'] = 'audio';
             }
+            if (!empty($_POST['media_group_id'])) {
+                $message_data['media_group_id'] = substr(Wo_Secure($_POST['media_group_id']), 0, 64);
+            }
             if (empty($error_message) && !empty($_POST['text'])) {
                 $message_data['text'] = Wo_Secure($_POST['text']);
 

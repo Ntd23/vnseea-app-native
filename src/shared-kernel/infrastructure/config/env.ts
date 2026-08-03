@@ -22,6 +22,19 @@ function parseRequiredNumber(name: keyof typeof Config) {
   return parsed;
 }
 
+export function resolveGoogleMapsAndroidCertSha1(
+  isDevelopmentBuild: boolean,
+) {
+  const debugCertificate = Config.GOOGLE_MAPS_ANDROID_CERT_SHA1 || '';
+  const releaseCertificate =
+    Config.GOOGLE_MAPS_ANDROID_CERT_SHA1_RELEASE || debugCertificate;
+
+  return (isDevelopmentBuild ? debugCertificate : releaseCertificate).trim();
+}
+
+const isDevelopmentBuild =
+  typeof __DEV__ !== 'undefined' && Boolean(__DEV__);
+
 export const apiConfig = {
   apiBaseUrl: requireEnv('API_BASE_URL'),
   webBaseUrl: requireEnv('WEB_BASE_URL'),
@@ -30,7 +43,8 @@ export const apiConfig = {
   requestTimeoutMs: parseRequiredNumber('REQUEST_TIMEOUT_MS'),
   oneSignalAppId: Config.ONESIGNAL_APP_ID || '',
   googleMapsApiKey: Config.GOOGLE_MAPS_API_KEY || '',
-  googleMapsAndroidCertSha1: Config.GOOGLE_MAPS_ANDROID_CERT_SHA1 || '',
+  googleMapsAndroidCertSha1:
+    resolveGoogleMapsAndroidCertSha1(isDevelopmentBuild),
   googleMapsMapId: Config.GOOGLE_MAPS_MAP_ID || '',
   liveKitWsUrl: Config.LIVEKIT_WS_URL || '',
   socketUrl: Config.SOCKET_URL || '',

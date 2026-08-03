@@ -107,6 +107,7 @@ import { PollPostCard } from '../components/PollPostCard';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import { PostEditModal } from '../../../shared-kernel/presentation/components/PostEditModal';
 import {
   PhotoViewerModal,
   type PhotoViewerState,
@@ -116,6 +117,10 @@ import { hiddenPostsStorage } from '../../infrastructure/storage/hiddenPostsStor
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
+import {
+  getFeedPostCaption,
+  isFeedPostCaptionEditable,
+} from '../../application/editing/postCaptionEdit';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -752,6 +757,7 @@ function PostDetailScreen() {
     reportPost,
     sharePost,
     deletePost,
+    editPost,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
     postId,
@@ -795,6 +801,7 @@ function PostDetailScreen() {
     y: number;
   } | null>(null);
   const [postMenuVisible, setPostMenuVisible] = useState(false);
+  const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
   const photoViewerRef = useRef<PhotoViewerState>(null);
@@ -893,6 +900,35 @@ function PostDetailScreen() {
   const handleClosePostMenu = useCallback(() => {
     setPostMenuVisible(false);
   }, []);
+
+  const handleStartEditPost = useCallback((selectedPost: FeedPost) => {
+    if (!isFeedPostCaptionEditable(selectedPost)) return;
+    setEditingPost(selectedPost);
+  }, []);
+
+  const handleCloseEditPost = useCallback(() => {
+    setEditingPost(null);
+  }, []);
+
+  const handleSubmitEditPost = useCallback(
+    async (text: string) => {
+      if (!editingPost || !isFeedPostCaptionEditable(editingPost)) return;
+      const result = await editPost(editingPost.id, {
+        text,
+        privacy: editingPost.privacy,
+      });
+      if (!result.edited) {
+        throw new Error('Không thể chỉnh sửa bài viết. Vui lòng thử lại.');
+      }
+      if (result.persistence === 'local') {
+        Alert.alert(
+          'Đã lưu tạm',
+          'Bản sửa hiện chỉ được lưu trên thiết bị này vì API server chưa sẵn sàng.',
+        );
+      }
+    },
+    [editPost, editingPost],
+  );
 
   const handleSavePost = useCallback(
     async (targetPostId: string) => {
@@ -994,6 +1030,7 @@ function PostDetailScreen() {
   const isPostDetailSwipeBackBlocked =
     reactionsSheetVisible ||
     postMenuVisible ||
+    editingPost !== null ||
     pickerAnchor !== null ||
     photoViewer !== null;
 
@@ -1441,12 +1478,23 @@ function PostDetailScreen() {
         onClose={handleClosePostMenu}
         post={activePost}
         canDelete={activePost.permissions?.canDelete === true}
+        canEdit={
+          activePost.permissions?.canEdit === true &&
+          isFeedPostCaptionEditable(activePost)
+        }
         onSave={handleSavePost}
+        onEdit={handleStartEditPost}
         onHide={handleHidePost}
         onDelete={handleDeletePost}
         onReport={handleReportPost}
         onReportHide={handleReportHidePost}
         onReportSuccessClose={handleReportSuccessClose}
+      />
+      <PostEditModal
+        visible={editingPost !== null}
+        initialText={getFeedPostCaption(editingPost)}
+        onClose={handleCloseEditPost}
+        onSubmit={handleSubmitEditPost}
       />
     </View>,
   );

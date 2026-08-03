@@ -627,7 +627,7 @@ function ReelItemBase({
     const id = heartCounter.current++;
     const anim = new RNAnimated.Value(0);
     const randomRotate = `${Math.floor(Math.random() * 40) - 20}deg`;
-    
+
     setFloatingHearts(prev => [...prev, { id, x, y, rotate: randomRotate, anim }]);
 
     RNAnimated.sequence([
@@ -716,20 +716,33 @@ function ReelItemBase({
   const protectedBottom = Math.max(bottomOverlayInset, insets.bottom);
   const railBottom = Math.max(protectedBottom + 28, 44);
   const infoBottom = Math.max(protectedBottom + 12, 24);
-  const videoFitMode = getReelVideoFitMode(videoNaturalAspectRatio);
+  const videoFitMode = getReelVideoFitMode(
+    videoNaturalAspectRatio,
+    SCREEN_W / height,
+  );
   const videoResizeMode = videoFitMode === 'blurContain' ? 'contain' : 'cover';
   const usesBlurContainVideo = videoFitMode === 'blurContain';
   const renderVideoLoader = useCallback(
     () => (
       <View style={styles.videoLoadingCover}>
         {item.thumbnailUrl ? (
-          <Image
-            source={{ uri: item.thumbnailUrl }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-        ) : null}
-        <View style={styles.videoLoadingScrim} />
+          <>
+            <Image
+              source={{ uri: item.thumbnailUrl }}
+              style={[StyleSheet.absoluteFill, styles.blurredVideoBackground]}
+              resizeMode="cover"
+              blurRadius={24}
+            />
+            <View style={styles.videoLoadingScrim} />
+            <Image
+              source={{ uri: item.thumbnailUrl }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="contain"
+            />
+          </>
+        ) : (
+          <View style={styles.videoLoadingScrim} />
+        )}
         {isCurrent ? (
           <View style={styles.videoLoadingIndicator}>
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -747,9 +760,8 @@ function ReelItemBase({
   return (
     <Animated.View style={[styles.reelRoot, { height }]}>
       <Animated.View style={[styles.mediaStage, mediaStageAnimatedStyle]}>
-
-      {/* Landscape reels keep a blurred backdrop after the first native
-          frame. Until then VideoPlayer's loader keeps the thumbnail visible. */}
+      {/* Any source whose real aspect ratio differs from the screen uses a
+          blurred backdrop plus `contain`, preserving the complete frame. */}
       {item.thumbnailUrl && hasRenderedFirstFrame && usesBlurContainVideo ? (
         <Animated.View
           pointerEvents="none"

@@ -185,7 +185,10 @@ function mergeMessages(...messageLists: MessageItem[][]) {
           shouldKeepDeliveredOverPending ||
           message.time >= current.time)
       ) {
-        messages.set(message.id, message);
+        messages.set(message.id, {
+          ...message,
+          mediaGroupId: message.mediaGroupId ?? current.mediaGroupId,
+        });
       }
     }
   }
@@ -585,7 +588,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
             note: options.productInquiry.note || message || undefined,
           }
         : undefined;
-          const optimisticMessage: MessageItem = {
+      const optimisticMessage: MessageItem = {
         id: tempId,
         conversationId: '',
         fromId: sessionStorage.getSession()?.userId ?? '',
@@ -593,15 +596,16 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         message,
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
-            sharedPost: textDescriptor.sharedPost,
-            storyReply: options?.storyReply,
-            contentKind:
-              attachment?.mediaType ??
-              (options?.storyReply
-                ? 'story'
-                : marketplaceContext
-                ? 'product'
-                : textDescriptor.kind),
+        mediaGroupId: options?.mediaGroupId,
+        sharedPost: textDescriptor.sharedPost,
+        storyReply: options?.storyReply,
+        contentKind:
+          attachment?.mediaType ??
+          (options?.storyReply
+            ? 'story'
+            : marketplaceContext
+            ? 'product'
+            : textDescriptor.kind),
         link: textDescriptor.link,
         location: textDescriptor.location,
         marketplaceContext,
@@ -629,6 +633,13 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
           sentMessages = await getMessagesForChat({
             limit: 1,
           });
+        }
+
+        if (options?.mediaGroupId) {
+          sentMessages = sentMessages.map(item => ({
+            ...item,
+            mediaGroupId: options.mediaGroupId,
+          }));
         }
 
         setMessages(current =>

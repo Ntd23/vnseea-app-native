@@ -1,7 +1,6 @@
 // Description: Builds high-priority Android call notifications with a full-screen intent.
 package com.vnseea.android.call
 
-import android.app.KeyguardManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -100,7 +99,7 @@ object LiveKitCallNotifier {
       }
     }
 
-    val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+    val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
       .setSmallIcon(R.mipmap.ic_launcher)
       .setContentTitle(callerName)
       .setContentText(text)
@@ -114,7 +113,6 @@ object LiveKitCallNotifier {
       .setAutoCancel(false)
       .setTimeoutAfter(43_000)
       .setContentIntent(fullScreenPendingIntent)
-      .setFullScreenIntent(fullScreenPendingIntent, true)
       .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
       .setSound(ringtoneUri)
       .addAction(
@@ -137,7 +135,16 @@ object LiveKitCallNotifier {
           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         ),
       )
-      .build()
+
+    if (canUseFullScreenIntent(manager)) {
+      notificationBuilder.setFullScreenIntent(fullScreenPendingIntent, true)
+    } else {
+      Log.i(
+        "LiveKitCallPush",
+        "full-screen intent unavailable; using heads-up notification call_id=$callId",
+      )
+    }
+    val notification = notificationBuilder.build()
 
     if (LiveKitCallNativeActions.isIncomingCallHandledRecently(context, callId)) {
       Log.i("LiveKitCallPush", "skip late notification for handled call_id=$callId")
@@ -150,23 +157,11 @@ object LiveKitCallNotifier {
       return
     }
     Log.i("LiveKitCallPush", "notification posted id=$notificationId")
-    maybeLaunchFullScreen(context, fullScreenIntent)
   }
 
-  private fun maybeLaunchFullScreen(context: Context, intent: Intent) {
-    val callId = intent.getStringExtra(LiveKitCallNativeActions.EXTRA_CALL_ID).orEmpty()
-    if (LiveKitCallNativeActions.isIncomingCallHandledRecently(context, callId)) {
-      Log.i("LiveKitCallPush", "skip late fullscreen activity for handled call_id=$callId")
-      return
-    }
-    val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-    val isLocked = keyguardManager?.isKeyguardLocked == true
-    try {
-      context.startActivity(intent)
-      Log.i("LiveKitCallPush", "activity launched directly locked=$isLocked sdk=${Build.VERSION.SDK_INT}")
-    } catch (error: Throwable) {
-      Log.w("LiveKitCallPush", "activity launch failed ${error.message}")
-    }
+  private fun canUseFullScreenIntent(manager: NotificationManager): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+      manager.canUseFullScreenIntent()
   }
 
   private fun incomingCallRingtoneUri(context: Context): Uri {

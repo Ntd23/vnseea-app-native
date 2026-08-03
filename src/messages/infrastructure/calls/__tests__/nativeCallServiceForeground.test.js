@@ -9,7 +9,7 @@ const directPayload = {
   avatar: 'https://example.com/a.jpg',
 };
 
-function loadServiceForPlatform(os) {
+function loadServiceForPlatform(os, nativeModules = {}) {
   jest.resetModules();
 
   let foregroundHandler = null;
@@ -48,7 +48,7 @@ function loadServiceForPlatform(os) {
   };
 
   jest.doMock('react-native', () => ({
-    NativeModules: {},
+    NativeModules: nativeModules,
     Platform: { OS: os },
   }));
   jest.doMock('@livekit/react-native-webrtc', () => ({
@@ -171,6 +171,64 @@ describe('native call service foreground incoming push handling', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
     expect(onIncoming).toHaveBeenCalledTimes(1);
     expect(callKeepDefault.displayIncomingCall).not.toHaveBeenCalled();
+  });
+
+  it('starts and stops the Android foreground service with the connected call lifecycle', async () => {
+    const androidCallIntent = {
+      startCallForegroundService: jest.fn().mockResolvedValue(true),
+      stopCallForegroundService: jest.fn().mockResolvedValue(true),
+    };
+    const { service, callKeepDefault } = loadServiceForPlatform('android', {
+      VnseeaCallIntent: androidCallIntent,
+    });
+
+    await service.configureNativeCallService();
+    service.markNativeCallConnected('call-android', {
+      callId: '42',
+      callType: 'video',
+      title: 'Caller',
+    });
+    await Promise.resolve();
+
+    expect(androidCallIntent.startCallForegroundService).toHaveBeenCalledWith(
+      '42',
+      'video',
+      'Caller',
+    );
+    expect(callKeepDefault.setup).not.toHaveBeenCalled();
+
+    service.endNativeCall('call-android');
+    await Promise.resolve();
+
+    expect(androidCallIntent.stopCallForegroundService).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a late Android foreground-service start after the call already ended', async () => {
+    let resolveStart;
+    const androidCallIntent = {
+      startCallForegroundService: jest.fn(
+        () => new Promise(resolve => {
+          resolveStart = resolve;
+        }),
+      ),
+      stopCallForegroundService: jest.fn().mockResolvedValue(true),
+    };
+    const { service } = loadServiceForPlatform('android', {
+      VnseeaCallIntent: androidCallIntent,
+    });
+
+    service.markNativeCallConnected('call-ended-early', {
+      callId: 'late-42',
+      callType: 'audio',
+    });
+    service.endNativeCall('call-ended-early');
+    expect(androidCallIntent.stopCallForegroundService).toHaveBeenCalledTimes(1);
+
+    resolveStart(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(androidCallIntent.stopCallForegroundService).toHaveBeenCalledTimes(2);
   });
 
   it('dismisses iOS VoIP close pushes instead of displaying a new incoming CallKit call', async () => {

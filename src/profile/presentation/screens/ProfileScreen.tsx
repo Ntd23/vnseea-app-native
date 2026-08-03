@@ -161,6 +161,7 @@ import {
 } from '../../../live/infrastructure/storage/endedLivePostsStorage';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import { PostEditModal } from '../../../shared-kernel/presentation/components/PostEditModal';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -184,6 +185,14 @@ import type {
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
 import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
+import {
+  applyFeedPostCaptionEdit,
+  applyLocalPostCaptionEdits,
+  getFeedPostCaption,
+  isFeedPostCaptionEditable,
+} from '../../../feed/application/editing/postCaptionEdit';
+import { editPostWithLocalFallback } from '../../../feed/application/editing/editPostWithLocalFallback';
+import { postEditedEvents } from '../../../feed/application/events/postEditedEvents';
 import type {
   ReportPostInput,
   SharePostInput,
@@ -1621,8 +1630,12 @@ function ProfileScreen() {
   const [postMenuVisible, setPostMenuVisible] = useState(false);
   const [selectedPostForMenu, setSelectedPostForMenu] =
     useState<FeedPost | null>(null);
+  const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
   const canDeleteSelectedPost =
     selectedPostForMenu?.permissions?.canDelete === true;
+  const canEditSelectedPost =
+    selectedPostForMenu?.permissions?.canEdit === true &&
+    isFeedPostCaptionEditable(selectedPostForMenu);
   const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
   const [reactionsSheetPostId, setReactionsSheetPostId] = useState<
     string | null
@@ -1641,10 +1654,11 @@ function ProfileScreen() {
       posts,
       currentUserId,
     );
-    return endedLivePostsStorage.filterVisiblePosts(
+    const activePosts = endedLivePostsStorage.filterVisiblePosts(
       visiblePosts,
       currentUserId,
     );
+    return applyLocalPostCaptionEdits(activePosts);
   }, [currentUserId, posts]);
 
   const gestureX = useSharedValue(0);
@@ -3445,6 +3459,15 @@ function ProfileScreen() {
     setSelectedPostForMenu(null);
   }, []);
 
+  const handleStartEditPost = useCallback((post: FeedPost) => {
+    if (!isFeedPostCaptionEditable(post)) return;
+    setEditingPost(post);
+  }, []);
+
+  const handleCloseEditPost = useCallback(() => {
+    setEditingPost(null);
+  }, []);
+
   const removeProfilePostFromList = useCallback((postId: string) => {
     setPosts(previous => previous.filter(post => post.id !== postId));
   }, []);
@@ -3462,6 +3485,20 @@ function ProfileScreen() {
     );
     return () => subscription.remove();
   }, [currentUserId, removeProfilePostFromList]);
+
+  useEffect(
+    () =>
+      postEditedEvents.subscribe(({ postId, text }) => {
+        setPosts(previous =>
+          previous.map(post =>
+            String(post.id) === String(postId)
+              ? (applyFeedPostCaptionEdit(post, text) as ProfileFeedPost)
+              : post,
+          ),
+        );
+      }),
+    [],
+  );
 
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
@@ -3491,6 +3528,30 @@ function ProfileScreen() {
       }
     },
     [feedRepo, postCardCopy],
+  );
+
+  const handleSubmitEditPost = useCallback(
+    async (text: string) => {
+      if (!editingPost || !isFeedPostCaptionEditable(editingPost)) return;
+      const result = await editPostWithLocalFallback(
+        feedRepo.editPost,
+        editingPost.id,
+        {
+          text,
+          privacy: editingPost.privacy,
+        },
+      );
+      if (!result.edited) {
+        throw new Error('Không thể chỉnh sửa bài viết. Vui lòng thử lại.');
+      }
+      if (result.persistence === 'local') {
+        showToast({
+          message: 'Đã lưu tạm trên thiết bị này vì API sửa bài chưa sẵn sàng.',
+          type: 'warning',
+        });
+      }
+    },
+    [editingPost, feedRepo],
   );
 
   const handleReportPost = useCallback(
@@ -5856,10 +5917,18 @@ function ProfileScreen() {
             onClose={handleClosePostMenu}
             post={selectedPostForMenu}
             canDelete={canDeleteSelectedPost}
+            canEdit={canEditSelectedPost}
             onSave={handleSavePost}
+            onEdit={handleStartEditPost}
             onHide={handleHidePost}
             onDelete={handleDeletePost}
             onReport={handleReportPost}
+          />
+          <PostEditModal
+            visible={editingPost !== null}
+            initialText={getFeedPostCaption(editingPost)}
+            onClose={handleCloseEditPost}
+            onSubmit={handleSubmitEditPost}
           />
           <PhotoViewerModal
             state={photoViewer}

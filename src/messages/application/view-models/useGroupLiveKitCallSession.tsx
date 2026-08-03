@@ -1231,7 +1231,13 @@ export function GroupLiveKitCallSessionProvider({
         disconnectActiveRoom();
         throw caught;
       }
-      if (callUuid) markNativeCallConnected(callUuid);
+      if (callUuid) {
+        markNativeCallConnected(callUuid, {
+          callId,
+          callType: 'video',
+          title: sessionRef.current?.group.name,
+        });
+      }
     },
     [disconnectActiveRoom, patchSession, repository],
   );
