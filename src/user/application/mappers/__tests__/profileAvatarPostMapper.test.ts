@@ -1,6 +1,6 @@
 import { mapUserProfile } from '../userProfileMapper';
 
-const WEB_BASE_URL = 'https://v2.vnseea.vn';
+const WEB_BASE_URL = 'https://vnseea.vn';
 
 describe('profile avatar post mapping', () => {
   it('maps a valid avatar post id for profile media navigation', () => {

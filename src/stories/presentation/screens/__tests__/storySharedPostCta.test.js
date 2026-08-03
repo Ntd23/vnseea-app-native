@@ -10,7 +10,7 @@ const {
 describe('shared post Story CTA', () => {
   it.each([
     ['Xem bài viết trên VNSEEA: vnseea://post/123', '123'],
-    ['Ghi chú\nhttps://v2.vnseea.vn/post/456?from=story', '456'],
+    ['Ghi chú\nhttps://vnseea.vn/post/456?from=story', '456'],
   ])('parses a valid post deep link from Story description', (description, postId) => {
     expect(parseSharedPostIdFromStoryDescription(description)).toBe(postId);
   });

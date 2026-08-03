@@ -11,7 +11,7 @@ jest.mock('../../../../shared-kernel/infrastructure/api/apiBridge', () => ({
 
 jest.mock('../../../../shared-kernel/infrastructure/config/env', () => ({
   apiConfig: {
-    webBaseUrl: 'https://v2.vnseea.vn',
+    webBaseUrl: 'https://vnseea.vn',
   },
 }));
 
@@ -116,7 +116,7 @@ describe('ApiMessagesRepository conversation details', () => {
           user_data: { user_id: '11', username: 'post', name: 'Post' },
           last_message: rawMessage('1', {
             from_id: '1',
-            or_text: 'Xem bài này\nhttps://v2.vnseea.vn/post/123',
+            or_text: 'Xem bài này\nhttps://vnseea.vn/post/123',
           }),
         },
         {
@@ -126,7 +126,7 @@ describe('ApiMessagesRepository conversation details', () => {
           group_name: 'Map group',
           last_message: rawMessage('2', {
             or_text:
-              'Mở bản đồ: https://v2.vnseea.vn/map?lat=21.02&lng=105.84&title=Hanoi',
+              'Mở bản đồ: https://vnseea.vn/map?lat=21.02&lng=105.84&title=Hanoi',
           }),
         },
         {
@@ -210,7 +210,7 @@ describe('ApiMessagesRepository conversation details', () => {
           last_message: rawMessage('30', {
             time: 500,
             or_text:
-              'https://v2.vnseea.vn/map?lat=21.02&lng=105.84&title=Hanoi',
+              'https://vnseea.vn/map?lat=21.02&lng=105.84&title=Hanoi',
           }),
         },
       ],
@@ -239,7 +239,7 @@ describe('ApiMessagesRepository conversation details', () => {
         or_text: '',
       }),
       rawMessage('23', {
-        or_text: 'Bài viết hay\nhttps://v2.vnseea.vn/post/321',
+        or_text: 'Bài viết hay\nhttps://vnseea.vn/post/321',
       }),
       rawMessage('24', {
         or_text: 'https://example.com/news',
@@ -308,7 +308,7 @@ describe('ApiMessagesRepository conversation details', () => {
 
   it('decodes WoWonder group link markup before classifying a shared location', async () => {
     const encodedLocation =
-      '[a]https%3A%2F%2Fv2.vnseea.vn%2Fmap%3Flat%3D37.785834%26amp%3Blng%3D-122.406417%26amp%3Btitle%3DV%25E1%25BB%258B%2Btr%25C3%25AD%2Bc%25E1%25BB%25A7a%2Bb%25E1%25BA%25A1n%26amp%3Baddress%3DV%25E1%25BB%258B%2Btr%25C3%25AD%2Bhi%25E1%25BB%2587n%2Bt%25E1%25BA%25A1i[/a]';
+      '[a]https%3A%2F%2Fvnseea.vn%2Fmap%3Flat%3D37.785834%26amp%3Blng%3D-122.406417%26amp%3Btitle%3DV%25E1%25BB%258B%2Btr%25C3%25AD%2Bc%25E1%25BB%25A7a%2Bb%25E1%25BA%25A1n%26amp%3Baddress%3DV%25E1%25BB%258B%2Btr%25C3%25AD%2Bhi%25E1%25BB%2587n%2Bt%25E1%25BA%25A1i[/a]';
     post.mockResolvedValueOnce({
       api_status: 200,
       data: {

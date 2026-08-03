@@ -36,7 +36,7 @@ jest.mock(
 );
 
 jest.mock('../../../../shared-kernel/infrastructure/config/env', () => ({
-  apiConfig: { webBaseUrl: 'https://v2.vnseea.vn' },
+  apiConfig: { webBaseUrl: 'https://vnseea.vn' },
 }));
 
 const mockRepository = jest.requireMock(

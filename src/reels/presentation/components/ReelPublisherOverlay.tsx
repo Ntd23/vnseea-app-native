@@ -34,7 +34,7 @@ import type { ChatItem } from '../../../messages/domain/types/messages.types';
 
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
-const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const AVATAR_FALLBACK = 'https://vnseea.vn/upload/photos/d-avatar.jpg';
 const GRID_COLUMNS = 3;
 const GRID_GAP = 1;
 

@@ -58,8 +58,8 @@ type RegisterFieldKey =
   | 'terms';
 
 const BRAND = APP_BRAND_COLOR;
-const TERMS_URL = 'https://v2.vnseea.vn/terms/terms';
-const PRIVACY_URL = 'https://v2.vnseea.vn/terms/privacy-policy';
+const TERMS_URL = 'https://vnseea.vn/terms/terms';
+const PRIVACY_URL = 'https://vnseea.vn/terms/privacy-policy';
 const MIN_BIRTH_YEAR = new Date().getFullYear() - 100;
 const BIRTHDAY_OPTION_ROW_HEIGHT = 50;
 const BIRTHDAY_COLUMN_HEIGHT = 210;

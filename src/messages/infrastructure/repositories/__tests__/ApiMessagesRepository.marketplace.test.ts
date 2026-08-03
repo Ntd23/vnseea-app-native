@@ -9,7 +9,7 @@ jest.mock('../../../../shared-kernel/infrastructure/api/apiBridge', () => ({
 }));
 
 jest.mock('../../../../shared-kernel/infrastructure/config/env', () => ({
-  apiConfig: { webBaseUrl: 'https://v2.vnseea.vn' },
+  apiConfig: { webBaseUrl: 'https://vnseea.vn' },
 }));
 
 jest.mock(
@@ -74,7 +74,7 @@ describe('ApiMessagesRepository marketplace contexts', () => {
         JSON.stringify({
           id: '40',
           title: 'Áo khoác mùa đông',
-          imageUrl: 'https://v2.vnseea.vn/upload/photos/coat.jpg',
+          imageUrl: 'https://vnseea.vn/upload/photos/coat.jpg',
           price: '200.000 VND',
           href: '/product/40',
         }),
@@ -111,7 +111,7 @@ describe('ApiMessagesRepository marketplace contexts', () => {
       productId: '40',
       name: 'Áo khoác mùa đông',
       price: '200.000 VND',
-      image: 'https://v2.vnseea.vn/upload/photos/coat.jpg',
+      image: 'https://vnseea.vn/upload/photos/coat.jpg',
       note: 'Tôi muốn tìm hiểu thêm về sản phẩm này.',
     });
     expect(chat.lastMessageKind).toBe('product');

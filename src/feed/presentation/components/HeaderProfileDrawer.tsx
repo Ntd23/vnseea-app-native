@@ -95,7 +95,7 @@ import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 
 const SCREEN_W = Dimensions.get('window').width;
 const DRAWER_W = SCREEN_W * 0.84;
-const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const FALLBACK_AVATAR = 'https://vnseea.vn/upload/photos/d-avatar.jpg';
 const DRAWER_HEADER_BAR_HEIGHT = 68;
 const DRAWER_CONTENT_DEFER_MS = 80;
 const DRAWER_SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => index);
