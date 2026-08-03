@@ -59,10 +59,16 @@ type RegisterFieldKey =
 const BRAND = APP_BRAND_COLOR;
 const TERMS_URL = 'https://v2.vnseea.vn/terms/terms';
 const PRIVACY_URL = 'https://v2.vnseea.vn/terms/privacy-policy';
-const REGISTER_USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
 const MIN_BIRTH_YEAR = new Date().getFullYear() - 100;
 const BIRTHDAY_OPTION_ROW_HEIGHT = 50;
 const BIRTHDAY_COLUMN_HEIGHT = 210;
+
+function hasUnsupportedUsernameControlCharacter(value: string) {
+  return Array.from(value).some(character => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 31 || codePoint === 127;
+  });
+}
 
 function padDatePart(value: number) {
   return String(value).padStart(2, '0');
@@ -436,12 +442,13 @@ function RegisterScreen() {
   }, []);
 
   const handleRegister = useCallback(async () => {
-    const normalizedUsername = username.trim();
+    const normalizedUsername = username.trim().normalize('NFC');
     if (!normalizedUsername) {
       setValidationError('Nhập tên người dùng.');
       return;
     }
-    if (normalizedUsername.length < 5 || normalizedUsername.length > 32) {
+    const usernameLength = Array.from(normalizedUsername).length;
+    if (usernameLength < 5 || usernameLength > 32) {
       setValidationError(
         isVi
           ? 'Tên người dùng phải có từ 5 đến 32 ký tự.'
@@ -449,11 +456,11 @@ function RegisterScreen() {
       );
       return;
     }
-    if (!REGISTER_USERNAME_PATTERN.test(normalizedUsername)) {
+    if (hasUnsupportedUsernameControlCharacter(normalizedUsername)) {
       setValidationError(
         isVi
-          ? 'Tên người dùng chỉ được chứa chữ, số và dấu gạch dưới.'
-          : 'Username can only contain letters, numbers, and underscores.',
+          ? 'Tên người dùng chứa ký tự điều khiển không hợp lệ.'
+          : 'Username contains unsupported control characters.',
       );
       return;
     }
@@ -599,7 +606,7 @@ function RegisterScreen() {
               />
 
               <AuthTextField
-                label={copy.email}
+                label={copy.registerEmail}
                 placeholder={copy.emailPlaceholder}
                 value={email}
                 onChangeText={value => {
