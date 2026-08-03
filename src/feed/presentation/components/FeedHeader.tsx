@@ -85,7 +85,6 @@ export const FeedHeader = React.memo(function FeedHeader({
         if (cancelled || started) return;
         started = true;
         preloadMessagesStartupChats().catch(() => undefined);
-        navigation.getParent()?.preload(ROUTES.MESSAGES);
       };
       const task = InteractionManager.runAfterInteractions(startPreload);
       const fallbackTimer = setTimeout(startPreload, 700);
@@ -95,7 +94,7 @@ export const FeedHeader = React.memo(function FeedHeader({
         clearTimeout(fallbackTimer);
         task.cancel();
       };
-    }, [navigation]),
+    }, []),
   );
 
   const handlePressLogo = useCallback(() => {

@@ -138,6 +138,9 @@ if (empty($error_code)) {
             if (!empty($_POST['message_type'])) {
                 $message_data['type_two'] = Wo_Secure($_POST['message_type']);
             }
+            if (!empty($_POST['media_group_id'])) {
+                $message_data['media_group_id'] = substr(Wo_Secure($_POST['media_group_id']), 0, 64);
+            }
             if (!empty($story_reply)) {
                 $message_data['story_id'] = $story_reply['story_id'];
                 $message_data['type_two'] = 'story_reply';
