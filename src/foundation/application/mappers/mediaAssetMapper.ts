@@ -35,9 +35,10 @@ function inferMediaKind(url: string, mimeType?: string): MediaKind {
 export function mapMediaAsset(
   record: RawRecord,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): MediaAsset | undefined {
   const rawUrl = firstString(record, ['url', 'src', 'image', 'file', 'media']);
-  const url = normalizeRawUrl(rawUrl, webBaseUrl);
+  const url = normalizeRawUrl(rawUrl, webBaseUrl, mediaBaseUrl);
 
   if (!url) {
     return undefined;
@@ -47,6 +48,7 @@ export function mapMediaAsset(
   const thumbnailUrl = normalizeRawUrl(
     firstString(record, ['thumbnail', 'thumb', 'poster']),
     webBaseUrl,
+    mediaBaseUrl,
   );
 
   return {

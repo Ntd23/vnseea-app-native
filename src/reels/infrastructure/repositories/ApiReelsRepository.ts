@@ -11,6 +11,7 @@ import {
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
   FetchReelsOptions,
@@ -87,7 +88,7 @@ function normalizeMediaUrl(value: string | undefined): string | undefined {
     ? trimmed
     : trimmed.startsWith('//')
     ? `${siteRoot.startsWith('http://') ? 'http:' : 'https:'}${trimmed}`
-    : `${siteRoot}/${trimmed.replace(/^\/+/, '')}`;
+    : normalizeConfiguredUrl(trimmed) ?? trimmed;
 
   try {
     return encodeURI(absoluteUrl);

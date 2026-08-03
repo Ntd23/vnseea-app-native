@@ -359,4 +359,14 @@ describe('FeedHeader platform chrome', () => {
       'navigation.navigate(ROUTES.FORUM)',
     );
   });
+
+  it('does not expose the web subscription shortcut in the App Bar menu', () => {
+    const drawerSource = withoutComments(
+      read('src/feed/presentation/components/HeaderProfileDrawer.tsx'),
+    );
+
+    expect(drawerSource).not.toContain('subscriptionsLabel');
+    expect(drawerSource).not.toContain("'/go-pro'");
+    expect(drawerSource).not.toContain('Linking.openURL');
+  });
 });

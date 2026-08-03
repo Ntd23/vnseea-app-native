@@ -19,8 +19,8 @@
 
 - Target React Native: Android debug build trên máy thật hoặc emulator.
 - Metro: `pnpm start -- --reset-cache`.
-- API: `API_BASE_URL=https://v2.vnseea.vn/api`.
-- Web root: `WEB_BASE_URL=https://v2.vnseea.vn`.
+- API: `API_BASE_URL=https://vnseea.vn/api`.
+- Web root: `WEB_BASE_URL=https://vnseea.vn`.
 - Session source: WoWonder `access_token` lưu trong MMKV.
 - Env bắt buộc: `API_BASE_URL`, `WEB_BASE_URL`, `SERVER_KEY`, `REQUEST_TIMEOUT_MS`.
 
@@ -36,7 +36,7 @@
 
 | ID           | Trạng thái | Trường hợp kiểm thử           | Entry                                                | Kết quả mong đợi                                                                         |
 | ------------ | ---------- | ----------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `SK-API-001` | `[ ]`      | Chuẩn hóa URL POST            | `apiBridge.post('/api/auth')`                        | Request cuối cùng trỏ tới `https://v2.vnseea.vn/api/auth`, không bị `/api/api/auth`.   |
+| `SK-API-001` | `[ ]`      | Chuẩn hóa URL POST            | `apiBridge.post('/api/auth')`                        | Request cuối cùng trỏ tới `https://vnseea.vn/api/auth`, không bị `/api/api/auth`.   |
 | `SK-API-002` | `[ ]`      | Tự động gắn `server_key`      | Request interceptor của `apiClient`                  | Request không phải GET có `server_key` từ `.env`; không hardcode key trong file tracked. |
 | `SK-API-003` | `[ ]`      | Tự động gắn `access_token`    | `sessionStorage.setSession` rồi gọi request cần auth | Query của request có `access_token=<stored token>`.                                      |
 | `SK-API-004` | `[ ]`      | Payload POST dạng URL-encoded | Login request                                        | PHP nhận field qua `$_POST` và trả JSON, không lỗi transport chung chung.                |

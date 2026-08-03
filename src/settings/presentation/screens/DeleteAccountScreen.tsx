@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
-import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToSettingsPanel } from '../../../navigation/settingsNavigation';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -91,7 +91,7 @@ function DeleteAccountScreen() {
       navigation.goBack();
       return;
     }
-    navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.SETTINGS });
+    navigateToSettingsPanel(navigation, 'main', { fromDashboard: false });
   }, [isLoading, navigation]);
 
   const performDelete = useCallback(async () => {

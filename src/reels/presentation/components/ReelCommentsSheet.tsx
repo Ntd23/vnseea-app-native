@@ -133,7 +133,7 @@ import {
   serializeCommentMentions,
 } from '../../application/utils/commentMentions';
 
-const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const AVATAR_FALLBACK = 'https://vnseea.vn/upload/photos/d-avatar.jpg';
 const FONT_PRIMARY = 'Inter';
 
 const COMMENTS_COPY = {

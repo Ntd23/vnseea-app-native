@@ -3,6 +3,7 @@ declare module 'react-native-config' {
   interface NativeConfig {
     API_BASE_URL?: string;
     WEB_BASE_URL?: string;
+    MEDIA_BASE_URL?: string;
     SERVER_KEY?: string;
     REQUEST_TIMEOUT_MS?: string;
     ONESIGNAL_APP_ID?: string;

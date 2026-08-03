@@ -121,7 +121,7 @@ describe('message chat merge', () => {
       groupId: '20',
       userId: '20',
       lastMessageId: '100',
-      lastMessage: 'https://v2.vnseea.vn/map?lat=21&lng=105',
+      lastMessage: 'https://vnseea.vn/map?lat=21&lng=105',
       lastMessageKind: 'location',
       lastMessageTime: 200,
     });

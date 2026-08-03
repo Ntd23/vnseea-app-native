@@ -96,7 +96,7 @@ const REEL_ITEM_COPY = {
   },
 };
 
-const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const AVATAR_FALLBACK = 'https://vnseea.vn/upload/photos/d-avatar.jpg';
 
 // Screen width used by the SVG gradient — computed once at module level.
 // Rotation is not a concern for a portrait-locked reels feed.
@@ -627,7 +627,7 @@ function ReelItemBase({
     const id = heartCounter.current++;
     const anim = new RNAnimated.Value(0);
     const randomRotate = `${Math.floor(Math.random() * 40) - 20}deg`;
-    
+
     setFloatingHearts(prev => [...prev, { id, x, y, rotate: randomRotate, anim }]);
 
     RNAnimated.sequence([
@@ -760,7 +760,6 @@ function ReelItemBase({
   return (
     <Animated.View style={[styles.reelRoot, { height }]}>
       <Animated.View style={[styles.mediaStage, mediaStageAnimatedStyle]}>
-
       {/* Any source whose real aspect ratio differs from the screen uses a
           blurred backdrop plus `contain`, preserving the complete frame. */}
       {item.thumbnailUrl && hasRenderedFirstFrame && usesBlurContainVideo ? (

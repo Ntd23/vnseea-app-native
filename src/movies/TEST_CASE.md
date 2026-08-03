@@ -22,7 +22,7 @@
 ## Environment
 
 - React Native target: Android debug build on physical device or emulator.
-- Backend API: `https://v2.vnseea.vn/api` (env `API_BASE_URL`).
+- Backend API: `https://vnseea.vn/api` (env `API_BASE_URL`).
 - Backend session source: WoWonder `access_token` stored in MMKV (`sessionStorage`).
 - Auth requirement: **authenticated** for `CREATE_MOVIE`; **optional** for `MOVIES`.
 - Composer state: `USE_REAL_API = true` — `useCreateMovieViewModel.submit()` posts multipart to `/api/create-movie` via `apiBridge.multipart`.
@@ -128,7 +128,7 @@ npx jest --passWithNoTests
 ## Backend curl sanity check
 
 ```bash
-curl -X POST https://v2.vnseea.vn/api/create-movie \
+curl -X POST https://vnseea.vn/api/create-movie \
   -H "access_token: <TOKEN>" \
   -F "name=Test Movie" \
   -F "description=Đây là mô tả phim dài hơn 32 ký tự để pass validate" \

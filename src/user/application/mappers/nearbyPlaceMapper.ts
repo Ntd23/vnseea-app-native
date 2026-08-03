@@ -124,6 +124,7 @@ function firstBooleanFromRecords(
 function mapOwner(
   records: Array<RawApiRecord | undefined>,
   webBaseUrl: string,
+  mediaBaseUrl: string,
 ) {
   const owner =
     records
@@ -163,6 +164,7 @@ function mapOwner(
         ['owner_avatar', 'avatar', 'profile_picture'],
       ),
       webBaseUrl,
+      mediaBaseUrl,
     ),
   };
 }
@@ -171,6 +173,7 @@ export function mapNearbyPlace(
   record: RawApiRecord,
   kind: NearbyPlaceKind,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): NearbyPlace | null {
   const page = asRecord(record.page_data);
   const detail = asRecord(kind === 'shop' ? record.product : record.job);
@@ -183,7 +186,7 @@ export function mapNearbyPlace(
   const detailId = firstEntityId(detail ?? {}, ['id']);
   const name = firstString(page, ['name', 'page_title', 'title']);
   const records = [record, page, detail];
-  const owner = mapOwner(records, webBaseUrl);
+  const owner = mapOwner(records, webBaseUrl, mediaBaseUrl);
 
   if (!name) {
     return null;
@@ -198,8 +201,13 @@ export function mapNearbyPlace(
     avatarUrl: normalizeRawUrl(
       firstString(page, ['avatar', 'page_avatar']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
-    coverUrl: normalizeRawUrl(firstString(page, ['cover']), webBaseUrl),
+    coverUrl: normalizeRawUrl(
+      firstString(page, ['cover']),
+      webBaseUrl,
+      mediaBaseUrl,
+    ),
     url: normalizeRawUrl(firstString(page, ['url']), webBaseUrl),
     category: firstString(page, [
       'category',
@@ -235,6 +243,7 @@ export function mapNearbyPlace(
 export function mapNearbyPage(
   record: RawApiRecord,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): NearbyPlace | null {
   const page = asRecord(record.page_data);
   const records = [record, page];
@@ -255,7 +264,7 @@ export function mapNearbyPage(
   );
   const pinnedFlag = firstPinApprovedFlag(records);
   const isPinApproved = mapPinStatus === 'approved' || pinnedFlag === true;
-  const owner = mapOwner(records, webBaseUrl);
+  const owner = mapOwner(records, webBaseUrl, mediaBaseUrl);
 
   if (!name) {
     return null;
@@ -276,10 +285,12 @@ export function mapNearbyPage(
     avatarUrl: normalizeRawUrl(
       firstStringFromRecords(records, ['avatar', 'page_avatar']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
     coverUrl: normalizeRawUrl(
       firstStringFromRecords(records, ['cover', 'page_cover']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
     url: normalizeRawUrl(firstStringFromRecords(records, ['url']), webBaseUrl),
     description: firstStringFromRecords(records, [

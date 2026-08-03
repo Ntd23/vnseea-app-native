@@ -22,7 +22,7 @@ describe('ApiOffersRepository navigation fields', () => {
           user_id: '9',
           product: { id: '31' },
           post_id: '88',
-          url: 'https://v2.vnseea.vn/post/88',
+          url: 'https://vnseea.vn/post/88',
           discount_type: 'discount_percent',
           discount_percent: '20',
         },
@@ -37,7 +37,7 @@ describe('ApiOffersRepository navigation fields', () => {
         id: 5,
         productId: 31,
         postId: 88,
-        url: 'https://v2.vnseea.vn/post/88',
+        url: 'https://vnseea.vn/post/88',
       }),
     );
   });

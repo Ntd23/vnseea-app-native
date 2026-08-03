@@ -150,7 +150,9 @@ import {
 } from '../../domain/constants/countries';
 
 type SettingsNav = NativeStackNavigationProp<RootStackParamList>;
-type SettingsRoute = RouteProp<MainTabParamList, typeof ROUTES.SETTINGS>;
+type SettingsRoute =
+  | RouteProp<MainTabParamList, typeof ROUTES.SETTINGS>
+  | RouteProp<RootStackParamList, typeof ROUTES.SETTINGS_PANEL>;
 
 const DASHBOARD_COPY = {
   vi: {

@@ -42,6 +42,7 @@ import {
 } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToSettingsPanel } from '../../../navigation/settingsNavigation';
 import type {
   RootStackParamList,
   SettingsPanelRouteParam,
@@ -389,10 +390,7 @@ function UserDashboardScreen() {
 
   const openSettingsPanel = useCallback(
     (panel: SettingsPanelRouteParam) => {
-      navigation.navigate(ROUTES.MAIN_TABS, {
-        screen: ROUTES.SETTINGS,
-        params: { initialPanel: panel, fromDashboard: true },
-      });
+      navigateToSettingsPanel(navigation, panel);
     },
     [navigation],
   );

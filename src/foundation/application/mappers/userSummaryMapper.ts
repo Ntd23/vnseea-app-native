@@ -13,6 +13,7 @@ import { normalizeRawUrl } from '../normalizers/url';
 export function mapUserSummary(
   record: RawRecord,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): UserSummary {
   return {
     id: firstEntityId(record, ['user_id', 'id']),
@@ -21,6 +22,7 @@ export function mapUserSummary(
     avatarUrl: normalizeRawUrl(
       firstString(record, ['avatar', 'avatar_url', 'profile_picture']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
     verified: firstBoolean(record, ['verified', 'is_verified']),
   };

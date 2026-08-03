@@ -163,7 +163,7 @@ type NearbyRoute = RouteProp<RootStackParamList, typeof ROUTES.NEARBY_USERS>;
 
 const BRAND = APP_BRAND_COLOR;
 const ACCENT = '#EF4444';
-const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const FALLBACK_AVATAR = 'https://vnseea.vn/upload/photos/d-avatar.jpg';
 const feedRepository = createFeedRepository();
 const NAVIGATION_CAMERA_PITCH = 60;
 const NAVIGATION_CAMERA_ZOOM = 19.25;

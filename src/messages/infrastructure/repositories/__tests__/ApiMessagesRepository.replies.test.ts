@@ -11,7 +11,7 @@ jest.mock('../../../../shared-kernel/infrastructure/api/apiBridge', () => ({
 
 jest.mock('../../../../shared-kernel/infrastructure/config/env', () => ({
   apiConfig: {
-    webBaseUrl: 'https://v2.vnseea.vn',
+    webBaseUrl: 'https://vnseea.vn',
   },
 }));
 
@@ -87,11 +87,11 @@ const replySources = [
     or_text: 'https://example.com/news',
   }),
   rawMessage('12', {
-    or_text: 'Xem bài viết\nhttps://v2.vnseea.vn/post/42',
+    or_text: 'Xem bài viết\nhttps://vnseea.vn/post/42',
   }),
   rawMessage('13', {
     or_text:
-      'https://v2.vnseea.vn/map?lat=21.0285&lng=105.8542&title=Hà Nội',
+      'https://vnseea.vn/map?lat=21.0285&lng=105.8542&title=Hà Nội',
   }),
   rawMessage('14', {
     or_text: '',
@@ -163,7 +163,7 @@ describe('ApiMessagesRepository message replies', () => {
   it('strips a legacy reply envelope before classifying the current message', async () => {
     const legacyReply = [
       '↪️ *Trả lời tin nhắn:*',
-      '👉 *Người gửi*: Bài viết đã chia sẻ https://v2.vnseea.vn/post/42',
+      '👉 *Người gửi*: Bài viết đã chia sẻ https://vnseea.vn/post/42',
       '🆔 ID: *11*',
       '',
       'Tôi đồng ý',

@@ -94,7 +94,7 @@ function readString(raw: RawGroup | undefined, key: string): string {
 }
 
 function normalizeUrl(url: string) {
-  return normalizeHostedMediaUrl(url, siteRoot);
+  return normalizeHostedMediaUrl(url, siteRoot, apiConfig.mediaBaseUrl);
 }
 
 function readNumber(raw: RawGroup | undefined, key: string): number | undefined {

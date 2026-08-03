@@ -13,6 +13,7 @@ import { normalizeRawUrl } from '../normalizers/url';
 export function mapPageSummary(
   record: RawRecord,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): PageSummary {
   return {
     id: firstEntityId(record, ['page_id', 'id']),
@@ -21,10 +22,12 @@ export function mapPageSummary(
     avatarUrl: normalizeRawUrl(
       firstString(record, ['avatar', 'page_avatar']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
     coverUrl: normalizeRawUrl(
       firstString(record, ['cover', 'page_cover']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
     liked: firstBoolean(record, ['is_liked', 'liked']),
   };

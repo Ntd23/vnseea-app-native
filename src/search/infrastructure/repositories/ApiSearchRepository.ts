@@ -3,6 +3,7 @@
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { GroupItem } from '../../../community/domain/types/community.types';
 import type { TrendingHashtag } from '../../../explore/domain/types/explore.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
@@ -34,9 +35,7 @@ type HashtagSuggestionsResponse = {
 const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeUrl(url: string): string {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 function readString(raw: RawRecord | undefined, ...keys: string[]): string {

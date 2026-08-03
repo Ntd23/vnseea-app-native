@@ -22,7 +22,7 @@
 ## Environment
 
 - React Native target: Android debug build on a physical device or emulator.
-- Backend API: `https://v2.vnseea.vn/api` (stories are not yet paginated by
+- Backend API: `https://vnseea.vn/api` (stories are not yet paginated by
   the backend, so the grid renders the full fetched list in one page).
 - ViewModel returns mock data in the UI-only phase.
 - All visible copy comes from `getStoriesCopy(language)` driven by

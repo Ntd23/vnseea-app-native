@@ -20,6 +20,7 @@
 //     must take the StoryItem it already has from `getStories()`.
 
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import {
   REACTION_TO_WIRE,
@@ -176,7 +177,10 @@ function mapPublisher(
     userId,
     username,
     name,
-    avatarUrl: readString(safe, 'avatar', 'profile_picture') || undefined,
+    avatarUrl:
+      normalizeConfiguredUrl(
+        readString(safe, 'avatar', 'profile_picture'),
+      ) || undefined,
     isVerified: readBool(safe, 'verified'),
     isOnline: readUserOnline(safe),
   };
@@ -194,7 +198,7 @@ function mapMediaItem(
   fallbackType: 'image' | 'video',
   storyId?: string,
 ): StoryMedia | null {
-  const url = readString(raw, 'filename', 'url');
+  const url = normalizeConfiguredUrl(readString(raw, 'filename', 'url'));
   if (!url) return null;
   const rawType = readString(raw, 'type').toLowerCase();
   const type: 'image' | 'video' =
@@ -257,7 +261,9 @@ function extractMedia(raw: Record<string, unknown>, storyId: string): StoryMedia
   // FALLBACK: If no media segments were found but a thumbnail/cover is present,
   // treat the thumbnail URL as the main image segment.
   if (out.length === 0) {
-    const thumbnail = readString(raw, 'thumbnail', 'cover_image');
+    const thumbnail = normalizeConfiguredUrl(
+      readString(raw, 'thumbnail', 'cover_image'),
+    );
     if (thumbnail && thumbnail.length > 0) {
       const isVideo = /\.(mp4|mov|3gp|webm|avi|mkv)$/i.test(thumbnail);
       out.push({
@@ -323,11 +329,13 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
   // Thumbnail: get_stories.php attaches either the resized story thumb
   // OR the publisher's avatar as `thumbnail` (line 99-104 in the PHP).
   // We also probe the `thumb.filename` shape returned by `Wo_GetStroies`.
-  let thumbnailUrl = readString(raw, 'thumbnail') || undefined;
+  let thumbnailUrl =
+    normalizeConfiguredUrl(readString(raw, 'thumbnail')) || undefined;
   if (!thumbnailUrl) {
     const thumb = raw.thumb as Record<string, unknown> | undefined;
     if (thumb && typeof thumb === 'object') {
-      thumbnailUrl = readString(thumb, 'filename') || undefined;
+      thumbnailUrl =
+        normalizeConfiguredUrl(readString(thumb, 'filename')) || undefined;
     }
   }
 

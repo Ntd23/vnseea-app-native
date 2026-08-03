@@ -9,22 +9,22 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 
 export const resolveSummaryMappers = {
   user(record: RawRecord) {
-    return mapUserSummary(record, apiConfig.webBaseUrl);
+    return mapUserSummary(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl);
   },
 
   page(record: RawRecord) {
-    return mapPageSummary(record, apiConfig.webBaseUrl);
+    return mapPageSummary(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl);
   },
 
   group(record: RawRecord) {
-    return mapGroupSummary(record, apiConfig.webBaseUrl);
+    return mapGroupSummary(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl);
   },
 
   post(record: RawRecord) {
-    return mapPostSummary(record, apiConfig.webBaseUrl);
+    return mapPostSummary(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl);
   },
 
   media(record: RawRecord) {
-    return mapMediaAsset(record, apiConfig.webBaseUrl);
+    return mapMediaAsset(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl);
   },
 };

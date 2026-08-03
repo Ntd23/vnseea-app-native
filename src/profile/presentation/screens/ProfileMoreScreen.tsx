@@ -49,6 +49,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToSettingsPanel } from '../../../navigation/settingsNavigation';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -490,12 +491,9 @@ export default function ProfileMoreScreen() {
               label: copy.privacy,
               Icon: Lock,
               onPress: () =>
-                navigation.navigate(ROUTES.MAIN_TABS, {
-                  screen: ROUTES.SETTINGS,
-                  params: {
-                    initialPanel: 'general-privacy',
-                    fromProfile: true,
-                  },
+                navigateToSettingsPanel(navigation, 'general-privacy', {
+                  fromDashboard: false,
+                  fromProfile: true,
                 }),
             } satisfies ProfileMoreAction,
           ]

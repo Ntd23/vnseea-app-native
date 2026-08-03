@@ -24,7 +24,7 @@
 ## Environment
 
 - React Native target: Android debug build on physical device or emulator.
-- Backend API: `https://v2.vnseea.vn/api`
+- Backend API: `https://vnseea.vn/api`
 - Backend session source: WoWonder `access_token` stored in MMKV.
 - Auth requirement: authenticated for create, edit, delete, pay; public for `getFundingList`.
 
