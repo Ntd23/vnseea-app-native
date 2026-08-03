@@ -131,6 +131,7 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
   const [isLoading, setIsLoading] = useState(autoLoad);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
   const activeProbeGenerationRef = useRef(0);
   const activeProbeInFlightGenerationRef = useRef<number | null>(null);
   const enabledRef = useRef(enabled);
@@ -147,8 +148,26 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
 
   const load = useCallback(
     async (mode: 'initial' | 'refresh' | 'background' = 'initial') => {
-      if (!enabledRef.current) return;
+      if (!mountedRef.current || !enabledRef.current) return;
+      const requestSession = sessionStorage.getSession();
+      if (!requestSession?.accessToken) {
+        if (mode !== 'background') {
+          setIsLoading(false);
+          setIsRefreshing(false);
+          setError(null);
+        }
+        return;
+      }
       if (loadInFlightGenerationRef.current !== null) return;
+      const requestAccessToken = requestSession?.accessToken ?? null;
+      const requestOwnerId = requestSession?.userId;
+      const hasSessionChanged = () => {
+        const currentSession = sessionStorage.getSession();
+        return (
+          (currentSession?.accessToken ?? null) !== requestAccessToken ||
+          currentSession?.userId !== requestOwnerId
+        );
+      };
       const loadGeneration = loadGenerationRef.current + 1;
       loadGenerationRef.current = loadGeneration;
       loadInFlightGenerationRef.current = loadGeneration;
@@ -204,7 +223,9 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
           { force: mode === 'refresh' },
         );
         if (
+          !mountedRef.current ||
           !enabledRef.current ||
+          hasSessionChanged() ||
           localOwnerIdRef.current !== localOwnerId ||
           loadGenerationRef.current !== loadGeneration
         ) {
@@ -229,13 +250,15 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
         }
       } catch (err) {
         if (
+          !mountedRef.current ||
           !enabledRef.current ||
+          hasSessionChanged() ||
           localOwnerIdRef.current !== localOwnerId ||
           loadGenerationRef.current !== loadGeneration
         ) {
           return;
         }
-        console.error('[Live] load error:', err);
+        console.warn('[Live] load error:', err);
         if (mode !== 'background') {
           setError('Không tải được danh sách live.');
         }
@@ -244,6 +267,7 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
           loadInFlightGenerationRef.current = null;
         }
         if (
+          mountedRef.current &&
           foregroundLoadGeneration !== null &&
           foregroundLoadGenerationRef.current === foregroundLoadGeneration
         ) {
@@ -254,6 +278,20 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
     },
     [discoveryResourceKey, localOwnerId, repository, userId],
   );
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      enabledRef.current = false;
+      activeProbeGenerationRef.current += 1;
+      activeProbeInFlightGenerationRef.current = null;
+      foregroundLoadGenerationRef.current += 1;
+      loadGenerationRef.current += 1;
+      loadInFlightGenerationRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     activeProbeGenerationRef.current += 1;
@@ -335,8 +373,19 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
   }, [enabled, load, refreshIntervalMs]);
 
   const refreshActiveStreams = useCallback(async (postIds: number[]) => {
-    if (!enabledRef.current) return;
+    if (!mountedRef.current || !enabledRef.current) return;
     if (postIds.length === 0) return;
+    const requestSession = sessionStorage.getSession();
+    if (!requestSession?.accessToken) return;
+    const requestAccessToken = requestSession.accessToken;
+    const requestOwnerId = requestSession.userId;
+    const hasSessionChanged = () => {
+      const currentSession = sessionStorage.getSession();
+      return (
+        currentSession?.accessToken !== requestAccessToken ||
+        currentSession?.userId !== requestOwnerId
+      );
+    };
     if (activeProbeInFlightGenerationRef.current !== null) return;
     const probeGeneration = activeProbeGenerationRef.current + 1;
     activeProbeGenerationRef.current = probeGeneration;
@@ -351,13 +400,24 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
             );
             return [postId, snapshot] as const;
           } catch (err) {
-            console.log('[Live] active stream probe skipped:', { postId, err });
+            if (
+              mountedRef.current &&
+              enabledRef.current &&
+              !hasSessionChanged()
+            ) {
+              console.log('[Live] active stream probe skipped:', {
+                postId,
+                err,
+              });
+            }
             return [postId, undefined] as const;
           }
         }),
       );
       if (
+        !mountedRef.current ||
         !enabledRef.current ||
+        hasSessionChanged() ||
         localOwnerIdRef.current !== localOwnerId ||
         activeProbeGenerationRef.current !== probeGeneration
       ) {

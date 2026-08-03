@@ -46,16 +46,17 @@ foreach ($required_fields as $key => $value) {
 if (empty($error_code)) {
     $username         = trim((string) $_POST['username']);
     $_POST['username'] = $username;
+    $username_length  = function_exists('mb_strlen') ? mb_strlen($username, 'UTF-8') : strlen($username);
     $password         = $_POST['password'];
     $email            = $_POST['email'];
     $confirm_password = $_POST['confirm_password'];
     if (in_array(true, Wo_IsNameExist($username, 0))) {
         $error_code    = 4;
         $error_message = 'Username is already taken';
-    } else if (in_array($username, $wo['site_pages']) || !preg_match('/^[A-Za-z0-9_]+$/', $username)) {
+    } else if (in_array($username, $wo['site_pages']) || !preg_match('/^[^\x00-\x1F\x7F]+$/u', $username)) {
         $error_code    = 5;
-        $error_message = 'Invalid username characters, please choose another username';
-    } else if (strlen($username) < 5 OR strlen($username) > 32) {
+        $error_message = 'Username contains unsupported control characters';
+    } else if ($username_length < 5 OR $username_length > 32) {
         $error_code    = 6;
         $error_message = 'Username must be between 5 / 32 letters';
     } else if (Wo_EmailExists($email) === true) {

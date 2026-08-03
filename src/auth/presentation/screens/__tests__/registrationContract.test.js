@@ -14,14 +14,38 @@ describe('registration identity contract', () => {
       'src/auth/infrastructure/repositories/ApiAuthRepository.ts',
     );
 
-    expect(screen).toContain('const REGISTER_USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;');
     expect(screen).toContain(
-      'normalizedUsername.length < 5 || normalizedUsername.length > 32',
+      'function hasUnsupportedUsernameControlCharacter(value: string)',
     );
     expect(screen).toContain(
-      '!REGISTER_USERNAME_PATTERN.test(normalizedUsername)',
+      'const usernameLength = Array.from(normalizedUsername).length;',
+    );
+    expect(screen).toContain(
+      'usernameLength < 5 || usernameLength > 32',
+    );
+    expect(screen).toContain(
+      'hasUnsupportedUsernameControlCharacter(normalizedUsername)',
     );
     expect(repository).toContain('username: input.username.trim()');
+  });
+
+  it('accepts spaces, special characters, emoji, accents, and normal digits', () => {
+    const endpoint = read('phtml/api/v2/endpoints/create-account.php');
+    const isUsernameAllowed = value =>
+      !Array.from(value).some(character => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint <= 31 || codePoint === 127;
+      });
+
+    expect(isUsernameAllowed('Nguyễn123')).toBe(true);
+    expect(isUsernameAllowed('Đặng_2026')).toBe(true);
+    expect(isUsernameAllowed('Nguyễn Văn 123')).toBe(true);
+    expect(isUsernameAllowed('Bro yêu !@#$%^&*() ❤️')).toBe(true);
+    expect(isUsernameAllowed('Nguyễn\n123')).toBe(false);
+    expect(endpoint).toContain(
+      "preg_match('/^[^\\x00-\\x1F\\x7F]+$/u', $username)",
+    );
+    expect(endpoint).toContain("mb_strlen($username, 'UTF-8')");
   });
 
   it('does not let the API mirror overwrite explicit usernames with random values', () => {

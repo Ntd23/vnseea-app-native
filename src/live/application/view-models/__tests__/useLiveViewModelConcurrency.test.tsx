@@ -6,6 +6,10 @@ const mockGetLiveStreams = jest.fn();
 const mockGetLiveFriends = jest.fn();
 const mockGetUserLiveStreams = jest.fn();
 const mockGetLivePost = jest.fn();
+let mockSession: { accessToken: string; userId: string } | null = {
+  accessToken: 'token-1',
+  userId: 'viewer-1',
+};
 
 jest.mock('../../../infrastructure/repositories/ApiLiveRepository', () => ({
   createLiveRepository: () => ({
@@ -33,7 +37,7 @@ jest.mock(
   '../../../../shared-kernel/infrastructure/storage/sessionStorage',
   () => ({
     sessionStorage: {
-      getSession: () => ({ userId: 'viewer-1' }),
+      getSession: () => mockSession,
     },
   }),
 );
@@ -81,6 +85,7 @@ const liveItem: LiveStreamItem = {
 describe('useLiveViewModel request concurrency', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    mockSession = { accessToken: 'token-1', userId: 'viewer-1' };
     mockGetLiveStreams.mockReset().mockResolvedValue([]);
     mockGetLiveFriends.mockReset().mockResolvedValue([]);
     mockGetUserLiveStreams.mockReset().mockResolvedValue([]);
@@ -241,6 +246,107 @@ describe('useLiveViewModel request concurrency', () => {
 
     expect(latest.liveStreams).toEqual([]);
     expect(latest.friendsLive).toEqual([]);
+    await act(async () => renderer.unmount());
+  });
+
+  it('ignores an authorization failure after the auth session is cleared', async () => {
+    const streamsRequest = deferred<LiveStreamItem[]>();
+    const friendsRequest = deferred<LiveStreamItem[]>();
+    mockGetLiveStreams.mockImplementation(() => streamsRequest.promise);
+    mockGetLiveFriends.mockImplementation(() => friendsRequest.promise);
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const consoleWarn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+
+    let latest!: ReturnType<typeof useLiveViewModel>;
+    function Probe() {
+      latest = useLiveViewModel({ autoLoad: false, enabled: true });
+      return null;
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<Probe />);
+    });
+
+    let refreshPromise!: Promise<void>;
+    await act(async () => {
+      refreshPromise = latest.refresh();
+      await Promise.resolve();
+    });
+    expect(latest.isRefreshing).toBe(true);
+
+    mockSession = null;
+    await act(async () => {
+      streamsRequest.reject(new Error('Not authorized'));
+      friendsRequest.reject(new Error('Not authorized'));
+      await refreshPromise;
+    });
+
+    expect(latest.error).toBeNull();
+    expect(latest.isRefreshing).toBe(false);
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleWarn).not.toHaveBeenCalled();
+    await act(async () => renderer.unmount());
+  });
+
+  it('does not start live discovery without an authenticated session', async () => {
+    mockSession = null;
+
+    let latest!: ReturnType<typeof useLiveViewModel>;
+    function Probe() {
+      latest = useLiveViewModel({ autoLoad: false, enabled: true });
+      return null;
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<Probe />);
+    });
+
+    await act(async () => {
+      await latest.refresh();
+    });
+
+    expect(mockGetLiveStreams).not.toHaveBeenCalled();
+    expect(mockGetLiveFriends).not.toHaveBeenCalled();
+    expect(latest.error).toBeNull();
+    expect(latest.isLoading).toBe(false);
+    expect(latest.isRefreshing).toBe(false);
+    await act(async () => renderer.unmount());
+  });
+
+  it('stops probing active streams after the auth session is cleared', async () => {
+    mockGetLiveStreams.mockResolvedValue([liveItem]);
+    mockGetLiveFriends.mockResolvedValue([]);
+    mockGetLivePost.mockResolvedValue(liveItem);
+
+    let latest!: ReturnType<typeof useLiveViewModel>;
+    function Probe() {
+      latest = useLiveViewModel({ autoLoad: false, enabled: true });
+      return null;
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<Probe />);
+    });
+    await act(async () => {
+      await latest.refresh();
+      await flushAsyncWork();
+    });
+    expect(mockGetLivePost).toHaveBeenCalledTimes(1);
+
+    mockSession = null;
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+      await flushAsyncWork();
+    });
+
+    expect(mockGetLivePost).toHaveBeenCalledTimes(1);
     await act(async () => renderer.unmount());
   });
 });
