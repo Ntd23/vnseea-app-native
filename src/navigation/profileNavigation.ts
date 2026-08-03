@@ -1,6 +1,7 @@
 import { ROUTES } from './constants/routes';
 import { Platform } from 'react-native';
 import { sessionStorage } from '../shared-kernel/infrastructure/storage/sessionStorage';
+import { navigationRef } from './navigationRef';
 
 type NavigateLike = {
   navigate: (...args: any[]) => void;
@@ -39,7 +40,13 @@ function pushProfileRoute(
 }
 
 export function navigateToOwnProfile(navigation: NavigateLike) {
-  const rootNavigator = getRootNavigator(navigation);
+  // A preloaded native-stack screen receives a placeholder navigation object
+  // that intentionally rejects actions. The profile drawer is also mounted in
+  // the preloaded Messages screen, so use the live container ref when ready.
+  // Keep the passed-navigation fallback for tests and early app startup.
+  const rootNavigator = navigationRef.isReady()
+    ? (navigationRef as unknown as NavigateLike)
+    : getRootNavigator(navigation);
 
   if (Platform.OS !== 'ios') {
     rootNavigator.navigate(ROUTES.PROFILE);

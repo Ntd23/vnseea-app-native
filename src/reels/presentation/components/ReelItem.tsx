@@ -771,13 +771,23 @@ function ReelItemBase({
     () => (
       <View style={styles.videoLoadingCover}>
         {item.thumbnailUrl ? (
-          <Image
-            source={{ uri: item.thumbnailUrl }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="contain"
-          />
-        ) : null}
-        <View style={styles.videoLoadingScrim} />
+          <>
+            <Image
+              source={{ uri: item.thumbnailUrl }}
+              style={[StyleSheet.absoluteFill, styles.blurredVideoBackground]}
+              resizeMode="cover"
+              blurRadius={24}
+            />
+            <View style={styles.videoLoadingScrim} />
+            <Image
+              source={{ uri: item.thumbnailUrl }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="contain"
+            />
+          </>
+        ) : (
+          <View style={styles.videoLoadingScrim} />
+        )}
         {isCurrent ? (
           <View style={styles.videoLoadingIndicator}>
             <ActivityIndicator size="small" color="#FFFFFF" />

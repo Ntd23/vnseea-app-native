@@ -43,6 +43,8 @@ export interface FeedGroupContext {
 export interface FeedPostPermissions {
   canDelete: boolean;
   canShare: boolean;
+  /** Viewer owns the post (or backend explicitly grants edit permission). */
+  canEdit?: boolean;
   /** Set to false when an API snapshot omits both can_share/canShare fields. */
   canShareKnown?: boolean;
 }

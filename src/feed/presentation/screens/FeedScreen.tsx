@@ -49,6 +49,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import { PostEditModal } from '../../../shared-kernel/presentation/components/PostEditModal';
 import {
   PhotoViewerModal,
   type PhotoViewerState,
@@ -106,6 +107,10 @@ import type {
   FeedAdPost,
 } from '../../domain/types/feed.types';
 import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
+import {
+  getFeedPostCaption,
+  isFeedPostCaptionEditable,
+} from '../../application/editing/postCaptionEdit';
 import type {
   FeedSource,
   ReportPostInput,
@@ -161,9 +166,7 @@ import {
 import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
 import { FeedMediaImage } from '../components/FeedMediaImage';
 import { useEventsOnFeedViewModel, EventPostCard } from '../../../events';
-import {
-  type JobsItem,
-} from '../../../jobs/domain/types/jobs.types';
+import { type JobsItem } from '../../../jobs/domain/types/jobs.types';
 import { useJobsOnFeedViewModel } from '../../../jobs/application/view-models/useJobsOnFeedViewModel';
 import type { GroupItem } from '../../../community/domain/types/community.types';
 import { useSuggestedGroupsOnFeedViewModel } from '../../../community/application/view-models/useSuggestedGroupsOnFeedViewModel';
@@ -1290,9 +1293,7 @@ function FeedScreen() {
       ? 'Không tải được bảng tin. Vui lòng kiểm tra kết nối và thử lại.'
       : 'Could not load the feed. Check your connection and try again.';
   const feedLoadMoreMessage =
-    language === 'vi'
-      ? 'Đang tải thêm bài viết…'
-      : 'Loading more posts…';
+    language === 'vi' ? 'Đang tải thêm bài viết…' : 'Loading more posts…';
   const vm = useFeedViewModel();
   const feedSafeAreaInsets = useSafeAreaInsets();
   const { bottomContentPadding, scrollIndicatorBottomInset } =
@@ -1314,6 +1315,7 @@ function FeedScreen() {
   const saveFeedPost = vm.savePost;
   const reportFeedPost = vm.reportPost;
   const deleteFeedPost = vm.deletePost;
+  const editFeedPost = vm.editPost;
   const hideFeedPost = vm.hidePost;
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
@@ -2437,9 +2439,7 @@ function FeedScreen() {
           avatarUrl: job.page?.avatar || job.image,
           entityType: pageId ? ('page' as const) : ('user' as const),
           pageId,
-          ownerId: job.page?.user_id
-            ? String(job.page.user_id)
-            : undefined,
+          ownerId: job.page?.user_id ? String(job.page.user_id) : undefined,
         },
         permissions: {
           canDelete: false,
@@ -2677,8 +2677,7 @@ function FeedScreen() {
     if (
       imagePrefetchTimerRef.current ||
       pendingImagePrefetchUrlsRef.current.length === 0 ||
-      imagePrefetchInFlightCountRef.current >=
-        IMAGE_PREFETCH_MAX_CONCURRENCY
+      imagePrefetchInFlightCountRef.current >= IMAGE_PREFETCH_MAX_CONCURRENCY
     ) {
       return;
     }
@@ -2687,8 +2686,7 @@ function FeedScreen() {
       imagePrefetchTimerRef.current = null;
       const availableSlots = Math.max(
         0,
-        IMAGE_PREFETCH_MAX_CONCURRENCY -
-          imagePrefetchInFlightCountRef.current,
+        IMAGE_PREFETCH_MAX_CONCURRENCY - imagePrefetchInFlightCountRef.current,
       );
       const nextUrls = pendingImagePrefetchUrlsRef.current.splice(
         0,
@@ -2720,8 +2718,7 @@ function FeedScreen() {
 
       if (
         pendingImagePrefetchUrlsRef.current.length > 0 &&
-        imagePrefetchInFlightCountRef.current <
-          IMAGE_PREFETCH_MAX_CONCURRENCY
+        imagePrefetchInFlightCountRef.current < IMAGE_PREFETCH_MAX_CONCURRENCY
       ) {
         scheduleImagePrefetchFlush();
       }
@@ -2860,9 +2857,7 @@ function FeedScreen() {
           : firstVisibleIndex - FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS;
       const endIndex =
         direction === 'up'
-          ? furthestVisibleIndex +
-            FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS +
-            1
+          ? furthestVisibleIndex + FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS + 1
           : furthestVisibleIndex + FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS + 1;
 
       prefetchFeedVideoPostersInRange(startIndex, endIndex);
@@ -3169,8 +3164,12 @@ function FeedScreen() {
   const [postMenuVisible, setPostMenuVisible] = useState(false);
   const [selectedPostForMenu, setSelectedPostForMenu] =
     useState<FeedPost | null>(null);
+  const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
   const canDeleteSelectedPost =
     selectedPostForMenu?.permissions?.canDelete === true;
+  const canEditSelectedPost =
+    selectedPostForMenu?.permissions?.canEdit === true &&
+    isFeedPostCaptionEditable(selectedPostForMenu);
 
   const handleOpenPostMenu = useCallback((post: FeedPost) => {
     setSelectedPostForMenu(post);
@@ -3181,6 +3180,35 @@ function FeedScreen() {
     setPostMenuVisible(false);
     setSelectedPostForMenu(null);
   }, []);
+
+  const handleStartEditPost = useCallback((post: FeedPost) => {
+    if (!isFeedPostCaptionEditable(post)) return;
+    setEditingPost(post);
+  }, []);
+
+  const handleCloseEditPost = useCallback(() => {
+    setEditingPost(null);
+  }, []);
+
+  const handleSubmitEditPost = useCallback(
+    async (text: string) => {
+      if (!editingPost || !isFeedPostCaptionEditable(editingPost)) return;
+      const result = await editFeedPost(editingPost.id, {
+        text,
+        privacy: editingPost.privacy,
+      });
+      if (!result.edited) {
+        throw new Error('Không thể chỉnh sửa bài viết. Vui lòng thử lại.');
+      }
+      if (result.persistence === 'local') {
+        Alert.alert(
+          'Đã lưu tạm',
+          'Bản sửa hiện chỉ được lưu trên thiết bị này vì API server chưa sẵn sàng.',
+        );
+      }
+    },
+    [editFeedPost, editingPost],
+  );
 
   const handleSavePost = useCallback(
     async (postId: string) => {
@@ -4094,43 +4122,40 @@ function FeedScreen() {
     [feedRefreshProgressViewOffset, handleRefresh, vm.isRefreshing],
   );
 
-  const feedListEmptyComponent = useMemo(
-    () => {
-      if (vm.isLoading) {
-        return (
-          <View>
-            {[1, 2, 3].map(i => (
-              <PostSkeleton key={i} />
-            ))}
-          </View>
-        );
-      }
-
-      if (!vm.error) return null;
-
+  const feedListEmptyComponent = useMemo(() => {
+    if (vm.isLoading) {
       return (
-        <View className="items-center px-8 py-16">
-          <Text className="text-center text-base font-semibold text-[#475569]">
-            {feedLoadErrorMessage}
-          </Text>
-          <TouchableOpacity
-            className="mt-4 rounded-full bg-red-50 px-6 py-3"
-            activeOpacity={0.8}
-            onPress={handleRefresh}
-          >
-            <Text className="font-bold text-brand">{copy.commentRetry}</Text>
-          </TouchableOpacity>
+        <View>
+          {[1, 2, 3].map(i => (
+            <PostSkeleton key={i} />
+          ))}
         </View>
       );
-    },
-    [
-      copy.commentRetry,
-      feedLoadErrorMessage,
-      handleRefresh,
-      vm.error,
-      vm.isLoading,
-    ],
-  );
+    }
+
+    if (!vm.error) return null;
+
+    return (
+      <View className="items-center px-8 py-16">
+        <Text className="text-center text-base font-semibold text-[#475569]">
+          {feedLoadErrorMessage}
+        </Text>
+        <TouchableOpacity
+          className="mt-4 rounded-full bg-red-50 px-6 py-3"
+          activeOpacity={0.8}
+          onPress={handleRefresh}
+        >
+          <Text className="font-bold text-brand">{copy.commentRetry}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [
+    copy.commentRetry,
+    feedLoadErrorMessage,
+    handleRefresh,
+    vm.error,
+    vm.isLoading,
+  ]);
 
   const feedListElement = (
     <FlashList
@@ -4319,10 +4344,18 @@ function FeedScreen() {
           onClose={handleClosePostMenu}
           post={selectedPostForMenu}
           canDelete={canDeleteSelectedPost}
+          canEdit={canEditSelectedPost}
           onSave={handleSavePost}
+          onEdit={handleStartEditPost}
           onHide={handleHidePost}
           onDelete={handleDeletePost}
           onReport={handleReportPost}
+        />
+        <PostEditModal
+          visible={editingPost !== null}
+          initialText={getFeedPostCaption(editingPost)}
+          onClose={handleCloseEditPost}
+          onSubmit={handleSubmitEditPost}
         />
       </SafeAreaView>
     </GestureHandlerRootView>

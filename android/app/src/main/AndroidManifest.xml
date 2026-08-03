@@ -12,7 +12,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -29,6 +28,19 @@
     <!-- Fallback for Android 12 and below -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+
+    <!-- CallKeep is iOS-only; ensure its Android phone permissions never merge. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" tools:node="remove" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" tools:node="remove" />
+
+    <queries>
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="tel" />
+      </intent>
+    </queries>
 
     <application
       android:name=".MainApplication"
@@ -68,13 +80,9 @@
         </intent-filter>
       </activity>
       <service
-        android:name="io.wazo.callkeep.VoiceConnectionService"
-        android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
-        android:exported="true">
-        <intent-filter>
-          <action android:name="android.telecom.ConnectionService" />
-        </intent-filter>
-      </service>
+        android:name=".call.LiveKitCallForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="microphone|camera" />
       <receiver
         android:name=".call.LiveKitCallActionReceiver"
         android:exported="false" />

@@ -128,7 +128,8 @@ if (!function_exists('Wo_SendCanonicalLiveKitCallPush')) {
             $notification['notification_title'],
             $call_type,
             'direct',
-            true
+            true,
+            $notification['request_data']
         );
         if (function_exists('Wo_VnseeaCallDebugLog')) {
             Wo_VnseeaCallDebugLog('call_push_dispatch_v2', array(
@@ -277,6 +278,7 @@ if (!function_exists('Wo_DismissCanonicalLiveKitOtherEndpoints')) {
             $call_type,
             'direct',
             true,
+            array(),
             $endpoint_id,
             true
         );
@@ -382,6 +384,7 @@ if (!function_exists('Wo_DismissCanonicalLiveKitGroupOtherEndpoints')) {
             'video',
             'group',
             true,
+            array(),
             $endpoint_id,
             true
         );

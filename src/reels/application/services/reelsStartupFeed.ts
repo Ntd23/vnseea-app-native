@@ -49,6 +49,7 @@ export function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
     privacyContract: post.privacyContract ?? 'legacy_feed',
     isAnonymous: post.isAnonymous === true,
     canShare: isFeedPostShareable(post),
+    canEdit: post.permissions?.canEdit === true,
     canShareKnown: post.permissions
       ? post.permissions.canShareKnown !== false
       : false,

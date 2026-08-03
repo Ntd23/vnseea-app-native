@@ -160,8 +160,20 @@ function decodeLegacyLinkMarkup(value: string): string {
     }
   });
 }
+function restoreMessageLineBreaks(value: string): string {
+  return value
+    .replace(/\r\n?/g, '\n')
+    .replace(/&lt;br\s*\/?&gt;/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/&#(?:10|13);/gi, '\n')
+    .replace(/\[nl\]/gi, '\n')
+    .replace(/\\r\\n|\\n\\r|\\r|\\n/g, '\n');
+}
+function serializeMessageLineBreaks(value: string): string {
+  return value.replace(/\r\n?/g, '\n').replace(/\n/g, '\\n');
+}
 function cleanText(value: string): string {
-  return decodeLegacyLinkMarkup(value)
+  return restoreMessageLineBreaks(decodeLegacyLinkMarkup(value))
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -1426,6 +1438,8 @@ function mapMessage(
     replyTo,
     media,
     mediaType,
+    mediaGroupId:
+      readString(raw, 'media_group_id', 'mediaGroupId') || undefined,
     thumbnail: normalizeRawUrl(
       readMessageThumbnail(raw),
       apiConfig.webBaseUrl,
@@ -1764,10 +1778,11 @@ export function createMessagesRepository(): MessagesRepository {
       const messageHashId = `${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
-      const textPayload =
+      const rawTextPayload =
         target.type === 'group' && attachment?.mediaType === 'audio'
           ? [message, GROUP_VOICE_MESSAGE_MARKER].filter(Boolean).join('\n')
           : message;
+      const textPayload = serializeMessageLineBreaks(rawTextPayload);
       const userPayload = {
         user_id: target.id,
         text: textPayload,
@@ -1789,6 +1804,9 @@ export function createMessagesRepository(): MessagesRepository {
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
           : {}),
+        ...(options?.mediaGroupId
+          ? { media_group_id: options.mediaGroupId }
+          : {}),
       };
       const groupPayload = {
         type: 'send',
@@ -1797,6 +1815,9 @@ export function createMessagesRepository(): MessagesRepository {
         message_hash_id: messageHashId,
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
+          : {}),
+        ...(options?.mediaGroupId
+          ? { media_group_id: options.mediaGroupId }
           : {}),
       };
       const route =
@@ -1827,10 +1848,21 @@ export function createMessagesRepository(): MessagesRepository {
             item as RawRecord,
             chat,
           );
+          const withOriginalLineBreaks =
+            message.includes('\n') && !sentMessage.message.includes('\n')
+              ? {
+                  ...sentMessage,
+                  message:
+                    sentMessage.message.replace(/\s+/g, ' ').trim() ===
+                    message.replace(/\s+/g, ' ').trim()
+                      ? message
+                      : sentMessage.message,
+                }
+              : sentMessage;
           const withReply =
-            sentMessage.replyTo || !options?.replyTo
-              ? sentMessage
-              : { ...sentMessage, replyTo: options.replyTo };
+            withOriginalLineBreaks.replyTo || !options?.replyTo
+              ? withOriginalLineBreaks
+              : { ...withOriginalLineBreaks, replyTo: options.replyTo };
           if (withReply.storyReply?.available || !options?.storyReply) {
             return withReply;
           }

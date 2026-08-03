@@ -31,6 +31,13 @@ type AndroidCallIntentModule = {
   getInitialCallAction?: () => Promise<Record<string, string> | null>;
   getInitialMessageAction?: () => Promise<Record<string, string> | null>;
   dismissIncomingCall?: (callId: string) => Promise<boolean>;
+  showIncomingCall?: (callData: Record<string, string>) => Promise<boolean>;
+  startCallForegroundService?: (
+    callId: string,
+    callType: LiveKitCallType,
+    title: string,
+  ) => Promise<boolean>;
+  stopCallForegroundService?: () => Promise<boolean>;
 };
 
 export type NativeMessageAction = {
@@ -49,6 +56,7 @@ type ActiveNativeCall = {
 };
 
 const activeCalls = new Map<string, ActiveNativeCall>();
+const connectedAndroidCallUuids = new Set<string>();
 
 let isConfigured = false;
 let listeners: NativeCallListeners = {};
@@ -84,6 +92,18 @@ let lastWebRTCAudioSessionActivatedCallUuid = '';
 function getAndroidCallIntentModule() {
   if (Platform.OS !== 'android') return null;
   return NativeModules.VnseeaCallIntent as AndroidCallIntentModule | undefined;
+}
+
+function stopAndroidCallForegroundServiceIfIdle() {
+  if (Platform.OS !== 'android' || connectedAndroidCallUuids.size > 0) return;
+  const stopPromise =
+    getAndroidCallIntentModule()?.stopCallForegroundService?.();
+  stopPromise?.catch(error => {
+    console.warn(
+      '[LiveKitCall] Could not stop Android call foreground service',
+      error,
+    );
+  });
 }
 
 function logNativeCallDebug(event: string, data: Record<string, unknown> = {}) {
@@ -659,20 +679,6 @@ export async function configureNativeCallService() {
         ringtoneSound: 'incoming_call_ringtone.mp3',
         includesCallsInRecents: false,
       },
-      android: {
-        selfManaged: true,
-        alertTitle: 'Cho phép cuộc gọi',
-        alertDescription:
-          'VNSEEA cần quyền tài khoản điện thoại để hiển thị cuộc gọi đến.',
-        cancelButton: 'Hủy',
-        okButton: 'Đồng ý',
-        additionalPermissions: [],
-        foregroundService: {
-          channelId: 'vnseea-livekit-calls',
-          channelName: 'VNSEEA Calls',
-          notificationTitle: 'VNSEEA đang xử lý cuộc gọi',
-        },
-      },
     });
 
     RNCallKeep.default.addEventListener('answerCall', ({ callUUID }: any) => {
@@ -1062,26 +1068,23 @@ export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
 
   if (Platform.OS === 'android') {
     const module = getAndroidCallIntentModule();
-    if (module && 'showIncomingCall' in module) {
-      // @ts-ignore
-      module
-        .showIncomingCall({
-          event_type: 'livekit_call',
-          call_id: call.callId,
-          call_type: call.callType,
-          room_name: call.roomName || '',
-          from_id: call.peer.id,
-          name: call.peer.name,
-          avatar: call.peer.avatar || '',
-          action_token: call.actionToken || '',
-          api_url: call.apiUrl || '',
-          client_endpoint_id:
-            call.clientEndpointId || getClientEndpointIdentity(),
-          call_context: 'direct',
-        })
-        .catch((err: any) =>
-          console.warn('[LiveKitCall] showIncomingCall failed', err),
-        );
+    if (module?.showIncomingCall) {
+      module.showIncomingCall({
+        event_type: 'livekit_call',
+        call_id: call.callId,
+        call_type: call.callType,
+        room_name: call.roomName || '',
+        from_id: call.peer.id,
+        name: call.peer.name,
+        avatar: call.peer.avatar || '',
+        action_token: call.actionToken || '',
+        api_url: call.apiUrl || '',
+        client_endpoint_id:
+          call.clientEndpointId || getClientEndpointIdentity(),
+        call_context: 'direct',
+      }).catch((err: any) =>
+        console.warn('[LiveKitCall] showIncomingCall failed', err),
+      );
     }
     return callUuid;
   }
@@ -1127,31 +1130,28 @@ export async function displayNativeIncomingGroupCall(
 
   if (Platform.OS === 'android') {
     const module = getAndroidCallIntentModule();
-    if (module && 'showIncomingCall' in module) {
-      // @ts-ignore
-      module
-        .showIncomingCall({
-          event_type: 'livekit_group_call',
-          call_id: call.callId,
-          call_type: call.callType,
-          room_name: call.roomName || '',
-          group_id: call.groupId,
-          group_name: call.group.name,
-          group_avatar: call.group.avatar || '',
-          caller_id: call.caller.id,
-          caller_name: call.caller.name,
-          caller_avatar: call.caller.avatar || '',
-          name: call.caller.name,
-          avatar: call.caller.avatar || '',
-          action_token: call.actionToken || '',
-          api_url: call.apiUrl || '',
-          client_endpoint_id:
-            call.clientEndpointId || getClientEndpointIdentity(),
-          call_context: 'group',
-        })
-        .catch((err: any) =>
-          console.warn('[LiveKitCall] showIncomingGroupCall failed', err),
-        );
+    if (module?.showIncomingCall) {
+      module.showIncomingCall({
+        event_type: 'livekit_group_call',
+        call_id: call.callId,
+        call_type: call.callType,
+        room_name: call.roomName || '',
+        group_id: call.groupId,
+        group_name: call.group.name,
+        group_avatar: call.group.avatar || '',
+        caller_id: call.caller.id,
+        caller_name: call.caller.name,
+        caller_avatar: call.caller.avatar || '',
+        name: call.caller.name,
+        avatar: call.caller.avatar || '',
+        action_token: call.actionToken || '',
+        api_url: call.apiUrl || '',
+        client_endpoint_id:
+          call.clientEndpointId || getClientEndpointIdentity(),
+        call_context: 'group',
+      }).catch((err: any) =>
+        console.warn('[LiveKitCall] showIncomingGroupCall failed', err),
+      );
     }
     return callUuid;
   }
@@ -1181,7 +1181,46 @@ export async function displayNativeIncomingGroupCall(
   return callUuid;
 }
 
-export function markNativeCallConnected(callUuid: string) {
+export function markNativeCallConnected(
+  callUuid: string,
+  androidDetails?: {
+    callId: string;
+    callType: LiveKitCallType;
+    title?: string;
+  },
+) {
+  if (Platform.OS === 'android') {
+    if (!androidDetails?.callId) return;
+    connectedAndroidCallUuids.add(callUuid);
+    const startPromise = getAndroidCallIntentModule()?.startCallForegroundService?.(
+      androidDetails.callId,
+      androidDetails.callType,
+      androidDetails.title ?? '',
+    );
+    if (!startPromise) {
+      connectedAndroidCallUuids.delete(callUuid);
+      stopAndroidCallForegroundServiceIfIdle();
+      return;
+    }
+    startPromise
+      .then(started => {
+        const callStillConnected = connectedAndroidCallUuids.has(callUuid);
+        if (!started) connectedAndroidCallUuids.delete(callUuid);
+        if (!started || !callStillConnected) {
+          stopAndroidCallForegroundServiceIfIdle();
+        }
+      })
+      .catch(error => {
+        connectedAndroidCallUuids.delete(callUuid);
+        stopAndroidCallForegroundServiceIfIdle();
+        console.warn(
+          '[LiveKitCall] Could not start Android call foreground service',
+          error,
+        );
+      });
+    return;
+  }
+
   const nativeCall = activeCalls.get(callUuid);
   if (!nativeCall?.usesNativeCallUi) return;
 
@@ -1204,6 +1243,11 @@ export function endNativeCall(callUuid?: string, reason?: number) {
   if (!callUuid) return;
   const nativeCall = activeCalls.get(callUuid);
   activeCalls.delete(callUuid);
+  if (Platform.OS === 'android') {
+    connectedAndroidCallUuids.delete(callUuid);
+    stopAndroidCallForegroundServiceIfIdle();
+    return;
+  }
   if (!nativeCall?.usesNativeCallUi) return;
 
   const RNCallKeep = loadCallKeep();

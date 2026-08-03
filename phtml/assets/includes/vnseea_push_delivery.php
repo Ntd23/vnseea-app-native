@@ -1378,6 +1378,18 @@ if (!function_exists('VNSEEA_SendOneSignalDelivery')) {
             ),
             'data' => $payload
         );
+        $request_data = !empty($delivery['request_data']) && is_array($delivery['request_data'])
+            ? $delivery['request_data']
+            : array();
+        if (!empty($request_data['ttl'])) {
+            $request['ttl'] = max(1, (int)$request_data['ttl']);
+        }
+        if (!empty($request_data['collapse_id'])) {
+            $request['collapse_id'] = substr((string)$request_data['collapse_id'], 0, 64);
+        }
+        if (isset($request_data['priority'])) {
+            $request['priority'] = (int)$request_data['priority'] === 5 ? 5 : 10;
+        }
         if ($platform === 'android') {
             $request['existing_android_channel_id'] = 'vnseea_notifications_sound_v1';
             $request['android_sound'] = 'app_notification_sound';
@@ -1802,10 +1814,33 @@ if (!function_exists('VNSEEA_SendApnsVoipTarget')) {
 }
 
 if (!function_exists('VNSEEA_SendImmediateCallPush')) {
-    function VNSEEA_SendImmediateCallPush($recipient_id, $notification_data, $display_name, $call_type, $context = 'direct', $allow_voip = true, $excluded_endpoint_id = '', $is_control = false)
+    function VNSEEA_SendImmediateCallPush($recipient_id, $notification_data, $display_name, $call_type, $context = 'direct', $allow_voip = true, $request_data = array(), $excluded_endpoint_id = '', $is_control = false)
     {
         $recipient_id = (int)$recipient_id;
         $call_type = $call_type === 'audio' ? 'audio' : 'video';
+        $call_id = !empty($notification_data['call_id'])
+            ? (string)$notification_data['call_id']
+            : 'unknown';
+        $ring_mode = !empty($notification_data['ring_mode'])
+            ? strtolower((string)$notification_data['ring_mode'])
+            : 'fullscreen';
+        $expires_at = !empty($notification_data['expires_at'])
+            ? (int)$notification_data['expires_at']
+            : 0;
+        $derived_request_data = array(
+            'priority' => in_array($ring_mode, array('passive', 'silent'), true) ? 5 : 10,
+            'ttl' => $expires_at > time() ? max(1, $expires_at - time()) : 45,
+            'collapse_id' => $context === 'group'
+                ? 'livekit_group_call_' . $call_id
+                : 'livekit_call_' . $call_type . '_' . $call_id
+        );
+        $request_data = array_merge(
+            $derived_request_data,
+            is_array($request_data) ? $request_data : array()
+        );
+        if ($expires_at > 0) {
+            $request_data['ttl'] = max(1, min((int)$request_data['ttl'], $expires_at - time()));
+        }
         $onesignal_targets = VNSEEA_GetUserPushTargets($recipient_id, 'onesignal');
         $onesignal_state = empty($onesignal_targets) ? 'unavailable' : 'failed';
         foreach ($onesignal_targets as $target) {
@@ -1817,7 +1852,8 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
                 continue;
             }
             $delivery = array_merge($target, array(
-                'batch_uuid' => VNSEEA_PushUuidV4()
+                'batch_uuid' => VNSEEA_PushUuidV4(),
+                'request_data' => $request_data
             ));
             $payload = array_merge($notification_data, array(
                 'client_endpoint_id' => $target_endpoint_id,

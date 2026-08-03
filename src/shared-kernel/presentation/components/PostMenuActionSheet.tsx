@@ -18,6 +18,7 @@ import {
   ChevronRight,
   EyeOff,
   Flag,
+  Pencil,
   Trash2,
   X,
 } from 'lucide-react-native';
@@ -30,7 +31,9 @@ interface PostMenuActionSheetProps {
   onClose: () => void;
   post: FeedPost | null;
   canDelete?: boolean;
+  canEdit?: boolean;
   onSave: (postId: string) => Promise<void>;
+  onEdit?: (post: FeedPost) => void;
   onHide: (postId: string) => Promise<void> | void;
   onDelete: (postId: string) => Promise<void>;
   onReport: (postId: string, input: ReportPostInput) => Promise<void>;
@@ -155,7 +158,9 @@ export function PostMenuActionSheet({
   onClose,
   post,
   canDelete = false,
+  canEdit = false,
   onSave,
+  onEdit,
   onHide,
   onDelete,
   onReport,
@@ -256,6 +261,8 @@ export function PostMenuActionSheet({
 
   const isBusy = loadingId !== null;
   const canRenderDelete = canDelete && post.permissions?.canDelete === true;
+  const canRenderEdit =
+    canEdit && post.permissions?.canEdit === true && onEdit !== undefined;
 
   const handleReportBack = () => {
     if (isBusy) return;
@@ -392,6 +399,22 @@ export function PostMenuActionSheet({
             iconClassName="bg-brand-soft"
             onPress={() => runAction('save', onSave)}
           />
+          {canRenderEdit ? (
+            <>
+              <Divider />
+              <MenuAction
+                label="Chỉnh sửa bài viết"
+                loading={false}
+                disabled={isBusy}
+                icon={<Pencil size={20} color={APP_BRAND_COLOR} />}
+                iconClassName="bg-brand-soft"
+                onPress={() => {
+                  onClose();
+                  onEdit?.(post);
+                }}
+              />
+            </>
+          ) : null}
           <Divider />
           <MenuAction
             label="Ẩn bài viết"

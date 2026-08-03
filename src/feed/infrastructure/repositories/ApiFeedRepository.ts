@@ -222,8 +222,10 @@ function readPostPermissions(
       ? undefined
       : readOptionalBool(raw, 'can_share', 'canShare');
   const backendCanShare = nestedCanShare ?? rootCanShare;
+  const backendCanEdit = readOptionalBool(permissions, 'can_edit', 'canEdit');
   return {
     canDelete: readBool(permissions, 'can_delete', 'canDelete'),
+    canEdit: backendCanEdit === true,
     canShare:
       backendCanShare === true &&
       privacy.isValid &&
@@ -233,10 +235,7 @@ function readPostPermissions(
   };
 }
 
-function readPositiveEntityId(
-  raw: Record<string, unknown>,
-  ...keys: string[]
-) {
+function readPositiveEntityId(raw: Record<string, unknown>, ...keys: string[]) {
   const value = readString(raw, ...keys).trim();
   if (!value) return '';
   const numericValue = Number(value);
@@ -252,7 +251,11 @@ function readPagePublisherRecord(
 
   for (const key of ['page_info', 'page_data']) {
     const candidate = raw[key];
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    if (
+      !candidate ||
+      typeof candidate !== 'object' ||
+      Array.isArray(candidate)
+    ) {
       continue;
     }
     const pageRecord = candidate as Record<string, unknown>;
@@ -270,8 +273,7 @@ function readPagePublisherRecord(
     'pageId',
   );
   const publisherLooksLikePage = Boolean(
-    publisherPageId ||
-      readString(fallbackPublisher, 'page_name', 'page_title'),
+    publisherPageId || readString(fallbackPublisher, 'page_name', 'page_title'),
   );
   return publisherLooksLikePage ? fallbackPublisher : null;
 }
@@ -299,7 +301,13 @@ function readPostPresentation(raw: Record<string, unknown>) {
 
   return {
     privacy,
-    permissions,
+    permissions: {
+      ...permissions,
+      // Older WoWonder responses do not expose `can_edit`. Ownership is the
+      // reliable fallback and avoids granting edit rights to group admins who
+      // may be allowed to delete somebody else's post.
+      canEdit: permissions.canEdit === true || isOwner,
+    },
     publisher:
       privacy.isAnonymous && !isOwner
         ? ({} as Record<string, unknown>)
@@ -484,8 +492,7 @@ function mapPostPublisher(
       : readString(publisher, 'user_id', 'id'),
     name,
     username,
-    avatarUrl:
-      readString(publisher, 'avatar', 'profile_picture') || undefined,
+    avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
   };
 
   if (isPage && presentation.pageId) {
@@ -767,8 +774,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   const privacy: PostPrivacy = privacyResult.audience;
 
   const videoUrl = normalizePlayableMediaUrl(readString(raw, 'postFile')) ?? '';
-  const publisherAvatarUrl =
-    publisher.avatarUrl || undefined;
+  const publisherAvatarUrl = publisher.avatarUrl || undefined;
   const normalizedPublisherAvatarUrl =
     normalizePlayableMediaUrl(publisherAvatarUrl);
   const rawThumbnailUrl =
@@ -1268,9 +1274,7 @@ function readNestedImages(
       return {
         id: record ? readNumber(record, 'id') || index + 1 : index + 1,
         image,
-        product_id: record
-          ? readNumber(record, 'product_id', 'productId')
-          : 0,
+        product_id: record ? readNumber(record, 'product_id', 'productId') : 0,
       };
     })
     .filter((item): item is ProductItem['images'][number] => Boolean(item));
@@ -1294,7 +1298,9 @@ function mapProductPost(raw: Record<string, unknown>): FeedProductPost {
     readNumber(product, 'id', 'product_id') || readNumber(raw, 'product_id');
   const images = readNestedImages(product);
   const fallbackImage =
-    readNestedImage(product) || base.photos[0] || normalizeMediaUrl(readString(raw, 'postFile'));
+    readNestedImage(product) ||
+    base.photos[0] ||
+    normalizeMediaUrl(readString(raw, 'postFile'));
   if (images.length === 0 && fallbackImage) {
     images.push({ id: 1, image: fallbackImage, product_id: productId });
   }
@@ -1311,15 +1317,16 @@ function mapProductPost(raw: Record<string, unknown>): FeedProductPost {
     product: {
       id: productId,
       user_id: readNumber(product, 'user_id') || sellerId,
-      name: cleanCaption(readString(product, 'name', 'title', 'product_title')) || 'Sản phẩm',
+      name:
+        cleanCaption(readString(product, 'name', 'title', 'product_title')) ||
+        'Sản phẩm',
       category: readNumber(product, 'category', 'category_id'),
       category_name: cleanCaption(
         readString(product, 'category_name', 'category_label'),
       ),
       product_sub_category:
         readString(product, 'product_sub_category') || undefined,
-      sub_category:
-        readNumber(product, 'sub_category', 'sub_id') || undefined,
+      sub_category: readNumber(product, 'sub_category', 'sub_id') || undefined,
       description: cleanCaption(readString(product, 'description')),
       price: readString(product, 'price', 'product_price'),
       points:
@@ -1349,7 +1356,8 @@ function mapProductPost(raw: Record<string, unknown>): FeedProductPost {
       seller: {
         user_id: sellerId,
         username:
-          readString(seller, 'username', 'user_name') || base.publisher.username,
+          readString(seller, 'username', 'user_name') ||
+          base.publisher.username,
         name:
           cleanCaption(readString(seller, 'name', 'full_name')) ||
           base.publisher.name,
@@ -1382,10 +1390,14 @@ function mapJobPost(raw: Record<string, unknown>): FeedJobPost {
   const job = readNestedRecord(raw, 'job', 'job_data') ?? {};
   const page = readNestedRecord(job, 'page') ?? readNestedRecord(raw, 'page');
   const jobImage =
-    readNestedImage(job) || base.photos[0] || normalizeMediaUrl(readString(raw, 'postFile')) || '';
+    readNestedImage(job) ||
+    base.photos[0] ||
+    normalizeMediaUrl(readString(raw, 'postFile')) ||
+    '';
   const jobId = readString(job, 'id', 'job_id') || readString(raw, 'job_id');
   const postId = readString(job, 'post_id') || base.id;
-  const pageId = readString(job, 'page_id') || readString(page ?? {}, 'page_id', 'id');
+  const pageId =
+    readString(job, 'page_id') || readString(page ?? {}, 'page_id', 'id');
   const pageTitle =
     cleanCaption(readString(page ?? {}, 'page_title', 'name', 'full_name')) ||
     base.publisher.name;
@@ -1450,9 +1462,7 @@ function mapJobPost(raw: Record<string, unknown>): FeedJobPost {
           username: mappedJob.page.page_name || base.publisher.username,
           avatarUrl: mappedJob.page.avatar || base.publisher.avatarUrl,
           entityType: 'page',
-          pageId: String(
-            mappedJob.page.page_id || base.publisher.pageId || '',
-          ),
+          pageId: String(mappedJob.page.page_id || base.publisher.pageId || ''),
           ownerId: String(
             mappedJob.page.user_id || base.publisher.ownerId || '',
           ),
@@ -1591,10 +1601,7 @@ const suggestedUsersCache = new Map<
 >();
 const suggestedAuthorOffsets = new Map<string, number>();
 const activeSuggestedAuthorCohorts = new Map<string, string[]>();
-type RecommendedEndpointAvailability =
-  | 'unknown'
-  | 'available'
-  | 'unsupported';
+type RecommendedEndpointAvailability = 'unknown' | 'available' | 'unsupported';
 let recommendedEndpointAvailability: RecommendedEndpointAvailability =
   'unknown';
 
@@ -1749,8 +1756,7 @@ function isRawCursorBackedByAd(
 ): boolean {
   if (!cursor) return false;
   return posts.some(
-    item =>
-      looksLikeAd(item) && readString(item, 'id', 'ad_id') === cursor,
+    item => looksLikeAd(item) && readString(item, 'id', 'ad_id') === cursor,
   );
 }
 
@@ -1880,8 +1886,7 @@ async function fetchRecommendedRawFeedPostsWithFallback(
       ? mapLightRawFeedPosts(page.posts).length
       : page.posts.length;
   const hasEnoughUsablePosts =
-    minimumUsablePosts <= 0 ||
-    usableLightPostCount >= minimumUsablePosts;
+    minimumUsablePosts <= 0 || usableLightPostCount >= minimumUsablePosts;
   const hasAdvancingCursor = Boolean(
     page.nextCursor && page.nextCursor !== afterPostId,
   );
@@ -2178,9 +2183,7 @@ async function fetchRawFeedPosts(
 
   // Preserve a complete window from the viewer's own timeline. A shared
   // cursor cannot safely advance past rows that were deliberately capped.
-  const ownRawLimit = sessionUserId
-    ? Math.min(50, Math.max(20, limit))
-    : 0;
+  const ownRawLimit = sessionUserId ? Math.min(50, Math.max(20, limit)) : 0;
 
   // ── Diagnostic: log total raw posts available per source ──
   //
@@ -2698,9 +2701,7 @@ export function createFeedRepository(): FeedRepository {
         const remainingVisibleSlots = Math.max(1, limit - mappedById.size);
         const minimumUsablePosts = Math.max(
           1,
-          Math.ceil(
-            remainingVisibleSlots * MIN_RECOMMENDED_PAGE_FILL_RATIO,
-          ),
+          Math.ceil(remainingVisibleSlots * MIN_RECOMMENDED_PAGE_FILL_RATIO),
         );
         const page = await fetchRecommendedRawFeedPostsWithFallback(
           rawLimit,
@@ -2800,9 +2801,7 @@ export function createFeedRepository(): FeedRepository {
       source: FeedSource = 'all',
     ) {
       const page = await fetchRawFeedPosts(limit, afterPostId, source);
-      return page.posts
-        .filter(looksLikeTextOrPhoto)
-        .map(mapTextPostBase);
+      return page.posts.filter(looksLikeTextOrPhoto).map(mapTextPostBase);
     },
 
     async getHashtagPosts(tag: string, limit = 20, afterPostId?: string) {
@@ -3656,9 +3655,7 @@ export function createFeedRepository(): FeedRepository {
 // + video. We mirror the same dispatch the feed list does so the
 // detail screen's renderer (which is union-aware) sees the right
 // `kind` discriminator.
-export function mapFeedPost(
-  raw: Record<string, unknown>,
-): FeedPost {
+export function mapFeedPost(raw: Record<string, unknown>): FeedPost {
   if (readSharedInfo(raw)) {
     return mapSharedOuterPost(raw);
   }

@@ -25,6 +25,15 @@ describe('funding detail donation safety', () => {
     expect(screen).toContain('minimumFontScale={0.6}');
   });
 
+  it('keeps the donation amount and confirm action above Samsung keyboards', () => {
+    expect(screen).toContain(
+      "import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';",
+    );
+    expect(screen).toContain('<KeyboardSafeView');
+    expect(screen).toContain('enabled={visible}');
+    expect(screen).toContain('keyboardVerticalOffset={0}');
+  });
+
   it('checks the latest wallet balance before submitting a donation', () => {
     expect(walletRepository).toContain(
       'walletBalance: toNumber(response.wallet)',

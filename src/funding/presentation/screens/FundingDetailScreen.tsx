@@ -37,6 +37,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useEarningsViewModel } from '../../../wallet';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 
 type DetailNav = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, 'FundingDetail'>;
@@ -67,6 +68,7 @@ function formatDate(timestamp?: any, fallback?: string) {
 }
 
 const BRAND_COLOR = APP_BRAND_COLOR;
+const MODAL_KEYBOARD_SAFE_STYLE = { flex: 1 } as const;
 
 const DETAIL_COPY = {
   vi: {
@@ -300,86 +302,92 @@ function DonateModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable
-        className="flex-1 items-center justify-end bg-black/40"
-        onPress={onClose}
+      <KeyboardSafeView
+        style={MODAL_KEYBOARD_SAFE_STYLE}
+        enabled={visible}
+        keyboardVerticalOffset={0}
       >
         <Pressable
-          className="w-full rounded-t-[28px] bg-white px-5 pb-8 pt-5"
-          onPress={event => event.stopPropagation()}
+          className="flex-1 items-center justify-end bg-black/40"
+          onPress={onClose}
         >
-          <View className="mb-5 flex-row items-start justify-between">
-            <View className="flex-1 pr-4">
-              <Text className="text-[20px] font-extrabold text-[#0F172A]">{copy.modalTitle}</Text>
-              <Text className="mt-1 text-[13px] font-semibold text-[#64748B] leading-5">
-                {copy.modalDesc}
-              </Text>
-            </View>
-            <TouchableOpacity
-              className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
-              activeOpacity={0.85}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              onPress={onClose}
-            >
-              <X size={18} color="#334155" />
-            </TouchableOpacity>
-          </View>
-
-          <View className="flex-row items-center px-4 bg-white border border-[#E2E8F0] rounded-2xl min-h-[54px] mb-5">
-            <Text className="text-[17px] font-extrabold" style={{ color: BRAND_COLOR }}>+</Text>
-            <TextInput
-              className="ml-3 flex-1 text-[15px] font-bold text-[#0F172A]"
-              placeholder="0"
-              placeholderTextColor="#94A3B8"
-              keyboardType="numeric"
-              value={amount}
-              onChangeText={text => setAmount(text.replace(/[^0-9]/g, ''))}
-            />
-            <View className="ml-2 rounded-lg bg-brand-soft px-2.5 py-1">
-              <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>
-                {currencySymbol}
-              </Text>
-            </View>
-          </View>
-
-          <View className="mb-5 flex-row items-center justify-between rounded-2xl bg-[#F8FAFC] px-4 py-3">
-            <Text className="text-[12px] font-bold text-[#64748B]">
-              {copy.availableBalance}
-            </Text>
-            {isBalanceLoading && walletBalance === null ? (
-              <ActivityIndicator size="small" color={BRAND_COLOR} />
-            ) : walletBalance === null ? (
-              <Text className="ml-3 text-[13px] font-extrabold text-[#94A3B8]">—</Text>
-            ) : (
-              <Text
-                className="ml-3 flex-1 text-right text-[13px] font-extrabold"
-                style={{ color: BRAND_COLOR }}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.7}
-              >
-                {formatMoney(walletBalance, currencySymbol)}
-              </Text>
-            )}
-          </View>
-
-          <TouchableOpacity
-            className="min-h-[54px] items-center justify-center rounded-full shadow-sm"
-            style={{ backgroundColor: BRAND_COLOR }}
-            activeOpacity={0.85}
-            onPress={handleConfirm}
-            disabled={isSubmitting}
+          <Pressable
+            className="w-full rounded-t-[28px] bg-white px-5 pb-8 pt-5"
+            onPress={event => event.stopPropagation()}
           >
-            {isSubmitting ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text className="text-[16px] font-bold text-white">
-                {copy.modalConfirm}
+            <View className="mb-5 flex-row items-start justify-between">
+              <View className="flex-1 pr-4">
+                <Text className="text-[20px] font-extrabold text-[#0F172A]">{copy.modalTitle}</Text>
+                <Text className="mt-1 text-[13px] font-semibold text-[#64748B] leading-5">
+                  {copy.modalDesc}
+                </Text>
+              </View>
+              <TouchableOpacity
+                className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
+                activeOpacity={0.85}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                onPress={onClose}
+              >
+                <X size={18} color="#334155" />
+              </TouchableOpacity>
+            </View>
+
+            <View className="flex-row items-center px-4 bg-white border border-[#E2E8F0] rounded-2xl min-h-[54px] mb-5">
+              <Text className="text-[17px] font-extrabold" style={{ color: BRAND_COLOR }}>+</Text>
+              <TextInput
+                className="ml-3 flex-1 text-[15px] font-bold text-[#0F172A]"
+                placeholder="0"
+                placeholderTextColor="#94A3B8"
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={text => setAmount(text.replace(/[^0-9]/g, ''))}
+              />
+              <View className="ml-2 rounded-lg bg-brand-soft px-2.5 py-1">
+                <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>
+                  {currencySymbol}
+                </Text>
+              </View>
+            </View>
+
+            <View className="mb-5 flex-row items-center justify-between rounded-2xl bg-[#F8FAFC] px-4 py-3">
+              <Text className="text-[12px] font-bold text-[#64748B]">
+                {copy.availableBalance}
               </Text>
-            )}
-          </TouchableOpacity>
+              {isBalanceLoading && walletBalance === null ? (
+                <ActivityIndicator size="small" color={BRAND_COLOR} />
+              ) : walletBalance === null ? (
+                <Text className="ml-3 text-[13px] font-extrabold text-[#94A3B8]">—</Text>
+              ) : (
+                <Text
+                  className="ml-3 flex-1 text-right text-[13px] font-extrabold"
+                  style={{ color: BRAND_COLOR }}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {formatMoney(walletBalance, currencySymbol)}
+                </Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              className="min-h-[54px] items-center justify-center rounded-full shadow-sm"
+              style={{ backgroundColor: BRAND_COLOR }}
+              activeOpacity={0.85}
+              onPress={handleConfirm}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text className="text-[16px] font-bold text-white">
+                  {copy.modalConfirm}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardSafeView>
     </Modal>
   );
 }

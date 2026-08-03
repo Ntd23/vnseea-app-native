@@ -82,6 +82,7 @@ function expectRedacted(post: FeedPost) {
   expect(post.publisher).not.toHaveProperty('profileUrl');
   expect(post.permissions).toEqual({
     canDelete: false,
+    canEdit: false,
     canShare: false,
     canShareKnown: true,
   });
@@ -131,6 +132,7 @@ describe('ApiFeedRepository privacy mapping', () => {
     });
     expect(post.permissions).toEqual({
       canDelete: true,
+      canEdit: true,
       canShare: false,
       canShareKnown: true,
     });

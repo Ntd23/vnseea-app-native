@@ -76,15 +76,13 @@ describe('iOS native tab scroll roots', () => {
     expect(nearbySource).toContain('iosPagerSwipeLock.setLocked(true)');
   });
 
-  it('keeps Reels full-screen on AnimatedFlatList without bottom-tab inset padding', () => {
+  it('keeps Reels full-screen on FlatList without bottom-tab inset padding', () => {
     const source = read('src/reels/presentation/screens/ReelsScreen.tsx');
     const reelItemSource = read(
       'src/reels/presentation/components/ReelItem.tsx',
     );
 
-    expect(source).toContain(
-      'const AnimatedFlatList = Animated.createAnimatedComponent(FlatList)',
-    );
+    expect(source).toContain('<FlatList');
     expect(source).not.toContain('useMainTabContentInsets');
     expect(source).not.toContain('bottomOverlayInset={bottomContentPadding}');
     expect(source).not.toContain('bottomContentPadding');
@@ -93,10 +91,8 @@ describe('iOS native tab scroll roots', () => {
     expect(reelItemSource).toContain(
       'Math.max(bottomOverlayInset, insets.bottom)',
     );
-    expect(reelItemSource).toContain('resizeMode="cover"');
-    expect(reelItemSource).not.toContain('resizeMode="contain"');
-    expect(source).toContain('<AnimatedFlatList');
-    expect(source).toContain('onScroll={handleScroll}');
+    expect(reelItemSource).toContain('resizeMode="contain"');
+    expect(source).not.toContain('<AnimatedFlatList');
     expect(source).toContain('pagingEnabled');
     expect(source).toContain('snapToInterval={itemHeight}');
     expect(source).toContain('getItemLayout={getItemLayout}');
@@ -108,7 +104,7 @@ describe('iOS native tab scroll roots', () => {
   it('uses icon-only header controls for Reels auto-scroll and sound toggles', () => {
     const source = read('src/reels/presentation/screens/ReelsScreen.tsx');
 
-    expect(source).toContain('onPressIn={toggleAutoScroll}');
+    expect(source).toContain('onPress={toggleAutoScroll}');
     expect(source).toContain('<ChevronsDown size={20} color="#fff" />');
     expect(source).not.toContain('copy.autoOn');
     expect(source).not.toContain('copy.autoOff');
@@ -187,7 +183,7 @@ describe('iOS native tab scroll roots', () => {
       'ListHeaderComponent={marketplaceListHeaderComponent}',
     );
     expect(source).toContain(
-      "Platform.OS === 'ios' ? ['left', 'right'] : ['top']",
+      "Platform.OS === 'ios' ? ['top', 'left', 'right'] : ['top']",
     );
     expect(source).toContain(
       "const renderHeaderOutsideList = Platform.OS === 'android'",
@@ -237,11 +233,13 @@ describe('iOS native tab scroll roots', () => {
 
     expect(source).toContain('Platform,');
     expect(source).toContain('const profileContentHeader = (');
-    expect(source).toContain('const renderProfilePostItem');
+    expect(source).toContain('const renderProfileListItem');
+    expect(source).toContain('renderProfilePostContent(item.post)');
     expect(source).toContain('const profilePostsListElement = (');
     expect(source).toContain('<FlashList');
     expect(source).toContain('ListHeaderComponent={profileContentHeader}');
-    expect(source).toContain('ListEmptyComponent={profilePostsEmptyComponent}');
+    expect(source).toContain('const shouldRenderProfilePostsState');
+    expect(source).toContain("items.push({ type: 'state' })");
     expect(source).toContain(
       'ListFooterComponent={profilePostsFooterComponent}',
     );

@@ -42,6 +42,12 @@ import {
   mergeFeedVideoPostSnapshotIntoReel,
   mergeReelsStartupItems,
 } from '../services/reelsStartupFeed';
+import { postEditedEvents } from '../../../feed/application/events/postEditedEvents';
+import {
+  applyLocalPostCaptionEdit,
+  applyLocalPostCaptionEdits,
+} from '../../../feed/application/editing/postCaptionEdit';
+import { editPostWithLocalFallback } from '../../../feed/application/editing/editPostWithLocalFallback';
 
 const repository = createReelsRepository();
 const feedRepository = createFeedRepository();
@@ -81,7 +87,9 @@ export function useReelsViewModel(initialVideo?: {
   const [startupSnapshot] = useState(() =>
     getReelsStartupSnapshot(initialVideo),
   );
-  const [items, setItems] = useState<ReelsItem[]>(startupSnapshot.items);
+  const [items, setItems] = useState<ReelsItem[]>(() =>
+    applyLocalPostCaptionEdits(startupSnapshot.items),
+  );
   const itemsRef = useRef(items);
   // Seed the ref synchronously from the constructor argument so the
   // initial-load `loadInitial()` (which fires in a useEffect on mount)
@@ -110,6 +118,22 @@ export function useReelsViewModel(initialVideo?: {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  useEffect(
+    () =>
+      postEditedEvents.subscribe(({ postId, text }) => {
+        setItems(previous => {
+          const nextItems = previous.map(item =>
+            String(item.id) === String(postId)
+              ? { ...item, caption: text }
+              : item,
+          );
+          itemsRef.current = nextItems;
+          return nextItems;
+        });
+      }),
+    [],
+  );
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -302,8 +326,11 @@ export function useReelsViewModel(initialVideo?: {
 
   /** Drop one or more bad ids from a freshly-fetched page. */
   const filterUnavailable = useCallback((list: ReelsItem[]) => {
-    if (unavailableIdsRef.current.size === 0) return list;
-    return list.filter(item => !unavailableIdsRef.current.has(item.id));
+    const availableItems =
+      unavailableIdsRef.current.size === 0
+        ? list
+        : list.filter(item => !unavailableIdsRef.current.has(item.id));
+    return applyLocalPostCaptionEdits(availableItems);
   }, []);
 
   /** Load the first page (used on mount + when the user explicitly retries). */
@@ -457,7 +484,9 @@ export function useReelsViewModel(initialVideo?: {
 
     setItems(prev => {
       const nextItems = prev.map(item =>
-        mergeFeedVideoPostSnapshotIntoReel(item, nextPost),
+        applyLocalPostCaptionEdit(
+          mergeFeedVideoPostSnapshotIntoReel(item, nextPost),
+        ),
       );
       itemsRef.current = nextItems;
       return nextItems;
@@ -1540,6 +1569,20 @@ export function useReelsViewModel(initialVideo?: {
     return feedRepository.sharePost(input);
   }, []);
 
+  const editReelCaption = useCallback(async (postId: string, text: string) => {
+    const reel = itemsRef.current.find(
+      item => String(item.id) === String(postId),
+    );
+    if (!reel || reel.canEdit !== true) {
+      throw new Error('Bạn không có quyền chỉnh sửa video này.');
+    }
+
+    return editPostWithLocalFallback(feedRepository.editPost, postId, {
+      text,
+      privacy: reel.privacy,
+    });
+  }, []);
+
   // Initial load on mount
   useEffect(() => {
     loadInitial();
@@ -1601,5 +1644,6 @@ export function useReelsViewModel(initialVideo?: {
     deleteFailedComment,
     followPublisher,
     sharePost,
+    editReelCaption,
   };
 }

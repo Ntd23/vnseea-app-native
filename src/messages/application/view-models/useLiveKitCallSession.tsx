@@ -3026,7 +3026,13 @@ export function LiveKitCallSessionProvider({
         isLocalMicrophoneEnabled: false,
         isLocalCameraEnabled: false,
       });
-      if (callUuid) markNativeCallConnected(callUuid);
+      if (callUuid) {
+        markNativeCallConnected(callUuid, {
+          callId,
+          callType,
+          title: nextPayload.peer?.name,
+        });
+      }
       publishLocalCallMedia({
         room: nextRoom,
         callId,

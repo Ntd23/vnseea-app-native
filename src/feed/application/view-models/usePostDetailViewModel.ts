@@ -2,13 +2,19 @@
 // mutations separate from the comment VM so the screen can paint immediately.
 import { useCallback, useEffect, useState } from 'react';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
-import type { FeedPost } from '../../domain/types/feed.types';
+import type { FeedPost, PostPrivacy } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   GetPostByIdResult,
   ReportPostInput,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
+import {
+  applyFeedPostCaptionEdit,
+  applyLocalPostCaptionEdit,
+} from '../editing/postCaptionEdit';
+import { editPostWithLocalFallback } from '../editing/editPostWithLocalFallback';
+import { postEditedEvents } from '../events/postEditedEvents';
 
 const feedRepository = createFeedRepository();
 
@@ -28,7 +34,9 @@ export function usePostDetailViewModel({
   fallbackPost,
   postId,
 }: UsePostDetailViewModelOptions) {
-  const [post, setPost] = useState<FeedPost | undefined>(fallbackPost);
+  const [post, setPost] = useState<FeedPost | undefined>(() =>
+    fallbackPost ? applyLocalPostCaptionEdit(fallbackPost) : undefined,
+  );
   const [isLoading, setIsLoading] = useState(fallbackPost === undefined);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +56,7 @@ export function usePostDetailViewModel({
       .getPostById(postId, { fetchComments: false, addView: true })
       .then((result: GetPostByIdResult) => {
         if (cancelled) return;
-        setPost(result.post);
+        setPost(applyLocalPostCaptionEdit(result.post));
       })
       .catch(caught => {
         if (cancelled) return;
@@ -64,6 +72,17 @@ export function usePostDetailViewModel({
       cancelled = true;
     };
   }, [fallbackPost, postId]);
+
+  useEffect(
+    () =>
+      postEditedEvents.subscribe(event => {
+        if (String(event.postId) !== String(postId)) return;
+        setPost(current =>
+          current ? applyFeedPostCaptionEdit(current, event.text) : current,
+        );
+      }),
+    [postId],
+  );
 
   const toggleReaction = useCallback(
     async (reaction: ReactionType | null) => {
@@ -130,7 +149,7 @@ export function usePostDetailViewModel({
   );
 
   const applyRealtimePost = useCallback((nextPost: FeedPost) => {
-    setPost(nextPost);
+    setPost(applyLocalPostCaptionEdit(nextPost));
     setError(null);
   }, []);
 
@@ -174,6 +193,20 @@ export function usePostDetailViewModel({
     return result;
   }, []);
 
+  const editPost = useCallback(
+    async (
+      targetPostId: string,
+      input: { text: string; privacy?: PostPrivacy },
+    ) => {
+      return editPostWithLocalFallback(
+        feedRepository.editPost,
+        targetPostId,
+        input,
+      );
+    },
+    [],
+  );
+
   return {
     post,
     isLoading,
@@ -186,5 +219,6 @@ export function usePostDetailViewModel({
     reportPost,
     sharePost,
     deletePost,
+    editPost,
   };
 }

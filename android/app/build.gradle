@@ -4,6 +4,23 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
+def normalizeSha1 = { value ->
+    String.valueOf(value ?: "").replaceAll("[^0-9A-Fa-f]", "").toUpperCase()
+}
+def releaseMapsCertificateSha1 = normalizeSha1(
+    project.env.get("GOOGLE_MAPS_ANDROID_CERT_SHA1_RELEASE", "")
+)
+def releaseBuildRequested = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains("release")
+}
+
+if (releaseBuildRequested && !(releaseMapsCertificateSha1 ==~ /[0-9A-F]{40}/)) {
+    throw new GradleException(
+        "GOOGLE_MAPS_ANDROID_CERT_SHA1_RELEASE must contain the 40-character " +
+        "Google Play App Signing SHA-1 before building a release."
+    )
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.

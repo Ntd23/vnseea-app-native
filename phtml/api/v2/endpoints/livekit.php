@@ -419,6 +419,7 @@ function Wo_ApiLiveKitDismissOtherAnswerEndpoints($call_source, $call_type, $end
         $call_type,
         'direct',
         true,
+        array(),
         $endpoint_id,
         true
     );

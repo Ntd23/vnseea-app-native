@@ -13,6 +13,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.bridge.Arguments
+import org.json.JSONObject
 
 class VnseeaCallIntentModule(
   private val appContext: ReactApplicationContext,
@@ -79,6 +80,37 @@ class VnseeaCallIntentModule(
   }
 
   @ReactMethod
+  fun startCallForegroundService(
+    callId: String?,
+    callType: String?,
+    title: String?,
+    promise: Promise,
+  ) {
+    try {
+      promise.resolve(
+        LiveKitCallForegroundService.start(
+          appContext,
+          callId.orEmpty(),
+          callType.orEmpty(),
+          title.orEmpty(),
+        ),
+      )
+    } catch (error: Exception) {
+      promise.reject("E_START_CALL_FOREGROUND_SERVICE", error)
+    }
+  }
+
+  @ReactMethod
+  fun stopCallForegroundService(promise: Promise) {
+    try {
+      LiveKitCallForegroundService.stop(appContext)
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("E_STOP_CALL_FOREGROUND_SERVICE", error)
+    }
+  }
+
+  @ReactMethod
   fun showIncomingCall(callData: com.facebook.react.bridge.ReadableMap, promise: Promise) {
     try {
       val callId = try {
@@ -95,6 +127,7 @@ class VnseeaCallIntentModule(
         return
       }
 
+      val notificationData = JSONObject()
       val intent = Intent(appContext, IncomingCallActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or
           Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -103,7 +136,9 @@ class VnseeaCallIntentModule(
         while (iterator.hasNextKey()) {
           val key = iterator.nextKey()
           try {
-            putExtra(key, callData.getString(key))
+            val value = callData.getString(key).orEmpty()
+            putExtra(key, value)
+            notificationData.put(key, value)
           } catch (_: Throwable) {
           }
         }
@@ -112,7 +147,7 @@ class VnseeaCallIntentModule(
       if (activity != null) {
         activity.startActivity(intent)
       } else {
-        appContext.startActivity(intent)
+        LiveKitCallNotifier.show(appContext, notificationData)
       }
       promise.resolve(true)
     } catch (error: Exception) {
