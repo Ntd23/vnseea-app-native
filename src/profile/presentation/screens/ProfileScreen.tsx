@@ -93,6 +93,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { navigateBackOrFeed } from '../../../navigation/profileBackNavigation';
+import { navigateToSettingsPanel } from '../../../navigation/settingsNavigation';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { useDeferredVisiblePostIds } from '../../../feed/application/realtime/useDeferredVisiblePostIds';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
@@ -4026,17 +4027,14 @@ function ProfileScreen() {
   }, [allStories, copy.stories, navigation, userStory]);
 
   const handleOpenSettings = useCallback(() => {
-    navigation.navigate(ROUTES.MAIN_TABS, {
-      screen: ROUTES.SETTINGS,
-      params: {
-        initialPanel: 'main',
-        fromProfile: true,
-        returnProfilePreview: {
-          displayName: displayName || copy.userFallback,
-          username,
-          avatarUrl,
-          coverUrl,
-        },
+    navigateToSettingsPanel(navigation, 'main', {
+      fromDashboard: false,
+      fromProfile: true,
+      returnProfilePreview: {
+        displayName: displayName || copy.userFallback,
+        username,
+        avatarUrl,
+        coverUrl,
       },
     });
   }, [

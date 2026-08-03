@@ -209,7 +209,10 @@ export function createStackRoutes(
     { name: ROUTES.MAIN_TABS, component: MainTabsComponent },
     { name: ROUTES.REELS, component: ReelsScreen },
     ...(Platform.OS === 'ios'
-      ? [{ name: ROUTES.NOTIFICATIONS, component: NotificationsScreen }]
+      ? [
+          { name: ROUTES.NOTIFICATIONS, component: NotificationsScreen },
+          { name: ROUTES.SETTINGS_PANEL, component: SettingsScreen },
+        ]
       : []),
     { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
     { name: ROUTES.PROFILE, component: ProfileScreen },

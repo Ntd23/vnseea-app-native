@@ -16,7 +16,6 @@ import {
   Vibration,
   View,
   Alert,
-  Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -80,12 +79,11 @@ import {
   Globe,
   ShoppingBag,
   Tv,
-  CreditCard,
   TrendingUp,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { navigateToSettingsPanel } from '../../../navigation/settingsNavigation';
 import type { SettingsPanelRouteParam } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppTheme';
@@ -169,7 +167,6 @@ const DRAWER_COPY = {
     featReels: 'cuộn phim',
     featExplore: 'Khám phá',
     settingsLabel: 'Cài đặt',
-    subscriptionsLabel: 'Đăng ký',
     adminAreaLabel: 'Khu vực quản trị',
 
  // New copy for the 3-zone menu
@@ -260,7 +257,6 @@ const DRAWER_COPY = {
     featReels: 'Reels',
     featExplore: 'Explore',
     settingsLabel: 'Settings',
-    subscriptionsLabel: 'Subscriptions',
     adminAreaLabel: 'Admin Area',
 
  // New copy for the 3-zone menu
@@ -429,10 +425,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
   const openSettingsPanel = useCallback(
     (panel: SettingsPanelRouteParam) => {
       handleClose();
-      navigation.navigate(ROUTES.MAIN_TABS, {
-        screen: ROUTES.SETTINGS,
-        params: { initialPanel: panel, fromDashboard: true },
-      });
+      navigateToSettingsPanel(navigation, panel);
     },
     [navigation, handleClose],
   );
@@ -856,11 +849,6 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              title={copy.settingsLabel}
              icon={<Settings size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'settings' })}
-            />
-            <MenuRow
-             title={copy.subscriptionsLabel}
-             icon={<CreditCard size={18} color="#64748b" />}
-             onPress={() => Linking.openURL(apiConfig.webBaseUrl + '/go-pro').catch(() => undefined)}
             />
             <LanguageRow
              currentLanguage={currentLanguage}

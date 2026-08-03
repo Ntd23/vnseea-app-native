@@ -21,6 +21,18 @@ import type { OrdersItem } from '../orders/domain/types/orders.types';
 import type { FundingItem } from '../funding/domain/types/funding.types';
 import type { ActivityCenterTab } from '../activity/domain/types/activity.types';
 
+export type SettingsScreenRouteParams = {
+  initialPanel?: SettingsPanelRouteParam;
+  fromDashboard?: boolean;
+  fromProfile?: boolean;
+  returnProfilePreview?: {
+    displayName?: string;
+    username?: string;
+    avatarUrl?: string;
+    coverUrl?: string;
+  };
+};
+
 export type MainTabParamList = {
   [ROUTES.FEED]:
     | {
@@ -45,19 +57,7 @@ export type MainTabParamList = {
     | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
   [ROUTES.PROFILE]: undefined;
-  [ROUTES.SETTINGS]:
-    | {
-        initialPanel?: SettingsPanelRouteParam;
-        fromDashboard?: boolean;
-        fromProfile?: boolean;
-        returnProfilePreview?: {
-          displayName?: string;
-          username?: string;
-          avatarUrl?: string;
-          coverUrl?: string;
-        };
-      }
-    | undefined;
+  [ROUTES.SETTINGS]: SettingsScreenRouteParams | undefined;
 };
 
 export type SettingsPanelRouteParam =
@@ -108,6 +108,7 @@ export type RootStackParamList = {
   };
   [ROUTES.FORGOT_PASSWORD]: undefined;
   [ROUTES.DELETE_ACCOUNT]: undefined;
+  [ROUTES.SETTINGS_PANEL]: SettingsScreenRouteParams | undefined;
   [ROUTES.MAIN_TABS]: NavigatorScreenParams<MainTabParamList> | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
   [ROUTES.REELS]:
