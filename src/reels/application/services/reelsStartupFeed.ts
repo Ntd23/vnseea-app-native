@@ -84,16 +84,9 @@ export function mergeFeedVideoPostSnapshotIntoReel(
   const snapshot = mapFeedVideoPostToReel(post);
   return {
     ...current,
-    // Realtime post-detail snapshots come from a different endpoint than
-    // the Reels page. That endpoint may omit permissions or normalize media
-    // URLs differently, so only reconcile fields that are safe to update
-    // without remounting the player or hiding Reel-only actions.
-    caption: snapshot.caption ?? current.caption,
-    postedAt: snapshot.postedAt ?? current.postedAt,
-    likeCount: snapshot.likeCount,
-    commentCount: snapshot.commentCount,
-    isLiked: snapshot.isLiked,
-    myReaction: snapshot.myReaction,
+    ...snapshot,
+    videoUrl: snapshot.videoUrl || current.videoUrl,
+    thumbnailUrl: snapshot.thumbnailUrl ?? current.thumbnailUrl,
     viewCount: post.viewCount ?? current.viewCount,
     isSaved: post.isSaved ?? current.isSaved,
     publisher: {
