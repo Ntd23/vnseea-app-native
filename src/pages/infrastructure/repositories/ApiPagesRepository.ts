@@ -2,6 +2,7 @@
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { PagesRepository } from '../../domain/repositories/PagesRepository';
 import type {
   CreatePageDraft,
@@ -99,9 +100,7 @@ function readString(raw: RawPage | undefined, ...keys: string[]): string {
 }
 
 function normalizeUrl(url: string) {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 function readNumber(raw: RawPage | undefined, ...keys: string[]): number | undefined {

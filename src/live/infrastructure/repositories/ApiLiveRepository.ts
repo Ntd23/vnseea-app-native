@@ -11,6 +11,7 @@ import {
 } from '../../../shared-kernel/application/api/apiResponse';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { LiveRepository } from '../../domain/repositories/LiveRepository';
 import type {
@@ -85,8 +86,6 @@ type CommentCreateResponse = {
   api_status: number | string;
   data?: RawRecord;
 };
-
-const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function readString(raw: RawRecord | undefined | null, ...keys: string[]) {
   if (!raw) return '';
@@ -213,9 +212,7 @@ function readRecord(raw: RawRecord | undefined | null, key: string) {
 }
 
 function normalizeMediaUrl(value: string) {
-  if (!value) return '';
-  if (/^https?:\/\//i.test(value)) return value;
-  return `${siteRoot}/${value.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(value) ?? '';
 }
 
 function cleanText(value: string) {

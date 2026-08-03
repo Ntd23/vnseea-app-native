@@ -4,7 +4,7 @@
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { NotificationsRepository } from '../../domain/repositories/NotificationsRepository';
 import {
   GROUP_CHAT_INVITE_NOTIFICATION,
@@ -30,7 +30,6 @@ type NotificationsResponse = {
   errors?: { error_text?: string };
 };
 
-const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 const NOTIFICATIONS_PAGE_SIZE = 100;
 const NOTIFICATION_CENTER_CHAT_TYPES = new Set([
   GROUP_CHAT_INVITE_NOTIFICATION,
@@ -123,9 +122,7 @@ function readBool(
 }
 
 function normalizeUrl(url: string): string {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 function readUrlTargetId(url: string, patterns: RegExp[]): string {

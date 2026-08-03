@@ -50,17 +50,22 @@ export function resolveGroupMembershipStatus(
 export function normalizeHostedMediaUrl(
   value: string | undefined,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): string {
   const mediaUrl = value?.trim();
   if (!mediaUrl) return '';
 
   const baseUrl = new URL(webBaseUrl);
+  const normalizedValue = mediaUrl.replace(/^\/+/, '');
+  const resolutionBase = /^upload\//i.test(normalizedValue)
+    ? new URL(mediaBaseUrl)
+    : baseUrl;
   const absoluteUrl = mediaUrl.startsWith('//')
     ? `${baseUrl.protocol}${mediaUrl}`
     : mediaUrl;
 
   try {
-    const resolved = new URL(absoluteUrl, `${baseUrl.origin}/`);
+    const resolved = new URL(absoluteUrl, `${resolutionBase.origin}/`);
     if (
       resolved.protocol === 'http:' &&
       baseUrl.protocol === 'https:' &&

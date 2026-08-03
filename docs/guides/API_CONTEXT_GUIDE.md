@@ -23,8 +23,8 @@ src/shared-kernel/infrastructure/config/env.ts
 Local env values live in `.env`:
 
 ```env
-API_BASE_URL=https://v2.vnseea.vn/api
-WEB_BASE_URL=https://v2.vnseea.vn
+API_BASE_URL=https://vnseea.vn/api
+WEB_BASE_URL=https://vnseea.vn
 SERVER_KEY=...
 REQUEST_TIMEOUT_MS=15000
 ```
@@ -379,7 +379,7 @@ Copy this when creating a new context test file:
 ## Environment
 
 - React Native target: Android debug build on physical device or emulator.
-- Backend API: `https://v2.vnseea.vn/api`
+- Backend API: `https://vnseea.vn/api`
 - Backend session source: WoWonder `access_token` stored in MMKV.
 - Auth requirement: `<guest/authenticated/optional>`
 

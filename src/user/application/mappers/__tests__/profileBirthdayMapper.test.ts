@@ -8,7 +8,7 @@ describe('profile birthday mapping', () => {
         username: 'birthday_user',
         birthday: '1995-04-21',
       },
-      'https://v2.vnseea.vn',
+      'https://vnseea.vn',
     );
 
     expect(profile.birthday).toBe('1995-04-21');

@@ -2,10 +2,9 @@
 // Port từ: client/src/offers/infrastructure/repositories/
 
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { OffersRepository } from '../../domain/repositories/OffersRepository';
 import type { OfferItem } from '../../domain/types/offers.types';
-
-const siteRoot = 'https://v2.vnseea.vn';
 
 type OffersApiResponse = {
   api_status: number;
@@ -13,9 +12,7 @@ type OffersApiResponse = {
 };
 
 function normalizeUrl(url: string): string {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 export function createOffersRepository(): OffersRepository {

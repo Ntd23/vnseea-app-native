@@ -24,7 +24,7 @@
 ## Environment
 
 - React Native target: Android debug build on physical device or emulator.
-- Backend API: `https://v2.vnseea.vn/api`.
+- Backend API: `https://vnseea.vn/api`.
 - Backend endpoints:
   - `POST /auth`
   - `POST /create-account`
@@ -95,4 +95,4 @@ npx jest --passWithNoTests
 ## Notes
 
 - Rebuild Android after `.env` changes because `react-native-config` values are compiled into native build output.
-- `API_BASE_URL` must be `https://v2.vnseea.vn/api`, not `https://v2.vnseea.vn/api/v2`.
+- `API_BASE_URL` must be `https://vnseea.vn/api`, not `https://vnseea.vn/api/v2`.

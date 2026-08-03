@@ -10,7 +10,7 @@ import {
   toUserSuggestionsPayload,
 } from '../userPayloadMapper';
 
-const WEB_BASE_URL = 'https://v2.vnseea.vn';
+const WEB_BASE_URL = 'https://vnseea.vn';
 
 describe('userProfileMapper', () => {
   it('maps raw user records into profile domain data', () => {
@@ -45,8 +45,8 @@ describe('userProfileMapper', () => {
         id: '7',
         username: 'admin',
         name: 'Admin User',
-        avatarUrl: 'https://v2.vnseea.vn/upload/avatar.jpg',
-        coverUrl: 'https://v2.vnseea.vn/upload/cover.jpg',
+        avatarUrl: 'https://vnseea.vn/upload/avatar.jpg',
+        coverUrl: 'https://vnseea.vn/upload/cover.jpg',
         verified: true,
         email: 'admin@gmail.com',
         phoneNumber: '0900000000',
@@ -183,7 +183,7 @@ describe('nearbyPlaceMapper', () => {
           subtitle: '@vnseeapage',
           description: 'Trang cộng đồng',
           avatar: '/upload/page.jpg',
-          url: 'https://v2.vnseea.vn/vnseeapage',
+          url: 'https://vnseea.vn/vnseeapage',
           location: 'Hà Nội',
           lat: '21.0285',
           lng: '105.8542',
@@ -199,8 +199,8 @@ describe('nearbyPlaceMapper', () => {
       placeId: undefined,
       name: 'VNSEEA Page',
       username: 'vnseeapage',
-      avatarUrl: 'https://v2.vnseea.vn/upload/page.jpg',
-      url: 'https://v2.vnseea.vn/vnseeapage',
+      avatarUrl: 'https://vnseea.vn/upload/page.jpg',
+      url: 'https://vnseea.vn/vnseeapage',
       description: 'Trang cộng đồng',
       location: 'Hà Nội',
       distance: 1.25,
@@ -285,7 +285,7 @@ describe('nearbyPlaceMapper', () => {
             username: 'vnseeastore',
             avatar: '/upload/store.jpg',
             category: 'Mua sắm',
-            url: 'https://v2.vnseea.vn/vnseeastore',
+            url: 'https://vnseea.vn/vnseeastore',
           },
           product: {
             id: '5',
@@ -303,8 +303,8 @@ describe('nearbyPlaceMapper', () => {
       kind: 'shop',
       name: 'VNSEEA Store',
       username: 'vnseeastore',
-      avatarUrl: 'https://v2.vnseea.vn/upload/store.jpg',
-      url: 'https://v2.vnseea.vn/vnseeastore',
+      avatarUrl: 'https://vnseea.vn/upload/store.jpg',
+      url: 'https://vnseea.vn/vnseeastore',
       category: 'Mua sắm',
       description: undefined,
       location: 'Hà Nội',

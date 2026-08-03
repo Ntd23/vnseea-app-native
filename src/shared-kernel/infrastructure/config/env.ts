@@ -25,6 +25,7 @@ function parseRequiredNumber(name: keyof typeof Config) {
 export const apiConfig = {
   apiBaseUrl: requireEnv('API_BASE_URL'),
   webBaseUrl: requireEnv('WEB_BASE_URL'),
+  mediaBaseUrl: Config.MEDIA_BASE_URL || requireEnv('WEB_BASE_URL'),
   serverKey: requireEnv('SERVER_KEY'),
   requestTimeoutMs: parseRequiredNumber('REQUEST_TIMEOUT_MS'),
   oneSignalAppId: Config.ONESIGNAL_APP_ID || '',

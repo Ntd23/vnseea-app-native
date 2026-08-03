@@ -13,6 +13,7 @@ import { normalizeRawUrl } from '../normalizers/url';
 export function mapGroupSummary(
   record: RawRecord,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): GroupSummary {
   return {
     id: firstEntityId(record, ['group_id', 'id']),
@@ -21,10 +22,12 @@ export function mapGroupSummary(
     avatarUrl: normalizeRawUrl(
       firstString(record, ['avatar', 'group_avatar']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
     coverUrl: normalizeRawUrl(
       firstString(record, ['cover', 'group_cover']),
       webBaseUrl,
+      mediaBaseUrl,
     ),
     joined: firstBoolean(record, ['is_joined', 'joined']),
   };

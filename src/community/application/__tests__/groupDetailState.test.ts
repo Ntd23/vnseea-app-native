@@ -37,24 +37,31 @@ describe('group detail state', () => {
   });
 
   describe('normalizeHostedMediaUrl', () => {
-    const webBaseUrl = 'https://v2.vnseea.vn';
+    const webBaseUrl = 'https://vnseea.vn';
 
     it('builds absolute HTTPS URLs for relative and protocol-relative media', () => {
       expect(
         normalizeHostedMediaUrl('upload/photos/group.jpg', webBaseUrl),
-      ).toBe('https://v2.vnseea.vn/upload/photos/group.jpg');
+      ).toBe('https://vnseea.vn/upload/photos/group.jpg');
       expect(
-        normalizeHostedMediaUrl('//v2.vnseea.vn/upload/group.jpg', webBaseUrl),
-      ).toBe('https://v2.vnseea.vn/upload/group.jpg');
+        normalizeHostedMediaUrl('//vnseea.vn/upload/group.jpg', webBaseUrl),
+      ).toBe('https://vnseea.vn/upload/group.jpg');
+      expect(
+        normalizeHostedMediaUrl(
+          'upload/photos/group.jpg',
+          webBaseUrl,
+          'https://media.vnseea.vn',
+        ),
+      ).toBe('https://media.vnseea.vn/upload/photos/group.jpg');
     });
 
     it('upgrades same-host HTTP media without changing external HTTPS media', () => {
       expect(
         normalizeHostedMediaUrl(
-          'http://v2.vnseea.vn/upload/group.jpg',
+          'http://vnseea.vn/upload/group.jpg',
           webBaseUrl,
         ),
-      ).toBe('https://v2.vnseea.vn/upload/group.jpg');
+      ).toBe('https://vnseea.vn/upload/group.jpg');
       expect(
         normalizeHostedMediaUrl(
           'https://cdn.example.com/group.jpg',

@@ -308,7 +308,7 @@ function hasUploadFile(payload: Record<string, unknown>) {
 
 function mapUserList(records: RawApiRecord[] | undefined): UserProfile[] {
   return (records ?? []).map(record =>
-    mapUserProfile(record, apiConfig.webBaseUrl),
+    mapUserProfile(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl),
   );
 }
 
@@ -317,7 +317,14 @@ function mapNearbyPlaces(
   kind: NearbyPlaceKind,
 ): NearbyPlace[] {
   return (records ?? [])
-    .map(record => mapNearbyPlace(record, kind, apiConfig.webBaseUrl))
+    .map(record =>
+      mapNearbyPlace(
+        record,
+        kind,
+        apiConfig.webBaseUrl,
+        apiConfig.mediaBaseUrl,
+      ),
+    )
     .filter(Boolean) as NearbyPlace[];
 }
 
@@ -411,7 +418,9 @@ async function requestNearbyPages(input?: NearbyPagesInput) {
   );
 
   const pages = (response.items ?? [])
-    .map(record => mapNearbyPage(record, apiConfig.webBaseUrl))
+    .map(record =>
+      mapNearbyPage(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl),
+    )
     .filter(Boolean) as NearbyPlace[];
 
   return pages;
@@ -855,7 +864,11 @@ function mapFamily(records: UserProfileResponse['family']): UserProfile[] {
       const directRecord = asRecord(record);
       const userRecord = asRecord(directRecord?.user_data) ?? directRecord;
       return userRecord
-        ? mapUserProfile(userRecord, apiConfig.webBaseUrl)
+        ? mapUserProfile(
+            userRecord,
+            apiConfig.webBaseUrl,
+            apiConfig.mediaBaseUrl,
+          )
         : null;
     })
     .filter(Boolean) as UserProfile[];
@@ -866,15 +879,19 @@ function mapUserProfileResponse(
 ): UserProfileResult {
   return {
     profile: response.user_data
-      ? mapUserProfile(response.user_data, apiConfig.webBaseUrl)
+      ? mapUserProfile(
+          response.user_data,
+          apiConfig.webBaseUrl,
+          apiConfig.mediaBaseUrl,
+        )
       : undefined,
     followers: mapUserList(response.followers),
     following: mapUserList(response.following),
     likedPages: (response.liked_pages ?? []).map(record =>
-      mapPageSummary(record, apiConfig.webBaseUrl),
+      mapPageSummary(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl),
     ),
     joinedGroups: (response.joined_groups ?? []).map(record =>
-      mapGroupSummary(record, apiConfig.webBaseUrl),
+      mapGroupSummary(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl),
     ),
     family: mapFamily(response.family),
   };
@@ -895,7 +912,11 @@ export function createUserRepository(): UserRepository {
         return null;
       }
 
-      return mapUserProfile(response.user_data, apiConfig.webBaseUrl);
+      return mapUserProfile(
+        response.user_data,
+        apiConfig.webBaseUrl,
+        apiConfig.mediaBaseUrl,
+      );
     },
 
     async getUserProfile(input: GetUserProfileInput) {
@@ -920,6 +941,7 @@ export function createUserRepository(): UserRepository {
           profile: mapUserProfile(
             currentUserResponse.user_data,
             apiConfig.webBaseUrl,
+            apiConfig.mediaBaseUrl,
           ),
           followers: [],
           following: [],

@@ -52,7 +52,7 @@ describe('resolveNotificationDestination', () => {
             type,
             text: type === 'reaction' ? 'story' : '',
             storyId: '145',
-            url: 'https://v2.vnseea.vn/timeline?story=true&story_id=145',
+            url: 'https://vnseea.vn/timeline?story=true&story_id=145',
           }),
         ),
       ).toEqual({ kind: 'story', storyId: '145' });
@@ -74,12 +74,12 @@ describe('resolveNotificationDestination', () => {
         resolveNotificationDestination(
           notification({
             type,
-            url: 'https://v2.vnseea.vn/forums/thread/123',
+            url: 'https://vnseea.vn/forums/thread/123',
           }),
         ),
       ).toEqual({
         kind: 'external',
-        url: 'https://v2.vnseea.vn/forums/thread/123',
+        url: 'https://vnseea.vn/forums/thread/123',
       });
     },
   );
@@ -122,12 +122,12 @@ describe('resolveNotificationDestination', () => {
         notification({
           type: 'group_admin',
           groupName: 'nhom-cong-dong',
-          url: 'https://v2.vnseea.vn/nhom-cong-dong',
+          url: 'https://vnseea.vn/nhom-cong-dong',
         }),
       ),
     ).toEqual({
       kind: 'external',
-      url: 'https://v2.vnseea.vn/nhom-cong-dong',
+      url: 'https://vnseea.vn/nhom-cong-dong',
     });
   });
 
@@ -186,13 +186,13 @@ describe('resolveNotificationDestination', () => {
         notification({
           type: 'new_review',
           productId: '12',
-          url: 'https://v2.vnseea.vn/product/12',
+          url: 'https://vnseea.vn/product/12',
         }),
       ),
     ).toEqual({
       kind: 'product',
       productId: '12',
-      fallbackUrl: 'https://v2.vnseea.vn/product/12',
+      fallbackUrl: 'https://vnseea.vn/product/12',
     });
   });
 
@@ -238,9 +238,9 @@ describe('resolveNotificationDestination', () => {
       resolveNotificationDestination(
         notification({
           type: 'custom_type',
-          url: 'https://v2.vnseea.vn/custom',
+          url: 'https://vnseea.vn/custom',
         }),
       ),
-    ).toEqual({ kind: 'external', url: 'https://v2.vnseea.vn/custom' });
+    ).toEqual({ kind: 'external', url: 'https://vnseea.vn/custom' });
   });
 });

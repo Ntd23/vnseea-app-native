@@ -10,10 +10,8 @@ import type {
   JobsSelectOption,
 } from '../../domain/types/jobs.types';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
-
-const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 const EMPTY_METADATA: JobsMetadata = {
   types: [],
@@ -66,9 +64,7 @@ async function loadJobsMetadata(): Promise<JobsMetadata> {
 }
 
 function normalizeUrl(url: string): string {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 export function createJobsRepository(): JobsRepository {

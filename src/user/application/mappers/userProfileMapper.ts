@@ -94,8 +94,13 @@ function mapPrivacy(record: RawRecord): UserProfile['privacy'] {
 export function mapUserProfile(
   record: RawRecord,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): UserProfile {
-  const summary: UserSummary = mapUserSummary(record, webBaseUrl);
+  const summary: UserSummary = mapUserSummary(
+    record,
+    webBaseUrl,
+    mediaBaseUrl,
+  );
 
   return {
     ...summary,
@@ -117,7 +122,11 @@ export function mapUserProfile(
     school: firstString(record, ['school']),
     schoolCompleted: firstBoolean(record, ['school_completed']),
     relationshipId: firstString(record, ['relationship_id']),
-    coverUrl: normalizeRawUrl(firstString(record, ['cover']), webBaseUrl),
+    coverUrl: normalizeRawUrl(
+      firstString(record, ['cover']),
+      webBaseUrl,
+      mediaBaseUrl,
+    ),
     avatarPostId: positiveEntityId(record, ['avatar_post_id', 'avatarPostId']),
     coverPostId: positiveEntityId(record, ['cover_post_id', 'coverPostId']),
     postCount: profileCount(record, 'post_count'),

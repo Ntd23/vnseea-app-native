@@ -13,7 +13,7 @@ export type SharedMapLocation = {
 };
 
 function cleanBaseUrl() {
-  return (apiConfig.webBaseUrl || 'https://v2.vnseea.vn').replace(/\/+$/, '');
+  return (apiConfig.webBaseUrl || 'https://vnseea.vn').replace(/\/+$/, '');
 }
 
 function formatCoordinateParam(value: number) {
@@ -104,7 +104,7 @@ export function parseMapShareUrl(rawUrl: string): SharedMapLocation | null {
       .trim();
     const url = new URL(normalizedUrl);
     const isSupportedHost =
-      url.hostname === 'v2.vnseea.vn' ||
+      url.hostname === 'vnseea.vn' ||
       url.hostname.endsWith('.vnseea.vn') ||
       url.protocol === 'vnseea:';
     const isMapPath =

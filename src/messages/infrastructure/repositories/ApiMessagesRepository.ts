@@ -406,6 +406,7 @@ function readMarketplaceProductImage(product: RawRecord) {
   return normalizeRawUrl(
     readString(firstImage ?? {}, 'image', 'image_org'),
     apiConfig.webBaseUrl,
+    apiConfig.mediaBaseUrl,
   );
 }
 
@@ -491,6 +492,7 @@ function mapMarketplaceMessageContext(
           normalizeRawUrl(
             readString(item, 'image', 'image_url'),
             apiConfig.webBaseUrl,
+            apiConfig.mediaBaseUrl,
           ) || undefined,
         quantity: Math.max(1, readNumber(item, 'quantity', 'units') || 1),
         total: readString(item, 'total', 'price'),
@@ -535,6 +537,7 @@ function mapMarketplaceMessageContext(
         normalizeRawUrl(
           readString(canonical ?? {}, 'image'),
           apiConfig.webBaseUrl,
+          apiConfig.mediaBaseUrl,
         ) || (product ? readMarketplaceProductImage(product) : undefined),
       location:
         readString(canonical ?? {}, 'location') ||
@@ -608,6 +611,7 @@ function mapNuxtProductInquiryContext(
               normalizeRawUrl(
                 readString(payload, 'imageUrl', 'image_url', 'image'),
                 apiConfig.webBaseUrl,
+                apiConfig.mediaBaseUrl,
               ) || undefined,
             note: note || undefined,
           };
@@ -688,12 +692,14 @@ function mapStoryReplyReference(
       normalizeRawUrl(
         readString(publisher, 'avatar', 'profile_picture'),
         apiConfig.webBaseUrl,
+        apiConfig.mediaBaseUrl,
       ) || undefined,
     mediaType,
     thumbnailUrl:
       normalizeRawUrl(
         readString(story, 'thumbnail'),
         apiConfig.webBaseUrl,
+        apiConfig.mediaBaseUrl,
       ) || undefined,
     caption: readString(story, 'description', 'title') || undefined,
     available,
@@ -1310,6 +1316,7 @@ function mapMessage(
   const media = normalizeRawUrl(
     readMessageMedia(raw),
     apiConfig.webBaseUrl,
+    apiConfig.mediaBaseUrl,
   );
   const rawText = readString(raw, 'or_text');
   const decodedMessage = rawText
@@ -1422,6 +1429,7 @@ function mapMessage(
     thumbnail: normalizeRawUrl(
       readMessageThumbnail(raw),
       apiConfig.webBaseUrl,
+      apiConfig.mediaBaseUrl,
     ),
     reactions: mapMessageReactionSummary(raw.reaction ?? raw.reactions),
     time: readNumber(raw, 'time'),

@@ -12,7 +12,11 @@ import {
 import { mapMediaAsset } from './mediaAssetMapper';
 import { mapUserSummary } from './userSummaryMapper';
 
-function mapPostMedia(record: RawRecord, webBaseUrl: string): MediaAsset[] {
+function mapPostMedia(
+  record: RawRecord,
+  webBaseUrl: string,
+  mediaBaseUrl: string,
+): MediaAsset[] {
   const mediaRecords = [record.postFile, record.postPhoto, record.postVideo]
     .map(value => {
       if (typeof value === 'string') {
@@ -24,22 +28,23 @@ function mapPostMedia(record: RawRecord, webBaseUrl: string): MediaAsset[] {
     .filter(Boolean) as RawRecord[];
 
   return mediaRecords
-    .map(mediaRecord => mapMediaAsset(mediaRecord, webBaseUrl))
+    .map(mediaRecord => mapMediaAsset(mediaRecord, webBaseUrl, mediaBaseUrl))
     .filter(Boolean) as MediaAsset[];
 }
 
 export function mapPostSummary(
   record: RawRecord,
   webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
 ): PostSummary {
   const authorRecord =
     asRecord(record.publisher) ?? asRecord(record.user_data) ?? record;
 
   return {
     id: firstEntityId(record, ['post_id', 'id']),
-    author: mapUserSummary(authorRecord, webBaseUrl),
+    author: mapUserSummary(authorRecord, webBaseUrl, mediaBaseUrl),
     text: firstString(record, ['postText', 'text', 'description']),
-    media: mapPostMedia(record, webBaseUrl),
+    media: mapPostMedia(record, webBaseUrl, mediaBaseUrl),
     createdAt: firstString(record, ['time_text', 'created_at', 'time']),
   };
 }

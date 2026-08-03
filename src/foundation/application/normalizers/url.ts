@@ -9,7 +9,15 @@ export function joinUrl(baseUrl: string, path: string) {
   return `${normalizedBase}/${normalizedPath}`;
 }
 
-export function normalizeRawUrl(value: string | undefined, webBaseUrl: string) {
+export function isRelativeUploadPath(value: string) {
+  return /^\/?upload\//i.test(value.trim());
+}
+
+export function normalizeRawUrl(
+  value: string | undefined,
+  webBaseUrl: string,
+  mediaBaseUrl = webBaseUrl,
+) {
   if (!value) {
     return undefined;
   }
@@ -18,5 +26,8 @@ export function normalizeRawUrl(value: string | undefined, webBaseUrl: string) {
     return value;
   }
 
-  return joinUrl(webBaseUrl, value);
+  return joinUrl(
+    isRelativeUploadPath(value) ? mediaBaseUrl : webBaseUrl,
+    value,
+  );
 }

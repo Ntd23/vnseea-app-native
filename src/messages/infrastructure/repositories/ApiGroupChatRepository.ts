@@ -1,6 +1,7 @@
 // Description: Group chat API repository implementation
 // English description: Implements group chat data operations through the WoWonder group_chat API.
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { GroupChatRepository } from '../../domain/repositories/GroupChatRepository';
 import type {
   GroupChatItem,
@@ -14,12 +15,8 @@ import type {
   GroupChatSearchUsersResponse,
 } from '../../domain/types/groupChat.types';
 
-const siteRoot = 'https://v2.vnseea.vn';
-
 function normalizeUrl(url: string): string {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

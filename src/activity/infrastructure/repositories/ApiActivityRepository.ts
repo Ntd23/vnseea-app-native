@@ -1,7 +1,7 @@
 // Description: Maps and loads current-state saved/reaction/comment/share collections.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { ActivityRepository } from '../../domain/repositories/ActivityRepository';
 import type {
@@ -88,10 +88,7 @@ function cleanText(value: string) {
 }
 
 function normalizeMediaUrl(value: string) {
-  const url = value.trim();
-  if (!url) return undefined;
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(value.trim());
 }
 
 function readPublisher(raw: Record<string, unknown>) {

@@ -21,7 +21,7 @@
 ## Environment
 
 - React Native target: Android debug build on a physical device or emulator.
-- Backend API: `https://v2.vnseea.vn/api`
+- Backend API: `https://vnseea.vn/api`
 - Tab bar interaction is driven through `tabBarVisibility` (`src/navigation/tabBarVisibility.ts`)
   and observed by the `CustomTabBar` in `src/navigation/MainTabNavigator.tsx`.
 

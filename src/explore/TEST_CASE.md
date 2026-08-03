@@ -26,7 +26,7 @@
 ## Environment
 
 - React Native target: Android debug build on a physical device or emulator.
-- Backend API: `https://v2.vnseea.vn/api`
+- Backend API: `https://vnseea.vn/api`
 - Backend endpoint exercised: `POST /api/hashtag-suggestions`
 - Auth requirement: **none** — the endpoint is public.
 

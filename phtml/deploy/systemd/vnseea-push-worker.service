@@ -7,8 +7,8 @@ Wants=network-online.target
 Type=simple
 User=vnseea
 Group=vnseea
-WorkingDirectory=/home/vnseea/domains/v2.vnseea.vn/main
-ExecStart=/usr/bin/php /home/vnseea/domains/v2.vnseea.vn/main/workers/push-delivery-worker.php --batch=50 --idle-ms=500 --max-memory-mb=192
+WorkingDirectory=/home/vnseea/domains/vnseea.vn/main
+ExecStart=/usr/bin/php /home/vnseea/domains/vnseea.vn/main/workers/push-delivery-worker.php --batch=50 --idle-ms=500 --max-memory-mb=192
 Restart=always
 RestartSec=2
 TimeoutStopSec=20

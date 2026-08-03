@@ -1,7 +1,7 @@
 // Description: Loads real WoWonder blog articles for the Settings article screens.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { BlogsRepository, BlogCreateData, BlogCreateResult } from '../../domain/repositories/BlogsRepository';
 import type { BlogCategoryOption, BlogComment, BlogsItem } from '../../domain/types/blogs.types';
@@ -49,8 +49,6 @@ type BlogPostLookupResponse = {
   api_status: number | string;
   data?: RawRecord[];
 };
-const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
-
 const BLOG_CATEGORY_OPTIONS: BlogCategoryOption[] = [
   { id: 'vehicles', label: 'Xe c\u1ed9' },
   { id: 'comedy', label: 'H\u00e0i k\u1ecbch' },
@@ -169,9 +167,7 @@ function readNumber(raw: RawRecord | undefined, ...keys: string[]) {
 }
 
 function normalizeUrl(url: string) {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 function cleanText(text: string) {

@@ -6,7 +6,7 @@ describe('offer navigation destination', () => {
       resolveOfferNavigationDestination({
         productId: 42,
         postId: 91,
-        url: 'https://v2.vnseea.vn/post/91',
+        url: 'https://vnseea.vn/post/91',
       }),
     ).toEqual({ kind: 'product', productId: 42 });
   });
@@ -14,7 +14,7 @@ describe('offer navigation destination', () => {
   it('extracts a product id from a product URL', () => {
     expect(
       resolveOfferNavigationDestination({
-        url: 'https://v2.vnseea.vn/products/73?ref=offer',
+        url: 'https://vnseea.vn/products/73?ref=offer',
       }),
     ).toEqual({ kind: 'product', productId: 73 });
   });
@@ -23,7 +23,7 @@ describe('offer navigation destination', () => {
     expect(
       resolveOfferNavigationDestination({
         postId: 108,
-        url: 'https://v2.vnseea.vn/index.php?link1=post&id=108',
+        url: 'https://vnseea.vn/index.php?link1=post&id=108',
       }),
     ).toEqual({ kind: 'post', postId: '108' });
   });
