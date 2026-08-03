@@ -13,7 +13,13 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ArrowLeft, MailCheck, RotateCcw, ShieldCheck } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  MailCheck,
+  MessageSquareText,
+  RotateCcw,
+  ShieldCheck,
+} from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -44,10 +50,20 @@ function EmailVerificationScreen({
   navigation,
   route,
 }: EmailVerificationScreenProps) {
-  const { userId, email } = route.params;
+  const { userId, identity, channel } = route.params;
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
   const copy = useMemo(() => getAuthCopy(language), [language]);
+  const usesSms = channel === 'sms';
+  const verificationTitle = usesSms
+    ? copy.phoneVerificationTitle
+    : copy.emailVerificationTitle;
+  const verificationDescription = usesSms
+    ? copy.phoneVerificationDescription
+    : copy.emailVerificationDescription;
+  const verificationResent = usesSms
+    ? copy.phoneVerificationResent
+    : copy.emailVerificationResent;
   const inputRef = useRef<TextInput | null>(null);
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -124,7 +140,7 @@ function EmailVerificationScreen({
     try {
       await repository.resendAccountCode(userId);
       setCode('');
-      setNotice(copy.emailVerificationResent);
+      setNotice(verificationResent);
       setResendRemaining(RESEND_DELAY_SECONDS);
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (caughtError) {
@@ -137,7 +153,7 @@ function EmailVerificationScreen({
     } finally {
       setIsResending(false);
     }
-  }, [copy, isResending, resendRemaining, userId]);
+  }, [copy, isResending, resendRemaining, userId, verificationResent]);
 
   const handleBackToLogin = useCallback(() => {
     navigation.reset({
@@ -175,7 +191,15 @@ function EmailVerificationScreen({
               <ArrowLeft size={21} color="#334155" />
             </TouchableOpacity>
             <View style={styles.headerIcon}>
-              <MailCheck size={30} color={APP_BRAND_COLOR} strokeWidth={2.2} />
+              {usesSms ? (
+                <MessageSquareText
+                  size={30}
+                  color={APP_BRAND_COLOR}
+                  strokeWidth={2.2}
+                />
+              ) : (
+                <MailCheck size={30} color={APP_BRAND_COLOR} strokeWidth={2.2} />
+              )}
               <View style={styles.headerIconBadge}>
                 <ShieldCheck size={15} color="#FFFFFF" strokeWidth={2.5} />
               </View>
@@ -183,12 +207,12 @@ function EmailVerificationScreen({
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.title}>{copy.emailVerificationTitle}</Text>
+            <Text style={styles.title}>{verificationTitle}</Text>
             <Text style={styles.description}>
-              {copy.emailVerificationDescription}
+              {verificationDescription}
             </Text>
             <Text numberOfLines={1} style={styles.email}>
-              {email}
+              {identity}
             </Text>
 
             <Text style={styles.fieldLabel}>

@@ -22,6 +22,8 @@ describe('registration identity contract', () => {
       '!REGISTER_USERNAME_PATTERN.test(normalizedUsername)',
     );
     expect(repository).toContain('username: input.username.trim()');
+    expect(repository).toContain('email: apiIdentity.email');
+    expect(repository).toContain('phone_num: apiIdentity.phoneNumber');
   });
 
   it('does not let the API mirror overwrite explicit usernames with random values', () => {
@@ -55,7 +57,12 @@ describe('registration identity contract', () => {
       'navigation.replace(ROUTES.EMAIL_VERIFICATION, {',
     );
     expect(verificationBranch).toContain('userId: result.userId');
-    expect(verificationBranch).toContain('email: email.trim()');
+    expect(verificationBranch).toContain(
+      'identity: result.identity || registrationIdentity.value',
+    );
+    expect(verificationBranch).toContain(
+      "registrationIdentity.type === 'phone' ? 'sms' : 'email'",
+    );
     expect(verificationBranch).not.toContain(
       'Alert.alert(copy.verificationTitle, result.message)',
     );

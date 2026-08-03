@@ -103,7 +103,8 @@ export type RootStackParamList = {
   [ROUTES.REGISTER]: undefined;
   [ROUTES.EMAIL_VERIFICATION]: {
     userId: string;
-    email: string;
+    identity: string;
+    channel: 'email' | 'sms';
   };
   [ROUTES.FORGOT_PASSWORD]: undefined;
   [ROUTES.DELETE_ACCOUNT]: undefined;
