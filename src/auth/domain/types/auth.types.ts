@@ -50,6 +50,8 @@ export type AuthResult =
       status: 'verification_required';
       userId: string;
       message: string;
+      channel: 'email' | 'sms';
+      identity?: string;
     };
 
 export type CurrentUserResult = {

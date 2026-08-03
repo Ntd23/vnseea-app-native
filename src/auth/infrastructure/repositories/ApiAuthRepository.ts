@@ -27,6 +27,7 @@ import type {
   LoginCredentials,
   RegisterInput,
 } from '../../domain/types/auth.types';
+import { buildRegistrationApiIdentity } from '../../domain/registrationIdentity';
 
 const AUTH_DEBUG_PREFIX = '[VNSEEA_AUTH_DEBUG]';
 const LOGOUT_BACKEND_TIMEOUT_MS = 5_000;
@@ -40,6 +41,8 @@ type AuthResponse = {
   message?: string;
   user_data?: Record<string, unknown>;
   status?: string;
+  verification_channel?: 'email' | 'sms';
+  verification_target?: string;
   push_release_pending?: boolean | number | string;
 };
 
@@ -124,6 +127,8 @@ function mapAuthResponse(response: AuthResponse): AuthResult {
       status: 'verification_required',
       userId: String(response.user_id),
       message: response.message,
+      channel: response.verification_channel || 'email',
+      identity: response.verification_target,
     };
   }
 
@@ -165,13 +170,18 @@ export function createAuthRepository(): AuthRepository {
     },
 
     async register(input: RegisterInput) {
+      const apiIdentity = buildRegistrationApiIdentity(input.email);
+      if (!apiIdentity) {
+        throw new Error('Enter a valid email address or phone number.');
+      }
       const response = await apiBridge.post<AuthResponse>(
         apiRoutes.auth.register,
         {
           first_name: input.firstName.trim(),
           last_name: input.lastName.trim(),
           username: input.username.trim(),
-          email: input.email.trim(),
+          email: apiIdentity.email,
+          phone_num: apiIdentity.phoneNumber,
           password: input.password.trim(),
           confirm_password: input.confirmPassword.trim(),
           birthday: input.birthday?.trim() || '',
@@ -182,7 +192,14 @@ export function createAuthRepository(): AuthRepository {
         },
       );
       console.log('[ApiAuthRepository] Register response:', response);
-      return mapAuthResponse(response);
+      const result = mapAuthResponse(response);
+      if (result.status !== 'verification_required') return result;
+
+      return {
+        ...result,
+        channel: apiIdentity.identity.type === 'phone' ? 'sms' : 'email',
+        identity: apiIdentity.identity.value,
+      };
     },
 
     async confirmAccount(input: ConfirmAccountInput) {

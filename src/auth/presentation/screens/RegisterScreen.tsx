@@ -45,6 +45,7 @@ import AuthSubmitButton from '../components/AuthSubmitButton';
 import AuthFooterLink from '../components/AuthFooterLink';
 import AuthErrorBanner from '../components/AuthErrorBanner';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { parseRegistrationIdentity } from '../../domain/registrationIdentity';
 
 type RegisterNav = NativeStackNavigationProp<RootStackParamList>;
 type RegisterFieldKey =
@@ -144,15 +145,6 @@ function formatDateForDisplay(value: string) {
   return `${padDatePart(date.getDate())}/${padDatePart(
     date.getMonth() + 1,
   )}/${date.getFullYear()}`;
-}
-
-function isValidLoginIdentity(value: string) {
-  const normalized = value.trim();
-  if (!normalized) return false;
-  if (normalized.includes('@')) {
-    return normalized.includes('.') && normalized.length >= 5;
-  }
-  return normalized.replace(/\D/g, '').length >= 8;
 }
 
 type BirthdayPickerOption = {
@@ -464,7 +456,8 @@ function RegisterScreen() {
       );
       return;
     }
-    if (!isValidLoginIdentity(email)) {
+    const registrationIdentity = parseRegistrationIdentity(email);
+    if (!registrationIdentity) {
       setValidationError(copy.validationUsername);
       return;
     }
@@ -507,7 +500,10 @@ function RegisterScreen() {
 
       navigation.replace(ROUTES.EMAIL_VERIFICATION, {
         userId: result.userId,
-        email: email.trim(),
+        identity: result.identity || registrationIdentity.value,
+        channel:
+          result.channel ||
+          (registrationIdentity.type === 'phone' ? 'sms' : 'email'),
       });
     } catch {
       // The view model exposes the message for inline rendering.

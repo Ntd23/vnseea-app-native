@@ -76,6 +76,70 @@ describe('ApiAuthRepository account verification', () => {
     jest.clearAllMocks();
   });
 
+  it('uses the Nuxt-compatible internal email for phone registration', async () => {
+    post.mockResolvedValueOnce({
+      api_status: 220,
+      user_id: 42,
+      message: 'Verification required.',
+    });
+
+    const result = await createAuthRepository().register({
+      firstName: 'Van',
+      lastName: 'Nguyen',
+      username: 'van_nguyen',
+      email: '090 123 4567',
+      password: 'secret1',
+      confirmPassword: 'secret1',
+      birthday: '2000-01-01',
+      gender: 'female',
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      apiRoutes.auth.register,
+      expect.objectContaining({
+        email: 'phone_0901234567@vnseea.invalid',
+        phone_num: '0901234567',
+      }),
+    );
+    expect(result).toEqual({
+      status: 'verification_required',
+      userId: '42',
+      message: 'Verification required.',
+      channel: 'sms',
+      identity: '+84901234567',
+    });
+  });
+
+  it('keeps a real email unchanged during registration', async () => {
+    post.mockResolvedValueOnce({
+      api_status: 220,
+      user_id: 43,
+      message: 'Verification required.',
+    });
+
+    const result = await createAuthRepository().register({
+      firstName: 'Van',
+      lastName: 'Nguyen',
+      username: 'van_nguyen',
+      email: ' User@Example.COM ',
+      password: 'secret1',
+      confirmPassword: 'secret1',
+      gender: 'female',
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      apiRoutes.auth.register,
+      expect.objectContaining({
+        email: 'user@example.com',
+        phone_num: undefined,
+      }),
+    );
+    expect(result).toEqual(expect.objectContaining({
+      channel: 'email',
+      identity: 'user@example.com',
+    }));
+  });
+
   it('confirms a six-digit code and initializes the authenticated session', async () => {
     post.mockResolvedValueOnce({
       api_status: 200,

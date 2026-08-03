@@ -29,6 +29,10 @@ export const AUTH_COPY: Record<AppLanguage, Record<string, string>> = {
     emailVerificationResendIn: 'Gửi lại mã sau',
     emailVerificationResent: 'Mã xác minh mới đã được gửi đến email của bạn.',
     emailVerificationBackToLogin: 'Quay lại đăng nhập',
+    phoneVerificationTitle: 'Xác minh số điện thoại',
+    phoneVerificationDescription:
+      'Nhập mã gồm 6 chữ số đã được gửi đến số điện thoại của bạn.',
+    phoneVerificationResent: 'Mã xác minh mới đã được gửi đến số điện thoại của bạn.',
     validationUsername: 'Nhập email hoặc số điện thoại.',
     validationPassword: 'Nhập mật khẩu.',
     firstName: 'Họ',
@@ -90,6 +94,10 @@ export const AUTH_COPY: Record<AppLanguage, Record<string, string>> = {
     emailVerificationResendIn: 'Resend code in',
     emailVerificationResent: 'A new verification code was sent to your email.',
     emailVerificationBackToLogin: 'Back to login',
+    phoneVerificationTitle: 'Verify your phone number',
+    phoneVerificationDescription:
+      'Enter the 6-digit code sent to your phone number.',
+    phoneVerificationResent: 'A new verification code was sent to your phone.',
     validationUsername: 'Enter email or phone number.',
     validationPassword: 'Enter your password.',
     firstName: 'First Name',

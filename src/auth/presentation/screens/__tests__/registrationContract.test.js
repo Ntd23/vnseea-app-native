@@ -27,6 +27,8 @@ describe('registration identity contract', () => {
       'hasUnsupportedUsernameControlCharacter(normalizedUsername)',
     );
     expect(repository).toContain('username: input.username.trim()');
+    expect(repository).toContain('email: apiIdentity.email');
+    expect(repository).toContain('phone_num: apiIdentity.phoneNumber');
   });
 
   it('accepts spaces, special characters, emoji, accents, and normal digits', () => {
@@ -79,7 +81,12 @@ describe('registration identity contract', () => {
       'navigation.replace(ROUTES.EMAIL_VERIFICATION, {',
     );
     expect(verificationBranch).toContain('userId: result.userId');
-    expect(verificationBranch).toContain('email: email.trim()');
+    expect(verificationBranch).toContain(
+      'identity: result.identity || registrationIdentity.value',
+    );
+    expect(verificationBranch).toContain(
+      "registrationIdentity.type === 'phone' ? 'sms' : 'email'",
+    );
     expect(verificationBranch).not.toContain(
       'Alert.alert(copy.verificationTitle, result.message)',
     );

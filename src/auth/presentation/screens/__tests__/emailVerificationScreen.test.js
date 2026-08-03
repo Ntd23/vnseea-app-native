@@ -15,7 +15,8 @@ describe('Email verification screen', () => {
     expect(routes).toContain("EMAIL_VERIFICATION: 'EmailVerification'");
     expect(types).toContain('[ROUTES.EMAIL_VERIFICATION]: {');
     expect(types).toContain('userId: string;');
-    expect(types).toContain('email: string;');
+    expect(types).toContain('identity: string;');
+    expect(types).toContain("channel: 'email' | 'sms';");
     expect(authIndex).toContain('EmailVerificationScreen');
     expect(registry).toContain(
       '{ name: ROUTES.EMAIL_VERIFICATION, component: EmailVerificationScreen }',
@@ -58,5 +59,7 @@ describe('Email verification screen', () => {
     expect(copy).toContain("emailVerificationSubmit: 'Xác minh và tiếp tục'");
     expect(copy).toContain("emailVerificationTitle: 'Verify your email'");
     expect(copy).toContain("emailVerificationSubmit: 'Verify and continue'");
+    expect(copy).toContain("phoneVerificationTitle: 'Xác minh số điện thoại'");
+    expect(copy).toContain("phoneVerificationTitle: 'Verify your phone number'");
   });
 });
