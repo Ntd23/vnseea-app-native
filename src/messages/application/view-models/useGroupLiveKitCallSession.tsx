@@ -128,7 +128,7 @@ type GroupLiveKitCallSessionContextValue = {
   statusText: string;
   isActive: boolean;
   startGroupCall: (params: StartGroupCallParams) => void;
-  answerIncomingGroupCall: (call: IncomingGroupLiveKitCall) => void;
+  answerIncomingGroupCall: (call: IncomingGroupLiveKitCall) => Promise<boolean>;
   ensureSessionFromRoute: (params: GroupLiveKitCallRouteParams) => void;
   minimizeCall: () => void;
   restoreCallRoom: () => void;
@@ -1005,7 +1005,12 @@ export function GroupLiveKitCallSessionProvider({
   }, [disconnectActiveRoom, repository]);
 
   const connectPayload = useCallback(
-    async (callId: string, callUuid: string, cameraGranted: boolean) => {
+    async (
+      callId: string,
+      callUuid: string,
+      cameraGranted: boolean,
+      alreadyJoined = false,
+    ) => {
       patchSession({ phase: 'connecting' });
       const payload = await repository.getJoinPayload({ callId });
       disconnectActiveRoom();
@@ -1041,8 +1046,10 @@ export function GroupLiveKitCallSessionProvider({
         await AudioSession.startAudioSession().catch(() => undefined);
       }
 
-      await repository.joinCall({ callId });
-      joinedCallIdRef.current = callId;
+      if (!alreadyJoined) {
+        await repository.joinCall({ callId });
+        joinedCallIdRef.current = callId;
+      }
 
       const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS);
       const handleDisconnected = (reason?: DisconnectReason) => {
@@ -1257,6 +1264,7 @@ export function GroupLiveKitCallSessionProvider({
       });
       sessionRef.current = initialSession;
       setSession(initialSession);
+      let createdCallId = '';
 
       async function boot() {
         const permissions = await requestGroupVideoCallPermissions();
@@ -1270,6 +1278,7 @@ export function GroupLiveKitCallSessionProvider({
         const created = await repository.createCall({
           groupId: params.groupId,
         });
+        createdCallId = created.call.id;
         const callUuid = createNativeGroupCallUuid(created.call.id);
         const deliveryWarningText =
           !created.isExisting && created.delivery.state === 'failed'
@@ -1294,7 +1303,12 @@ export function GroupLiveKitCallSessionProvider({
         );
       }
 
-      boot().catch(caught => {
+      boot().catch(async caught => {
+        if (createdCallId) {
+          await repository
+            .leaveCall({ callId: createdCallId })
+            .catch(() => undefined);
+        }
         cleanupFailedGroupCallStart();
         patchSession({
           phase: 'error',
@@ -1310,11 +1324,11 @@ export function GroupLiveKitCallSessionProvider({
   );
 
   const answerIncomingGroupCall = useCallback(
-    (call: IncomingGroupLiveKitCall) => {
+    async (call: IncomingGroupLiveKitCall) => {
       const current = sessionRef.current;
       if (current && !isFinalPhase(current.phase)) {
         patchSession({ isMinimized: false });
-        return;
+        return joinedCallIdRef.current === call.callId;
       }
 
       leaveSentRef.current = false;
@@ -1330,8 +1344,9 @@ export function GroupLiveKitCallSessionProvider({
       } satisfies GroupLiveKitCallSession;
       sessionRef.current = initialSession;
       setSession(initialSession);
+      let didJoinCall = false;
 
-      async function boot() {
+      try {
         const permissions = await requestGroupVideoCallPermissions();
         if (!permissions.microphoneGranted) {
           throw new Error(formatPermissionError());
@@ -1347,10 +1362,23 @@ export function GroupLiveKitCallSessionProvider({
         const callUuid =
           displayedUuid || createNativeGroupCallUuid(call.callId);
         patchSession({ nativeCallUuid: callUuid });
-        await connectPayload(call.callId, callUuid, permissions.cameraGranted);
-      }
-
-      boot().catch(caught => {
+        await repository.joinCall({ callId: call.callId });
+        didJoinCall = true;
+        joinedCallIdRef.current = call.callId;
+        await connectPayload(
+          call.callId,
+          callUuid,
+          permissions.cameraGranted,
+          true,
+        );
+        return true;
+      } catch (caught) {
+        if (didJoinCall) {
+          await repository
+            .leaveCall({ callId: call.callId })
+            .catch(() => undefined);
+          joinedCallIdRef.current = '';
+        }
         cleanupFailedGroupCallStart();
         patchSession({
           phase: 'error',
@@ -1360,9 +1388,10 @@ export function GroupLiveKitCallSessionProvider({
               : 'Không thể trả lời cuộc gọi nhóm.',
           hasMediaPermissions: false,
         });
-      });
+        return false;
+      }
     },
-    [cleanupFailedGroupCallStart, connectPayload, patchSession],
+    [cleanupFailedGroupCallStart, connectPayload, patchSession, repository],
   );
 
   const ensureSessionFromRoute = useCallback(
@@ -1583,6 +1612,10 @@ export function GroupLiveKitCallSessionProvider({
         .syncCall({ callId: current.callId })
         .catch(() => null);
       if (!result) return;
+      if (result.endpointOwned === false) {
+        finishSession('sync_inactive');
+        return;
+      }
       if (result.call.status !== 'active') {
         finishSession('sync_inactive');
         return;

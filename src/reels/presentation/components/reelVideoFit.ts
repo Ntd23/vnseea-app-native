@@ -1,36 +1,60 @@
-export type ReelVideoFitMode = 'cover' | 'blurContain';
+export const REEL_VIDEO_FALLBACK_ASPECT_RATIO = 9 / 16;
 
-// Native video metadata can be rounded by a few pixels. Treat ratios as the
-// same only when they are effectively identical; every real mismatch uses
-// contain so no edge of the source video is cropped.
-export const REEL_VIDEO_ASPECT_RATIO_EPSILON = 0.001;
+export interface ContainedReelVideoRect {
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+}
 
-export function getReelVideoFitMode(
+function isUsableDimension(value: number) {
+  return Number.isFinite(value) && value > 0;
+}
+
+/** Fits the natural video frame inside the stage without cropping it. */
+export function getContainedReelVideoRect(
+  containerWidth: number,
+  containerHeight: number,
   aspectRatio: number | undefined,
-  frameAspectRatio: number | undefined,
-): ReelVideoFitMode {
+): ContainedReelVideoRect {
   if (
-    typeof aspectRatio !== 'number' ||
-    !Number.isFinite(aspectRatio) ||
-    aspectRatio <= 0 ||
-    typeof frameAspectRatio !== 'number' ||
-    !Number.isFinite(frameAspectRatio) ||
-    frameAspectRatio <= 0
+    !isUsableDimension(containerWidth) ||
+    !isUsableDimension(containerHeight)
   ) {
-    // `contain` is the safe loading fallback before naturalSize is known.
-    return 'blurContain';
+    return { width: 0, height: 0, left: 0, top: 0 };
   }
 
-  return Math.abs(aspectRatio - frameAspectRatio) <=
-    REEL_VIDEO_ASPECT_RATIO_EPSILON
-    ? 'cover'
-    : 'blurContain';
+  const resolvedAspectRatio = isUsableDimension(Number(aspectRatio))
+    ? Number(aspectRatio)
+    : REEL_VIDEO_FALLBACK_ASPECT_RATIO;
+  const containerAspectRatio = containerWidth / containerHeight;
+
+  if (resolvedAspectRatio >= containerAspectRatio) {
+    const width = containerWidth;
+    const height = width / resolvedAspectRatio;
+    return {
+      width,
+      height,
+      left: 0,
+      top: (containerHeight - height) / 2,
+    };
+  }
+
+  const height = containerHeight;
+  const width = height * resolvedAspectRatio;
+  return {
+    width,
+    height,
+    left: (containerWidth - width) / 2,
+    top: 0,
+  };
 }
 
 export function getReelVideoNaturalAspectRatio(data: any) {
   const size = data?.naturalSize ?? data;
   const width = Number(size?.width);
   const height = Number(size?.height);
+  const orientation = String(size?.orientation ?? '').toLowerCase();
 
   if (!Number.isFinite(width) || !Number.isFinite(height)) {
     return undefined;
@@ -38,6 +62,14 @@ export function getReelVideoNaturalAspectRatio(data: any) {
 
   if (width <= 0 || height <= 0) {
     return undefined;
+  }
+
+  if (orientation === 'portrait' && width > height) {
+    return height / width;
+  }
+
+  if (orientation === 'landscape' && height > width) {
+    return height / width;
   }
 
   return width / height;

@@ -1,23 +1,40 @@
 import {
-  getReelVideoFitMode,
+  getContainedReelVideoRect,
   getReelVideoNaturalAspectRatio,
 } from '../reelVideoFit';
 
 describe('reelVideoFit', () => {
-  it('uses contain while dimensions are unknown so loading never crops', () => {
-    expect(getReelVideoFitMode(undefined, 9 / 19.5)).toBe('blurContain');
-    expect(getReelVideoFitMode(9 / 16, undefined)).toBe('blurContain');
+  it.each([
+    ['9:16', 9 / 16],
+    ['2:3', 2 / 3],
+    ['3:4', 3 / 4],
+    ['1:1', 1],
+    ['16:9', 16 / 9],
+  ])('contains %s video without cropping', (_label, aspectRatio) => {
+    const rect = getContainedReelVideoRect(390, 844, aspectRatio);
+
+    expect(rect.width).toBeLessThanOrEqual(390);
+    expect(rect.height).toBeLessThanOrEqual(844);
+    expect(rect.width / rect.height).toBeCloseTo(aspectRatio);
+    expect(rect.left).toBeGreaterThanOrEqual(0);
+    expect(rect.top).toBeGreaterThanOrEqual(0);
   });
 
-  it('uses contain for videos wider or taller than the reel frame', () => {
-    expect(getReelVideoFitMode(9 / 16, 9 / 19.5)).toBe('blurContain');
-    expect(getReelVideoFitMode(9 / 21, 9 / 19.5)).toBe('blurContain');
-    expect(getReelVideoFitMode(1, 9 / 19.5)).toBe('blurContain');
-    expect(getReelVideoFitMode(16 / 9, 9 / 19.5)).toBe('blurContain');
+  it('uses a contained 9:16 frame before metadata is available', () => {
+    const rect = getContainedReelVideoRect(390, 844, undefined);
+
+    expect(rect.width / rect.height).toBeCloseTo(9 / 16);
+    expect(rect.width).toBe(390);
+    expect(rect.top).toBeGreaterThan(0);
   });
 
-  it('only uses cover when source and frame ratios match', () => {
-    expect(getReelVideoFitMode(9 / 16, 9 / 16)).toBe('cover');
+  it('returns an empty frame for invalid container dimensions', () => {
+    expect(getContainedReelVideoRect(0, 844, 9 / 16)).toEqual({
+      width: 0,
+      height: 0,
+      left: 0,
+      top: 0,
+    });
   });
 
   it('extracts natural aspect ratio from react-native-video load data', () => {
@@ -33,5 +50,26 @@ describe('reelVideoFit', () => {
       }),
     ).toBeCloseTo(720 / 1280);
     expect(getReelVideoNaturalAspectRatio({ naturalSize: {} })).toBeUndefined();
+  });
+
+  it('honors native orientation metadata for rotated video files', () => {
+    expect(
+      getReelVideoNaturalAspectRatio({
+        naturalSize: {
+          width: 1920,
+          height: 1080,
+          orientation: 'portrait',
+        },
+      }),
+    ).toBeCloseTo(9 / 16);
+    expect(
+      getReelVideoNaturalAspectRatio({
+        naturalSize: {
+          width: 1080,
+          height: 1920,
+          orientation: 'landscape',
+        },
+      }),
+    ).toBeCloseTo(16 / 9);
   });
 });

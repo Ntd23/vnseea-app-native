@@ -183,8 +183,10 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]) {
 
 function readOptionalBool(raw: Record<string, unknown>, ...keys: string[]) {
   for (const key of keys) {
-    if (!(key in raw)) continue;
-    return readBool(raw, key);
+    const value = raw[key];
+    if (typeof value === 'boolean') return value;
+    if (value === 'true' || value === '1' || value === 1) return true;
+    if (value === 'false' || value === '0' || value === 0) return false;
   }
   return undefined;
 }
@@ -214,11 +216,12 @@ function readPostPermissions(
 ) {
   const permissions =
     (raw.permissions as Record<string, unknown> | undefined) ?? raw;
-  const backendCanShare = readOptionalBool(
-    permissions,
-    'can_share',
-    'canShare',
-  );
+  const nestedCanShare = readOptionalBool(permissions, 'can_share', 'canShare');
+  const rootCanShare =
+    permissions === raw
+      ? undefined
+      : readOptionalBool(raw, 'can_share', 'canShare');
+  const backendCanShare = nestedCanShare ?? rootCanShare;
   const backendCanEdit = readOptionalBool(permissions, 'can_edit', 'canEdit');
   return {
     canDelete: readBool(permissions, 'can_delete', 'canDelete'),
@@ -228,6 +231,7 @@ function readPostPermissions(
       privacy.isValid &&
       privacy.audience === 'public' &&
       !privacy.isAnonymous,
+    canShareKnown: backendCanShare !== undefined,
   };
 }
 

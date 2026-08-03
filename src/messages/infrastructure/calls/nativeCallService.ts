@@ -16,6 +16,7 @@ import type {
   IncomingGroupLiveKitCall,
 } from '../../domain/types/groupCall.types';
 import type { ChatItem } from '../../domain/types/messages.types';
+import { getClientEndpointIdentity } from '../../../shared-kernel/infrastructure/livekit/clientEndpointIdentity';
 
 type NativeCallListeners = {
   onAnswer?: (callUuid: string) => void;
@@ -63,8 +64,10 @@ let cachedCallKeep: Record<string, any> | null | undefined;
 let cachedVoipPush: Record<string, any> | null | undefined;
 let cachedInitialNativeAction: Promise<Record<string, string> | null> | null =
   null;
-let cachedInitialNativeMessageAction: Promise<Record<string, string> | null> | null =
-  null;
+let cachedInitialNativeMessageAction: Promise<Record<
+  string,
+  string
+> | null> | null = null;
 const pendingAnswerUuids: string[] = [];
 const pendingEndUuids: string[] = [];
 const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
@@ -254,6 +257,8 @@ function readPushLiveKitCall(payload: unknown): IncomingLiveKitCall | null {
     actionToken: readPushString(payload, 'action_token') || undefined,
     expiresAt: Number(readPushString(payload, 'expires_at')) || undefined,
     apiUrl: readPushString(payload, 'api_url') || undefined,
+    clientEndpointId:
+      readPushString(payload, 'client_endpoint_id') || undefined,
     peer: {
       id: readPushString(payload, 'from_id'),
       name: readPushString(payload, 'name') || 'Người dùng',
@@ -318,12 +323,14 @@ function readPushLiveKitGroupCall(
     actionToken: readPushString(payload, 'action_token') || undefined,
     expiresAt: Number(readPushString(payload, 'expires_at')) || undefined,
     apiUrl: readPushString(payload, 'api_url') || undefined,
+    clientEndpointId:
+      readPushString(payload, 'client_endpoint_id') || undefined,
     ringMode:
       readPushString(payload, 'ring_mode') === 'fullscreen'
         ? 'fullscreen'
         : readPushString(payload, 'ring_mode') === 'passive'
-          ? 'passive'
-          : undefined,
+        ? 'passive'
+        : undefined,
   };
 }
 
@@ -402,7 +409,7 @@ function hasRecentWebRTCAudioSessionActivation(callUuid?: string) {
   if (
     lastWebRTCAudioSessionActivatedAt <= 0 ||
     Date.now() - lastWebRTCAudioSessionActivatedAt >
-    CALLKIT_AUDIO_SESSION_RECENT_MS
+      CALLKIT_AUDIO_SESSION_RECENT_MS
   ) {
     return false;
   }
@@ -533,11 +540,14 @@ export function waitForNativeAudioSessionActivation(
     });
   }
   if (lastWebRTCAudioSessionActivatedAt > 0) {
-    logNativeCallDebug('callkit_webrtc_audio_session_activate_missing_for_recent', {
-      callUuid,
-      recentCallUuid: lastWebRTCAudioSessionActivatedCallUuid,
-      recentAgeMs: Date.now() - lastWebRTCAudioSessionActivatedAt,
-    });
+    logNativeCallDebug(
+      'callkit_webrtc_audio_session_activate_missing_for_recent',
+      {
+        callUuid,
+        recentCallUuid: lastWebRTCAudioSessionActivatedCallUuid,
+        recentAgeMs: Date.now() - lastWebRTCAudioSessionActivatedAt,
+      },
+    );
   }
 
   return new Promise<NativeAudioSessionActivationResult>(resolve => {
@@ -645,9 +655,7 @@ export function createNativeCallUuid(
   )}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
-export function createNativeGroupCallUuid(
-  callId?: string,
-) {
+export function createNativeGroupCallUuid(callId?: string) {
   const seed = callId
     ? `vnseea-livekit-group|video|${callId}`
     : `vnseea-livekit-group|${Date.now()}|${Math.random()}`;
@@ -825,7 +833,10 @@ export function usesNativeCallUi(callUuid?: string) {
   return Boolean(activeCalls.get(callUuid)?.usesNativeCallUi);
 }
 
-async function getInitialNativeActionPayload(): Promise<Record<string, string> | null> {
+async function getInitialNativeActionPayload(): Promise<Record<
+  string,
+  string
+> | null> {
   if (Platform.OS !== 'android') return null;
   if (cachedInitialNativeAction) {
     return cachedInitialNativeAction;
@@ -835,13 +846,14 @@ async function getInitialNativeActionPayload(): Promise<Record<string, string> |
   if (!initialActionPromise) {
     return null;
   }
-  cachedInitialNativeAction =
-    initialActionPromise?.then(payload => {
+  cachedInitialNativeAction = initialActionPromise
+    ?.then(payload => {
       if (!payload) {
         cachedInitialNativeAction = null;
       }
       return payload;
-    }).catch(error => {
+    })
+    .catch(error => {
       cachedInitialNativeAction = null;
       throw error;
     });
@@ -852,7 +864,10 @@ function clearInitialNativeActionPayload() {
   cachedInitialNativeAction = null;
 }
 
-async function getInitialNativeMessageActionPayload(): Promise<Record<string, string> | null> {
+async function getInitialNativeMessageActionPayload(): Promise<Record<
+  string,
+  string
+> | null> {
   if (Platform.OS !== 'android') return null;
   if (cachedInitialNativeMessageAction) {
     return cachedInitialNativeMessageAction;
@@ -862,13 +877,14 @@ async function getInitialNativeMessageActionPayload(): Promise<Record<string, st
   if (!initialActionPromise) {
     return null;
   }
-  cachedInitialNativeMessageAction =
-    initialActionPromise.then(payload => {
+  cachedInitialNativeMessageAction = initialActionPromise
+    .then(payload => {
       if (!payload) {
         cachedInitialNativeMessageAction = null;
       }
       return payload;
-    }).catch(error => {
+    })
+    .catch(error => {
       cachedInitialNativeMessageAction = null;
       throw error;
     });
@@ -1063,8 +1079,12 @@ export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
         avatar: call.peer.avatar || '',
         action_token: call.actionToken || '',
         api_url: call.apiUrl || '',
+        client_endpoint_id:
+          call.clientEndpointId || getClientEndpointIdentity(),
         call_context: 'direct',
-      }).catch((err: any) => console.warn('[LiveKitCall] showIncomingCall failed', err));
+      }).catch((err: any) =>
+        console.warn('[LiveKitCall] showIncomingCall failed', err),
+      );
     }
     return callUuid;
   }
@@ -1126,8 +1146,12 @@ export async function displayNativeIncomingGroupCall(
         avatar: call.caller.avatar || '',
         action_token: call.actionToken || '',
         api_url: call.apiUrl || '',
+        client_endpoint_id:
+          call.clientEndpointId || getClientEndpointIdentity(),
         call_context: 'group',
-      }).catch((err: any) => console.warn('[LiveKitCall] showIncomingGroupCall failed', err));
+      }).catch((err: any) =>
+        console.warn('[LiveKitCall] showIncomingGroupCall failed', err),
+      );
     }
     return callUuid;
   }
@@ -1250,9 +1274,8 @@ export function dismissNativeIncomingCall(callId?: string) {
     for (const callUuid of matchingCallUuids) {
       activeCalls.delete(callUuid);
     }
-    const dismissPromise = getAndroidCallIntentModule()?.dismissIncomingCall?.(
-      callId,
-    );
+    const dismissPromise =
+      getAndroidCallIntentModule()?.dismissIncomingCall?.(callId);
     dismissPromise?.catch(error => {
       console.warn('[LiveKitCall] Could not dismiss Android call UI', error);
     });

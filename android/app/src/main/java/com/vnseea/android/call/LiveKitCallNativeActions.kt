@@ -34,6 +34,7 @@ object LiveKitCallNativeActions {
   const val EXTRA_CALLER_COVER = "caller_cover"
   const val EXTRA_GROUP_COVER = "group_cover"
   const val EXTRA_ACTION_TOKEN = "action_token"
+  const val EXTRA_CLIENT_ENDPOINT_ID = "client_endpoint_id"
   const val EXTRA_API_URL = "api_url"
   const val EXTRA_RING_MODE = "ring_mode"
   const val EXTRA_CALL_CONTEXT = "call_context"
@@ -84,7 +85,12 @@ object LiveKitCallNativeActions {
     })
   }
 
-  fun postAction(apiUrl: String?, actionToken: String?, action: String) {
+  fun postAction(
+    apiUrl: String?,
+    actionToken: String?,
+    action: String,
+    clientEndpointId: String? = null,
+  ) {
     if (apiUrl.isNullOrBlank() || actionToken.isNullOrBlank()) return
     Thread {
       try {
@@ -101,6 +107,7 @@ object LiveKitCallNativeActions {
           "type" to "native_action",
           "call_action" to action,
           "action_token" to actionToken,
+          "client_endpoint_id" to clientEndpointId.orEmpty(),
         ).joinToString("&") { (key, value) ->
           "${URLEncoder.encode(key, "UTF-8")}=${URLEncoder.encode(value, "UTF-8")}"
         }

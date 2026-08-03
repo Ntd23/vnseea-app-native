@@ -192,6 +192,7 @@ function mapReelToFeedVideoPost(item: ReelsItem): FeedVideoPost {
       canDelete: false,
       canShare: item.canShare,
       canEdit: item.canEdit,
+      canShareKnown: item.canShareKnown !== false,
     },
     publisher: {
       id: item.publisher.userId,

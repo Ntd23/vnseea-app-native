@@ -397,6 +397,34 @@ function Wo_ApiLiveKitSendCallPush($recipient, $caller, $call_id, $call_type, $r
     );
 }
 
+function Wo_ApiLiveKitDismissOtherAnswerEndpoints($call_source, $call_type, $endpoint_id) {
+    global $wo;
+    if (empty($call_source) || !is_array($call_source) || empty($call_source['to_id'])) {
+        return;
+    }
+    $call_id = Wo_ApiLiveKitSourceId($call_source);
+    VNSEEA_SendImmediateCallPush(
+        intval($call_source['to_id']),
+        array(
+            'event_type' => 'livekit_call_closed',
+            'call_context' => 'direct',
+            'provider' => 'livekit',
+            'call_id' => (string) $call_id,
+            'call_type' => $call_type,
+            'status' => 'answered_elsewhere',
+            'uuid' => Wo_ApiLiveKitCallUuid($call_id, $call_type),
+            'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/livekit'
+        ),
+        'VNSEEA',
+        $call_type,
+        'direct',
+        true,
+        array(),
+        $endpoint_id,
+        true
+    );
+}
+
 function Wo_ApiLiveKitCreateCall($recipient, $recipient_id, $call_type) {
     global $wo;
 
@@ -404,7 +432,8 @@ function Wo_ApiLiveKitCreateCall($recipient, $recipient_id, $call_type) {
         $wo['user'],
         $recipient,
         $call_type,
-        'api_v2'
+        'api_v2',
+        VNSEEA_GetRequestEndpointId($wo['user']['user_id'])
     );
     if (intval(!empty($result['status']) ? $result['status'] : 500) !== 200) {
         return Wo_ApiLiveKitError(
@@ -460,6 +489,17 @@ function Wo_ApiLiveKitBuildPayload($call_id, $call_type) {
         );
     }
 
+    $endpoint_id = VNSEEA_GetRequestEndpointId($user_id);
+    $endpoint_role = $is_caller ? 'caller' : 'receiver';
+    $endpoint_scope = VNSEEA_DirectCallEndpointScope($call_type);
+    $endpoint_lease = VNSEEA_GetLiveKitEndpointLease($endpoint_scope, $call_id, $user_id, $endpoint_role);
+    if (empty($endpoint_lease) || intval($endpoint_lease['active']) !== 1) {
+        VNSEEA_ClaimLiveKitEndpoint($endpoint_scope, $call_id, $user_id, $endpoint_role, $endpoint_id);
+    }
+    if (!VNSEEA_IsLiveKitEndpointOwner($endpoint_scope, $call_id, $user_id, $endpoint_role, $endpoint_id)) {
+        return Wo_ApiLiveKitError('call_active_on_another_device', 'Call is active on another device.', 409);
+    }
+
     $ws_url = Wo_GetLiveKitServerUrl();
     $api_key = !empty($wo['config']['livekit_api_key']) ? trim($wo['config']['livekit_api_key']) : '';
     $api_secret = !empty($wo['config']['livekit_api_secret']) ? trim($wo['config']['livekit_api_secret']) : '';
@@ -472,7 +512,7 @@ function Wo_ApiLiveKitBuildPayload($call_id, $call_type) {
     $peer_id = $is_caller ? intval($call_source['to_id']) : intval($call_source['from_id']);
     $peer = Wo_UserData($peer_id);
     $current_user = Wo_ApiLiveKitUser($wo['user']);
-    $identity = 'user_' . $user_id . '_' . substr(sha1($wo['user']['user_id'] . '|' . $room_name), 0, 12);
+    $identity = VNSEEA_BuildLiveKitParticipantIdentity('direct_call', $user_id, $call_id, $endpoint_id);
     $timing = Wo_ApiLiveKitTiming($call_source, $call_type);
 
     $payload = array(
@@ -522,6 +562,7 @@ function Wo_ApiLiveKitBuildPayload($call_id, $call_type) {
             'started_at' => $timing['started_at'],
             'started_at_ms' => $timing['started_at_ms']
         ),
+        'endpoint_owned' => true,
         'current_user' => $current_user,
         'peer' => Wo_ApiLiveKitUser($peer),
         'livekit' => array(
@@ -531,7 +572,7 @@ function Wo_ApiLiveKitBuildPayload($call_id, $call_type) {
     ), Wo_ApiLiveKitTimingFields($timing));
 }
 
-function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id) {
+function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id, $endpoint_id = '') {
     global $sqlConnect;
 
     $call_source = ($call_id > 0) ? Wo_GetCallSourceById($call_id, $call_type) : false;
@@ -540,6 +581,31 @@ function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id) {
     }
     if (intval($call_source['to_id']) !== intval($actor_id)) {
         return Wo_ApiLiveKitError('call_forbidden', 'You cannot answer this call.', 403);
+    }
+
+    $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+    if ($endpoint_id === '') {
+        $endpoint_id = VNSEEA_GetRequestEndpointId($actor_id);
+    }
+    $endpoint_scope = VNSEEA_DirectCallEndpointScope($call_type);
+    $existing_status = !empty($call_source['status']) ? $call_source['status'] : 'calling';
+    $existing_active = intval(!empty($call_source['active']) ? $call_source['active'] : 0);
+    $answer_transaction = false;
+    if ($existing_active === 1 && $existing_status === 'answered') {
+        if (!VNSEEA_IsLiveKitEndpointOwner($endpoint_scope, $call_id, $actor_id, 'receiver', $endpoint_id)) {
+            return Wo_ApiLiveKitError('call_answered_elsewhere', 'Call was answered on another device.', 409);
+        }
+    }
+    else {
+        $answer_transaction = mysqli_begin_transaction($sqlConnect);
+        if (!$answer_transaction) {
+            return Wo_ApiLiveKitError('call_answer_failed', 'Could not reserve this call.', 500);
+        }
+        $endpoint_claim = VNSEEA_ClaimLiveKitEndpoint($endpoint_scope, $call_id, $actor_id, 'receiver', $endpoint_id);
+        if (empty($endpoint_claim['ok'])) {
+            mysqli_rollback($sqlConnect);
+            return Wo_ApiLiveKitError('call_answered_elsewhere', 'Call was answered on another device.', 409);
+        }
     }
 
     $table = ($call_type == 'audio') ? T_AUDIO_CALLES : T_VIDEOS_CALLES;
@@ -558,7 +624,15 @@ function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id) {
         ));
     }
     if ($answered_rows <= 0 && !$already_answered) {
+        if ($answer_transaction) {
+            mysqli_rollback($sqlConnect);
+        }
         return Wo_ApiLiveKitError('call_not_available', 'Call is no longer available.', 409);
+    }
+
+    if ($answer_transaction && !mysqli_commit($sqlConnect)) {
+        mysqli_rollback($sqlConnect);
+        return Wo_ApiLiveKitError('call_answer_failed', 'Could not answer this call.', 500);
     }
 
     $answered_source = Wo_GetCallSourceById($call_id, $call_type);
@@ -582,21 +656,48 @@ function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id) {
         'finished' => false,
         'peer_id' => (string) $actor_id
     ), Wo_ApiLiveKitTimingFields($timing)));
+    Wo_ApiLiveKitDismissOtherAnswerEndpoints($answered_source, $call_type, $endpoint_id);
 
     return array_merge(array(
         'api_status' => 200,
         'call_id' => (string) $call_id,
         'call_type' => $call_type,
         'call_status' => 'answered',
-        'active' => true
+        'active' => true,
+        'endpoint_owned' => true
     ), Wo_ApiLiveKitTimingFields($timing));
 }
 
-function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor_id = 0) {
+function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor_id = 0, $endpoint_id = '') {
     global $sqlConnect;
 
     $final_status = in_array($status, array('ended', 'declined', 'no_answer', 'missed')) ? $status : 'cancelled';
     $call_source = ($call_id > 0) ? Wo_GetCallSourceById($call_id, $call_type) : false;
+    if (empty($call_source) || !is_array($call_source)) {
+        return Wo_ApiLiveKitError('call_not_found', 'Call not found.', 404);
+    }
+    $actor_id = intval($actor_id);
+    $is_caller = intval($call_source['from_id']) === $actor_id;
+    $is_receiver = intval($call_source['to_id']) === $actor_id;
+    if (!$is_caller && !$is_receiver) {
+        return Wo_ApiLiveKitError('call_forbidden', 'You cannot end this call.', 403);
+    }
+    $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+    if ($endpoint_id === '') {
+        $endpoint_id = VNSEEA_GetRequestEndpointId($actor_id);
+    }
+    $endpoint_role = $is_caller ? 'caller' : 'receiver';
+    $endpoint_scope = VNSEEA_DirectCallEndpointScope($call_type);
+    $lease = VNSEEA_GetLiveKitEndpointLease($endpoint_scope, $call_id, $actor_id, $endpoint_role);
+    if ((empty($lease) || intval($lease['active']) !== 1) && $is_receiver && $final_status === 'declined') {
+        VNSEEA_ClaimLiveKitEndpoint($endpoint_scope, $call_id, $actor_id, $endpoint_role, $endpoint_id);
+    }
+    if (empty($lease) && $is_caller) {
+        VNSEEA_ClaimLiveKitEndpoint($endpoint_scope, $call_id, $actor_id, $endpoint_role, $endpoint_id);
+    }
+    if (!VNSEEA_IsLiveKitEndpointOwner($endpoint_scope, $call_id, $actor_id, $endpoint_role, $endpoint_id)) {
+        return Wo_ApiLiveKitError('call_active_on_another_device', 'Call is active on another device.', 409);
+    }
     if ($call_id > 0) {
         $table = ($call_type == 'audio') ? T_AUDIO_CALLES : T_VIDEOS_CALLES;
         mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = '" . Wo_Secure($final_status) . "', `declined` = '" . ($final_status == 'declined' ? '1' : '0') . "' WHERE `id` = '" . Wo_Secure($call_id) . "'");
@@ -608,6 +709,7 @@ function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor
             'ended_at_ms' => (int) round(microtime(true) * 1000),
             'status_by' => $actor_id > 0 ? $actor_id : 0
         ));
+        VNSEEA_ReleaseLiveKitEndpoint($endpoint_scope, $call_id);
     }
     if (!empty($call_source) && is_array($call_source)) {
         Wo_ApiLiveKitPublishRealtime($final_status == 'declined' ? 'declined' : 'closed', $call_source, $call_type, array(
@@ -682,7 +784,7 @@ else if ($action == 'create') {
 else if ($action == 'answer') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
     $call_type = Wo_ApiLiveKitCallType(!empty($_POST['call_type']) ? $_POST['call_type'] : 'video');
-    $response_data = Wo_ApiLiveKitAnswerCall($call_id, $call_type, intval($wo['user']['user_id']));
+    $response_data = Wo_ApiLiveKitAnswerCall($call_id, $call_type, intval($wo['user']['user_id']), VNSEEA_GetRequestEndpointId($wo['user']['user_id']));
 }
 else if ($action == 'payload') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
@@ -710,12 +812,22 @@ else if ($action == 'check') {
         }
         $call_source = Wo_GetCallSourceById($call_id, $call_type);
         $timing = Wo_ApiLiveKitTiming($call_source, $call_type);
+        $actor_id = intval($wo['user']['user_id']);
+        $endpoint_role = intval($call_source['from_id']) === $actor_id ? 'caller' : (intval($call_source['to_id']) === $actor_id ? 'receiver' : '');
+        $endpoint_owned = $endpoint_role !== '' && VNSEEA_IsLiveKitEndpointOwner(
+            VNSEEA_DirectCallEndpointScope($call_type),
+            $call_id,
+            $actor_id,
+            $endpoint_role,
+            VNSEEA_GetRequestEndpointId($actor_id)
+        );
         Wo_ApiLiveKitDebugLog('check', array(
             'user_id' => intval($wo['user']['user_id']),
             'call_id' => $call_id,
             'call_type' => $call_type,
             'status' => $call_status,
             'active' => intval(!empty($call_source['active']) ? $call_source['active'] : 0),
+            'endpoint_owned' => $endpoint_owned,
             'started_at' => $timing['started_at'],
             'started_at_ms' => $timing['started_at_ms'],
             'elapsed' => $timing['elapsed'],
@@ -736,7 +848,7 @@ else if ($action == 'close') {
     $call_type = Wo_ApiLiveKitCallType(!empty($_POST['call_type']) ? $_POST['call_type'] : 'video');
     $status = !empty($_POST['status']) ? Wo_Secure($_POST['status']) : 'cancelled';
     $duration = !empty($_POST['duration']) ? intval($_POST['duration']) : 0;
-    $response_data = Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, intval($wo['user']['user_id']));
+    $response_data = Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, intval($wo['user']['user_id']), VNSEEA_GetRequestEndpointId($wo['user']['user_id']));
 }
 else if ($action == 'native_action') {
     $token = !empty($_POST['action_token']) ? $_POST['action_token'] : '';
@@ -748,16 +860,17 @@ else if ($action == 'native_action') {
         $call_id = !empty($payload['call_id']) ? intval($payload['call_id']) : 0;
         $call_type = Wo_ApiLiveKitCallType(!empty($payload['call_type']) ? $payload['call_type'] : 'video');
         $actor_id = !empty($payload['to_id']) ? intval($payload['to_id']) : 0;
+        $endpoint_id = VNSEEA_GetRequestEndpointId($actor_id);
         $call_action = !empty($_POST['call_action']) ? Wo_Secure($_POST['call_action']) : '';
         if ($call_action == 'answer') {
-            $response_data = Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id);
+            $response_data = Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id, $endpoint_id);
         }
         else if ($call_action == 'decline') {
-            $response_data = Wo_ApiLiveKitCloseCall($call_id, $call_type, 'declined', 0, $actor_id);
+            $response_data = Wo_ApiLiveKitCloseCall($call_id, $call_type, 'declined', 0, $actor_id, $endpoint_id);
         }
         else if ($call_action == 'close') {
             $duration = !empty($_POST['duration']) ? intval($_POST['duration']) : 0;
-            $response_data = Wo_ApiLiveKitCloseCall($call_id, $call_type, 'ended', $duration, $actor_id);
+            $response_data = Wo_ApiLiveKitCloseCall($call_id, $call_type, 'ended', $duration, $actor_id, $endpoint_id);
         }
         else {
             $response_data = Wo_ApiLiveKitError('invalid_call_action', 'Invalid call action.', 400);

@@ -67,7 +67,8 @@ if ($f == 'create_livekit_call') {
                     $wo['user'],
                     $recipient,
                     $call_type,
-                    'nuxt'
+                    'nuxt',
+                    VNSEEA_GetRequestEndpointId($wo['user']['user_id'])
                 );
             }
         }

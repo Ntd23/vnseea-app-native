@@ -89,6 +89,7 @@ describe('liveKitCallMapper', () => {
       serverNowMs: 1700000042000,
       elapsedSeconds: 42,
       elapsedMs: 42000,
+      endpointOwned: true,
     });
   });
 

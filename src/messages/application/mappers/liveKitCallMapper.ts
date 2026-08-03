@@ -43,9 +43,7 @@ function resolveExplicitFalse(value: unknown) {
   return value === false || value === 0 || value === '0' || value === 'false';
 }
 
-function normalizeDeliveryChannel(
-  value: unknown,
-): CallDeliveryChannelState {
+function normalizeDeliveryChannel(value: unknown): CallDeliveryChannelState {
   return value === 'accepted' || value === 'failed' ? value : 'unavailable';
 }
 
@@ -165,6 +163,10 @@ export function mapLiveKitCheckResponse(
     serverNowMs: resolveNumber(raw.server_now_ms, serverNow * 1000),
     elapsedSeconds,
     elapsedMs: resolveNumber(raw.elapsed_ms, elapsedSeconds * 1000),
+    endpointOwned:
+      raw.endpoint_owned === undefined
+        ? true
+        : resolveBoolean(raw.endpoint_owned),
   };
 }
 

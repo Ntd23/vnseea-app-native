@@ -3,10 +3,7 @@ export type LiveKitCallType = 'audio' | 'video';
 
 export type LiveKitCallDirection = 'incoming' | 'outgoing';
 
-export type CallDeliveryChannelState =
-  | 'accepted'
-  | 'failed'
-  | 'unavailable';
+export type CallDeliveryChannelState = 'accepted' | 'failed' | 'unavailable';
 
 export type CallDeliveryState = {
   state: 'accepted' | 'partial' | 'failed';
@@ -84,6 +81,7 @@ export type LiveKitCallCheckResult = {
   serverNowMs: number;
   elapsedSeconds: number;
   elapsedMs: number;
+  endpointOwned: boolean;
 };
 
 export type IncomingLiveKitCall = {
@@ -95,6 +93,7 @@ export type IncomingLiveKitCall = {
   actionToken?: string;
   expiresAt?: number;
   apiUrl?: string;
+  clientEndpointId?: string;
 };
 
 export type LiveKitCallRouteParams = {

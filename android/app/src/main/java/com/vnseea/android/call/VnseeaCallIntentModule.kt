@@ -57,6 +57,7 @@ class VnseeaCallIntentModule(
       LiveKitCallNativeActions.EXTRA_NAME,
       LiveKitCallNativeActions.EXTRA_AVATAR,
       LiveKitCallNativeActions.EXTRA_ACTION_TOKEN,
+      LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID,
       LiveKitCallNativeActions.EXTRA_API_URL,
       LiveKitCallNativeActions.EXTRA_RING_MODE,
       LiveKitCallNativeActions.EXTRA_CALL_CONTEXT,

@@ -84,6 +84,7 @@ function expectRedacted(post: FeedPost) {
     canDelete: false,
     canEdit: false,
     canShare: false,
+    canShareKnown: true,
   });
 }
 
@@ -133,6 +134,7 @@ describe('ApiFeedRepository privacy mapping', () => {
       canDelete: true,
       canEdit: true,
       canShare: false,
+      canShareKnown: true,
     });
   });
 
@@ -140,17 +142,28 @@ describe('ApiFeedRepository privacy mapping', () => {
     const posts = await mapUserPosts([
       rawPost('allowed'),
       rawPost('missing', { can_share: undefined }),
+      rawPost('explicit-false', { can_share: '0' }),
+      rawPost('root-fallback', { permissions: { can_delete: '0' } }),
       rawPost('followers', { postPrivacy: '2' }),
       rawPost('malformed', { postPrivacy: 'wat' }),
       rawPost('anonymous', { is_anonymous: '1' }),
     ]);
 
-    expect(posts.map(post => [post.id, (post as Extract<FeedPost, { privacy: unknown }>).privacy, post.permissions?.canShare])).toEqual([
-      ['allowed', 'public', true],
-      ['missing', 'public', false],
-      ['followers', 'followers', false],
-      ['malformed', 'only_me', false],
-      ['anonymous', 'public', false],
+    expect(
+      posts.map(post => [
+        post.id,
+        (post as Extract<FeedPost, { privacy: unknown }>).privacy,
+        post.permissions?.canShare,
+        post.permissions?.canShareKnown,
+      ]),
+    ).toEqual([
+      ['allowed', 'public', true, true],
+      ['missing', 'public', false, false],
+      ['explicit-false', 'public', false, true],
+      ['root-fallback', 'public', true, true],
+      ['followers', 'followers', false, true],
+      ['malformed', 'only_me', false, true],
+      ['anonymous', 'public', false, true],
     ]);
   });
 });

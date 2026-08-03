@@ -12,9 +12,7 @@ describe('Reel video playback resilience', () => {
   const reelsScreenSource = read(
     'src/reels/presentation/screens/ReelsScreen.tsx',
   );
-  const feedScreenSource = read(
-    'src/feed/presentation/screens/FeedScreen.tsx',
-  );
+  const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
   const homeVideoSource = read(
     'src/feed/presentation/components/PostCards.tsx',
   );
@@ -44,8 +42,10 @@ describe('Reel video playback resilience', () => {
     expect(reelsScreenSource).toContain('REELS_COMMENTS_PREVIEW_RATIO = 0.36');
     expect(reelItemSource).toContain('mediaStageAnimatedStyle');
     expect(reelItemSource).toContain('videoFrameAnimatedStyle');
-    expect(reelItemSource).toContain('previewVideoAspectRatio');
-    expect(reelItemSource).toContain('commentsPreviewProgress.value = withTiming');
+    expect(reelItemSource).toContain('previewVideoRect');
+    expect(reelItemSource).toContain(
+      'commentsPreviewProgress.value = withTiming',
+    );
     expect(reelItemSource).toContain('reelChromeAnimatedStyle');
     expect(reelItemSource).toContain('paused={!playing}');
     expect(reelsScreenSource).toContain(
@@ -78,8 +78,12 @@ describe('Reel video playback resilience', () => {
   });
 
   it('keeps playback progress and scrubbing off the React render hot path', () => {
-    expect(reelItemSource).toContain('const playbackProgress = useSharedValue(0)');
-    expect(reelItemSource).toContain('const dragSeekProgress = useSharedValue(0)');
+    expect(reelItemSource).toContain(
+      'const playbackProgress = useSharedValue(0)',
+    );
+    expect(reelItemSource).toContain(
+      'const dragSeekProgress = useSharedValue(0)',
+    );
     expect(reelItemSource).toContain('SEEK_PREVIEW_THROTTLE_MS = 80');
     expect(reelItemSource).toContain('progressFillAnimatedStyle');
     expect(reelItemSource).not.toContain('setCurrentTime(');
@@ -117,7 +121,9 @@ describe('Reel video playback resilience', () => {
     expect(reelsScreenSource).not.toContain(
       '.activeOffsetX([BACK_GESTURE_ACTIVE_OFFSET_X, 999])',
     );
-    expect(reelsScreenSource).toContain('dragX.value = withTiming(0, returnConfig)');
+    expect(reelsScreenSource).toContain(
+      'dragX.value = withTiming(0, returnConfig)',
+    );
     expect(reelsScreenSource).toContain(
       'screenDismissX.value = withTiming(0, returnConfig)',
     );
@@ -150,6 +156,19 @@ describe('Reel video playback resilience', () => {
     expect(reelItemSource).toContain('key={`${item.id}:${playerAttempt}`}');
   });
 
+  it('never crops foreground video or its loading poster', () => {
+    expect(reelItemSource).toContain(
+      'const fullVideoRect = getContainedReelVideoRect(',
+    );
+    expect(reelItemSource).toContain(
+      'const previewVideoRect = getContainedReelVideoRect(',
+    );
+    expect(reelItemSource).toContain('resizeMode="contain"');
+    expect(reelItemSource).toContain('shutterColor="transparent"');
+    expect(reelItemSource).toContain('Image.getSize(');
+    expect(reelItemSource).not.toContain('getReelVideoFitMode');
+  });
+
   it('pauses and unmounts reel players while the app is backgrounded', () => {
     expect(reelsScreenSource).toContain(
       "() => AppState.currentState === 'active'",
@@ -166,15 +185,9 @@ describe('Reel video playback resilience', () => {
     expect(reelsScreenSource).not.toContain(
       'REELS_ACTIVE_PLAYER_MOUNT_DELAY_MS',
     );
-    expect(reelsScreenSource).toContain(
-      'REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS',
-    );
-    expect(reelsScreenSource).toContain(
-      "Platform.OS === 'android' ? 80 : 60",
-    );
-    expect(reelsScreenSource).toContain(
-      'const shouldKeepPlayersMounted =',
-    );
+    expect(reelsScreenSource).toContain('REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS');
+    expect(reelsScreenSource).toContain("Platform.OS === 'android' ? 80 : 60");
+    expect(reelsScreenSource).toContain('const shouldKeepPlayersMounted =');
     expect(reelsScreenSource).toContain(
       'const activePreloadRadius = isNeighborPreloadReady ? preloadRadius : 0',
     );
@@ -201,9 +214,7 @@ describe('Reel video playback resilience', () => {
     expect(reelsScreenSource).toContain(
       "BackHandler.addEventListener(\n        'hardwareBackPress'",
     );
-    expect(reelsScreenSource).toContain(
-      'runOnJS(beginDismissTransition)()',
-    );
+    expect(reelsScreenSource).toContain('runOnJS(beginDismissTransition)()');
     expect(reelsScreenSource).toContain('onPress={goBackToFeed}');
     expect(reelsScreenSource).toContain('navigation.navigate(ROUTES.FEED)');
     expect(reelsScreenSource).not.toContain('{!isTabRoute ? (');

@@ -144,6 +144,10 @@ export function mapGroupLiveKitSyncResponse(
     participants: mapParticipants(raw.participants),
     elapsedSeconds: elapsedFromCall(call),
     elapsedMs: call.elapsedMs,
+    endpointOwned:
+      raw.endpoint_owned === undefined
+        ? true
+        : resolveBoolean(raw.endpoint_owned),
   };
 }
 
@@ -170,8 +174,8 @@ export function mapIncomingGroupLiveKitCall(
       resolveString(incoming.ring_mode) === 'passive'
         ? 'passive'
         : resolveString(incoming.ring_mode) === 'fullscreen'
-          ? 'fullscreen'
-          : undefined,
+        ? 'fullscreen'
+        : undefined,
   };
 }
 

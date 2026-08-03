@@ -37,6 +37,8 @@ export interface ReelsItem {
   canShare: boolean;
   /** Viewer may edit this reel's caption. */
   canEdit?: boolean;
+  /** Set to false when the current snapshot omitted an authoritative permission. */
+  canShareKnown?: boolean;
   /** Unix timestamp (seconds) when posted */
   postedAt?: number;
   /** Publisher (account that posted the reel) */

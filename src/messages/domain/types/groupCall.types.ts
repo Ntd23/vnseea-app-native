@@ -1,8 +1,5 @@
 // Description: Defines LiveKit group call domain types owned by the Messages context.
-import type {
-  CallDeliveryState,
-  LiveKitCallDirection,
-} from './call.types';
+import type { CallDeliveryState, LiveKitCallDirection } from './call.types';
 
 export type GroupLiveKitCallType = 'video';
 
@@ -67,6 +64,7 @@ export type GroupLiveKitSyncResult = {
   participants: GroupLiveKitParticipant[];
   elapsedSeconds: number;
   elapsedMs: number;
+  endpointOwned: boolean;
 };
 
 export type IncomingGroupLiveKitCall = {
@@ -82,6 +80,7 @@ export type IncomingGroupLiveKitCall = {
   expiresAt?: number;
   apiUrl?: string;
   ringMode?: 'fullscreen' | 'passive';
+  clientEndpointId?: string;
 };
 
 export type GroupLiveKitCallRouteParams = {

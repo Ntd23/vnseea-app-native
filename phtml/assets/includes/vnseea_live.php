@@ -19,6 +19,7 @@ function VNSEEA_LiveCreateError($error_code, $extra = array())
         'live_already_running' => array(409, false),
         'live_post_insert_failed' => array(500, true),
         'live_post_finalize_failed' => array(500, true),
+        'live_active_on_another_device' => array(409, false),
     );
     $definition = isset($errors[$error_code]) ? $errors[$error_code] : array(500, true);
 
@@ -29,6 +30,100 @@ function VNSEEA_LiveCreateError($error_code, $extra = array())
         'retryable' => $definition[1],
         'message' => 'Unable to create live session.',
     ), is_array($extra) ? $extra : array());
+}
+
+if (!function_exists('VNSEEA_IsLiveHostEndpoint')) {
+    function VNSEEA_IsLiveHostEndpoint($post, $user_id, $request = null)
+    {
+        $post = is_object($post) ? (array) $post : (is_array($post) ? $post : array());
+        $post_id = intval(!empty($post['id']) ? $post['id'] : (!empty($post['post_id']) ? $post['post_id'] : 0));
+        $owner_id = intval(!empty($post['user_id']) ? $post['user_id'] : 0);
+        $user_id = intval($user_id);
+        if ($post_id < 1 || $user_id < 1 || $owner_id !== $user_id) {
+            return false;
+        }
+        $endpoint_id = VNSEEA_GetRequestEndpointId($user_id, $request);
+        return VNSEEA_IsLiveKitEndpointOwner('live', $post_id, $user_id, 'host', $endpoint_id);
+    }
+}
+
+if (!function_exists('VNSEEA_IsLivePostRecord')) {
+    function VNSEEA_IsLivePostRecord($post)
+    {
+        $post = is_object($post) ? (array) $post : (is_array($post) ? $post : array());
+        return (!empty($post['postType']) && $post['postType'] === 'live') || intval(!empty($post['postLive']) ? $post['postLive'] : 0) === 1;
+    }
+}
+
+if (!function_exists('VNSEEA_CanDeletePostFromEndpoint')) {
+    function VNSEEA_CanDeletePostFromEndpoint($post, $user_id, $request = null)
+    {
+        $post = is_object($post) ? (array) $post : (is_array($post) ? $post : array());
+        if (!VNSEEA_IsLivePostRecord($post)) {
+            return true;
+        }
+        $is_active = intval(!empty($post['live_ended']) ? $post['live_ended'] : 0) !== 1 && intval(!empty($post['live_time']) ? $post['live_time'] : 0) > 0;
+        return !$is_active || VNSEEA_IsLiveHostEndpoint($post, $user_id, $request);
+    }
+}
+
+function VNSEEA_DeleteLivePost($post_id, $system_cleanup = false)
+{
+    global $wo, $db;
+
+    $post_id = (int) $post_id;
+    if ($post_id < 1) {
+        return false;
+    }
+
+    $post = $db->where('id', $post_id)->where('postType', 'live')->getOne(T_POSTS);
+    if (empty($post)) {
+        return true;
+    }
+
+    $post = is_object($post) ? (array) $post : $post;
+    $owner_id = !empty($post['user_id']) ? (int) $post['user_id'] : 0;
+    if ($owner_id < 1) {
+        return false;
+    }
+
+    if (!$system_cleanup) {
+        $current_user_id = !empty($wo['user']['user_id']) ? (int) $wo['user']['user_id'] : 0;
+        if (empty($wo['loggedin']) || $current_user_id !== $owner_id) {
+            return false;
+        }
+        if (!VNSEEA_CanDeletePostFromEndpoint($post, $current_user_id)) {
+            return false;
+        }
+        $deleted = Wo_DeletePost($post_id);
+        if ($deleted) {
+            VNSEEA_ReleaseLiveKitEndpoint('live', $post_id);
+        }
+        return $deleted;
+    }
+
+    // A verified LiveKit room-finished webhook has no browser session. Run the
+    // existing complete post cleanup as the live owner, then restore globals.
+    $previous_loggedin = isset($wo['loggedin']) ? $wo['loggedin'] : false;
+    $previous_user = isset($wo['user']) ? $wo['user'] : array();
+    $owner = Wo_UserData($owner_id);
+    if (empty($owner)) {
+        return false;
+    }
+
+    try {
+        $wo['loggedin'] = true;
+        $wo['user'] = $owner;
+        $deleted = Wo_DeletePost($post_id);
+        if ($deleted) {
+            VNSEEA_ReleaseLiveKitEndpoint('live', $post_id);
+        }
+        return $deleted;
+    }
+    finally {
+        $wo['loggedin'] = $previous_loggedin;
+        $wo['user'] = $previous_user;
+    }
 }
 
 function VNSEEA_LivePostsHasAnonymousColumn()
@@ -72,6 +167,7 @@ function VNSEEA_CreateLiveSession($request = array(), $source = 'unknown')
     global $wo, $db;
     $request = is_array($request) ? $request : array();
     $user_id = !empty($wo['user']['id']) ? (int) $wo['user']['id'] : 0;
+    $endpoint_id = VNSEEA_GetRequestEndpointId($user_id, $request);
 
     if (empty($wo['config']['live_video'])) {
         $result = VNSEEA_LiveCreateError('live_video_disabled', array('user_id' => $user_id));
@@ -93,7 +189,7 @@ function VNSEEA_CreateLiveSession($request = array(), $source = 'unknown')
         ->where('user_id', $user_id)
         ->where('stream_name', '', '!=')
         ->where('live_ended', 0)
-        ->where('live_time', time() - 5, '>=')
+        ->where('live_time', time() - 45, '>=')
         ->getValue(T_POSTS, 'COUNT(*)');
     if ($active_live > 0) {
         $result = VNSEEA_LiveCreateError('live_already_running', array(
@@ -109,7 +205,7 @@ function VNSEEA_CreateLiveSession($request = array(), $source = 'unknown')
         : Wo_GenerateLiveStreamName($user_id);
     $live_title = !empty($request['title']) ? Wo_Secure(trim($request['title'])) : '';
     $live_description = !empty($request['description']) ? Wo_Secure(trim($request['description'])) : '';
-    $join_payload = Wo_GetLiveKitLivestreamJoinPayload($stream_name, 'host', $user_id, $wo['user']);
+    $join_payload = Wo_GetLiveKitLivestreamJoinPayload($stream_name, 'host', $user_id, $wo['user'], $endpoint_id);
     if ($stream_name === '' || empty($join_payload)) {
         $result = VNSEEA_LiveCreateError('livekit_not_ready', array('user_id' => $user_id));
         VNSEEA_LogLiveCreateResult($source, $result, array('stream_name' => $stream_name));
@@ -160,7 +256,7 @@ function VNSEEA_CreateLiveSession($request = array(), $source = 'unknown')
             ->where('user_id', $user_id)
             ->where('stream_name', '', '!=')
             ->where('live_ended', 0)
-            ->where('live_time', time() - 5, '>=')
+            ->where('live_time', time() - 45, '>=')
             ->getValue(T_POSTS, 'COUNT(*)');
         if ($locked_active_live > 0) {
             throw new RuntimeException('live_already_running:' . $locked_active_live);
@@ -176,6 +272,10 @@ function VNSEEA_CreateLiveSession($request = array(), $source = 'unknown')
             $db_error = method_exists($db, 'getLastErrno') ? (int) $db->getLastErrno() : 0;
             throw new RuntimeException('live_post_finalize_failed:' . $db_error);
         }
+        $endpoint_claim = VNSEEA_ClaimLiveKitEndpoint('live', $post_id, $user_id, 'host', $endpoint_id);
+        if (empty($endpoint_claim['ok'])) {
+            throw new RuntimeException('live_active_on_another_device:0');
+        }
         if (!$db->commit()) {
             $db_error = method_exists($db, 'getLastErrno') ? (int) $db->getLastErrno() : 0;
             throw new RuntimeException('live_post_finalize_failed:' . $db_error);
@@ -187,6 +287,7 @@ function VNSEEA_CreateLiveSession($request = array(), $source = 'unknown')
             'live_already_running',
             'live_post_insert_failed',
             'live_post_finalize_failed',
+            'live_active_on_another_device',
         ), true)
             ? $parts[0]
             : 'live_post_insert_failed';
@@ -216,6 +317,7 @@ function VNSEEA_CreateLiveSession($request = array(), $source = 'unknown')
         'ws_url' => $join_payload['ws_url'],
         'token' => $join_payload['token'],
         'is_host' => true,
+        'host_endpoint_id' => $endpoint_id,
         'title' => $live_title,
         'description' => $live_description,
         'post_url' => Wo_SeoLink('index.php?link1=post&id=' . $post_id),

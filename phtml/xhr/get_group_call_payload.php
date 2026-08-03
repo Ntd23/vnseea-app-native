@@ -13,6 +13,12 @@ if ($f == 'get_group_call_payload') {
             $group_call = $sync_data['call'];
 
             if (!empty($group_call['status']) && $group_call['status'] === 'active') {
+                $endpoint_id = VNSEEA_GetRequestEndpointId($user_id);
+                if (!VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, $user_id, 'participant', $endpoint_id)) {
+                    header("Content-type: application/json");
+                    echo json_encode(array('status' => 409, 'error_code' => 'group_call_active_on_another_device'));
+                    exit();
+                }
                 $user_avatar = '';
                 if (!empty($wo['user']['avatar'])) {
                     $user_avatar = filter_var($wo['user']['avatar'], FILTER_VALIDATE_URL)
@@ -26,7 +32,7 @@ if ($f == 'get_group_call_payload') {
                 if ($livekit_configured && class_exists('\Firebase\JWT\JWT')) {
                     $payload = array(
                         'iss' => trim($wo['config']['livekit_api_key']),
-                        'sub' => 'groupcall_user_' . $user_id . '_' . substr(sha1(session_id() . '|' . $group_call['room_name']), 0, 12),
+                        'sub' => VNSEEA_BuildLiveKitParticipantIdentity('group_call', $user_id, $call_id, $endpoint_id),
                         'nbf' => time() - 300,
                         'exp' => time() + 3600,
                         'name' => !empty($wo['user']['name']) ? $wo['user']['name'] : 'You',
@@ -70,7 +76,8 @@ if ($f == 'get_group_call_payload') {
                         'ws_url' => Wo_GetLiveKitServerUrl(),
                         'token' => $token
                     ),
-                    'participants' => !empty($sync_data['participants']) ? $sync_data['participants'] : array()
+                    'participants' => !empty($sync_data['participants']) ? $sync_data['participants'] : array(),
+                    'endpoint_owned' => true
                 );
             }
         }

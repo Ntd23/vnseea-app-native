@@ -686,6 +686,7 @@ class IncomingCallActivity : Activity() {
           extra(LiveKitCallNativeActions.EXTRA_API_URL),
           extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
           "decline",
+          extra(LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID),
         )
         finishAndRemoveTask()
       }
@@ -793,6 +794,7 @@ class IncomingCallActivity : Activity() {
                     extra(LiveKitCallNativeActions.EXTRA_API_URL),
                     extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
                     "answer",
+                    extra(LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID),
                   )
                   startActivity(Intent(this@IncomingCallActivity, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -838,6 +840,7 @@ class IncomingCallActivity : Activity() {
       extra(LiveKitCallNativeActions.EXTRA_API_URL),
       extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
       "decline",
+      extra(LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID),
     )
     startActivity(Intent(this@IncomingCallActivity, MainActivity::class.java).apply {
       flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
