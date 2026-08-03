@@ -2,18 +2,14 @@
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { PopularRepository } from '../../domain/repositories/PopularRepository';
 import type { PopularPost } from '../../domain/types/popular.types';
 import { mapUserSummary } from '../../../foundation/application/mappers/userSummaryMapper';
 
 // ── Helper functions (matching FeedRepository patterns) ────────────────────────
-const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
-
 function normalizeMediaUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${_siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url);
 }
 
 function readString(raw: Record<string, unknown>, ...keys: string[]): string {

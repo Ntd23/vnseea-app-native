@@ -524,7 +524,10 @@ function mapPostPublisher(
 const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeMediaUrl(url: string | undefined): string | undefined {
-  return normalizeHostedMediaUrl(url, _siteRoot) || undefined;
+  return (
+    normalizeHostedMediaUrl(url, _siteRoot, apiConfig.mediaBaseUrl) ||
+    undefined
+  );
 }
 
 function mapPostGroupContext(

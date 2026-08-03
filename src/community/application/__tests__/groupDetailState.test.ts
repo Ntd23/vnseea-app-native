@@ -46,6 +46,13 @@ describe('group detail state', () => {
       expect(
         normalizeHostedMediaUrl('//v2.vnseea.vn/upload/group.jpg', webBaseUrl),
       ).toBe('https://v2.vnseea.vn/upload/group.jpg');
+      expect(
+        normalizeHostedMediaUrl(
+          'upload/photos/group.jpg',
+          webBaseUrl,
+          'https://media.vnseea.vn',
+        ),
+      ).toBe('https://media.vnseea.vn/upload/photos/group.jpg');
     });
 
     it('upgrades same-host HTTP media without changing external HTTPS media', () => {

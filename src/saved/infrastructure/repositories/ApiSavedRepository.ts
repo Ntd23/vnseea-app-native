@@ -2,6 +2,7 @@
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type {
   SavedPostsPage,
   SavedRepository,
@@ -50,10 +51,7 @@ function cleanText(value: string) {
 }
 
 function normalizeMediaUrl(url: string) {
-  if (!url) return undefined;
-  if (/^https?:\/\//i.test(url)) return url;
-  const baseUrl = apiConfig.webBaseUrl.replace(/\/+$/, '');
-  return `${baseUrl}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url);
 }
 
 function extractAlbumImage(raw: Record<string, unknown>) {

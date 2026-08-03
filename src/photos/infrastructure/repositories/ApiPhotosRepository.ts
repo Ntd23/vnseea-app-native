@@ -1,7 +1,7 @@
 // Description: Loads the current user's photo posts and albums from WoWonder.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import type { PhotosRepository } from '../../domain/repositories/PhotosRepository';
 import type { AlbumItem, PhotosItem } from '../../domain/types/photos.types';
 import {
@@ -19,8 +19,6 @@ type PhotosApiResponse = {
     error_text?: string;
   };
 };
-
-const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function readString(raw: RawRecord | undefined, ...keys: string[]) {
   for (const key of keys) {
@@ -40,9 +38,7 @@ function readNumber(raw: RawRecord | undefined, ...keys: string[]) {
 }
 
 function normalizeUrl(url: string) {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 function cleanCaption(raw: string) {

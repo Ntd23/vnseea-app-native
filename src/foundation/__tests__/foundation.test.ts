@@ -62,6 +62,20 @@ describe('foundation URL resolver', () => {
     expect(normalizeRawUrl('/upload/photos/a.jpg', WEB_BASE_URL)).toBe(
       'https://v2.vnseea.vn/upload/photos/a.jpg',
     );
+    expect(
+      normalizeRawUrl(
+        '/upload/photos/a.jpg',
+        WEB_BASE_URL,
+        'https://media.vnseea.vn',
+      ),
+    ).toBe('https://media.vnseea.vn/upload/photos/a.jpg');
+    expect(
+      normalizeRawUrl(
+        '/themes/wondertag/logo.png',
+        WEB_BASE_URL,
+        'https://media.vnseea.vn',
+      ),
+    ).toBe('https://v2.vnseea.vn/themes/wondertag/logo.png');
     expect(normalizeRawUrl(undefined, WEB_BASE_URL)).toBeUndefined();
   });
 });

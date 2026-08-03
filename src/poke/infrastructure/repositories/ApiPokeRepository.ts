@@ -3,7 +3,7 @@
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { languageStorage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getPokeCopy } from '../../application/i18n/pokeCopy';
@@ -38,8 +38,6 @@ type PokeRemoveResponse = {
   };
 };
 
-const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
-
 function readString(raw: RawRecord | undefined, ...keys: string[]) {
   for (const key of keys) {
     const value = raw?.[key];
@@ -58,9 +56,7 @@ function readNumber(raw: RawRecord | undefined, ...keys: string[]) {
 }
 
 function normalizeUrl(url: string) {
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${siteRoot}/${url.replace(/^\/+/, '')}`;
+  return normalizeConfiguredUrl(url) ?? '';
 }
 
 function mapUserData(raw: RawRecord | undefined): PokeUserData {
