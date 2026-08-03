@@ -94,7 +94,8 @@ if ($f == 'live') {
         $stream_name = '';
         if ($blocked_reason === '') {
             $stream_name = Wo_GenerateLiveStreamName($wo['user']['id']);
-            $payload = Wo_GetLiveKitLivestreamJoinPayload($stream_name, 'host', $wo['user']['id'], $wo['user']);
+            $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['id']);
+            $payload = Wo_GetLiveKitLivestreamJoinPayload($stream_name, 'host', $wo['user']['id'], $wo['user'], $endpoint_id);
             if (empty($payload)) {
                 $blocked_reason = 'bootstrap_failed';
             }
@@ -174,13 +175,23 @@ if ($f == 'live') {
                     'post_id' => intval($post_id)
                 ));
             } else if (intval($post['live_ended']) === 1 || $stream_state === 'offline') {
-                $data['removed'] = 'yes';
+                // An ended broadcast is still a valid timeline post. Return a
+                // final session state so viewers render the ended card instead
+                // of treating the room shutdown as a network/API error.
+                $data['status'] = 200;
+                $data['post_id'] = intval($post['id']);
+                $data['provider'] = 'livekit';
+                $data['stream_name'] = $post['stream_name'];
+                $data['room_name'] = '';
+                $data['ws_url'] = '';
+                $data['token'] = '';
                 $data['stream_state'] = 'offline';
-                $data['message'] = $error_icon . $wo['lang']['stream_has_ended'];
+                $data['heartbeat_age'] = $heartbeat_age;
+                $data['message'] = $wo['lang']['stream_has_ended'];
                 Wo_VnseeaCallDebugLog('live_join', array(
                     'user_id' => intval($wo['user']['id']),
                     'role' => 'viewer',
-                    'status' => 410,
+                    'status' => 200,
                     'blocked_reason' => 'stream_offline',
                     'post_id' => intval($post['id']),
                     'stream_name' => $post['stream_name'],
@@ -189,7 +200,8 @@ if ($f == 'live') {
                     'live_ended' => intval($post['live_ended'])
                 ));
             } else {
-                $join_payload = Wo_GetLiveKitLivestreamJoinPayload($post['stream_name'], 'viewer', $wo['user']['id'], $wo['user']);
+                $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['id']);
+                $join_payload = Wo_GetLiveKitLivestreamJoinPayload($post['stream_name'], 'viewer', $wo['user']['id'], $wo['user'], $endpoint_id);
                 if (empty($join_payload)) {
                     $data['message'] = $error_icon . $wo['lang']['please_check_details'];
                     Wo_VnseeaCallDebugLog('live_join', array(
@@ -239,6 +251,7 @@ if ($f == 'live') {
                 $post_data = array();
             }
             if (!empty($post_data)) {
+                $is_live_host_endpoint = VNSEEA_IsLiveHostEndpoint($post_data, $wo['user']['id'], $_POST);
                 $heartbeat_window = 10;
                 $stale_window = 45;
                 $live_time = !empty($post_data['live_time']) ? intval($post_data['live_time']) : 0;
@@ -328,7 +341,7 @@ if ($f == 'live') {
                     }
                     if ($stream_state !== 'offline') {
                         $viewer_count = intval($db->where('post_id', $post_id)->where('time', time() - 6, '>=')->getValue(T_LIVE_SUB, 'COUNT(*)'));
-                        if ($wo['user']['id'] == intval(!empty($post_data['user_id']) ? $post_data['user_id'] : 0)) {
+                        if ($is_live_host_endpoint) {
                             $joined_users = $db->where('post_id', $post_id)->where('time', time() - 6, '>=')->where('is_watching', 0)->get(T_LIVE_SUB);
                             $joined_ids   = array();
                             if (!empty($joined_users)) {
@@ -412,7 +425,7 @@ if ($f == 'live') {
                         'joined' => $joined_payload,
                         'left' => $left_payload
                     );
-                    if ($wo['user']['id'] == intval(!empty($post_data['user_id']) ? $post_data['user_id'] : 0)) {
+                    if ($is_live_host_endpoint) {
                         if ($_POST['page'] == 'live') {
                             $time = time();
                             $db->where('id', $post_id)->update(T_POSTS, array(
@@ -459,8 +472,24 @@ if ($f == 'live') {
                     );
                 }
             } else {
-                $data['message'] = $error_icon . $wo['lang']['please_check_details'];
-                $data['removed'] = 'yes';
+                $data = array(
+                    'status' => 200,
+                    'html' => '',
+                    'count' => 0,
+                    'viewer_count' => 0,
+                    'word' => $wo['lang']['offline'],
+                    'still_live' => 'offline',
+                    'is_final' => 1,
+                    'heartbeat_age' => 0,
+                    'reactions_count' => 0,
+                    'shares_count' => 0,
+                    'clips_count' => 0,
+                    'comments' => array(),
+                    'reactions' => array(),
+                    'joined' => array(),
+                    'left' => array(),
+                    'removed' => 'yes'
+                );
             }
         } else {
             $data['message'] = $error_icon . $wo['lang']['please_check_details'];
@@ -471,10 +500,20 @@ if ($f == 'live') {
     }
     if ($s == 'delete') {
         $deleted = false;
+        $already_ended = false;
         if (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0) {
             $post_id = Wo_Secure($_POST['post_id']);
             $post = $db->where('post_id', $post_id)->where('user_id', $wo['user']['id'])->getOne(T_POSTS);
             if (!empty($post)) {
+                if (!VNSEEA_IsLiveHostEndpoint($post, $wo['user']['id'], $_POST)) {
+                    header("Content-type: application/json");
+                    echo json_encode(array(
+                        'status' => 409,
+                        'error_code' => 'live_active_on_another_device',
+                        'message' => 'Live is active on another device.'
+                    ));
+                    exit();
+                }
                 $db->where('post_id', $post_id)->where('user_id', $wo['user']['id'])->update(T_POSTS, array(
                 'live_ended' => 1,
                 'live_time' => 0
@@ -494,22 +533,27 @@ if ($f == 'live') {
                     catch (Exception $e) {
                     }
                 }
-                Wo_DeletePost($post_id);
-                $deleted = true;
-            }
-        }
-        $posts = $db->where('stream_name','','<>')->where('postFile','')->get(T_POSTS);
-        if (!empty($posts)) {
-            foreach ($posts as $key => $value) {
-                if ((!empty($value->agora_resource_id) || !empty($value->agora_sid) || !empty($value->agora_token)) && empty($value->postFile)) {
-                    Wo_DeletePost($value->id,'shared');
+                $deleted = VNSEEA_DeleteLivePost((int) $post->id);
+            } else {
+                // Ending a live session is idempotent. LiveKit's room-finished
+                // webhook may remove the post before the host request arrives.
+                $post_still_exists = intval(
+                    $db->where('post_id', $post_id)->getValue(T_POSTS, 'COUNT(*)')
+                );
+                if ($post_still_exists === 0) {
+                    $deleted = true;
+                    $already_ended = true;
                 }
             }
         }
         header("Content-type: application/json");
         echo json_encode(array(
             'status' => $deleted ? 200 : 400,
-            'message' => $deleted ? 'Live session ended.' : $error_icon . $wo['lang']['please_check_details']
+            'message' => $deleted
+                ? ($already_ended ? 'Live session was already ended.' : 'Live session ended and post deleted.')
+                : $error_icon . $wo['lang']['please_check_details'],
+            'already_ended' => $already_ended ? 1 : 0,
+            'post_deleted' => $deleted ? 1 : 0
         ));
         exit();
     }

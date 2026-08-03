@@ -41,7 +41,6 @@ function isMissingLivePostError(error: unknown) {
   return error instanceof Error && error.message.includes('post not found');
 }
 
-
 function mergeComments(
   current: LiveStreamComment[],
   incoming: LiveStreamComment[],
@@ -172,9 +171,7 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
       loadGenerationRef.current = loadGeneration;
       loadInFlightGenerationRef.current = loadGeneration;
       const foregroundLoadGeneration =
-        mode === 'background'
-          ? null
-          : foregroundLoadGenerationRef.current + 1;
+        mode === 'background' ? null : foregroundLoadGenerationRef.current + 1;
       if (foregroundLoadGeneration !== null) {
         foregroundLoadGenerationRef.current = foregroundLoadGeneration;
       }
@@ -372,81 +369,84 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
     };
   }, [enabled, load, refreshIntervalMs]);
 
-  const refreshActiveStreams = useCallback(async (postIds: number[]) => {
-    if (!mountedRef.current || !enabledRef.current) return;
-    if (postIds.length === 0) return;
-    const requestSession = sessionStorage.getSession();
-    if (!requestSession?.accessToken) return;
-    const requestAccessToken = requestSession.accessToken;
-    const requestOwnerId = requestSession.userId;
-    const hasSessionChanged = () => {
-      const currentSession = sessionStorage.getSession();
-      return (
-        currentSession?.accessToken !== requestAccessToken ||
-        currentSession?.userId !== requestOwnerId
-      );
-    };
-    if (activeProbeInFlightGenerationRef.current !== null) return;
-    const probeGeneration = activeProbeGenerationRef.current + 1;
-    activeProbeGenerationRef.current = probeGeneration;
-    activeProbeInFlightGenerationRef.current = probeGeneration;
+  const refreshActiveStreams = useCallback(
+    async (postIds: number[]) => {
+      if (!mountedRef.current || !enabledRef.current) return;
+      if (postIds.length === 0) return;
+      const requestSession = sessionStorage.getSession();
+      if (!requestSession?.accessToken) return;
+      const requestAccessToken = requestSession.accessToken;
+      const requestOwnerId = requestSession.userId;
+      const hasSessionChanged = () => {
+        const currentSession = sessionStorage.getSession();
+        return (
+          currentSession?.accessToken !== requestAccessToken ||
+          currentSession?.userId !== requestOwnerId
+        );
+      };
+      if (activeProbeInFlightGenerationRef.current !== null) return;
+      const probeGeneration = activeProbeGenerationRef.current + 1;
+      activeProbeGenerationRef.current = probeGeneration;
+      activeProbeInFlightGenerationRef.current = probeGeneration;
 
-    try {
-      const probeResults = await Promise.all(
-        postIds.map(async postId => {
-          try {
-            const snapshot = await loadLivePostSnapshot(postId, () =>
-              repository.getLivePost(postId),
-            );
-            return [postId, snapshot] as const;
-          } catch (err) {
-            if (
-              mountedRef.current &&
-              enabledRef.current &&
-              !hasSessionChanged()
-            ) {
-              console.log('[Live] active stream probe skipped:', {
-                postId,
-                err,
-              });
+      try {
+        const probeResults = await Promise.all(
+          postIds.map(async postId => {
+            try {
+              const snapshot = await loadLivePostSnapshot(postId, () =>
+                repository.getLivePost(postId),
+              );
+              return [postId, snapshot] as const;
+            } catch (err) {
+              if (
+                mountedRef.current &&
+                enabledRef.current &&
+                !hasSessionChanged()
+              ) {
+                console.log('[Live] active stream probe skipped:', {
+                  postId,
+                  err,
+                });
+              }
+              return [postId, undefined] as const;
             }
-            return [postId, undefined] as const;
-          }
-        }),
-      );
-      if (
-        !mountedRef.current ||
-        !enabledRef.current ||
-        hasSessionChanged() ||
-        localOwnerIdRef.current !== localOwnerId ||
-        activeProbeGenerationRef.current !== probeGeneration
-      ) {
-        return;
-      }
-      const snapshots = new Map<number, LiveStreamItem | null | undefined>(
-        probeResults,
-      );
-
-      probeResults.forEach(([postId, snapshot]) => {
-        if (snapshot === null) {
-          endedLivePostsStorage.markEnded(postId, localOwnerId);
-        } else if (snapshot?.state === 'offline') {
-          endedLivePostsStorage.notifyInactive(postId, localOwnerId);
+          }),
+        );
+        if (
+          !mountedRef.current ||
+          !enabledRef.current ||
+          hasSessionChanged() ||
+          localOwnerIdRef.current !== localOwnerId ||
+          activeProbeGenerationRef.current !== probeGeneration
+        ) {
+          return;
         }
-      });
+        const snapshots = new Map<number, LiveStreamItem | null | undefined>(
+          probeResults,
+        );
 
-      setLiveStreams(previous =>
-        applyLiveStreamSnapshots(previous, snapshots),
-      );
-      setFriendsLive(previous =>
-        applyLiveStreamSnapshots(previous, snapshots),
-      );
-    } finally {
-      if (activeProbeInFlightGenerationRef.current === probeGeneration) {
-        activeProbeInFlightGenerationRef.current = null;
+        probeResults.forEach(([postId, snapshot]) => {
+          if (snapshot === null) {
+            endedLivePostsStorage.markEnded(postId, localOwnerId);
+          } else if (snapshot?.state === 'offline') {
+            endedLivePostsStorage.notifyInactive(postId, localOwnerId);
+          }
+        });
+
+        setLiveStreams(previous =>
+          applyLiveStreamSnapshots(previous, snapshots),
+        );
+        setFriendsLive(previous =>
+          applyLiveStreamSnapshots(previous, snapshots),
+        );
+      } finally {
+        if (activeProbeInFlightGenerationRef.current === probeGeneration) {
+          activeProbeInFlightGenerationRef.current = null;
+        }
       }
-    }
-  }, [localOwnerId, repository]);
+    },
+    [localOwnerId, repository],
+  );
 
   const trackedLivePostIdsKey = useMemo(
     () =>
@@ -497,7 +497,10 @@ export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
 }
 
 // Live Room ViewModel (viewer or host)
-export function useLiveRoomViewModel(postId: number, initialSession?: LiveSession) {
+export function useLiveRoomViewModel(
+  postId: number,
+  initialSession?: LiveSession,
+) {
   const repository = useMemo(() => createLiveRepository(), []);
   const [streamInfo, setStreamInfo] = useState<LiveStreamItem | null>(null);
   const [comments, setComments] = useState<LiveStreamComment[]>([]);
@@ -508,7 +511,9 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedComments, setHasLoadedComments] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [liveSession, setLiveSession] = useState<LiveSession | null>(initialSession ?? null);
+  const [liveSession, setLiveSession] = useState<LiveSession | null>(
+    initialSession ?? null,
+  );
   const liveSessionRef = useRef<LiveSession | null>(initialSession ?? null);
   const stateRef = useRef<LiveStreamState>('stale');
   const activePostIdRef = useRef(postId);
@@ -534,13 +539,7 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
     return sessionStorage.getUserProfile();
   }, []);
 
-  const isHost = useMemo(() => {
-    const userId = sessionStorage.getSession()?.userId;
-    return Boolean(
-      liveSession?.isHost ||
-      (userId && streamInfo?.publisher.id === userId),
-    );
-  }, [liveSession?.isHost, streamInfo?.publisher.id]);
+  const isHost = liveSession?.isHost === true;
 
   useEffect(() => {
     liveSessionRef.current = liveSession;
@@ -604,13 +603,7 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
       setStreamInfo(stream);
       if (stream) {
         updateLiveState(stream.state);
-        const userId = sessionStorage.getSession()?.userId;
-        const currentIsHost = Boolean(userId && stream.publisher.id === userId);
-        if (
-          stream.state === 'live' &&
-          !liveSessionRef.current &&
-          !currentIsHost
-        ) {
+        if (stream.state === 'live' && !liveSessionRef.current) {
           const session = await repository.joinLive(postId, stream.streamName);
           if (activePostIdRef.current !== postId) return;
           liveSessionRef.current = session;
@@ -708,7 +701,9 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
           page: isHost ? 'live' : 'story',
         });
         if (activePostIdRef.current !== postId) return;
-        setComments(prev => mergeComments(onlyNew ? prev : [], result.comments));
+        setComments(prev =>
+          mergeComments(onlyNew ? prev : [], result.comments),
+        );
         setViewerCount(result.viewerCount);
         updateLiveState(result.state);
         setHasLoadedComments(true);
@@ -741,7 +736,8 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
   }, [loadStream]);
 
   useEffect(() => {
-    if (!streamInfo || state === 'offline' || state === 'stale') return undefined;
+    if (!streamInfo || state === 'offline' || state === 'stale')
+      return undefined;
     refreshComments(false).catch(err => {
       console.warn('[LiveRoom] initial comments load error:', err);
     });

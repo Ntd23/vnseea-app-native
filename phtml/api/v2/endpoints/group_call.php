@@ -1,6 +1,7 @@
 <?php
 // English description: Bridges authenticated v2 mobile requests to existing WoWonder LiveKit group call helpers.
 require_once 'vendor/autoload.php';
+require_once 'assets/includes/vnseea_livekit_call.php';
 
 $response_data = array(
     'api_status' => 400
@@ -185,58 +186,7 @@ function Wo_ApiGroupCallUuid($call_id, $call_type) {
 }
 
 function Wo_ApiGroupCallPublishRealtime($event, $group_call, $extra = array()) {
-    global $wo;
-    if (empty($group_call) || !is_array($group_call)) {
-        return false;
-    }
-    $secret = Wo_ApiGroupCallInternalSecret();
-    if ($secret === '') {
-        return null;
-    }
-    $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
-        ? (!empty($wo['config']['nodejs_ssl_port']) ? intval($wo['config']['nodejs_ssl_port']) : 0)
-        : (!empty($wo['config']['nodejs_port']) ? intval($wo['config']['nodejs_port']) : 0);
-    $endpoint = $port > 0
-        ? 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish'
-        : '';
-    if (!empty($wo['config']['livekit_socket_internal_url'])) {
-        $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
-    }
-    if ($endpoint === '') {
-        return null;
-    }
-    $payload = array_merge(array(
-        'context' => 'group',
-        'event' => $event,
-        'call_id' => (string) intval(!empty($group_call['id']) ? $group_call['id'] : 0),
-        'group_id' => (string) intval(!empty($group_call['group_id']) ? $group_call['group_id'] : 0),
-        'call_type' => Wo_ApiGroupCallType(!empty($group_call['call_type']) ? $group_call['call_type'] : 'video'),
-        'status' => !empty($group_call['status']) ? $group_call['status'] : 'active'
-    ), Wo_ApiGroupCallTimingFields($group_call), $extra);
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $endpoint);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        'Content-Type: application/json; charset=utf-8',
-        'X-Vnseea-Internal-Secret: ' . $secret
-    ));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
-    $result = curl_exec($ch);
-    $error = curl_error($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    error_log('[group_call_publish] event=' . $event .
-        ' call_id=' . $payload['call_id'] .
-        ' group_id=' . $payload['group_id'] .
-        ' recipients=' . json_encode(!empty($payload['recipient_ids']) ? $payload['recipient_ids'] : array()) .
-        ' http=' . intval($status) .
-        ' error=' . ($error ? $error : '-') .
-        ' body=' . substr((string) $result, 0, 160));
-    return intval($status) >= 200 && intval($status) < 300;
+    return Wo_PublishCanonicalLiveKitGroupState($event, $group_call, $extra);
 }
 
 function Wo_ApiGroupCallSendVoipPush($recipient, $notification_data, $display_name, $call_type) {
@@ -359,10 +309,15 @@ function Wo_ApiGroupCallPayload($call_id) {
         return Wo_ApiGroupCallError('livekit_not_configured', 'LiveKit is not configured.', 500);
     }
 
+    $endpoint_id = VNSEEA_GetRequestEndpointId($user_id);
+    if (!VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, $user_id, 'participant', $endpoint_id)) {
+        return Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409);
+    }
+
     $current_user = Wo_ApiGroupCallUser($wo['user']);
     $payload = array(
         'iss' => trim($wo['config']['livekit_api_key']),
-        'sub' => 'groupcall_user_' . $user_id . '_' . substr(sha1($wo['user']['user_id'] . '|' . $group_call['room_name']), 0, 12),
+        'sub' => VNSEEA_BuildLiveKitParticipantIdentity('group_call', $user_id, $call_id, $endpoint_id),
         'nbf' => time() - 300,
         'exp' => time() + 3600,
         'name' => $current_user['name'],
@@ -391,8 +346,13 @@ function Wo_ApiGroupCallPayload($call_id) {
             'ws_url' => Wo_GetLiveKitServerUrl(),
             'token' => \Firebase\JWT\JWT::encode($payload, trim($wo['config']['livekit_api_secret']), 'HS256')
         ),
-        'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array())
+        'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array()),
+        'endpoint_owned' => true
     );
+}
+
+function Wo_ApiGroupCallDismissOtherEndpoints($group_call, $user_id, $endpoint_id) {
+    Wo_DismissCanonicalLiveKitGroupOtherEndpoints($group_call, $user_id, $endpoint_id);
 }
 
 if (empty($action) || !in_array($action, $valid_actions)) {
@@ -417,18 +377,25 @@ else if ($action == 'create') {
             $response_data = Wo_ApiGroupCallError('create_failed', 'Could not create group call.');
         }
         else {
-            $delivery = VNSEEA_BuildCallDeliveryState(null, array());
-            if (Wo_ShouldNotifyNewGroupCall($group_call)) {
-                $delivery = Wo_ApiGroupCallSendPush(Wo_GetGroupChatCallMemberIds($group_id), $group_call, $wo['user']);
+            $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['user_id']);
+            $endpoint_claim = VNSEEA_ClaimLiveKitEndpoint('group_call', intval($group_call['id']), intval($wo['user']['user_id']), 'participant', $endpoint_id);
+            if (empty($endpoint_claim['ok'])) {
+                $response_data = Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409);
             }
-            $group = Wo_GroupTabData($group_id, false);
-            $response_data = array(
-                'api_status' => 200,
-                'call' => Wo_ApiGroupCallSummary($group_call),
-                'group' => Wo_ApiGroupCallGroup($group),
-                'is_existing' => !empty($group_call['is_existing']) ? 1 : 0,
-                'delivery' => $delivery
-            );
+            else {
+                $delivery = VNSEEA_BuildCallDeliveryState(null, array());
+                if (Wo_ShouldNotifyNewGroupCall($group_call)) {
+                    $delivery = Wo_ApiGroupCallSendPush(Wo_GetGroupChatCallMemberIds($group_id), $group_call, $wo['user']);
+                }
+                $group = Wo_GroupTabData($group_id, false);
+                $response_data = array(
+                    'api_status' => 200,
+                    'call' => Wo_ApiGroupCallSummary($group_call),
+                    'group' => Wo_ApiGroupCallGroup($group),
+                    'is_existing' => !empty($group_call['is_existing']) ? 1 : 0,
+                    'delivery' => $delivery
+                );
+            }
         }
     }
 }
@@ -437,30 +404,55 @@ else if ($action == 'payload') {
 }
 else if ($action == 'join') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
-    $group_call = Wo_JoinGroupCall($call_id, $wo['user']['user_id']);
+    $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['user_id']);
+    $join_transaction = mysqli_begin_transaction($sqlConnect);
+    $endpoint_claim = $join_transaction
+        ? VNSEEA_ClaimLiveKitEndpoint('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id)
+        : array('ok' => false, 'error_code' => 'transaction_failed');
+    $group_call = !empty($endpoint_claim['ok']) ? Wo_JoinGroupCall($call_id, $wo['user']['user_id']) : false;
+    if (!empty($group_call) && $join_transaction) {
+        if (!mysqli_commit($sqlConnect)) {
+            mysqli_rollback($sqlConnect);
+            $group_call = false;
+        }
+    }
+    else if ($join_transaction) {
+        mysqli_rollback($sqlConnect);
+    }
     if (!empty($group_call)) {
+        Wo_ApiGroupCallDismissOtherEndpoints($group_call, $wo['user']['user_id'], $endpoint_id);
         $sync_data = Wo_GetGroupCallSyncData($call_id, $wo['user']['user_id']);
         Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
-            'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array())
+            'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array()),
+            'active_user_id' => (string) intval($wo['user']['user_id'])
         ));
     }
-    $response_data = empty($group_call)
-        ? Wo_ApiGroupCallError('join_failed', 'Could not join group call.', 404)
-        : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
+    $response_data = !$join_transaction
+        ? Wo_ApiGroupCallError('join_failed', 'Could not reserve group call.', 500)
+        : (empty($endpoint_claim['ok'])
+        ? Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409)
+        : (empty($group_call)
+            ? Wo_ApiGroupCallError('join_failed', 'Could not join group call.', 404)
+            : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call), 'endpoint_owned' => true)));
 }
 else if ($action == 'leave') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
-    $group_call = Wo_LeaveGroupCall($call_id, $wo['user']['user_id']);
+    $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['user_id']);
+    $owns_endpoint = VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id);
+    $group_call = $owns_endpoint ? Wo_LeaveGroupCall($call_id, $wo['user']['user_id']) : false;
     if (!empty($group_call)) {
+        VNSEEA_ReleaseLiveKitEndpoint('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id);
         $sync_data = Wo_GetGroupCallSyncData($call_id, $wo['user']['user_id']);
         Wo_ApiGroupCallPublishRealtime(!empty($group_call['status']) && $group_call['status'] === 'ended' ? 'closed' : 'sync', $group_call, array(
             'participants' => !empty($sync_data['participants']) ? Wo_ApiGroupCallParticipants($sync_data['participants']) : array(),
             'left_user_id' => (string) intval($wo['user']['user_id'])
         ));
     }
-    $response_data = empty($group_call)
-        ? Wo_ApiGroupCallError('leave_failed', 'Could not leave group call.', 404)
-        : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
+    $response_data = !$owns_endpoint
+        ? Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409)
+        : (empty($group_call)
+            ? Wo_ApiGroupCallError('leave_failed', 'Could not leave group call.', 404)
+            : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call)));
 }
 else if ($action == 'sync') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
@@ -469,11 +461,13 @@ else if ($action == 'sync') {
         $response_data = Wo_ApiGroupCallError('call_not_found', 'Group call not found.', 404);
     }
     else {
+        $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['user_id']);
         $response_data = array(
             'api_status' => 200,
             'call' => Wo_ApiGroupCallSummary($sync_data['call']),
             'group' => Wo_ApiGroupCallGroup($sync_data['group']),
-            'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array())
+            'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array()),
+            'endpoint_owned' => VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id)
         );
     }
 }
@@ -504,16 +498,23 @@ else if ($action == 'incoming') {
 }
 else if ($action == 'decline') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
-    $declined = Wo_DeclineGroupCallInvite($call_id, $wo['user']['user_id']);
+    $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['user_id']);
+    $endpoint_claim = VNSEEA_ClaimLiveKitEndpoint('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id);
+    $declined = !empty($endpoint_claim['ok']) ? Wo_DeclineGroupCallInvite($call_id, $wo['user']['user_id']) : false;
+    if (!empty($endpoint_claim['ok'])) {
+        VNSEEA_ReleaseLiveKitEndpoint('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id);
+    }
     $group_call = Wo_GetGroupCallById($call_id);
     if (!empty($declined) && !empty($group_call)) {
         Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
             'declined_user_id' => (string) intval($wo['user']['user_id'])
         ));
     }
-    $response_data = empty($declined)
-        ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
-        : array('api_status' => 200);
+    $response_data = empty($endpoint_claim['ok'])
+        ? Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409)
+        : (empty($declined)
+            ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
+            : array('api_status' => 200));
 }
 else if ($action == 'native_action') {
     $payload = Wo_ApiGroupCallVerifyActionToken(!empty($_POST['action_token']) ? $_POST['action_token'] : '');
@@ -523,43 +524,62 @@ else if ($action == 'native_action') {
     else {
         $call_id = !empty($payload['call_id']) ? intval($payload['call_id']) : 0;
         $actor_id = !empty($payload['user_id']) ? intval($payload['user_id']) : 0;
+        $endpoint_id = VNSEEA_GetRequestEndpointId($actor_id);
         $call_action = !empty($_POST['call_action']) ? Wo_Secure($_POST['call_action']) : '';
         if ($call_action == 'answer') {
-            $group_call = Wo_JoinGroupCall($call_id, $actor_id);
+            $endpoint_claim = VNSEEA_ClaimLiveKitEndpoint('group_call', $call_id, $actor_id, 'participant', $endpoint_id);
+            $group_call = !empty($endpoint_claim['ok']) ? Wo_JoinGroupCall($call_id, $actor_id) : false;
+            if (empty($group_call) && !empty($endpoint_claim['ok'])) {
+                VNSEEA_ReleaseLiveKitEndpoint('group_call', $call_id, $actor_id, 'participant', $endpoint_id);
+            }
             if (!empty($group_call)) {
+                Wo_ApiGroupCallDismissOtherEndpoints($group_call, $actor_id, $endpoint_id);
                 $sync_data = Wo_GetGroupCallSyncData($call_id, $actor_id);
                 Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
-                    'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array())
+                    'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array()),
+                    'active_user_id' => (string) $actor_id
                 ));
             }
-            $response_data = empty($group_call)
-                ? Wo_ApiGroupCallError('join_failed', 'Could not join group call.', 404)
-                : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
+            $response_data = empty($endpoint_claim['ok'])
+                ? Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409)
+                : (empty($group_call)
+                    ? Wo_ApiGroupCallError('join_failed', 'Could not join group call.', 404)
+                    : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call)));
         }
         else if ($call_action == 'decline') {
-            $declined = Wo_DeclineGroupCallInvite($call_id, $actor_id);
+            $endpoint_claim = VNSEEA_ClaimLiveKitEndpoint('group_call', $call_id, $actor_id, 'participant', $endpoint_id);
+            $declined = !empty($endpoint_claim['ok']) ? Wo_DeclineGroupCallInvite($call_id, $actor_id) : false;
+            if (!empty($endpoint_claim['ok'])) {
+                VNSEEA_ReleaseLiveKitEndpoint('group_call', $call_id, $actor_id, 'participant', $endpoint_id);
+            }
             $group_call = Wo_GetGroupCallById($call_id);
             if (!empty($declined) && !empty($group_call)) {
                 Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
                     'declined_user_id' => (string) $actor_id
                 ));
             }
-            $response_data = empty($declined)
-                ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
-                : array('api_status' => 200);
+            $response_data = empty($endpoint_claim['ok'])
+                ? Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409)
+                : (empty($declined)
+                    ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
+                    : array('api_status' => 200));
         }
         else if ($call_action == 'close') {
-            $group_call = Wo_LeaveGroupCall($call_id, $actor_id);
+            $owns_endpoint = VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, $actor_id, 'participant', $endpoint_id);
+            $group_call = $owns_endpoint ? Wo_LeaveGroupCall($call_id, $actor_id) : false;
             if (!empty($group_call)) {
+                VNSEEA_ReleaseLiveKitEndpoint('group_call', $call_id, $actor_id, 'participant', $endpoint_id);
                 $sync_data = Wo_GetGroupCallSyncData($call_id, $actor_id);
                 Wo_ApiGroupCallPublishRealtime(!empty($group_call['status']) && $group_call['status'] === 'ended' ? 'closed' : 'sync', $group_call, array(
                     'participants' => !empty($sync_data['participants']) ? Wo_ApiGroupCallParticipants($sync_data['participants']) : array(),
                     'left_user_id' => (string) $actor_id
                 ));
             }
-            $response_data = empty($group_call)
-                ? Wo_ApiGroupCallError('leave_failed', 'Could not leave group call.', 404)
-                : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
+            $response_data = !$owns_endpoint
+                ? Wo_ApiGroupCallError('group_call_active_on_another_device', 'Group call is active on another device.', 409)
+                : (empty($group_call)
+                    ? Wo_ApiGroupCallError('leave_failed', 'Could not leave group call.', 404)
+                    : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call)));
         }
         else {
             $response_data = Wo_ApiGroupCallError('invalid_call_action', 'Invalid group call action.', 400);

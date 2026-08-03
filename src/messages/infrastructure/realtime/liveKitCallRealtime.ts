@@ -55,6 +55,7 @@ export type GroupLiveKitCallRealtimeEvent = LiveKitCallRealtimeTiming & {
   participantCount?: number;
   leftUserId?: string;
   declinedUserId?: string;
+  activeUserId?: string;
 };
 
 export type LiveKitCallCreatedPayload = {
@@ -238,7 +239,8 @@ function mapIncomingGroupCall(value: unknown): IncomingGroupLiveKitCall | null {
     roomName: readString(raw.room_name ?? raw.roomName),
     group: mapGroup(raw.group),
     caller: mapPeer(raw.caller),
-    participantCount: readNumber(raw.participant_count ?? raw.participantCount) ?? 0,
+    participantCount:
+      readNumber(raw.participant_count ?? raw.participantCount) ?? 0,
     actionToken: readString(raw.action_token ?? raw.actionToken) || undefined,
     expiresAt: readNumber(raw.expires_at ?? raw.expiresAt),
     apiUrl: readString(raw.api_url ?? raw.apiUrl) || undefined,
@@ -296,6 +298,7 @@ function mapGroupRealtimeEvent(
     elapsedMs: readNumber(raw.elapsed_ms ?? raw.elapsedMs),
     leftUserId: readString(raw.left_user_id ?? raw.leftUserId),
     declinedUserId: readString(raw.declined_user_id ?? raw.declinedUserId),
+    activeUserId: readString(raw.active_user_id ?? raw.activeUserId),
   };
 }
 
@@ -777,9 +780,7 @@ export function emitChatTypingDone(recipientId: string) {
   emitChatRealtimeEvent('typing_done', recipientId);
 }
 
-export function onLiveKitCallIncoming(
-  listener: Listener<IncomingLiveKitCall>,
-) {
+export function onLiveKitCallIncoming(listener: Listener<IncomingLiveKitCall>) {
   listeners.incoming.add(listener);
   connectLiveKitCallRealtime();
   return () => {

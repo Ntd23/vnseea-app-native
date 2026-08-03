@@ -26,7 +26,12 @@ if (empty($_POST['post_id'])) {
 if (empty($error_code)) {
 	$action = '';
 	if ($_POST['action'] == 'delete') {
-		if (Wo_DeletePost($_POST['post_id']) === true) {
+		$post_to_delete = $db->where('id', intval($_POST['post_id']))->getOne(T_POSTS);
+		if (!empty($post_to_delete) && !VNSEEA_CanDeletePostFromEndpoint($post_to_delete, $wo['user']['user_id'], $_POST)) {
+			$error_code = 409;
+			$error_message = 'Live is active on another device.';
+		}
+		else if ((VNSEEA_IsLivePostRecord($post_to_delete) ? VNSEEA_DeleteLivePost(intval($_POST['post_id'])) : Wo_DeletePost($_POST['post_id'])) === true) {
 			$action = 'deleted';
 			Wo_PublishRealtimePostChange($_POST['post_id'], 'deleted');
 		}

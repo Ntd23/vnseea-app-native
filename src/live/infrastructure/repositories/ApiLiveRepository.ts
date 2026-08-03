@@ -13,6 +13,7 @@ import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { getClientEndpointIdentity } from '../../../shared-kernel/infrastructure/livekit/clientEndpointIdentity';
 import type { LiveRepository } from '../../domain/repositories/LiveRepository';
 import type {
   CreateLivePayload,
@@ -92,7 +93,8 @@ function readString(raw: RawRecord | undefined | null, ...keys: string[]) {
   for (const key of keys) {
     const value = raw[key];
     if (typeof value === 'string' && value.length > 0) return value;
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    if (typeof value === 'number' && Number.isFinite(value))
+      return String(value);
   }
   return '';
 }
@@ -144,13 +146,18 @@ function toUrlEncodedPayload(data: RawRecord) {
 async function postLiveXHR(s: 'create' | 'join', data: RawRecord) {
   const accessToken = sessionStorage.getAccessToken();
   const sessionUserId = sessionStorage.getSession()?.userId;
+  const clientEndpointId = getClientEndpointIdentity();
 
-  const url = `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/requests.php?f=live&s=${s}`;
+  const url = `${apiConfig.webBaseUrl.replace(
+    /\/+$/,
+    '',
+  )}/requests.php?f=live&s=${s}`;
 
   const bodyPayload: RawRecord = {
     ...data,
     user_id: sessionUserId,
     access_token: accessToken,
+    client_endpoint_id: clientEndpointId,
     s: accessToken,
   };
 
@@ -161,6 +168,7 @@ async function postLiveXHR(s: 'create' | 'join', data: RawRecord) {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'X-Requested-With': 'XMLHttpRequest',
+        'X-VNSEEA-Endpoint-ID': clientEndpointId,
         ...(accessToken ? { Cookie: `user_session=${accessToken}` } : {}),
       },
       timeout: apiConfig.requestTimeoutMs,
@@ -179,7 +187,10 @@ async function postLiveXHR(s: 'create' | 'join', data: RawRecord) {
   return normalized as LiveSessionResponse;
 }
 
-function readOptionalBool(raw: RawRecord | undefined | null, ...keys: string[]) {
+function readOptionalBool(
+  raw: RawRecord | undefined | null,
+  ...keys: string[]
+) {
   if (!raw) return undefined;
   for (const key of keys) {
     const value = raw[key];
@@ -261,7 +272,11 @@ const LIVE_REACTION_EMOJI: Record<LiveReactionType, string> = {
 function readLiveReaction(raw: RawRecord): LiveReactionType | null {
   const value = readString(raw, 'reaction', 'reaction_type', 'type').trim();
   if (!value) return null;
-  return WIRE_TO_LIVE_REACTION[value] ?? WIRE_TO_LIVE_REACTION[value.toLowerCase()] ?? null;
+  return (
+    WIRE_TO_LIVE_REACTION[value] ??
+    WIRE_TO_LIVE_REACTION[value.toLowerCase()] ??
+    null
+  );
 }
 
 function mapLiveReactionEvent(raw: RawRecord): LiveReactionEvent | null {
@@ -395,13 +410,20 @@ function mapLivePost(raw: RawRecord): LiveStreamItem {
       (raw.user_data as RawRecord | undefined),
   );
   const text = cleanText(readString(raw, 'postText'));
-  const [titleLine, ...descriptionLines] = text.split('\n').map(line => line.trim());
+  const [titleLine, ...descriptionLines] = text
+    .split('\n')
+    .map(line => line.trim());
   const title =
     titleLine ||
-    (publisher.name ? `${publisher.name} đang phát trực tiếp` : 'Đang phát trực tiếp');
+    (publisher.name
+      ? `${publisher.name} đang phát trực tiếp`
+      : 'Đang phát trực tiếp');
   const description = descriptionLines.join('\n').trim();
-  const thumbnailUrl = normalizeMediaUrl(readString(raw, 'postFileThumb', 'live_bg'));
-  const startedAtSeconds = readNumber(raw, 'live_time') || readNumber(raw, 'time');
+  const thumbnailUrl = normalizeMediaUrl(
+    readString(raw, 'postFileThumb', 'live_bg'),
+  );
+  const startedAtSeconds =
+    readNumber(raw, 'live_time') || readNumber(raw, 'time');
 
   return {
     id: String(postId),
@@ -488,7 +510,11 @@ function collectLiveSessionCandidates(response: LiveSessionResponse) {
   return [sessionData, data, postData, root];
 }
 
-function logLiveSessionSummary(source: string, response: LiveSessionResponse, session: LiveSession) {
+function logLiveSessionSummary(
+  source: string,
+  response: LiveSessionResponse,
+  session: LiveSession,
+) {
   const root: RawRecord = getRootRecord(response);
   const data = readRecord(root, 'data');
   const postData = readRecord(root, 'post_data');
@@ -509,7 +535,10 @@ function logLiveSessionSummary(source: string, response: LiveSessionResponse, se
   });
 }
 
-function logLiveResponseEnvelope(source: string, response: LiveSessionResponse) {
+function logLiveResponseEnvelope(
+  source: string,
+  response: LiveSessionResponse,
+) {
   const root: RawRecord = getRootRecord(response);
   const data = readRecord(root, 'data');
   const postData = readRecord(root, 'post_data');
@@ -519,7 +548,9 @@ function logLiveResponseEnvelope(source: string, response: LiveSessionResponse) 
     source,
     responseArrayLength: Array.isArray(response) ? response.length : undefined,
     apiStatus: readString(root, 'api_status', 'status') || '(missing)',
-    message: readString(root, 'message') || readString(errors, 'error_text', 'message'),
+    message:
+      readString(root, 'message') ||
+      readString(errors, 'error_text', 'message'),
     rootKeys: Object.keys(root),
     dataKeys: data ? Object.keys(data) : [],
     postDataKeys: postData ? Object.keys(postData) : [],
@@ -544,7 +575,8 @@ function readLiveSession(
   for (const candidate of candidates) {
     postId = postId || readNumber(candidate, 'post_id', 'postId', 'id');
     streamName =
-      streamName || readString(candidate, 'stream_name', 'streamName', 'stream');
+      streamName ||
+      readString(candidate, 'stream_name', 'streamName', 'stream');
     provider = provider || readString(candidate, 'provider', 'live_provider');
     roomName =
       roomName ||
@@ -640,18 +672,16 @@ export function createLiveRepository(): LiveRepository {
       const rawItems = responses.flatMap(response => response.data ?? []);
 
       return uniqueLiveItems(
-        rawItems
-          .filter(isUsableLivePost)
-          .map(mapLivePost),
+        rawItems.filter(isUsableLivePost).map(mapLivePost),
       );
     },
 
     async getLiveFriends(): Promise<LiveStreamItem[]> {
-      const response = await apiBridge.get<LiveListResponse>(apiRoutes.live.friends);
+      const response = await apiBridge.get<LiveListResponse>(
+        apiRoutes.live.friends,
+      );
       return uniqueLiveItems(
-        (response.data ?? [])
-          .filter(isUsableLivePost)
-          .map(mapLivePost),
+        (response.data ?? []).filter(isUsableLivePost).map(mapLivePost),
       );
     },
 
@@ -671,9 +701,7 @@ export function createLiveRepository(): LiveRepository {
       );
 
       return uniqueLiveItems(
-        (response.data ?? [])
-          .filter(isUsableLivePost)
-          .map(mapLivePost),
+        (response.data ?? []).filter(isUsableLivePost).map(mapLivePost),
       );
     },
 
@@ -709,9 +737,13 @@ export function createLiveRepository(): LiveRepository {
       return mapLivePost(raw);
     },
 
-    async getLiveViewerCounts(postIds: number[]): Promise<Record<number, number>> {
+    async getLiveViewerCounts(
+      postIds: number[],
+    ): Promise<Record<number, number>> {
       const uniquePostIds = Array.from(
-        new Set(postIds.filter(postId => Number.isFinite(postId) && postId > 0)),
+        new Set(
+          postIds.filter(postId => Number.isFinite(postId) && postId > 0),
+        ),
       );
       if (uniquePostIds.length === 0) return {};
 
@@ -725,9 +757,17 @@ export function createLiveRepository(): LiveRepository {
                 fetch: 'post_data',
               },
             );
-            return [postId, response.post_data ? readLiveViewerCount(response.post_data) : undefined] as const;
+            return [
+              postId,
+              response.post_data
+                ? readLiveViewerCount(response.post_data)
+                : undefined,
+            ] as const;
           } catch (err) {
-            console.log('[Live] viewer count refresh skipped:', { postId, err });
+            console.log('[Live] viewer count refresh skipped:', {
+              postId,
+              err,
+            });
             return [postId, undefined] as const;
           }
         }),
@@ -775,7 +815,10 @@ export function createLiveRepository(): LiveRepository {
           limit: 1,
         });
       } catch (err) {
-        console.log('[Live] create session check_comments heartbeat failed:', err);
+        console.log(
+          '[Live] create session check_comments heartbeat failed:',
+          err,
+        );
       }
 
       return session;
@@ -787,14 +830,17 @@ export function createLiveRepository(): LiveRepository {
         stream_name: streamName,
       });
       const root = getRootRecord(response);
-      const session = readLiveSession(response, {
-        postId,
-        streamName: readString(root, 'stream_name') || streamName || '',
+      const viewerSession: LiveSession = {
+        ...readLiveSession(response, {
+          postId,
+          streamName: readString(root, 'stream_name') || streamName || '',
+          isHost: false,
+        }),
         isHost: false,
-      });
-      logLiveSessionSummary('join', response, session);
-      if (session.wsUrl && session.token) {
-        return session;
+      };
+      logLiveSessionSummary('join', response, viewerSession);
+      if (viewerSession.wsUrl && viewerSession.token) {
+        return viewerSession;
       }
 
       try {
@@ -805,10 +851,13 @@ export function createLiveRepository(): LiveRepository {
             fetch: 'post_data',
           },
         );
-        const postSession = readLiveSession(
-          postResponse as LiveSessionResponse,
-          session,
-        );
+        const postViewerSession: LiveSession = {
+          ...readLiveSession(
+            postResponse as LiveSessionResponse,
+            viewerSession,
+          ),
+          isHost: false,
+        };
         logLiveResponseEnvelope(
           'join_post_data_fallback',
           postResponse as LiveSessionResponse,
@@ -816,10 +865,10 @@ export function createLiveRepository(): LiveRepository {
         logLiveSessionSummary(
           'join_post_data_fallback',
           postResponse as LiveSessionResponse,
-          postSession,
+          postViewerSession,
         );
-        if (postSession.wsUrl && postSession.token) {
-          return postSession;
+        if (postViewerSession.wsUrl && postViewerSession.token) {
+          return postViewerSession;
         }
       } catch (err) {
         console.log('[Live] join post data fallback skipped:', err);
@@ -840,16 +889,13 @@ export function createLiveRepository(): LiveRepository {
       options?: { offset?: number; limit?: number; page?: 'live' | 'story' },
     ): Promise<LiveCommentsResult> {
       const [response, reactionSnapshot] = await Promise.all([
-        apiBridge.post<LiveCheckCommentsResponse>(
-          apiRoutes.live.main,
-          {
-            type: 'check_comments',
-            post_id: postId,
-            offset: options?.offset,
-            limit: options?.limit ?? 20,
-            page: options?.page ?? 'story',
-          },
-        ),
+        apiBridge.post<LiveCheckCommentsResponse>(apiRoutes.live.main, {
+          type: 'check_comments',
+          post_id: postId,
+          offset: options?.offset,
+          limit: options?.limit ?? 20,
+          page: options?.page ?? 'story',
+        }),
         options?.page === 'live'
           ? fetchLiveReactionSnapshot(postId)
           : Promise.resolve({
@@ -875,7 +921,9 @@ export function createLiveRepository(): LiveRepository {
           : liveCommentsReactionCount;
 
       return {
-        comments: (response.comments ?? []).map(mapComment).filter(item => item.message),
+        comments: (response.comments ?? [])
+          .map(mapComment)
+          .filter(item => item.message),
         viewerCount: readNumber(response as RawRecord, 'count'),
         state,
         reactionsCount,
@@ -898,7 +946,10 @@ export function createLiveRepository(): LiveRepository {
       return mapComment(response.data);
     },
 
-    async heartbeat(postId: number, page: 'live' | 'story' = 'story'): Promise<void> {
+    async heartbeat(
+      postId: number,
+      page: 'live' | 'story' = 'story',
+    ): Promise<void> {
       await apiBridge.post(apiRoutes.live.main, {
         type: 'check_comments',
         post_id: postId,
@@ -907,7 +958,10 @@ export function createLiveRepository(): LiveRepository {
       });
     },
 
-    async uploadThumbnail(_postId: number, _thumbBase64: string): Promise<void> {
+    async uploadThumbnail(
+      _postId: number,
+      _thumbBase64: string,
+    ): Promise<void> {
       // The v2 endpoint expects multipart field `thumb`, not base64. Keeping
       // this method as a no-op until the UI supplies a native file object.
     },

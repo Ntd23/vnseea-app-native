@@ -6,6 +6,30 @@ if ($f == 'close_call') {
         $duration   = !empty($_GET['duration']) ? intval($_GET['duration']) : 0;
         $call_type  = !empty($_GET['call_type']) ? Wo_Secure($_GET['call_type']) : '';
         $provider   = !empty($_GET['provider']) ? Wo_Secure($_GET['provider']) : 'twilio';
+        $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['user_id']);
+        $resolved_call_type = $call_type == 'audio' ? 'audio' : 'video';
+        $endpoint_scope = VNSEEA_DirectCallEndpointScope($resolved_call_type);
+        $livekit_source = Wo_GetCallSourceById($id, $resolved_call_type);
+        $is_livekit_call = !empty($livekit_source) && is_array($livekit_source) && $livekit_source['provider'] === 'livekit';
+        if ($is_livekit_call) {
+            $provider = 'livekit';
+            $actor_id = intval($wo['user']['user_id']);
+            $endpoint_role = intval($livekit_source['from_id']) === $actor_id ? 'caller' : 'receiver';
+            if (intval($livekit_source['from_id']) !== $actor_id && intval($livekit_source['to_id']) !== $actor_id) {
+                header("Content-type: application/json");
+                echo json_encode(array('status' => 403, 'error_code' => 'call_forbidden'));
+                exit();
+            }
+            $lease = VNSEEA_GetLiveKitEndpointLease($endpoint_scope, intval($id), $actor_id, $endpoint_role);
+            if (empty($lease) || intval($lease['active']) !== 1) {
+                VNSEEA_ClaimLiveKitEndpoint($endpoint_scope, intval($id), $actor_id, $endpoint_role, $endpoint_id);
+            }
+            if (!VNSEEA_IsLiveKitEndpointOwner($endpoint_scope, intval($id), $actor_id, $endpoint_role, $endpoint_id)) {
+                header("Content-type: application/json");
+                echo json_encode(array('status' => 409, 'error_code' => 'call_active_on_another_device'));
+                exit();
+            }
+        }
         $table_type = '';
         $final_status = 'cancelled';
         if ($status == 'ended') {
@@ -46,6 +70,9 @@ if ($f == 'close_call') {
             }
         }
         if ($query) {
+            if ($is_livekit_call) {
+                VNSEEA_ReleaseLiveKitEndpoint($endpoint_scope, intval($id));
+            }
             if ($status == 'ended') {
                 Wo_UpdateCallLog($id, (!empty($table_type) ? $table_type : 'audio'), 'ended', array(
                     'provider' => $provider,

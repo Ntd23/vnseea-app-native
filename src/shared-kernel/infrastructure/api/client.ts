@@ -8,6 +8,7 @@ import {
 } from '../../application/api/apiResponse';
 import { apiConfig } from '../config/env';
 import { sessionStorage } from '../storage/sessionStorage';
+import { getClientEndpointIdentity } from '../livekit/clientEndpointIdentity';
 
 export const BASE_URL = apiConfig.apiBaseUrl;
 
@@ -65,6 +66,10 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(config => {
   const accessToken = sessionStorage.getAccessToken();
+  const clientEndpointId = getClientEndpointIdentity();
+  const requestHeaders = AxiosHeaders.from(config.headers);
+  requestHeaders.set('X-VNSEEA-Endpoint-ID', clientEndpointId);
+  config.headers = requestHeaders;
 
   if (accessToken) {
     config.params = { ...config.params, access_token: accessToken };
@@ -74,6 +79,7 @@ apiClient.interceptors.request.use(config => {
   config.params = {
     ...config.params,
     server_key: apiConfig.serverKey,
+    client_endpoint_id: clientEndpointId,
   };
 
   return config;

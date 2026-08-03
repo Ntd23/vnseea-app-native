@@ -6,6 +6,7 @@ if ($f == 'sync_group_call') {
         $sync_data = Wo_GetGroupCallSyncData($call_id, $wo['user']['user_id']);
         if (!empty($sync_data)) {
             $group_call = $sync_data['call'];
+            $endpoint_id = VNSEEA_GetRequestEndpointId($wo['user']['user_id']);
             $data = array(
                 'status' => 200,
                 'call_id' => intval($group_call['id']),
@@ -15,7 +16,8 @@ if ($f == 'sync_group_call') {
                 'participant_count' => intval(!empty($group_call['participant_count']) ? $group_call['participant_count'] : 0),
                 'group_name' => !empty($sync_data['group']['group_name']) ? $sync_data['group']['group_name'] : '',
                 'group_avatar' => !empty($sync_data['group']['avatar']) ? $sync_data['group']['avatar'] : '',
-                'participants' => !empty($sync_data['participants']) ? $sync_data['participants'] : array()
+                'participants' => !empty($sync_data['participants']) ? $sync_data['participants'] : array(),
+                'endpoint_owned' => VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id)
             );
         }
     }

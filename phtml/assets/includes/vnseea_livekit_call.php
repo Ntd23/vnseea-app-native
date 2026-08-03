@@ -206,6 +206,188 @@ if (!function_exists('Wo_PublishCanonicalLiveKitIncomingCall')) {
     }
 }
 
+if (!function_exists('Wo_PublishCanonicalLiveKitCallState')) {
+    function Wo_PublishCanonicalLiveKitCallState($event, $call_source, $call_type, $extra = array())
+    {
+        global $wo;
+        if (empty($call_source) || !is_array($call_source)) {
+            return null;
+        }
+        $secret = Wo_CanonicalLiveKitActionSecret();
+        if ($secret === '') {
+            return null;
+        }
+        $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
+            ? intval(!empty($wo['config']['nodejs_ssl_port']) ? $wo['config']['nodejs_ssl_port'] : 0)
+            : intval(!empty($wo['config']['nodejs_port']) ? $wo['config']['nodejs_port'] : 0);
+        $endpoint = $port > 0 ? 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish' : '';
+        if (!empty($wo['config']['livekit_socket_internal_url'])) {
+            $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
+        }
+        if ($endpoint === '') {
+            return null;
+        }
+        $payload = array_merge(array(
+            'event' => $event,
+            'call_id' => (string) intval($call_source['id']),
+            'call_type' => $call_type === 'audio' ? 'audio' : 'video',
+            'from_id' => (string) intval($call_source['from_id']),
+            'to_id' => (string) intval($call_source['to_id']),
+            'provider' => 'livekit',
+        ), is_array($extra) ? $extra : array());
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $endpoint);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Content-Type: application/json; charset=utf-8',
+            'X-Vnseea-Internal-Secret: ' . hash_hmac('sha256', 'vnseea-livekit-internal', $secret)
+        ));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+        curl_exec($ch);
+        $status = intval(curl_getinfo($ch, CURLINFO_HTTP_CODE));
+        curl_close($ch);
+        return $status >= 200 && $status < 300;
+    }
+}
+
+if (!function_exists('Wo_DismissCanonicalLiveKitOtherEndpoints')) {
+    function Wo_DismissCanonicalLiveKitOtherEndpoints($call_source, $call_type, $endpoint_id)
+    {
+        global $wo;
+        if (empty($call_source) || !is_array($call_source)) {
+            return;
+        }
+        $call_id = intval($call_source['id']);
+        VNSEEA_SendImmediateCallPush(
+            intval($call_source['to_id']),
+            array(
+                'event_type' => 'livekit_call_closed',
+                'call_context' => 'direct',
+                'provider' => 'livekit',
+                'call_id' => (string) $call_id,
+                'call_type' => $call_type,
+                'status' => 'answered_elsewhere',
+                'uuid' => Wo_CanonicalLiveKitCallUuid($call_id, $call_type),
+                'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/livekit'
+            ),
+            'VNSEEA',
+            $call_type,
+            'direct',
+            true,
+            $endpoint_id,
+            true
+        );
+    }
+}
+
+if (!function_exists('Wo_CanonicalLiveKitGroupCallUuid')) {
+    function Wo_CanonicalLiveKitGroupCallUuid($call_id)
+    {
+        $hex = md5('vnseea-livekit-group|video|' . intval($call_id));
+        return substr($hex, 0, 8) . '-' .
+            substr($hex, 8, 4) . '-' .
+            substr($hex, 12, 4) . '-' .
+            substr($hex, 16, 4) . '-' .
+            substr($hex, 20, 12);
+    }
+}
+
+if (!function_exists('Wo_PublishCanonicalLiveKitGroupState')) {
+    function Wo_PublishCanonicalLiveKitGroupState($event, $group_call, $extra = array())
+    {
+        global $wo;
+        if (empty($group_call) || !is_array($group_call)) {
+            return null;
+        }
+        $secret = Wo_CanonicalLiveKitActionSecret();
+        if ($secret === '') {
+            return null;
+        }
+        $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
+            ? intval(!empty($wo['config']['nodejs_ssl_port']) ? $wo['config']['nodejs_ssl_port'] : 0)
+            : intval(!empty($wo['config']['nodejs_port']) ? $wo['config']['nodejs_port'] : 0);
+        $endpoint = $port > 0 ? 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish' : '';
+        if (!empty($wo['config']['livekit_socket_internal_url'])) {
+            $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
+        }
+        if ($endpoint === '') {
+            return null;
+        }
+        $server_now = time();
+        $server_now_ms = (int) round(microtime(true) * 1000);
+        $started_at = intval(!empty($group_call['started_at']) ? $group_call['started_at'] : 0);
+        $started_at_ms = $started_at > 0 ? $started_at * 1000 : 0;
+        $payload = array_merge(array(
+            'context' => 'group',
+            'event' => $event,
+            'call_id' => (string) intval(!empty($group_call['id']) ? $group_call['id'] : 0),
+            'group_id' => (string) intval(!empty($group_call['group_id']) ? $group_call['group_id'] : 0),
+            'call_type' => 'video',
+            'provider' => 'livekit',
+            'room_name' => !empty($group_call['room_name']) ? $group_call['room_name'] : '',
+            'status' => !empty($group_call['status']) ? $group_call['status'] : 'active',
+            'started_at' => $started_at,
+            'started_at_ms' => $started_at_ms,
+            'server_now' => $server_now,
+            'server_now_ms' => $server_now_ms,
+            'elapsed' => $started_at > 0 ? max(0, $server_now - $started_at) : 0,
+            'elapsed_ms' => $started_at_ms > 0 ? max(0, $server_now_ms - $started_at_ms) : 0,
+        ), is_array($extra) ? $extra : array());
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $endpoint);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Content-Type: application/json; charset=utf-8',
+            'X-Vnseea-Internal-Secret: ' . hash_hmac('sha256', 'vnseea-livekit-internal', $secret)
+        ));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+        curl_exec($ch);
+        $status = intval(curl_getinfo($ch, CURLINFO_HTTP_CODE));
+        curl_close($ch);
+        return $status >= 200 && $status < 300;
+    }
+}
+
+if (!function_exists('Wo_DismissCanonicalLiveKitGroupOtherEndpoints')) {
+    function Wo_DismissCanonicalLiveKitGroupOtherEndpoints($group_call, $user_id, $endpoint_id)
+    {
+        global $wo;
+        if (empty($group_call) || !is_array($group_call)) {
+            return;
+        }
+        $call_id = intval(!empty($group_call['id']) ? $group_call['id'] : 0);
+        if ($call_id < 1) {
+            return;
+        }
+        VNSEEA_SendImmediateCallPush(
+            intval($user_id),
+            array(
+                'event_type' => 'livekit_group_call_closed',
+                'call_context' => 'group',
+                'provider' => 'livekit_group',
+                'call_id' => (string) $call_id,
+                'group_id' => (string) intval(!empty($group_call['group_id']) ? $group_call['group_id'] : 0),
+                'call_type' => 'video',
+                'status' => 'answered_elsewhere',
+                'uuid' => Wo_CanonicalLiveKitGroupCallUuid($call_id),
+                'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/group_call'
+            ),
+            'VNSEEA',
+            'video',
+            'group',
+            true,
+            $endpoint_id,
+            true
+        );
+    }
+}
+
 if (!function_exists('Wo_PrepareCanonicalLiveKitDirectCall')) {
     function Wo_PrepareCanonicalLiveKitDirectCall($caller_id, $recipient_id)
     {
@@ -228,7 +410,7 @@ if (!function_exists('Wo_PrepareCanonicalLiveKitDirectCall')) {
 }
 
 if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
-    function Wo_CreateCanonicalLiveKitDirectCall($caller, $recipient, $call_type, $source = 'unknown')
+    function Wo_CreateCanonicalLiveKitDirectCall($caller, $recipient, $call_type, $source = 'unknown', $endpoint_id = '')
     {
         $call_type = ($call_type === 'audio') ? 'audio' : 'video';
         $caller_id = intval(!empty($caller['user_id']) ? $caller['user_id'] : 0);
@@ -265,6 +447,21 @@ if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
                 'status' => 500,
                 'error_code' => 'create_failed',
                 'message' => 'Could not create call.'
+            );
+        }
+
+        $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+        if ($endpoint_id === '') {
+            $endpoint_id = VNSEEA_GetRequestEndpointId($caller_id);
+        }
+        $endpoint_claim = VNSEEA_ClaimLiveKitEndpoint(VNSEEA_DirectCallEndpointScope($call_type), $call_id, $caller_id, 'caller', $endpoint_id);
+        if (empty($endpoint_claim['ok'])) {
+            $table = $call_type === 'audio' ? T_AUDIO_CALLES : T_VIDEOS_CALLES;
+            mysqli_query($GLOBALS['sqlConnect'], "UPDATE " . $table . " SET `active`=0,`status`='cancelled',`declined`=1 WHERE `id`=" . intval($call_id));
+            return array(
+                'status' => 409,
+                'error_code' => 'call_active_on_another_device',
+                'message' => 'Call is active on another device.'
             );
         }
 

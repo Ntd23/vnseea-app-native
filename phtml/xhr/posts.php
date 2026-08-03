@@ -1004,7 +1004,15 @@ if ($f == 'posts') {
         if (!empty($_GET['post_id'])) {
             $wo['story'] = $db->where('id', Wo_Secure($_GET['post_id']))->ArrayBuilder()->getOne(T_POSTS);
             $deleted = false;
-            if (!empty($wo['story']['blog_id']) && $wo['story']['blog_id'] > 0) {
+            if (!empty($wo['story']) && !VNSEEA_CanDeletePostFromEndpoint($wo['story'], $wo['user']['user_id'], $_GET)) {
+                header("Content-type: application/json");
+                echo json_encode(array('status' => 409, 'error_code' => 'live_active_on_another_device'));
+                exit();
+            }
+            if (VNSEEA_IsLivePostRecord($wo['story'])) {
+                $deleted = VNSEEA_DeleteLivePost(intval($_GET['post_id']));
+            }
+            else if (!empty($wo['story']['blog_id']) && $wo['story']['blog_id'] > 0) {
                 if (Wo_DeleteMyBlog($wo['story']['blog_id'])) {
                     $deleted = true;
                 }

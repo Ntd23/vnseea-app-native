@@ -42,6 +42,22 @@ if ($f == 'livekit_call_payload') {
                 );
             }
             else {
+                $endpoint_id = VNSEEA_GetRequestEndpointId($user_id);
+                $endpoint_role = $is_caller ? 'caller' : 'receiver';
+                $endpoint_scope = VNSEEA_DirectCallEndpointScope($call_type);
+                $lease = VNSEEA_GetLiveKitEndpointLease($endpoint_scope, $call_id, $user_id, $endpoint_role);
+                if (empty($lease) || intval($lease['active']) !== 1) {
+                    VNSEEA_ClaimLiveKitEndpoint($endpoint_scope, $call_id, $user_id, $endpoint_role, $endpoint_id);
+                }
+                if (!VNSEEA_IsLiveKitEndpointOwner($endpoint_scope, $call_id, $user_id, $endpoint_role, $endpoint_id)) {
+                    $data = array(
+                        'status' => 409,
+                        'error' => 'call_active_on_another_device'
+                    );
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode($data);
+                    exit();
+                }
                 $room_request = !empty($call_source['room_name']) ? $call_source['room_name'] : $call_id;
                 $room_name = 'wowonder' . md5($room_request);
                 $ws_url = Wo_GetLiveKitServerUrl();
@@ -61,7 +77,7 @@ if ($f == 'livekit_call_payload') {
                     if (!empty($peer_avatar) && !filter_var($peer_avatar, FILTER_VALIDATE_URL)) {
                         $peer_avatar = Wo_GetMedia(ltrim($peer_avatar, '/'));
                     }
-                    $identity = 'user_' . $user_id . '_' . substr(sha1(session_id() . '|' . $room_name), 0, 12);
+                    $identity = VNSEEA_BuildLiveKitParticipantIdentity('direct_call', $user_id, $call_id, $endpoint_id);
                     $payload = array(
                         'iss' => $api_key,
                         'sub' => $identity,
@@ -106,7 +122,8 @@ if ($f == 'livekit_call_payload') {
                         'livekit' => array(
                             'ws_url' => $ws_url,
                             'token' => \Firebase\JWT\JWT::encode($payload, $api_secret, 'HS256')
-                        )
+                        ),
+                        'endpoint_owned' => true
                     );
                 }
                 else {

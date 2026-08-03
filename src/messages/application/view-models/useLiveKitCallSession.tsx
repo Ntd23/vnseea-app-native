@@ -1878,6 +1878,7 @@ export function LiveKitCallSessionProvider({
   const audioOutputConfirmedModeRef = useRef<CallAudioOutputMode | null>(null);
   const audioOutputConfirmedCallIdRef = useRef('');
   const closeSentRef = useRef(false);
+  const answeredIncomingCallIdRef = useRef('');
   const isJoiningAnsweredCallRef = useRef(false);
   const isAnswerWatchdogCheckingRef = useRef(false);
   const activeConnectKeyRef = useRef('');
@@ -2098,6 +2099,7 @@ export function LiveKitCallSessionProvider({
         options.stopAudioSession ??
         !(Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid));
       mediaControllerRef.current = null;
+      answeredIncomingCallIdRef.current = '';
       activeConnectKeyRef.current = '';
       connectPayloadPromiseRef.current = null;
       audioStatsProbeCleanupRef.current?.();
@@ -3369,10 +3371,11 @@ export function LiveKitCallSessionProvider({
       const current = sessionRef.current;
       if (current && !isFinalPhase(current.phase)) {
         patchSession({ isMinimized: false });
-        return true;
+        return answeredIncomingCallIdRef.current === call.callId;
       }
 
       closeSentRef.current = false;
+      answeredIncomingCallIdRef.current = '';
       clearRingTimers();
       const nextUuid = createNativeCallUuid(call.callId, call.callType);
       const params: LiveKitCallRouteParams = {
@@ -3387,6 +3390,7 @@ export function LiveKitCallSessionProvider({
       } satisfies LiveKitCallSession;
       sessionRef.current = initialSession;
       setSession(initialSession);
+      let didCommitAnswer = false;
 
       async function boot() {
         const isGranted = await requestCallMediaPermissions(call.callType);
@@ -3429,6 +3433,8 @@ export function LiveKitCallSessionProvider({
           endNativeCall(nextUuid);
           throw answerError;
         }
+        answeredIncomingCallIdRef.current = call.callId;
+        didCommitAnswer = true;
         logCallDebug('answer_response', {
           callId: call.callId,
           callType: call.callType,
@@ -3468,6 +3474,23 @@ export function LiveKitCallSessionProvider({
         await boot();
         return true;
       } catch (caught) {
+        if (didCommitAnswer) {
+          await repository
+            .closeCall({
+              callId: call.callId,
+              callType: call.callType,
+              status: 'cancelled',
+              duration: 0,
+            })
+            .catch(closeError => {
+              logCallDebug('incoming_boot_close_error', {
+                callId: call.callId,
+                callType: call.callType,
+                error: serializeCallDebugError(closeError),
+              });
+            });
+        }
+        answeredIncomingCallIdRef.current = '';
         logCallDebug('incoming_boot_error', {
           callId: call.callId,
           callType: call.callType,
@@ -3682,6 +3705,12 @@ export function LiveKitCallSessionProvider({
         });
 
         if (status.finished) {
+          closeSentRef.current = true;
+          finishSession();
+          return;
+        }
+
+        if (status.status === 'answered' && status.endpointOwned === false) {
           closeSentRef.current = true;
           finishSession();
           return;

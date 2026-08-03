@@ -11,13 +11,16 @@ import {
   connectLiveKitCallRealtime,
   emitLiveKitCallDeclined,
   onLiveKitCallClosed,
+  onLiveKitCallAnswered,
   onLiveKitCallDeclined,
   onLiveKitCallIncoming,
   onLiveKitGroupCallClosed,
   onLiveKitGroupCallIncoming,
+  onLiveKitGroupCallSync,
 } from '../../infrastructure/realtime/liveKitCallRealtime';
 import { createGroupLiveKitCallRepository } from '../../infrastructure/repositories/ApiGroupLiveKitCallRepository';
 import { createLiveKitCallRepository } from '../../infrastructure/repositories/ApiLiveKitCallRepository';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 const AUTH_ROUTE_NAMES = new Set<string>([
   ROUTES.LOGIN,
@@ -39,13 +42,16 @@ function isAppForeground() {
   );
 }
 
-type NativeCallServiceModule = typeof import('../../infrastructure/calls/nativeCallService');
+type NativeCallServiceModule =
+  typeof import('../../infrastructure/calls/nativeCallService');
 
 function loadNativeCallService(): NativeCallServiceModule | null {
   try {
-    return (require('../../infrastructure/calls/nativeCallService') as
-      | NativeCallServiceModule
-      | undefined) ?? null;
+    return (
+      (require('../../infrastructure/calls/nativeCallService') as
+        | NativeCallServiceModule
+        | undefined) ?? null
+    );
   } catch (error) {
     console.warn('[LiveKitIncoming] Native call service unavailable', error);
     return null;
@@ -69,9 +75,17 @@ export function useIncomingLiveKitCalls() {
   const incomingCallRef = useRef<IncomingLiveKitCall | null>(null);
   const incomingGroupCallRef = useRef<IncomingGroupLiveKitCall | null>(null);
   const isConsumingInitialNativeActionRef = useRef(false);
-  const incomingCallPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const incomingCallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const incomingCallPollRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const incomingCallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const incomingGroupCallPollRef = useRef<ReturnType<
+    typeof setInterval
+  > | null>(null);
   const isPollingIncomingRef = useRef(false);
+  const isPollingIncomingGroupRef = useRef(false);
   const [incomingCall, setIncomingCall] = useState<IncomingLiveKitCall | null>(
     null,
   );
@@ -115,18 +129,26 @@ export function useIncomingLiveKitCalls() {
       incomingGroupCallRef.current = nextCall;
       activeGroupCallIdRef.current = nextCall?.callId ?? '';
       setIncomingGroupCall(nextCall);
+      if (!nextCall && incomingGroupCallPollRef.current) {
+        clearInterval(incomingGroupCallPollRef.current);
+        incomingGroupCallPollRef.current = null;
+        isPollingIncomingGroupRef.current = false;
+      }
     },
     [],
   );
 
-  const runWhenNavigationReady = useCallback((task: () => void, attempts = 16) => {
-    if (navigationRef.isReady()) {
-      task();
-      return;
-    }
-    if (attempts <= 0) return;
-    setTimeout(() => runWhenNavigationReady(task, attempts - 1), 250);
-  }, []);
+  const runWhenNavigationReady = useCallback(
+    (task: () => void, attempts = 16) => {
+      if (navigationRef.isReady()) {
+        task();
+        return;
+      }
+      if (attempts <= 0) return;
+      setTimeout(() => runWhenNavigationReady(task, attempts - 1), 250);
+    },
+    [],
+  );
 
   const dismissNativeIncomingCall = useCallback((callId?: string) => {
     if (!callId) return;
@@ -166,17 +188,25 @@ export function useIncomingLiveKitCalls() {
     (call: IncomingGroupLiveKitCall) => {
       dismissAndroidIncomingCall(call.callId);
       runWhenNavigationReady(() => {
-        answerIncomingGroupCall(call);
-        navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
-          groupId: call.groupId,
-          callId: call.callId,
-          direction: 'incoming',
-          groupName: call.group.name,
-          groupAvatar: call.group.avatar,
-        });
+        answerIncomingGroupCall(call)
+          .then(didAnswer => {
+            if (!didAnswer) return;
+            navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
+              groupId: call.groupId,
+              callId: call.callId,
+              direction: 'incoming',
+              groupName: call.group.name,
+              groupAvatar: call.group.avatar,
+            });
+          })
+          .catch(() => undefined);
       });
     },
-    [answerIncomingGroupCall, dismissAndroidIncomingCall, runWhenNavigationReady],
+    [
+      answerIncomingGroupCall,
+      dismissAndroidIncomingCall,
+      runWhenNavigationReady,
+    ],
   );
 
   const acceptIncomingCall = useCallback(() => {
@@ -324,8 +354,7 @@ export function useIncomingLiveKitCalls() {
         return;
       }
 
-      const directCall =
-        (await service.getInitialNativeCallAction?.()) ?? null;
+      const directCall = (await service.getInitialNativeCallAction?.()) ?? null;
       if (directCall) {
         openIncomingCallRoom(directCall);
       }
@@ -383,6 +412,43 @@ export function useIncomingLiveKitCalls() {
     const cleanupClosedSocket = onLiveKitCallClosed(event => {
       clearIncomingDirectCall(event.callId);
     });
+    const cleanupAnsweredSocket = onLiveKitCallAnswered(event => {
+      const current = incomingCallRef.current;
+      if (!current || current.callId !== event.callId) return;
+      repository
+        .checkCall({ callId: current.callId, callType: current.callType })
+        .then(status => {
+          if (status.status === 'answered' && status.endpointOwned === false) {
+            clearIncomingDirectCall(event.callId);
+          }
+        })
+        .catch(() => undefined);
+    });
+    const cleanupGroupSyncSocket = onLiveKitGroupCallSync(event => {
+      const currentUserId = sessionStorage.getSession()?.userId;
+      if (!currentUserId) return;
+      if (event.declinedUserId === currentUserId) {
+        nativeCallService?.dismissNativeIncomingCall?.(event.callId);
+        if (incomingGroupCallRef.current?.callId === event.callId) {
+          setActiveIncomingGroupCall(null);
+        }
+        return;
+      }
+      if (event.activeUserId !== currentUserId) return;
+      const current = incomingGroupCallRef.current;
+      if (!current || current.callId !== event.callId) return;
+      groupRepository
+        .syncCall({ callId: event.callId })
+        .then(status => {
+          if (status.endpointOwned === false) {
+            nativeCallService?.dismissNativeIncomingCall?.(event.callId);
+            if (incomingGroupCallRef.current?.callId === event.callId) {
+              setActiveIncomingGroupCall(null);
+            }
+          }
+        })
+        .catch(() => undefined);
+    });
     const cleanupGroupClosedSocket = onLiveKitGroupCallClosed(event => {
       nativeCallService?.dismissNativeIncomingCall?.(event.callId);
       if (incomingGroupCallRef.current?.callId === event.callId) {
@@ -394,96 +460,89 @@ export function useIncomingLiveKitCalls() {
     clearIncomingCallTimers();
     const cleanupListeners =
       nativeCallService?.setNativeCallListeners?.({
-      onIncoming: handleIncomingCallSignal,
-      onIncomingGroup: handleIncomingGroupCallSignal,
-      onAnswer(callUuid) {
-        clearNativeAnsweredIncomingState();
-        const nativeCall = nativeCallService.getNativeCall(callUuid);
-        if (!nativeCall?.callId || !navigationRef.isReady()) return;
-        if (nativeCall.context === 'group') {
-          const groupId = nativeCall.groupId ?? nativeCall.group?.id ?? '';
-          if (!groupId) return;
-          answerIncomingGroupCall({
+        onIncoming: handleIncomingCallSignal,
+        onIncomingGroup: handleIncomingGroupCallSignal,
+        onAnswer(callUuid) {
+          clearNativeAnsweredIncomingState();
+          const nativeCall = nativeCallService.getNativeCall(callUuid);
+          if (!nativeCall?.callId || !navigationRef.isReady()) return;
+          if (nativeCall.context === 'group') {
+            const groupId = nativeCall.groupId ?? nativeCall.group?.id ?? '';
+            if (!groupId) return;
+            openIncomingGroupCallRoom({
+              callId: nativeCall.callId,
+              groupId,
+              callType: 'video',
+              provider: 'livekit',
+              roomName: '',
+              group: nativeCall.group ?? {
+                id: groupId,
+                name: 'Nhóm',
+                avatar: '',
+              },
+              caller: nativeCall.peer ?? {
+                id: '',
+                name: 'Người dùng',
+                avatar: '',
+              },
+              participantCount: 0,
+            });
+            return;
+          }
+          openIncomingCallRoom({
             callId: nativeCall.callId,
-            groupId,
-            callType: 'video',
+            callType: nativeCall.callType,
             provider: 'livekit',
             roomName: '',
-            group: nativeCall.group ?? {
-              id: groupId,
-              name: 'Nhóm',
-              avatar: '',
-            },
-            caller: nativeCall.peer ?? {
+            peer: nativeCall.peer ?? {
               id: '',
               name: 'Người dùng',
               avatar: '',
             },
-            participantCount: 0,
           });
-          navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
-            groupId,
-            callId: nativeCall.callId,
-            direction: 'incoming',
-            groupName: nativeCall.group?.name,
-            groupAvatar: nativeCall.group?.avatar,
-          });
-          return;
-        }
-        openIncomingCallRoom({
-          callId: nativeCall.callId,
-          callType: nativeCall.callType,
-          provider: 'livekit',
-          roomName: '',
-          peer: nativeCall.peer ?? {
-            id: '',
-            name: 'Người dùng',
-            avatar: '',
-          },
-        });
-      },
-      onEnd(callUuid) {
-        const nativeCall = nativeCallService.getNativeCall(callUuid);
-        if (nativeCall?.context === 'group') {
-          const activeGroupSession = groupSessionRef.current;
-          if (activeGroupSession?.callId === nativeCall.callId) {
-            leaveCall('native_end').catch(() => undefined);
+        },
+        onEnd(callUuid) {
+          const nativeCall = nativeCallService.getNativeCall(callUuid);
+          if (nativeCall?.context === 'group') {
+            const activeGroupSession = groupSessionRef.current;
+            if (activeGroupSession?.callId === nativeCall.callId) {
+              leaveCall('native_end').catch(() => undefined);
+              return;
+            }
+            if (nativeCall.callId) {
+              groupRepository
+                .declineCall({ callId: nativeCall.callId })
+                .catch(() => undefined);
+            }
             return;
           }
-          if (nativeCall.callId) {
-            groupRepository
-              .declineCall({ callId: nativeCall.callId })
-              .catch(() => undefined);
+          if (!nativeCall?.callId) {
+            endCall('declined').catch(() => undefined);
+            return;
           }
-          return;
-        }
-        if (!nativeCall?.callId) {
-          endCall('declined').catch(() => undefined);
-          return;
-        }
-        const activeSession = sessionRef.current;
-        if (activeSession?.callId === nativeCall.callId) {
-          endCall(
-            activeSession.phase === 'connected' ? 'ended' : 'declined',
-          ).catch(() => undefined);
-          return;
-        }
-        emitLiveKitCallDeclined({
-          callId: nativeCall.callId,
-          callType: nativeCall.callType,
-          recipientId: nativeCall.peer?.id ?? '',
-          duration: 0,
-        });
-        repository
-          .closeCall({
+          const activeSession = sessionRef.current;
+          if (activeSession?.callId === nativeCall.callId) {
+            endCall(
+              activeSession.phase === 'connected' ? 'ended' : 'declined',
+            ).catch(() => undefined);
+            return;
+          }
+          emitLiveKitCallDeclined({
             callId: nativeCall.callId,
             callType: nativeCall.callType,
-            status: 'declined',
+            recipientId: nativeCall.peer?.id ?? '',
             duration: 0,
-          })
-          .catch(() => undefined);
-      },
-    }) ?? (() => undefined);
+          });
+          repository
+            .closeCall({
+              callId: nativeCall.callId,
+              callType: nativeCall.callType,
+              status: 'declined',
+              duration: 0,
+            })
+            .catch(() => undefined);
+        },
+      }) ?? (() => undefined);
 
     handleInitialNativeCallAction();
     handleInitialNativeMessageAction();
@@ -508,6 +567,8 @@ export function useIncomingLiveKitCalls() {
       cleanupIncomingGroupSocket();
       cleanupDeclinedSocket();
       cleanupClosedSocket();
+      cleanupAnsweredSocket();
+      cleanupGroupSyncSocket();
       cleanupGroupClosedSocket();
       cleanupListeners();
       clearInterval(realtimeConnectInterval);
@@ -516,7 +577,6 @@ export function useIncomingLiveKitCalls() {
     };
   }, [
     answerIncomingCall,
-    answerIncomingGroupCall,
     clearNativeAnsweredIncomingState,
     clearIncomingCallTimers,
     endCall,
@@ -527,6 +587,7 @@ export function useIncomingLiveKitCalls() {
     handleInitialNativeMessageAction,
     leaveCall,
     openIncomingCallRoom,
+    openIncomingGroupCallRoom,
     repository,
     setActiveIncomingCall,
     setActiveIncomingGroupCall,
@@ -543,8 +604,13 @@ export function useIncomingLiveKitCalls() {
     // Auto-dismiss after INCOMING_CALL_AUTO_DISMISS_MS (fallback safety net)
     incomingCallTimeoutRef.current = setTimeout(() => {
       if (incomingCallRef.current?.callId === currentIncoming.callId) {
-        console.log('[LiveKitIncoming] auto-dismiss timeout fired for', currentIncoming.callId);
-        loadNativeCallService()?.dismissNativeIncomingCall?.(currentIncoming.callId);
+        console.log(
+          '[LiveKitIncoming] auto-dismiss timeout fired for',
+          currentIncoming.callId,
+        );
+        loadNativeCallService()?.dismissNativeIncomingCall?.(
+          currentIncoming.callId,
+        );
         setActiveIncomingCall(null);
       }
     }, INCOMING_CALL_AUTO_DISMISS_MS);
@@ -567,7 +633,8 @@ export function useIncomingLiveKitCalls() {
         .then(status => {
           if (
             status &&
-            (status.finished ||
+            ((status.endpointOwned === false && status.status === 'answered') ||
+              status.finished ||
               status.status === 'cancelled' ||
               status.status === 'ended' ||
               status.status === 'no_answer' ||
@@ -578,7 +645,9 @@ export function useIncomingLiveKitCalls() {
               callToCheck.callId,
               status.status,
             );
-            loadNativeCallService()?.dismissNativeIncomingCall?.(callToCheck.callId);
+            loadNativeCallService()?.dismissNativeIncomingCall?.(
+              callToCheck.callId,
+            );
             setActiveIncomingCall(null);
           }
         })
@@ -591,7 +660,46 @@ export function useIncomingLiveKitCalls() {
     return () => {
       clearIncomingCallTimers();
     };
-  }, [clearIncomingCallTimers, incomingCall, repository, setActiveIncomingCall]);
+  }, [
+    clearIncomingCallTimers,
+    incomingCall,
+    repository,
+    setActiveIncomingCall,
+  ]);
+
+  useEffect(() => {
+    if (!incomingGroupCall) return;
+    incomingGroupCallPollRef.current = setInterval(() => {
+      if (isPollingIncomingGroupRef.current) return;
+      const current = incomingGroupCallRef.current;
+      if (!current) return;
+      isPollingIncomingGroupRef.current = true;
+      groupRepository
+        .getIncomingCall()
+        .then(latest => {
+          if (!latest || latest.callId !== current.callId) {
+            dismissNativeIncomingCall(current.callId);
+            setActiveIncomingGroupCall(null);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          isPollingIncomingGroupRef.current = false;
+        });
+    }, INCOMING_CALL_POLL_INTERVAL_MS);
+    return () => {
+      if (incomingGroupCallPollRef.current) {
+        clearInterval(incomingGroupCallPollRef.current);
+        incomingGroupCallPollRef.current = null;
+      }
+      isPollingIncomingGroupRef.current = false;
+    };
+  }, [
+    dismissNativeIncomingCall,
+    groupRepository,
+    incomingGroupCall,
+    setActiveIncomingGroupCall,
+  ]);
 
   return {
     incomingCall,

@@ -30,7 +30,8 @@ else{
 			if (!empty($post_data) && !VNSEEA_CanViewPost($post_data, $wo['user']['id'])) {
 				$post_data = null;
 			}
-    		if (!empty($post_data)) {
+			if (!empty($post_data)) {
+                $is_live_host_endpoint = VNSEEA_IsLiveHostEndpoint($post_data, $wo['user']['id'], $_POST);
                 if ($post_data->live_ended == 0) {
                 	$response_data = array('api_status' => 200);
 
@@ -77,7 +78,7 @@ else{
                         $word = $wo['lang']['live'];
                         $count = $db->where('post_id',$post_id)->where('time',time()-6,'>=')->getValue(T_LIVE_SUB,'COUNT(*)');
 
-                        if ($wo['user']['id'] == $post_data->user_id) {
+                        if ($is_live_host_endpoint) {
                             $joined_users = $db->where('post_id',$post_id)->where('time',time()-6,'>=')->where('is_watching',0)->get(T_LIVE_SUB);
                             $joined_ids = array();
                             if (!empty($joined_users)) {
@@ -126,7 +127,7 @@ else{
                     //     'still_live' => $still_live
                     // ));
                     
-                    if ($wo['user']['id'] == $post_data->user_id) {
+                    if ($is_live_host_endpoint) {
                         if ($_POST['page'] == 'live') {
                             $time = time();
                             $update_array = array('live_time' => $time);
@@ -162,20 +163,40 @@ else{
                     }
                 }
                 else{
-                    $error_code    = 7;
-				    $error_message = 'live ended';
+                    // Report a final state while viewers remove a live post
+                    // that has just been deleted by its host.
+                    $response_data = array(
+                        'api_status' => 200,
+                        'comments' => array(),
+                        'joined' => array(),
+                        'left' => array(),
+                        'count' => 0,
+                        'word' => $wo['lang']['offline'],
+                        'still_live' => 'offline',
+                        'is_final' => 1
+                    );
                 }
-                
-    		}
-    		else{
-                $error_code    = 6;
-			    $error_message = 'post not found';
-    		}
-    	}
-    	else{
-    		$error_code    = 5;
-		    $error_message = 'post_id can not be empty';
-    	}
+            }
+            else{
+                // The host deletes the live post when ending the session.
+                // A viewer polling during that transition needs a final state
+                // so the card can leave the feed without showing an error.
+                $response_data = array(
+                    'api_status' => 200,
+                    'comments' => array(),
+                    'joined' => array(),
+                    'left' => array(),
+                    'count' => 0,
+                    'word' => $wo['lang']['offline'],
+                    'still_live' => 'offline',
+                    'is_final' => 1
+                );
+            }
+        }
+        else{
+            $error_code    = 5;
+            $error_message = 'post_id can not be empty';
+        }
 	}
 
     if ($_POST['type'] == 'delete') {
@@ -183,6 +204,14 @@ else{
             $post_id = Wo_Secure($_POST['post_id']);
             $post = $db->where('post_id',$post_id)->where('user_id',$wo['user']['id'])->getOne(T_POSTS);
             if (!empty($post)) {
+                if (!VNSEEA_IsLiveHostEndpoint($post, $wo['user']['id'], $_POST)) {
+                    $response_data = array(
+                        'api_status' => 409,
+                        'error_code' => 'live_active_on_another_device',
+                        'message' => 'Live is active on another device.'
+                    );
+                    return;
+                }
                 $db->where('post_id',$post_id)->where('user_id',$wo['user']['id'])->update(T_POSTS,array('live_ended' => 1,'live_time' => 0));
                 if ($wo['config']['agora_live_video'] == 1 && !empty($wo['config']['agora_app_id']) && !empty($wo['config']['agora_customer_id']) && !empty($wo['config']['agora_customer_certificate']) && $wo['config']['live_video_save'] == 1) {
                     try {
@@ -196,15 +225,27 @@ else{
                     } catch (Exception $e) {
                     }
                 }
-                Wo_DeletePost($post_id);
-                $response_data = array(
-                                    'api_status' => 200,
-                                    'message' => 'deleted successfully'
-                                );
+                $deleted = VNSEEA_DeleteLivePost((int) $post->id);
+                if ($deleted) {
+                    $response_data = array(
+                                        'api_status' => 200,
+                                        'message' => 'Live session ended and post deleted.',
+                                        'post_deleted' => 1
+                                    );
+                }
+                else{
+                    $error_code    = 7;
+                    $error_message = 'Unable to delete live post';
+                }
             }
             else{
-                $error_code    = 6;
-                $error_message = 'post not found';
+                // End is idempotent: an absent post already satisfies the
+                // required final state.
+                $response_data = array(
+                                    'api_status' => 200,
+                                    'message' => 'Live session already ended.',
+                                    'post_deleted' => 1
+                                );
             }
         }
         else{

@@ -6967,13 +6967,16 @@ function Wo_GetLiveKitLivestreamRoomName($stream_name = '') {
     }
     return substr('wowonder_live_' . $stream_name, 0, 128);
 }
-function Wo_GetLiveKitLivestreamIdentity($user_id = 0, $role = 'viewer', $room_name = '') {
+function Wo_GetLiveKitLivestreamIdentity($user_id = 0, $role = 'viewer', $room_name = '', $endpoint_id = '') {
     $role = ($role === 'host') ? 'host' : 'viewer';
     $user_id = intval($user_id);
-    $seed = session_id() . '|' . $room_name . '|' . $role . '|' . $user_id;
-    return 'live_' . $role . '_' . ($user_id > 0 ? $user_id : 'guest') . '_' . substr(sha1($seed), 0, 12);
+    $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+    if ($endpoint_id === '') {
+        $endpoint_id = VNSEEA_GetRequestEndpointId($user_id);
+    }
+    return VNSEEA_BuildLiveKitParticipantIdentity('live_' . $role, $user_id, $room_name, $endpoint_id);
 }
-function Wo_GetLiveKitLivestreamToken($room_name = '', $role = 'viewer', $user_id = 0, $user_data = array()) {
+function Wo_GetLiveKitLivestreamToken($room_name = '', $role = 'viewer', $user_id = 0, $user_data = array(), $endpoint_id = '') {
     global $wo;
     $room_name = trim((string) $room_name);
     if ($room_name === '' || !Wo_IsLiveKitAvailable()) {
@@ -6989,7 +6992,11 @@ function Wo_GetLiveKitLivestreamToken($room_name = '', $role = 'viewer', $user_i
         $user_data = Wo_UserData($user_id);
     }
     $display_name = !empty($user_data['name']) ? $user_data['name'] : ($role === 'host' ? (!empty($wo['user']['name']) ? $wo['user']['name'] : 'Host') : 'Viewer');
-    $identity = Wo_GetLiveKitLivestreamIdentity($user_id, $role, $room_name);
+    $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+    if ($endpoint_id === '') {
+        $endpoint_id = VNSEEA_GetRequestEndpointId($user_id);
+    }
+    $identity = Wo_GetLiveKitLivestreamIdentity($user_id, $role, $room_name, $endpoint_id);
     $can_publish = ($role === 'host');
     $payload = array(
         'iss' => trim($wo['config']['livekit_api_key']),
@@ -7012,12 +7019,12 @@ function Wo_GetLiveKitLivestreamToken($room_name = '', $role = 'viewer', $user_i
     );
     return \Firebase\JWT\JWT::encode($payload, trim($wo['config']['livekit_api_secret']), 'HS256');
 }
-function Wo_GetLiveKitLivestreamJoinPayload($stream_name = '', $role = 'viewer', $user_id = 0, $user_data = array()) {
+function Wo_GetLiveKitLivestreamJoinPayload($stream_name = '', $role = 'viewer', $user_id = 0, $user_data = array(), $endpoint_id = '') {
     $room_name = Wo_GetLiveKitLivestreamRoomName($stream_name);
     if ($room_name === '') {
         return array();
     }
-    $token = Wo_GetLiveKitLivestreamToken($room_name, $role, $user_id, $user_data);
+    $token = Wo_GetLiveKitLivestreamToken($room_name, $role, $user_id, $user_data, $endpoint_id);
     if ($token === '') {
         return array();
     }
@@ -7027,7 +7034,8 @@ function Wo_GetLiveKitLivestreamJoinPayload($stream_name = '', $role = 'viewer',
         'room_name' => $room_name,
         'ws_url' => Wo_GetLiveKitServerUrl(),
         'token' => $token,
-        'is_host' => ($role === 'host')
+        'is_host' => ($role === 'host'),
+        'client_endpoint_id' => VNSEEA_NormalizeClientEndpointId($endpoint_id)
     );
 }
 function Wo_GetActiveCallProvider($call_type = 'video') {

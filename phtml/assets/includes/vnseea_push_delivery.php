@@ -501,7 +501,7 @@ if (!function_exists('VNSEEA_GetUserPushTargets')) {
         $token_query = @mysqli_query(
             $sqlConnect,
             "SELECT token_row.`id` AS `push_token_id`, token_row.`token`, token_row.`token_hash`," .
-            " token_row.`apns_environment`, installation.`id` AS `installation_row_id`, installation.`platform`" .
+            " token_row.`apns_environment`, installation.`id` AS `installation_row_id`, installation.`installation_id` AS `client_endpoint_id`, installation.`platform`" .
             " FROM " . T_PUSH_TOKENS . " AS token_row" .
             " INNER JOIN " . T_PUSH_INSTALLATIONS . " AS installation ON installation.`id`=token_row.`installation_id`" .
             " WHERE installation.`user_id`={$user_id} AND installation.`active`=1" .
@@ -511,6 +511,7 @@ if (!function_exists('VNSEEA_GetUserPushTargets')) {
             while ($token = mysqli_fetch_assoc($token_query)) {
                 $targets[] = array(
                     'installation_id' => (int)$token['installation_row_id'],
+                    'client_endpoint_id' => (string)$token['client_endpoint_id'],
                     'push_token_id' => (int)$token['push_token_id'],
                     'provider' => $provider,
                     'token' => (string)$token['token'],
@@ -1801,21 +1802,31 @@ if (!function_exists('VNSEEA_SendApnsVoipTarget')) {
 }
 
 if (!function_exists('VNSEEA_SendImmediateCallPush')) {
-    function VNSEEA_SendImmediateCallPush($recipient_id, $notification_data, $display_name, $call_type, $context = 'direct', $allow_voip = true)
+    function VNSEEA_SendImmediateCallPush($recipient_id, $notification_data, $display_name, $call_type, $context = 'direct', $allow_voip = true, $excluded_endpoint_id = '', $is_control = false)
     {
         $recipient_id = (int)$recipient_id;
         $call_type = $call_type === 'audio' ? 'audio' : 'video';
         $onesignal_targets = VNSEEA_GetUserPushTargets($recipient_id, 'onesignal');
         $onesignal_state = empty($onesignal_targets) ? 'unavailable' : 'failed';
         foreach ($onesignal_targets as $target) {
+            $target_endpoint_id = !empty($target['client_endpoint_id']) ? (string)$target['client_endpoint_id'] : '';
+            if ($is_control && $target_endpoint_id === '') {
+                continue;
+            }
+            if ($excluded_endpoint_id !== '' && $target_endpoint_id !== '' && hash_equals($excluded_endpoint_id, $target_endpoint_id)) {
+                continue;
+            }
             $delivery = array_merge($target, array(
                 'batch_uuid' => VNSEEA_PushUuidV4()
             ));
             $payload = array_merge($notification_data, array(
+                'client_endpoint_id' => $target_endpoint_id,
                 'title' => $display_name !== '' ? $display_name : 'VNSEEA',
-                'body' => $context === 'group'
+                'body' => $is_control
+                    ? 'Cuộc gọi đã được xử lý trên thiết bị khác'
+                    : ($context === 'group'
                     ? ($call_type === 'video' ? 'Cuộc gọi nhóm video đến' : 'Cuộc gọi nhóm thoại đến')
-                    : ($call_type === 'video' ? 'Cuộc gọi video đến' : 'Cuộc gọi thoại đến')
+                    : ($call_type === 'video' ? 'Cuộc gọi video đến' : 'Cuộc gọi thoại đến'))
             ));
             $result = VNSEEA_SendOneSignalDelivery($delivery, $payload);
             if (!empty($result['accepted'])) {
@@ -1831,9 +1842,19 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
             : array();
         $voip_state = empty($voip_targets) ? 'unavailable' : 'failed';
         foreach ($voip_targets as $target) {
+            $target_endpoint_id = !empty($target['client_endpoint_id']) ? (string)$target['client_endpoint_id'] : '';
+            if ($is_control && $target_endpoint_id === '') {
+                continue;
+            }
+            if ($excluded_endpoint_id !== '' && $target_endpoint_id !== '' && hash_equals($excluded_endpoint_id, $target_endpoint_id)) {
+                continue;
+            }
+            $target_notification_data = array_merge($notification_data, array(
+                'client_endpoint_id' => $target_endpoint_id
+            ));
             $result = VNSEEA_SendApnsVoipTarget(
                 $target,
-                $notification_data,
+                $target_notification_data,
                 $display_name,
                 $call_type,
                 $context
@@ -1851,14 +1872,21 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
 }
 
 if (!function_exists('VNSEEA_SendImmediateVoipEvent')) {
-    function VNSEEA_SendImmediateVoipEvent($recipient_id, $notification_data, $display_name, $call_type, $context = 'direct')
+    function VNSEEA_SendImmediateVoipEvent($recipient_id, $notification_data, $display_name, $call_type, $context = 'direct', $excluded_endpoint_id = '')
     {
         $targets = VNSEEA_GetUserPushTargets((int)$recipient_id, 'apns_voip');
         $state = empty($targets) ? 'unavailable' : 'failed';
         foreach ($targets as $target) {
+            $target_endpoint_id = !empty($target['client_endpoint_id']) ? (string)$target['client_endpoint_id'] : '';
+            if ($excluded_endpoint_id !== '' && $target_endpoint_id !== '' && hash_equals($excluded_endpoint_id, $target_endpoint_id)) {
+                continue;
+            }
+            $target_notification_data = array_merge($notification_data, array(
+                'client_endpoint_id' => $target_endpoint_id
+            ));
             $result = VNSEEA_SendApnsVoipTarget(
                 $target,
-                $notification_data,
+                $target_notification_data,
                 $display_name,
                 $call_type,
                 $context
