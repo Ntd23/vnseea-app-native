@@ -80,7 +80,11 @@ function expectRedacted(post: FeedPost) {
   });
   expect(post.publisher).not.toHaveProperty('avatarUrl');
   expect(post.publisher).not.toHaveProperty('profileUrl');
-  expect(post.permissions).toEqual({ canDelete: false, canShare: false });
+  expect(post.permissions).toEqual({
+    canDelete: false,
+    canEdit: false,
+    canShare: false,
+  });
 }
 
 describe('ApiFeedRepository privacy mapping', () => {
@@ -125,7 +129,11 @@ describe('ApiFeedRepository privacy mapping', () => {
       name: 'Real Name',
       username: 'real-user',
     });
-    expect(post.permissions).toEqual({ canDelete: true, canShare: false });
+    expect(post.permissions).toEqual({
+      canDelete: true,
+      canEdit: true,
+      canShare: false,
+    });
   });
 
   it('allows sharing only for explicit backend true, valid public, nonanonymous posts', async () => {

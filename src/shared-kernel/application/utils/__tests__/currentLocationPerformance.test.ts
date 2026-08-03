@@ -92,4 +92,36 @@ describe('getCurrentDeviceLocation performance behavior', () => {
     );
     expect(getCurrentLocation).toHaveBeenCalledTimes(2);
   });
+
+  it('requests fine and coarse permission together and accepts coarse-only access', async () => {
+    const getCurrentLocation = jest.fn();
+    const check = jest.fn().mockResolvedValue(false);
+    const { requestMultiple } = mockAndroidLocation(getCurrentLocation, check);
+    requestMultiple.mockResolvedValue({
+      'android.permission.ACCESS_FINE_LOCATION': 'denied',
+      'android.permission.ACCESS_COARSE_LOCATION': 'granted',
+    });
+
+    const { requestAndroidLocationPermission } = require('../currentLocation');
+
+    await expect(requestAndroidLocationPermission()).resolves.toBe(true);
+    expect(requestMultiple).toHaveBeenCalledWith([
+      'android.permission.ACCESS_FINE_LOCATION',
+      'android.permission.ACCESS_COARSE_LOCATION',
+    ]);
+  });
+
+  it('does not prompt again when coarse location is already granted', async () => {
+    const getCurrentLocation = jest.fn();
+    const check = jest
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const { requestMultiple } = mockAndroidLocation(getCurrentLocation, check);
+
+    const { requestAndroidLocationPermission } = require('../currentLocation');
+
+    await expect(requestAndroidLocationPermission()).resolves.toBe(true);
+    expect(requestMultiple).not.toHaveBeenCalled();
+  });
 });

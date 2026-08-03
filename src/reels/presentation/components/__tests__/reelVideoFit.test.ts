@@ -4,15 +4,20 @@ import {
 } from '../reelVideoFit';
 
 describe('reelVideoFit', () => {
-  it('keeps unknown and vertical videos in cover mode', () => {
-    expect(getReelVideoFitMode(undefined)).toBe('cover');
-    expect(getReelVideoFitMode(720 / 1280)).toBe('cover');
-    expect(getReelVideoFitMode(900 / 1200)).toBe('cover');
+  it('uses contain while dimensions are unknown so loading never crops', () => {
+    expect(getReelVideoFitMode(undefined, 9 / 19.5)).toBe('blurContain');
+    expect(getReelVideoFitMode(9 / 16, undefined)).toBe('blurContain');
   });
 
-  it('uses blur contain mode for square and landscape videos', () => {
-    expect(getReelVideoFitMode(1)).toBe('blurContain');
-    expect(getReelVideoFitMode(16 / 9)).toBe('blurContain');
+  it('uses contain for videos wider or taller than the reel frame', () => {
+    expect(getReelVideoFitMode(9 / 16, 9 / 19.5)).toBe('blurContain');
+    expect(getReelVideoFitMode(9 / 21, 9 / 19.5)).toBe('blurContain');
+    expect(getReelVideoFitMode(1, 9 / 19.5)).toBe('blurContain');
+    expect(getReelVideoFitMode(16 / 9, 9 / 19.5)).toBe('blurContain');
+  });
+
+  it('only uses cover when source and frame ratios match', () => {
+    expect(getReelVideoFitMode(9 / 16, 9 / 16)).toBe('cover');
   });
 
   it('extracts natural aspect ratio from react-native-video load data', () => {

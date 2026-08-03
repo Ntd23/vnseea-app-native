@@ -56,7 +56,7 @@ function getNativeCurrentLocationModule() {
     | undefined;
 }
 
-async function requestAndroidLocationPermission() {
+export async function requestAndroidLocationPermission() {
   const finePermission = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
   const coarsePermission =
     PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;

@@ -11,4 +11,9 @@
     <string name="incoming_call_decline">Decline</string>
     <string name="incoming_call_default_caller">VNSEEA</string>
     <string name="incoming_call_default_group">Group</string>
+    <string name="active_call_channel_name">Active VNSEEA calls</string>
+    <string name="active_call_channel_description">Keeps audio and video available during an active call</string>
+    <string name="active_call_notification_title">VNSEEA call in progress</string>
+    <string name="active_audio_call_notification_text">Audio call in progress</string>
+    <string name="active_video_call_notification_text">Video call in progress</string>
 </resources>

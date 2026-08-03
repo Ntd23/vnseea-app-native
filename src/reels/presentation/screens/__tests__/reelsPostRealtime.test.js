@@ -41,4 +41,10 @@ describe('Reels and profile post realtime wiring', () => {
     );
     expect(profileScreen).toContain('commentVm.refreshComments().catch');
   });
+
+  it('does not consume the Reels screen own optimistic reaction event twice', () => {
+    expect(reelsViewModel).toContain("source?: 'reels'");
+    expect(reelsViewModel).toContain("if (event.source === 'reels') return;");
+    expect(reelsViewModel).toContain("source: 'reels'");
+  });
 });

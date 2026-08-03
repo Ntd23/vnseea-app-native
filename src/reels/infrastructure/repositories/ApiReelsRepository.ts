@@ -366,6 +366,16 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     decodedPrivacy.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous');
   const permissionSource =
     (raw.permissions as Record<string, unknown> | undefined) ?? raw;
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  const ownerId =
+    readString(raw, 'user_id') ||
+    readString(realPublisherRaw ?? {}, 'user_id', 'id');
+  const isOwner = Boolean(
+    sessionUserId && ownerId && String(sessionUserId) === String(ownerId),
+  );
+  const backendCanEdit = readOptionalBool(
+    permissionSource.can_edit ?? permissionSource.canEdit,
+  );
   const canShare =
     readBool(permissionSource, 'can_share', 'canShare') &&
     decodedPrivacy.isValid &&
@@ -379,7 +389,6 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
   // `second_post_button != 'reaction'` the backend omits the field entirely
   // even though the DB row exists — fall back to the local cache so the
   // viewer's previous tap is restored after reload / app restart.
-  const sessionUserId = sessionStorage.getSession()?.userId;
   const apiReaction = extractMyReaction(raw);
   const cachedReaction = reelsReactionsStorage.get(sessionUserId, postId);
   const myReaction = apiReaction ?? cachedReaction;
@@ -439,6 +448,7 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     privacyContract,
     isAnonymous,
     canShare,
+    canEdit: backendCanEdit === true || isOwner,
     postedAt: readNumber(raw, 'time') || undefined,
     publisher: mapPublisher(publisherRaw),
     likeCount,

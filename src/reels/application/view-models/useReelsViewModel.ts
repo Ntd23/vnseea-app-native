@@ -42,6 +42,12 @@ import {
   mergeFeedVideoPostSnapshotIntoReel,
   mergeReelsStartupItems,
 } from '../services/reelsStartupFeed';
+import { postEditedEvents } from '../../../feed/application/events/postEditedEvents';
+import {
+  applyLocalPostCaptionEdit,
+  applyLocalPostCaptionEdits,
+} from '../../../feed/application/editing/postCaptionEdit';
+import { editPostWithLocalFallback } from '../../../feed/application/editing/editPostWithLocalFallback';
 
 const repository = createReelsRepository();
 const feedRepository = createFeedRepository();
@@ -81,7 +87,9 @@ export function useReelsViewModel(initialVideo?: {
   const [startupSnapshot] = useState(() =>
     getReelsStartupSnapshot(initialVideo),
   );
-  const [items, setItems] = useState<ReelsItem[]>(startupSnapshot.items);
+  const [items, setItems] = useState<ReelsItem[]>(() =>
+    applyLocalPostCaptionEdits(startupSnapshot.items),
+  );
   const itemsRef = useRef(items);
   // Seed the ref synchronously from the constructor argument so the
   // initial-load `loadInitial()` (which fires in a useEffect on mount)
@@ -106,10 +114,27 @@ export function useReelsViewModel(initialVideo?: {
   const [commentPhase, setCommentPhase] = useState<CommentPhase>('idle');
   const [commentError, setCommentError] = useState<string | null>(null);
   const [hasMoreComments, setHasMoreComments] = useState(false);
+  const reactionMutationVersionRef = useRef(new Map<string, number>());
 
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  useEffect(
+    () =>
+      postEditedEvents.subscribe(({ postId, text }) => {
+        setItems(previous => {
+          const nextItems = previous.map(item =>
+            String(item.id) === String(postId)
+              ? { ...item, caption: text }
+              : item,
+          );
+          itemsRef.current = nextItems;
+          return nextItems;
+        });
+      }),
+    [],
+  );
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -188,9 +213,11 @@ export function useReelsViewModel(initialVideo?: {
         postId: string;
         myReaction: ReactionType | null;
         likeCount: number;
+        source?: 'reels';
       }) => {
-        setItems(prev =>
-          prev.map(item => {
+        if (event.source === 'reels') return;
+        setItems(prev => {
+          const nextItems = prev.map(item => {
             if (item.id !== event.postId) return item;
             const willBeReacted = event.myReaction !== null;
             if (
@@ -205,8 +232,10 @@ export function useReelsViewModel(initialVideo?: {
               isLiked: willBeReacted,
               likeCount: event.likeCount,
             };
-          }),
-        );
+          });
+          itemsRef.current = nextItems;
+          return nextItems;
+        });
       },
     );
     return () => {
@@ -302,8 +331,11 @@ export function useReelsViewModel(initialVideo?: {
 
   /** Drop one or more bad ids from a freshly-fetched page. */
   const filterUnavailable = useCallback((list: ReelsItem[]) => {
-    if (unavailableIdsRef.current.size === 0) return list;
-    return list.filter(item => !unavailableIdsRef.current.has(item.id));
+    const availableItems =
+      unavailableIdsRef.current.size === 0
+        ? list
+        : list.filter(item => !unavailableIdsRef.current.has(item.id));
+    return applyLocalPostCaptionEdits(availableItems);
   }, []);
 
   /** Load the first page (used on mount + when the user explicitly retries). */
@@ -457,7 +489,9 @@ export function useReelsViewModel(initialVideo?: {
 
     setItems(prev => {
       const nextItems = prev.map(item =>
-        mergeFeedVideoPostSnapshotIntoReel(item, nextPost),
+        applyLocalPostCaptionEdit(
+          mergeFeedVideoPostSnapshotIntoReel(item, nextPost),
+        ),
       );
       itemsRef.current = nextItems;
       return nextItems;
@@ -564,35 +598,36 @@ export function useReelsViewModel(initialVideo?: {
    */
   const toggleReaction = useCallback(
     async (postId: string, nextReaction: ReactionType, forceSet?: boolean) => {
-      let snapshot: ReelsItem | undefined;
-      let targetReaction: ReactionType | null = nextReaction;
-      let finalLikeCount = 0;
+      const snapshot = itemsRef.current.find(item => item.id === postId);
+      if (!snapshot) return;
 
-      setItems(prev =>
-        prev.map(item => {
-          if (item.id !== postId) return item;
-          snapshot = item;
-
-          // Same reaction tapped twice = clear it (unless forceSet is true)
-          const willClear = !forceSet && item.myReaction === nextReaction;
-          targetReaction = willClear ? null : nextReaction;
-
-          // Count delta: 0 when swapping between reactions, ±1 at the
-          // null boundary.
-          const wasReacted = item.myReaction !== null;
-          const willBeReacted = targetReaction !== null;
-          const countDelta = Number(willBeReacted) - Number(wasReacted);
-
-          finalLikeCount = Math.max(0, item.likeCount + countDelta);
-
-          return {
-            ...item,
-            myReaction: targetReaction,
-            isLiked: willBeReacted,
-            likeCount: finalLikeCount,
-          };
-        }),
+      // Calculate before setState. Reading values assigned inside a React
+      // state updater immediately afterwards can emit an inconsistent second
+      // update and make the native video surface visibly flash.
+      const willClear = !forceSet && snapshot.myReaction === nextReaction;
+      const targetReaction: ReactionType | null = willClear
+        ? null
+        : nextReaction;
+      const wasReacted = snapshot.myReaction !== null;
+      const willBeReacted = targetReaction !== null;
+      const countDelta = Number(willBeReacted) - Number(wasReacted);
+      const finalLikeCount = Math.max(0, snapshot.likeCount + countDelta);
+      const nextItems = itemsRef.current.map(item =>
+        item.id === postId
+          ? {
+              ...item,
+              myReaction: targetReaction,
+              isLiked: willBeReacted,
+              likeCount: finalLikeCount,
+            }
+          : item,
       );
+      itemsRef.current = nextItems;
+      setItems(nextItems);
+
+      const mutationVersion =
+        (reactionMutationVersionRef.current.get(postId) ?? 0) + 1;
+      reactionMutationVersionRef.current.set(postId, mutationVersion);
 
       // Emit global reaction changed event
       DeviceEventEmitter.emit('postReactionChanged', {
@@ -600,24 +635,36 @@ export function useReelsViewModel(initialVideo?: {
         myReaction: targetReaction,
         likeCount: finalLikeCount,
         topReactions: targetReaction ? [targetReaction] : [],
+        source: 'reels',
       });
 
       try {
         await repository.setReaction(postId, targetReaction);
-      } catch {
-        if (snapshot) {
-          const original = snapshot;
-          setItems(prev =>
-            prev.map(item => (item.id === postId ? original : item)),
-          );
-          // Re-emit original reaction on failure
-          DeviceEventEmitter.emit('postReactionChanged', {
-            postId,
-            myReaction: original.myReaction,
-            likeCount: original.likeCount,
-            topReactions: original.myReaction ? [original.myReaction] : [],
-          });
+        if (
+          reactionMutationVersionRef.current.get(postId) === mutationVersion
+        ) {
+          reactionMutationVersionRef.current.delete(postId);
         }
+      } catch {
+        if (
+          reactionMutationVersionRef.current.get(postId) !== mutationVersion
+        ) {
+          return;
+        }
+        reactionMutationVersionRef.current.delete(postId);
+        const rollbackItems = itemsRef.current.map(item =>
+          item.id === postId ? snapshot : item,
+        );
+        itemsRef.current = rollbackItems;
+        setItems(rollbackItems);
+        // Re-emit original reaction on failure
+        DeviceEventEmitter.emit('postReactionChanged', {
+          postId,
+          myReaction: snapshot.myReaction,
+          likeCount: snapshot.likeCount,
+          topReactions: snapshot.myReaction ? [snapshot.myReaction] : [],
+          source: 'reels',
+        });
       }
     },
     [],
@@ -1540,6 +1587,20 @@ export function useReelsViewModel(initialVideo?: {
     return feedRepository.sharePost(input);
   }, []);
 
+  const editReelCaption = useCallback(async (postId: string, text: string) => {
+    const reel = itemsRef.current.find(
+      item => String(item.id) === String(postId),
+    );
+    if (!reel || reel.canEdit !== true) {
+      throw new Error('Bạn không có quyền chỉnh sửa video này.');
+    }
+
+    return editPostWithLocalFallback(feedRepository.editPost, postId, {
+      text,
+      privacy: reel.privacy,
+    });
+  }, []);
+
   // Initial load on mount
   useEffect(() => {
     loadInitial();
@@ -1601,5 +1662,6 @@ export function useReelsViewModel(initialVideo?: {
     deleteFailedComment,
     followPublisher,
     sharePost,
+    editReelCaption,
   };
 }

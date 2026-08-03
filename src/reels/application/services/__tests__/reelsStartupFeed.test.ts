@@ -125,6 +125,7 @@ describe('reels startup feed', () => {
       ...createReel('10', 1),
       videoUrl: 'https://cdn.example.com/reels-10.mp4',
       thumbnailUrl: 'https://cdn.example.com/reels-10.jpg',
+      canEdit: true,
       viewCount: 25,
       isSaved: true,
       publisher: {
@@ -135,8 +136,9 @@ describe('reels startup feed', () => {
     };
     const snapshot: FeedVideoPost = {
       ...createFeedVideo('10'),
-      videoUrl: '',
-      thumbnailUrl: undefined,
+      videoUrl: 'https://cdn.example.com/feed-snapshot-10.mp4',
+      thumbnailUrl: 'https://cdn.example.com/feed-snapshot-10.jpg',
+      permissions: { canDelete: false, canEdit: false, canShare: false },
       likeCount: 9,
       commentCount: 4,
       isLiked: true,
@@ -155,6 +157,8 @@ describe('reels startup feed', () => {
       id: '10',
       videoUrl: current.videoUrl,
       thumbnailUrl: current.thumbnailUrl,
+      canShare: true,
+      canEdit: true,
       likeCount: 9,
       commentCount: 4,
       viewCount: 25,

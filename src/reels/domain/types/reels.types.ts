@@ -35,6 +35,8 @@ export interface ReelsItem {
   privacyContract: ContentAudienceWireContract;
   isAnonymous: boolean;
   canShare: boolean;
+  /** Viewer may edit this reel's caption. */
+  canEdit?: boolean;
   /** Unix timestamp (seconds) when posted */
   postedAt?: number;
   /** Publisher (account that posted the reel) */
