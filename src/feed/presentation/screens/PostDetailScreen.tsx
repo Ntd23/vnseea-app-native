@@ -57,6 +57,7 @@ import {
   Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  Pressable as GesturePressable,
 } from 'react-native-gesture-handler';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -134,6 +135,7 @@ const POST_DETAIL_BACK_GESTURE_FAIL_OFFSET_Y =
   Platform.OS === 'android' ? 18 : 14;
 const POST_DETAIL_BACK_GESTURE_DISTANCE_RATIO = 0.32;
 const POST_DETAIL_BACK_GESTURE_VELOCITY = 700;
+const POST_DETAIL_ENTER_DURATION_MS = 220;
 const POST_DETAIL_BACK_CLOSE_DURATION_MS = 180;
 const POST_DETAIL_BACK_CANCEL_DURATION_MS = 140;
 
@@ -810,14 +812,33 @@ function PostDetailScreen() {
   const gestureY = useSharedValue(0);
   const gestureActive = useSharedValue(false);
   const hasDragged = useSharedValue(false);
-  const postDetailBackTranslateX = useSharedValue(0);
+  const postDetailBackTranslateX = useSharedValue(POST_DETAIL_SCREEN_WIDTH);
   const postDetailBackClosing = useSharedValue(false);
+  const postDetailBackGestureActive = useSharedValue(false);
+  const hasPresentedPostDetailRef = useRef(false);
 
   useEffect(() => {
     if (!isFocused) return;
-    postDetailBackTranslateX.value = 0;
     postDetailBackClosing.value = false;
-  }, [isFocused, postDetailBackClosing, postDetailBackTranslateX]);
+    postDetailBackGestureActive.value = false;
+
+    if (!hasPresentedPostDetailRef.current) {
+      hasPresentedPostDetailRef.current = true;
+      postDetailBackTranslateX.value = POST_DETAIL_SCREEN_WIDTH;
+      postDetailBackTranslateX.value = withTiming(0, {
+        duration: POST_DETAIL_ENTER_DURATION_MS,
+        easing: Easing.out(Easing.cubic),
+      });
+      return;
+    }
+
+    postDetailBackTranslateX.value = 0;
+  }, [
+    isFocused,
+    postDetailBackClosing,
+    postDetailBackGestureActive,
+    postDetailBackTranslateX,
+  ]);
 
   const handleOpenPicker = useCallback(
     (postId: string, x: number, y: number) => {
@@ -1024,9 +1045,33 @@ function PostDetailScreen() {
     Keyboard.dismiss();
   }, []);
 
-  const handlePostDetailBack = useCallback(() => {
+  const finishPostDetailBack = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
+
+  const handlePostDetailBack = useCallback(() => {
+    if (postDetailBackClosing.value) return;
+    postDetailBackClosing.value = true;
+    postDetailBackGestureActive.value = false;
+    cancelAnimation(postDetailBackTranslateX);
+    postDetailBackTranslateX.value = withTiming(
+      POST_DETAIL_SCREEN_WIDTH,
+      {
+        duration: POST_DETAIL_BACK_CLOSE_DURATION_MS,
+        easing: Easing.out(Easing.cubic),
+      },
+      finished => {
+        if (finished) {
+          runOnJS(finishPostDetailBack)();
+        }
+      },
+    );
+  }, [
+    finishPostDetailBack,
+    postDetailBackClosing,
+    postDetailBackGestureActive,
+    postDetailBackTranslateX,
+  ]);
 
   const canSwipeBackToPreviousPostScreen = navigation.canGoBack();
   const isPostDetailSwipeBackBlocked =
@@ -1058,6 +1103,7 @@ function PostDetailScreen() {
           'worklet';
           if (postDetailBackClosing.value) return;
           cancelAnimation(postDetailBackTranslateX);
+          postDetailBackGestureActive.value = true;
         })
         .onUpdate(event => {
           'worklet';
@@ -1087,23 +1133,31 @@ function PostDetailScreen() {
               },
               finished => {
                 if (finished) {
-                  runOnJS(handlePostDetailBack)();
+                  runOnJS(finishPostDetailBack)();
                 }
               },
             );
             return;
           }
 
+          postDetailBackGestureActive.value = false;
           postDetailBackTranslateX.value = withTiming(0, {
             duration: POST_DETAIL_BACK_CANCEL_DURATION_MS,
             easing: Easing.out(Easing.cubic),
           });
+        })
+        .onFinalize(() => {
+          'worklet';
+          if (!postDetailBackClosing.value) {
+            postDetailBackGestureActive.value = false;
+          }
         }),
     [
       canSwipeBackToPreviousPostScreen,
-      handlePostDetailBack,
+      finishPostDetailBack,
       isPostDetailSwipeBackBlocked,
       postDetailBackClosing,
+      postDetailBackGestureActive,
       postDetailBackTranslateX,
     ],
   );
@@ -1144,12 +1198,14 @@ function PostDetailScreen() {
     const isReady = postDetailBackTranslateX.value >= threshold;
 
     return {
-      opacity: interpolate(
-        postDetailBackTranslateX.value,
-        [0, 40, threshold],
-        [0, 0.85, 1],
-        'clamp',
-      ),
+      opacity: postDetailBackGestureActive.value
+        ? interpolate(
+            postDetailBackTranslateX.value,
+            [0, 40, threshold],
+            [0, 0.85, 1],
+            'clamp',
+          )
+        : 0,
       transform: [
         {
           translateX: interpolate(
@@ -1251,15 +1307,15 @@ function PostDetailScreen() {
           translucent={false}
         />
         <View className="surface-topbar flex-row items-center px-4 py-3">
-          <TouchableOpacity
-            activeOpacity={0.8}
+          <GesturePressable
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            onPress={() => navigation.goBack()}
+            onPress={handlePostDetailBack}
             className="h-10 w-10 items-center justify-center rounded-full"
+            simultaneousWithExternalGesture={postDetailSwipeBackGesture}
             accessibilityLabel="Quay lại"
           >
             <ArrowLeft size={22} color="#1E293B" />
-          </TouchableOpacity>
+          </GesturePressable>
           <Text className="ml-2 flex-1 text-heading">Bài viết</Text>
         </View>
         <View className="flex-1 items-center justify-center px-8">
@@ -1277,7 +1333,7 @@ function PostDetailScreen() {
           ) : null}
           <TouchableOpacity
             activeOpacity={0.9}
-            onPress={() => navigation.goBack()}
+            onPress={handlePostDetailBack}
             className="btn-primary mt-6 min-h-[44px] px-6"
           >
             <Text className="text-caption-primary text-inverse">Quay lại</Text>
@@ -1380,16 +1436,16 @@ function PostDetailScreen() {
           style={postDetailStyles.stickyIdentityHeader}
           onTouchStart={handleDismissKeyboardFromContent}
         >
-          <TouchableOpacity
-            activeOpacity={0.8}
+          <GesturePressable
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={handlePostDetailBack}
             style={postDetailStyles.stickyBackButton}
+            simultaneousWithExternalGesture={postDetailSwipeBackGesture}
             accessibilityRole="button"
             accessibilityLabel={language === 'vi' ? 'Quay lại' : 'Go back'}
           >
             <ArrowLeft size={22} color="#1E293B" />
-          </TouchableOpacity>
+          </GesturePressable>
           <View style={postDetailStyles.stickyIdentityContent}>
             <PostIdentityHeader
               avatar={activePost.publisher?.avatarUrl}

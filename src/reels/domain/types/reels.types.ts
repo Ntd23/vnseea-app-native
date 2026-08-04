@@ -43,6 +43,8 @@ export interface ReelsItem {
   postedAt?: number;
   /** Publisher (account that posted the reel) */
   publisher: ReelPublisher;
+  /** True when this reel is an outer post sharing another video post. */
+  isReposted?: boolean;
   /** Engagement counts */
   likeCount: number;
   commentCount: number;

@@ -34,8 +34,10 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { ReelsItem } from '../../../reels/domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useWatchViewModel } from '../../application/view-models/useWatchViewModel';
+import { buildWatchOriginalPostUrl } from '../watchPresentation';
 
 type WatchNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -95,8 +97,11 @@ function WatchScreen() {
     });
   }, [vm.selectedVideo]);
 
-  const handleOpenVideoUrl = useCallback(async () => {
-    const url = vm.selectedVideo?.videoUrl;
+  const handleOpenOriginalPost = useCallback(async () => {
+    const postId = vm.selectedVideo?.id;
+    const url = postId
+      ? buildWatchOriginalPostUrl(apiConfig.webBaseUrl, postId)
+      : undefined;
     if (url && (await Linking.canOpenURL(url))) {
       await Linking.openURL(url);
     }
@@ -234,7 +239,7 @@ function WatchScreen() {
           <Text style={styles.linkText}>{copy.download}</Text>
         </TouchableOpacity>
         <View style={styles.linkDivider} />
-        <TouchableOpacity style={styles.linkButton} onPress={handleOpenVideoUrl}>
+        <TouchableOpacity style={styles.linkButton} onPress={handleOpenOriginalPost}>
           <ExternalLink size={15} color="#64748b" />
           <Text style={styles.linkText}>{copy.original}</Text>
         </TouchableOpacity>

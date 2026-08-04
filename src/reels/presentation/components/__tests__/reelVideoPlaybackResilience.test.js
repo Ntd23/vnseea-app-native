@@ -233,4 +233,20 @@ describe('Reel video playback resilience', () => {
       'prev.initialSeekTime === next.initialSeekTime',
     );
   });
+
+  it('does not rebuild the native player for reaction-only UI updates', () => {
+    expect(reelItemSource).toContain('const videoPlayer = useMemo(() => {');
+    expect(reelItemSource).toContain('{videoPlayer}');
+
+    const playerMemoSource = reelItemSource.slice(
+      reelItemSource.indexOf('const videoPlayer = useMemo(() => {'),
+      reelItemSource.indexOf('// Each reel needs a unique SVG gradient ID'),
+    );
+
+    expect(playerMemoSource).toContain('paused={!playing}');
+    expect(playerMemoSource).toContain('item.id,');
+    expect(playerMemoSource).not.toContain('item.myReaction');
+    expect(playerMemoSource).not.toContain('item.likeCount');
+    expect(playerMemoSource).not.toContain('isPickerOpen');
+  });
 });

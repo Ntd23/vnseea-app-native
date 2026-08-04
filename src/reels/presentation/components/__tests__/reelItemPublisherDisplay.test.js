@@ -16,4 +16,13 @@ describe('ReelItem publisher display', () => {
     );
     expect(source).not.toContain('@{item.publisher.username || item.publisher.name || \'unknown\'}');
   });
+
+  it('labels shared reels as reposted next to the publisher', () => {
+    const source = read('src/reels/presentation/components/ReelItem.tsx');
+
+    expect(source).toContain("reposted: 'Đã đăng lại'");
+    expect(source).toContain('{item.isReposted ? (');
+    expect(source).toContain('<Repeat2 size={13}');
+    expect(source).toContain('{copy.reposted}');
+  });
 });

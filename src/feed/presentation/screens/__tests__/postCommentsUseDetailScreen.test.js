@@ -82,7 +82,8 @@ describe('post comments use the full post detail screen', () => {
 
     expect(detail).toContain('GestureDetector gesture={postDetailSwipeBackGesture}');
     expect(detail).toContain('postDetailBackTranslateX.value = Math.min(');
-    expect(detail).toContain('runOnJS(handlePostDetailBack)();');
+    expect(detail).toContain('runOnJS(finishPostDetailBack)();');
+    expect(detail).toContain('POST_DETAIL_ENTER_DURATION_MS');
     expect(detail).toContain('postDetailStyles.swipeBackCue');
     expect(detail).toContain('postDetailStyles.stickyBackButton');
     expect(detail).toContain('<ChevronLeft size={24} color="#FFFFFF"');
@@ -91,6 +92,7 @@ describe('post comments use the full post detail screen', () => {
     expect(detail).not.toContain('Swipe to go back');
     expect(navigator).toContain('const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {');
     expect(navigator).toContain("presentation: 'transparentModal'");
+    expect(navigator).toContain("animation: 'none'");
     expect(navigator).toContain("contentStyle: { backgroundColor: 'transparent' }");
     expect(navigator).toContain('options={POST_DETAIL_OPTIONS}');
   });

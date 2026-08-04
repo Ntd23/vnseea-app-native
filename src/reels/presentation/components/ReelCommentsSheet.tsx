@@ -125,6 +125,11 @@ import { ReelCommentComposerModal } from './ReelCommentComposerModal';
 import { CommentMentionSuggestions } from './CommentMentionSuggestions';
 import { CommentMentionText } from './CommentMentionText';
 import {
+  resolveKeyboardHeightFromFrame,
+  resolveKeyboardOverlap,
+  resolveKeyboardScreenY,
+} from './keyboardMetrics';
+import {
   applyCommentMentionSuggestion,
   getActiveCommentMentionToken,
   getRenderedCommentMentionLabel,
@@ -688,14 +693,16 @@ function ReelCommentsSheetBase({
   // coordinates relative to the Android content window when edge-to-edge is
   // disabled. Normalize the IME top into the same coordinate space instead of
   // guessing an accessory-bar height (which caused both a gap and an overlap
-  // on different devices).
+  // on different devices). The initial frame commonly reports y=0, so keep
+  // the runtime status/safe-area values in the max instead of short-circuiting
+  // them with a nullish fallback.
   const androidWindowScreenOffsetY =
     Platform.OS === 'android'
       ? Math.max(
           0,
-          initialWindowMetrics?.frame.y ??
-            StatusBar.currentHeight ??
-            insets.top,
+          initialWindowMetrics?.frame.y ?? 0,
+          StatusBar.currentHeight ?? 0,
+          insets.top,
         )
       : 0;
   const bottomSafeInset = Math.max(
@@ -808,9 +815,9 @@ function ReelCommentsSheetBase({
     composer.measureInWindow((_x, y, _width, height) => {
       const keyboardTopInWindow = keyboardTop - androidWindowScreenOffsetY;
       const unshiftedBottom = y + height + keyboardLiftRef.current;
-      const overlap = Math.max(
-        0,
-        Math.ceil(unshiftedBottom - keyboardTopInWindow),
+      const overlap = resolveKeyboardOverlap(
+        unshiftedBottom,
+        keyboardTopInWindow,
       );
       // The measured overlap is already in the composer window's coordinate
       // space, so it is the safest source of truth across OEM keyboard/nav
@@ -828,7 +835,7 @@ function ReelCommentsSheetBase({
   const scheduleKeyboardMeasurements = useCallback(() => {
     if (!shouldOwnKeyboardAvoidance) return;
     clearKeyboardMeasureTimers();
-    keyboardMeasureTimeoutsRef.current = [0, 80, 220].map(delay =>
+    keyboardMeasureTimeoutsRef.current = [0, 80, 220, 420].map(delay =>
       setTimeout(measureComposerAgainstKeyboard, delay),
     );
   }, [
@@ -1011,29 +1018,29 @@ function ReelCommentsSheetBase({
 
     const handleKeyboardShow = (event: KeyboardEvent) => {
       const keyboardMetrics = Keyboard.metrics?.();
-      const nextHeight = Math.max(
+      const screenHeight = Dimensions.get('screen').height;
+      const metricsHeight = resolveKeyboardHeightFromFrame(
+        keyboardMetrics,
+        screenHeight,
         0,
-        event.endCoordinates?.height ?? 0,
-        keyboardMetrics?.height ?? 0,
       );
-      // Prefer the coordinates from the event being handled. On Android,
-      // Keyboard.metrics() can still expose the previous IME frame for one
-      // render while the keyboard is transitioning, which would make the
-      // composer appear underneath the new keyboard.
-      const reportedScreenY =
-        typeof event.endCoordinates?.screenY === 'number' &&
-        Number.isFinite(event.endCoordinates.screenY) &&
-        event.endCoordinates.screenY > 0
-          ? event.endCoordinates.screenY
-          : keyboardMetrics?.screenY;
-      const fallbackKeyboardTop = Dimensions.get('screen').height - nextHeight;
+      const nextHeight = resolveKeyboardHeightFromFrame(
+        event.endCoordinates,
+        screenHeight,
+        metricsHeight,
+      );
+      const eventKeyboardTop = resolveKeyboardScreenY(
+        event.endCoordinates,
+        screenHeight,
+        nextHeight,
+      );
+      const metricsKeyboardTop = resolveKeyboardScreenY(
+        keyboardMetrics,
+        screenHeight,
+        nextHeight,
+      );
       keyboardHeightRef.current = nextHeight;
-      keyboardTopRef.current =
-        typeof reportedScreenY === 'number' &&
-        Number.isFinite(reportedScreenY) &&
-        reportedScreenY > 0
-          ? reportedScreenY
-          : fallbackKeyboardTop;
+      keyboardTopRef.current = eventKeyboardTop ?? metricsKeyboardTop;
       setKeyboardHeight(nextHeight);
       scheduleKeyboardMeasurements();
       if (replyingTo) {

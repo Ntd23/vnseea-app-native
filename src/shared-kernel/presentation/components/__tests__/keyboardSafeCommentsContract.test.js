@@ -90,8 +90,12 @@ describe('comment keyboard safety contract', () => {
       "isInline && Platform.OS === 'android' && !parentOwnsKeyboardAvoidance;",
     );
     expect(sharedSheet).toContain('Keyboard.metrics?.()');
+    expect(sharedSheet).toContain('resolveKeyboardHeightFromFrame');
+    expect(sharedSheet).toContain('resolveKeyboardScreenY');
     expect(sharedSheet).toContain('androidWindowScreenOffsetY');
     expect(sharedSheet).toContain('initialWindowMetrics?.frame.y');
+    expect(sharedSheet).toContain('StatusBar.currentHeight ?? 0');
+    expect(sharedSheet).toContain('[0, 80, 220, 420]');
     expect(sharedSheet).toContain('keyboardTopInWindow');
     expect(sharedSheet).toContain(
       'const keyboardTopInWindow = keyboardTop - androidWindowScreenOffsetY;',
@@ -121,6 +125,24 @@ describe('comment keyboard safety contract', () => {
     expect(sharedSheet).toContain('top: activeSheetTop');
     expect(sharedSheet).toContain('style={composerLiftStyle}');
     expect(sharedSheet).toContain('commitKeyboardLift(0)');
+  });
+
+  it('keeps the Android composer modal in a resize-aware window', () => {
+    const composerModal = read(
+      'src/reels/presentation/components/ReelCommentComposerModal.tsx',
+    );
+
+    // `navigationBarTranslucent` opts the Android Modal into an edge-to-edge
+    // dialog window, which can prevent adjustResize from exposing the IME
+    // boundary consistently across OEM keyboards. Keep the status bar
+    // translucent behavior, but leave the navigation bar in the normal window.
+    expect(composerModal).toContain('statusBarTranslucent');
+    expect(composerModal).not.toMatch(/^\s*navigationBarTranslucent\b/m);
+    expect(composerModal).toContain('resolveKeyboardHeightFromFrame');
+    expect(composerModal).toContain('syncKeyboardMetrics(true, 90)');
+    expect(composerModal).toMatch(
+      /isRepeatedKeyboardShow \? 90 : duration,\s*false,/,
+    );
   });
 
   it('dismisses the keyboard from any comment-list touch without swallowing actions', () => {
@@ -153,6 +175,10 @@ describe('comment keyboard safety contract', () => {
     [blog, movie].forEach(source => {
       expect(source).toContain('scrollResponderScrollNativeHandleToKeyboard');
       expect(source).toContain('onFocus={revealCommentInput}');
+      expect(source).toContain('Keyboard.addListener');
+      expect(source).toContain("'keyboardDidShow'");
+      expect(source).toContain('COMMENT_INPUT_REVEAL_DELAYS_MS');
+      expect(source).toContain('input?.isFocused()');
     });
   });
 });

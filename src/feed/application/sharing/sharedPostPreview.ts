@@ -39,6 +39,25 @@ export function buildSharedPostPreviewModel(
     location: post.location,
   };
 
+  if (post.liveContext) {
+    const live = post.liveContext;
+    return {
+      ...base,
+      content: {
+        kind: 'live',
+        state: live.state,
+        streamName: live.streamName,
+        title:
+          compactText(live.title) ||
+          compactText('caption' in post ? post.caption : undefined) ||
+          `${post.publisher.name || 'VNSEEA'} đang phát trực tiếp`,
+        description: compactText(live.description),
+        thumbnailUrl: compactText(live.thumbnailUrl),
+        viewerCount: live.viewerCount,
+      },
+    };
+  }
+
   switch (post.kind) {
     case 'video':
       return {
@@ -140,6 +159,9 @@ export function getSharedPostPreviewAssetUrls(
     case 'video':
       urls.push(model.content.thumbnailUrl);
       break;
+    case 'live':
+      urls.push(model.content.thumbnailUrl);
+      break;
     case 'attachment':
       urls.push(model.content.imageUrl);
       break;
@@ -160,6 +182,8 @@ export function getSharedPostPreviewPrimaryMediaUrl(
         model.content.photos[0] ?? model.content.linkPreview?.image ?? undefined
       );
     case 'video':
+      return model.content.thumbnailUrl;
+    case 'live':
       return model.content.thumbnailUrl;
     case 'attachment':
       return model.content.imageUrl;
@@ -201,4 +225,29 @@ export function applySharedPostSourceSnapshot(
     };
   }
   return { ...outerPost, sharedPost };
+}
+
+export function markSharedLivePreviewEnded(
+  outerPost: FeedPost,
+  sourcePostId: string | number,
+): FeedPost {
+  if (
+    String(outerPost.sharedPostId ?? '') !== String(sourcePostId) ||
+    outerPost.sharedPost?.content.kind !== 'live' ||
+    outerPost.sharedPost.content.state === 'offline'
+  ) {
+    return outerPost;
+  }
+
+  return {
+    ...outerPost,
+    sharedPost: {
+      ...outerPost.sharedPost,
+      content: {
+        ...outerPost.sharedPost.content,
+        state: 'offline',
+        viewerCount: 0,
+      },
+    },
+  };
 }

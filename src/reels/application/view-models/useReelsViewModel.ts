@@ -114,6 +114,7 @@ export function useReelsViewModel(initialVideo?: {
   const [commentPhase, setCommentPhase] = useState<CommentPhase>('idle');
   const [commentError, setCommentError] = useState<string | null>(null);
   const [hasMoreComments, setHasMoreComments] = useState(false);
+  const reactionMutationVersionRef = useRef(new Map<string, number>());
 
   useEffect(() => {
     itemsRef.current = items;
@@ -212,9 +213,11 @@ export function useReelsViewModel(initialVideo?: {
         postId: string;
         myReaction: ReactionType | null;
         likeCount: number;
+        source?: 'reels';
       }) => {
-        setItems(prev =>
-          prev.map(item => {
+        if (event.source === 'reels') return;
+        setItems(prev => {
+          const nextItems = prev.map(item => {
             if (item.id !== event.postId) return item;
             const willBeReacted = event.myReaction !== null;
             if (
@@ -229,8 +232,10 @@ export function useReelsViewModel(initialVideo?: {
               isLiked: willBeReacted,
               likeCount: event.likeCount,
             };
-          }),
-        );
+          });
+          itemsRef.current = nextItems;
+          return nextItems;
+        });
       },
     );
     return () => {
@@ -593,35 +598,36 @@ export function useReelsViewModel(initialVideo?: {
    */
   const toggleReaction = useCallback(
     async (postId: string, nextReaction: ReactionType, forceSet?: boolean) => {
-      let snapshot: ReelsItem | undefined;
-      let targetReaction: ReactionType | null = nextReaction;
-      let finalLikeCount = 0;
+      const snapshot = itemsRef.current.find(item => item.id === postId);
+      if (!snapshot) return;
 
-      setItems(prev =>
-        prev.map(item => {
-          if (item.id !== postId) return item;
-          snapshot = item;
-
-          // Same reaction tapped twice = clear it (unless forceSet is true)
-          const willClear = !forceSet && item.myReaction === nextReaction;
-          targetReaction = willClear ? null : nextReaction;
-
-          // Count delta: 0 when swapping between reactions, ±1 at the
-          // null boundary.
-          const wasReacted = item.myReaction !== null;
-          const willBeReacted = targetReaction !== null;
-          const countDelta = Number(willBeReacted) - Number(wasReacted);
-
-          finalLikeCount = Math.max(0, item.likeCount + countDelta);
-
-          return {
-            ...item,
-            myReaction: targetReaction,
-            isLiked: willBeReacted,
-            likeCount: finalLikeCount,
-          };
-        }),
+      // Calculate before setState. Reading values assigned inside a React
+      // state updater immediately afterwards can emit an inconsistent second
+      // update and make the native video surface visibly flash.
+      const willClear = !forceSet && snapshot.myReaction === nextReaction;
+      const targetReaction: ReactionType | null = willClear
+        ? null
+        : nextReaction;
+      const wasReacted = snapshot.myReaction !== null;
+      const willBeReacted = targetReaction !== null;
+      const countDelta = Number(willBeReacted) - Number(wasReacted);
+      const finalLikeCount = Math.max(0, snapshot.likeCount + countDelta);
+      const nextItems = itemsRef.current.map(item =>
+        item.id === postId
+          ? {
+              ...item,
+              myReaction: targetReaction,
+              isLiked: willBeReacted,
+              likeCount: finalLikeCount,
+            }
+          : item,
       );
+      itemsRef.current = nextItems;
+      setItems(nextItems);
+
+      const mutationVersion =
+        (reactionMutationVersionRef.current.get(postId) ?? 0) + 1;
+      reactionMutationVersionRef.current.set(postId, mutationVersion);
 
       // Emit global reaction changed event
       DeviceEventEmitter.emit('postReactionChanged', {
@@ -629,24 +635,36 @@ export function useReelsViewModel(initialVideo?: {
         myReaction: targetReaction,
         likeCount: finalLikeCount,
         topReactions: targetReaction ? [targetReaction] : [],
+        source: 'reels',
       });
 
       try {
         await repository.setReaction(postId, targetReaction);
-      } catch {
-        if (snapshot) {
-          const original = snapshot;
-          setItems(prev =>
-            prev.map(item => (item.id === postId ? original : item)),
-          );
-          // Re-emit original reaction on failure
-          DeviceEventEmitter.emit('postReactionChanged', {
-            postId,
-            myReaction: original.myReaction,
-            likeCount: original.likeCount,
-            topReactions: original.myReaction ? [original.myReaction] : [],
-          });
+        if (
+          reactionMutationVersionRef.current.get(postId) === mutationVersion
+        ) {
+          reactionMutationVersionRef.current.delete(postId);
         }
+      } catch {
+        if (
+          reactionMutationVersionRef.current.get(postId) !== mutationVersion
+        ) {
+          return;
+        }
+        reactionMutationVersionRef.current.delete(postId);
+        const rollbackItems = itemsRef.current.map(item =>
+          item.id === postId ? snapshot : item,
+        );
+        itemsRef.current = rollbackItems;
+        setItems(rollbackItems);
+        // Re-emit original reaction on failure
+        DeviceEventEmitter.emit('postReactionChanged', {
+          postId,
+          myReaction: snapshot.myReaction,
+          likeCount: snapshot.likeCount,
+          topReactions: snapshot.myReaction ? [snapshot.myReaction] : [],
+          source: 'reels',
+        });
       }
     },
     [],

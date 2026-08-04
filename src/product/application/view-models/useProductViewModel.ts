@@ -2,6 +2,10 @@
 import { useState, useCallback } from 'react';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { CreateProductInput, GetProductsInput, ProductItem } from '../../domain/types/product.types';
+import {
+  parsePositiveProductUnits,
+  PRODUCT_UNITS_ERROR,
+} from '../../domain/validation/productValidation';
 
 const repository = createProductRepository();
 
@@ -16,7 +20,7 @@ export interface ProductFormData {
   currency: string;
   lat?: string;
   lng?: string;
-  units?: number;
+  units: string;
   product_sub_category?: string;
   images: { uri: string; name: string; type: string }[];
 }
@@ -38,7 +42,7 @@ const initialFormData: ProductFormData = {
   currency: 'VND',
   lat: '',
   lng: '',
-  units: undefined,
+  units: '',
   product_sub_category: '',
   images: [],
 };
@@ -67,7 +71,7 @@ function buildInitialFormData(product?: ProductItem): ProductFormData {
         : product.currency_code || 'VND',
     lat: product.lat ?? '',
     lng: product.lng ?? '',
-    units: product.units,
+    units: product.units === undefined || product.units === null ? '' : String(product.units),
     product_sub_category: product.product_sub_category || (product.sub_category ? String(product.sub_category) : ''),
     images: [],
   };
@@ -148,6 +152,10 @@ export function useProductViewModel(initialProduct?: ProductItem) {
       errors.product_location = 'Vui lòng nhập địa điểm';
     }
 
+    if (parsePositiveProductUnits(formData.units) === null) {
+      errors.units = PRODUCT_UNITS_ERROR;
+    }
+
     if (formData.images.length === 0 && !hasExistingImages) {
       errors.images = 'Vui lòng thêm ít nhất 1 hình ảnh';
     }
@@ -194,6 +202,11 @@ export function useProductViewModel(initialProduct?: ProductItem) {
           errors.product_location = 'Vui lòng nhập địa điểm';
         }
         break;
+      case 8: // Units
+        if (parsePositiveProductUnits(formData.units) === null) {
+          errors.units = PRODUCT_UNITS_ERROR;
+        }
+        break;
     }
 
     setState(prev => ({ ...prev, errors }));
@@ -218,7 +231,11 @@ export function useProductViewModel(initialProduct?: ProductItem) {
   }, []);
 
   const submitProduct = useCallback(async () => {
-    if (!validateAll(state.formData)) {
+    const units = parsePositiveProductUnits(state.formData.units);
+    if (!validateAll(state.formData) || units === null) {
+      if (units === null) {
+        setSubmitError(PRODUCT_UNITS_ERROR);
+      }
       return;
     }
 
@@ -238,7 +255,7 @@ export function useProductViewModel(initialProduct?: ProductItem) {
         currency: state.formData.currency,
         lat: state.formData.lat,
         lng: state.formData.lng,
-        units: state.formData.units,
+        units,
         product_sub_category: state.formData.product_sub_category,
         images: state.formData.images,
       };

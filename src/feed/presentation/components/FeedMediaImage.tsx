@@ -16,7 +16,6 @@ import {
 import {
   markFeedMediaLoaded,
   releaseFeedMedia,
-  useFeedMediaLoaded,
 } from '../../application/state/feedMediaLoadState';
 
 type FeedMediaImageProps = {
@@ -32,10 +31,10 @@ const FEED_MEDIA_PLACEHOLDER_STYLE = { backgroundColor: '#E5E7EB' };
 const FEED_MEDIA_RETRY_DELAY_MS = 220;
 
 /**
- * A viewport-gated image that is retained briefly after it loads.
- * In-flight requests may be cancelled when their row leaves the viewport;
- * completed images survive short FlashList recycle loops without becoming
- * globally sticky for the rest of the feed session.
+ * A viewport-gated image. In-flight requests may be cancelled when the row
+ * leaves the viewport; the shared media state still remembers completed
+ * requests for cache/retry coordination without keeping an offscreen native
+ * Image mounted.
  */
 export const FeedMediaImage = React.memo(function FeedMediaImage({
   uri,
@@ -45,8 +44,14 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
   blurRadius,
   enabled = true,
 }: FeedMediaImageProps) {
-  const loaded = useFeedMediaLoaded(uri);
-  const shouldMountImage = enabled || loaded;
+  // A completed prefetch is only a cache hint. It must not force a native
+  // Image to mount while this row is outside the viewport: on Android that
+  // turns a harmless prefetch into a bitmap decode/upload burst during a
+  // fling. Once this exact row/URI has genuinely loaded, though, keep its
+  // native image alive for as long as the recycled holder still owns it so a
+  // short back-scroll does not flash the placeholder and decode it again.
+  const [loadedUri, setLoadedUri] = useState<string | null>(null);
+  const shouldMountImage = enabled || loadedUri === uri;
   const [retryAttempt, setRetryAttempt] = useState(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const source = useMemo<ImageURISource>(
@@ -59,6 +64,7 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
 
   useEffect(() => {
     setRetryAttempt(0);
+    setLoadedUri(null);
     return () => {
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
@@ -68,6 +74,7 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
   }, [uri]);
 
   const handleLoadError = useCallback(() => {
+    setLoadedUri(null);
     releaseFeedMedia(uri);
     if (!enabled || retryAttempt >= 1 || retryTimerRef.current) return;
 
@@ -76,6 +83,11 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
       setRetryAttempt(current => Math.min(1, current + 1));
     }, FEED_MEDIA_RETRY_DELAY_MS);
   }, [enabled, retryAttempt, uri]);
+
+  const handleLoad = useCallback(() => {
+    setLoadedUri(uri);
+    markFeedMediaLoaded(uri);
+  }, [uri]);
 
   if (!shouldMountImage) {
     return (
@@ -97,7 +109,7 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
       fadeDuration={0}
       resizeMethod="resize"
       progressiveRenderingEnabled
-      onLoad={() => markFeedMediaLoaded(uri)}
+      onLoad={handleLoad}
       onError={handleLoadError}
     />
   );

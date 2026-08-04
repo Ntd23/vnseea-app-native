@@ -62,6 +62,7 @@ export function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
       isVerified: false,
       isFollowing: post.publisher.isFollowing,
     },
+    isReposted: Boolean(post.sharedPostId),
     likeCount: post.likeCount,
     commentCount: post.commentCount,
     viewCount: post.viewCount ?? 0,
@@ -120,6 +121,7 @@ export function mergeFeedVideoPostSnapshotIntoReel(
     thumbnailUrl: snapshot.thumbnailUrl ?? current.thumbnailUrl,
     viewCount: post.viewCount ?? current.viewCount,
     isSaved: post.isSaved ?? current.isSaved,
+    isReposted: snapshot.isReposted || current.isReposted,
     publisher: {
       ...current.publisher,
       ...snapshot.publisher,

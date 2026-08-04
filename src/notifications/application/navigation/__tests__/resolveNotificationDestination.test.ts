@@ -35,7 +35,7 @@ describe('resolveNotificationDestination', () => {
     ['friends_request', 'profile'],
     ['added_u_as', 'profile'],
     ['memory', 'memories'],
-    ['sent_u_money', 'points'],
+    ['sent_u_money', 'balance'],
     ['subscribed_to_you', 'balance'],
   ])('routes %s to %s', (type, expectedKind) => {
     expect(resolveNotificationDestination(notification({ type })).kind).toBe(

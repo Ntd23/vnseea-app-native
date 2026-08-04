@@ -58,9 +58,17 @@ describe('Home and Messages navigation performance', () => {
     const messages = read(
       'src/messages/presentation/screens/MessageScreen.tsx',
     );
+    const viewModel = read(
+      'src/messages/application/view-models/useMessagesViewModel.ts',
+    );
 
     expect(messages).not.toContain('useNotificationBadgeViewModel();');
     expect(messages).toContain('await syncLatestChats();');
+    expect(viewModel).toContain('const [latestChats, groupChats] = await Promise.all');
+    expect(viewModel).toContain('repository.getGroupChats().catch(() => [])');
+    expect(viewModel).toContain(
+      'mergeChatItems(prev.chats, latestChats, groupChats)',
+    );
     expect(messages).toContain('MESSAGE_LIST_FALLBACK_POLL_DELAYS_MS');
     expect(messages).toContain('getBoundedFallbackPollDelay(');
     expect(messages).not.toContain('const interval = setInterval(() => {');

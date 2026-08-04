@@ -13,7 +13,9 @@ describe('Group info native-stack navigation', () => {
     const chat = read('src/messages/presentation/screens/ChatScreen.tsx');
 
     expect(registry).toContain('{ name: ROUTES.GROUP_INFO, component: GroupInfoScreen }');
-    expect(chat).toContain('navigation.navigate(ROUTES.GROUP_INFO, { chat })');
+    expect(chat).toContain(
+      'navigation.navigate(ROUTES.GROUP_INFO, { chat: displayChat })',
+    );
     expect(chat).not.toContain('GROUP_INFO_DISMISS_SWIPE_DISTANCE');
     expect(chat).not.toContain('groupInfoDismissPanResponder');
   });

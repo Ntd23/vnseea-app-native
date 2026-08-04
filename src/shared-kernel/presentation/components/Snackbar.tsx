@@ -150,12 +150,29 @@ function SnackbarCard({
   const translateY = useRef(new Animated.Value(-28)).current;
   const scale = useRef(new Animated.Value(0.98)).current;
   const dismissingRef = useRef(false);
+  const dismissedRef = useRef(false);
+  const dismissFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const palette = PALETTE[item.type];
   const Icon = palette.icon;
+
+  const finishDismiss = useCallback(() => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
+    if (dismissFallbackRef.current !== null) {
+      clearTimeout(dismissFallbackRef.current);
+      dismissFallbackRef.current = null;
+    }
+    onDismiss(item.id);
+  }, [item.id, onDismiss]);
 
   const dismiss = useCallback(() => {
     if (dismissingRef.current) return;
     dismissingRef.current = true;
+
+    // Some Android OEMs can interrupt native-driver callbacks when the
+    // window changes focus. Keep a short fallback so the snackbar never gets
+    // stuck on screen after tapping close or after its duration expires.
+    dismissFallbackRef.current = setTimeout(finishDismiss, 260);
 
     Animated.parallel([
       Animated.timing(opacity, {
@@ -173,8 +190,8 @@ function SnackbarCard({
         duration: 180,
         useNativeDriver: true,
       }),
-    ]).start(() => onDismiss(item.id));
-  }, [item.id, onDismiss, opacity, scale, translateY]);
+    ]).start(finishDismiss);
+  }, [finishDismiss, opacity, scale, translateY]);
 
   useEffect(() => {
     Animated.parallel([
@@ -198,10 +215,14 @@ function SnackbarCard({
     ]).start();
 
     const durationMs = resolveSnackbarDuration(item.duration);
-    if (durationMs === null) return undefined;
-
-    const timer = setTimeout(dismiss, durationMs);
-    return () => clearTimeout(timer);
+    const timer = durationMs === null ? null : setTimeout(dismiss, durationMs);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      if (dismissFallbackRef.current !== null) {
+        clearTimeout(dismissFallbackRef.current);
+        dismissFallbackRef.current = null;
+      }
+    };
   }, [dismiss, item.duration, opacity, scale, translateY]);
 
   const handleAction = useCallback(() => {
@@ -248,6 +269,7 @@ function SnackbarCard({
       ) : null}
 
       <Pressable
+        testID="snackbar-close"
         accessibilityLabel="Đóng thông báo"
         accessibilityRole="button"
         hitSlop={10}
@@ -302,7 +324,8 @@ export function SnackbarProvider({ children }: { children: React.ReactNode }) {
       {children}
       <View pointerEvents="box-none" style={styles.overlay}>
         <View
-          pointerEvents="box-none"
+          pointerEvents="auto"
+          collapsable={false}
           style={[
             styles.host,
             {
@@ -312,7 +335,11 @@ export function SnackbarProvider({ children }: { children: React.ReactNode }) {
           ]}
         >
           {queue[0] ? (
-            <SnackbarCard item={queue[0]} onDismiss={dismiss} />
+            <SnackbarCard
+              key={queue[0].id}
+              item={queue[0]}
+              onDismiss={dismiss}
+            />
           ) : null}
         </View>
       </View>

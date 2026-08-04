@@ -75,6 +75,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { createFeedRepository } from '../../../feed';
 import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
@@ -104,7 +105,13 @@ import {
   waitForImagePickerDismissal,
 } from '../../../shared-kernel/presentation/utils/profileImagePicker';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
-import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
+import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
+import type { SharePageInput } from '../../../feed/presentation/components/FeedShareBottomSheet';
+import {
+  buildSharedPageMessage,
+  buildSharedPageUrl,
+  createMessagesRepository,
+} from '../../../messages';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { usePageDetailViewModel } from '../../application/view-models/usePageDetailViewModel';
@@ -114,14 +121,6 @@ import type {
   PagesItem,
 } from '../../domain/types/pages.types';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
-// Dedicated page-only share sheet. Distinct from the shared
-// `ShareActionSheet` (which targets a FeedPost) — pages don't
-// have a post to share, just a public URL, so we render a
-// minimal 2-action modal (copy + native share) with a page
-// preview header. Defined next to the screen so the other Page
-// work currently in flight (offers, etc.) doesn't collide with
-// the import surface.
-import PageShareActionSheet from '../components/PageShareActionSheet';
 import PageDetailMenuActionSheet from '../components/PageDetailMenuActionSheet';
 import { PagePostMenuActionSheet } from '../components/PagePostMenuActionSheet';
 import {
@@ -134,6 +133,9 @@ type PageDetailProps = NativeStackScreenProps<
   RootStackParamList,
   typeof ROUTES.PAGE_DETAIL
 >;
+
+const pageShareFeedRepository = createFeedRepository();
+const pageShareMessagesRepository = createMessagesRepository();
 
 const PAGE_DETAIL_COPY = {
   vi: {
@@ -1977,6 +1979,76 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     [vm],
   );
 
+  const handleInternalSharePage = useCallback(
+    async (input: SharePageInput) => {
+      const publicUrl = input.page.url?.trim();
+      if (!publicUrl) {
+        throw new Error('Trang này chưa có liên kết công khai.');
+      }
+
+      const pageTitle =
+        input.page.pageTitle || input.page.pageName || 'Trang';
+      const shareText = buildSharedPageMessage({
+        url: publicUrl,
+        pageTitle,
+        note: input.text,
+      });
+
+      if (input.destination === 'message') {
+        if (input.recipientGroupId) {
+          await pageShareMessagesRepository.sendGroupMessage(
+            String(input.recipientGroupId),
+            shareText,
+          );
+          return;
+        }
+        if (input.recipientUserId) {
+          await pageShareMessagesRepository.sendMessage(
+            String(input.recipientUserId),
+            shareText,
+          );
+          return;
+        }
+        throw new Error('Bạn chưa chọn người nhận để gửi trang.');
+      }
+
+      const pagePreviewDescription =
+        input.page.pageDescription?.trim() ||
+        [
+          input.page.followersCount
+            ? `${input.page.followersCount} người theo dõi`
+            : undefined,
+          input.page.postCount
+            ? `${input.page.postCount} bài viết`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join(' · ') ||
+        'Khám phá Trang trên VNSEEA';
+
+      const draft = {
+        text: input.text?.trim() || '',
+        photos: [],
+        privacy: 'public' as const,
+        linkPreview: {
+          url: buildSharedPageUrl(publicUrl),
+          title: pageTitle,
+          description: pagePreviewDescription,
+          image: input.page.cover || input.page.avatar,
+        },
+        ...(input.destination === 'page' && input.pageId
+          ? { pageId: String(input.pageId) }
+          : {}),
+        ...(input.destination === 'group' && input.groupId
+          ? { groupId: String(input.groupId) }
+          : {}),
+      };
+
+      await pageShareFeedRepository.createPost(draft);
+    },
+    [],
+  );
+
   const handlePostShared = useCallback(() => {
     void vm.refresh();
   }, [vm]);
@@ -2012,11 +2084,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     [navigation, vm.posts],
   );
 
-  // Open the dedicated page share sheet. Previously this jumped
-  // straight to React Native's native Share dialog with a fixed
-  // message, which gave the user no chance to copy the link first.
-  // The new sheet (PageShareActionSheet) offers both actions
-  // and shows a page preview so users know what they're sharing.
+  // Open the shared Feed-style composer for page links.
   const handleShare = useCallback(() => {
     setShareSheetVisible(true);
   }, []);
@@ -2609,10 +2677,11 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
           Passes the live `vm.page` so the preview + link copy
           always reflect the most recent data, including any in-flight
           edits the user made to the page info. */}
-      <PageShareActionSheet
+      <FeedShareBottomSheet
         visible={shareSheetVisible}
         onClose={() => setShareSheetVisible(false)}
         page={vm.page}
+        onInternalPageShare={handleInternalSharePage}
       />
       <PageDetailMenuActionSheet
         visible={menuVisible}
@@ -2741,7 +2810,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onDeleteFailedComment={commentVm.deleteFailedComment}
         sheetHeight="90%"
       />
-      <ShareActionSheet
+      <FeedShareBottomSheet
         visible={postShareVisible}
         onClose={handleClosePostShare}
         post={sharingPost}

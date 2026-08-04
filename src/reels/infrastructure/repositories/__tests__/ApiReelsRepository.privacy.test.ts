@@ -93,6 +93,38 @@ describe('ApiReelsRepository privacy mapping', () => {
     expect(items.map(item => item.canShareKnown)).toEqual([true, false, true]);
   });
 
+  it('maps a shared video as a repost and uses the original video media', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: 200,
+      data: [
+        reel('repost', {
+          privacy_contract: 'audience_v2',
+          postFile: '',
+          postText: '',
+          shared_info: {
+            id: 'original-video',
+            postFile: 'upload/videos/original reel.mp4',
+            video_thumb: 'upload/photos/original cover.jpg',
+            postText: 'Video gốc',
+          },
+        }),
+      ],
+      has_more: false,
+      next_cursor: null,
+    });
+
+    const { items } = await createReelsRepository().fetchReels({ limit: 10 });
+
+    expect(items[0]).toMatchObject({
+      isReposted: true,
+      canShare: false,
+      caption: 'Video gốc',
+      videoUrl: 'https://demo.vnseea.vn/upload/videos/original%20reel.mp4',
+      thumbnailUrl:
+        'https://demo.vnseea.vn/upload/photos/original%20cover.jpg',
+    });
+  });
+
   it('falls back to a root permission when a nested permission object omits canShare', async () => {
     (backendApi.post as jest.Mock).mockResolvedValueOnce({
       api_status: 200,

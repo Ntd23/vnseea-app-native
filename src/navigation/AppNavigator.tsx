@@ -58,7 +58,10 @@ const PROFILE_CONNECTIONS_OPTIONS: NativeStackNavigationOptions = {
 
 const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {
   presentation: 'transparentModal',
-  animation: 'slide_from_right',
+  // PostDetail drives its own interactive horizontal transition. Running a
+  // native-stack pop after that transition finishes makes swipe-back look as
+  // if it pauses and then exits a second time.
+  animation: 'none',
   contentStyle: { backgroundColor: 'transparent' },
   gestureEnabled: false,
 };

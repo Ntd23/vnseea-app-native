@@ -113,6 +113,52 @@ describe('shared post preview mapping', () => {
     });
   });
 
+  it('maps a shared live source and switches it to ended from a source snapshot', () => {
+    const outer = mapFeedPost(
+      rawPost({
+        parent_id: '105',
+        shared_info: rawPost({
+          id: '105',
+          postText: 'Cung tro chuyen toi nay',
+          postType: 'live',
+          postFile: 'https://cdn.vnseea.test/live-105.m3u8',
+          stream_name: 'live-105',
+          still_live: '1',
+          live_sub_users: '27',
+          postFileThumb: 'https://cdn.vnseea.test/live-thumb.jpg',
+        }),
+      }),
+    );
+
+    expect(outer.sharedPost).toMatchObject({
+      postId: '105',
+      content: {
+        kind: 'live',
+        state: 'live',
+        streamName: 'live-105',
+        title: 'Cung tro chuyen toi nay',
+        thumbnailUrl: 'https://cdn.vnseea.test/live-thumb.jpg',
+        viewerCount: 27,
+      },
+    });
+
+    const endedSource = mapFeedPost(
+      rawPost({
+        id: '105',
+        postText: 'Cung tro chuyen toi nay',
+        postType: 'live',
+        postFile: 'https://cdn.vnseea.test/live-105.m3u8',
+        stream_name: 'live-105',
+        still_live: '0',
+        live_ended: '1',
+        postFileThumb: 'https://cdn.vnseea.test/live-thumb.jpg',
+      }),
+    );
+    expect(
+      applySharedPostSourceSnapshot(outer, endedSource).sharedPost?.content,
+    ).toMatchObject({ kind: 'live', state: 'offline' });
+  });
+
   it('keeps the source group identity inside a shared-post card', () => {
     const post = mapFeedPost(
       rawPost({

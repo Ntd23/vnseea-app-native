@@ -69,18 +69,25 @@ import {
 } from '../editing/postCaptionEdit';
 import { editPostWithLocalFallback } from '../editing/editPostWithLocalFallback';
 import { postEditedEvents } from '../events/postEditedEvents';
+import { markSharedLivePreviewEnded } from '../sharing/sharedPostPreview';
 
 const repository = createFeedRepository();
 const pollRepository = createPollRepository();
 
-function filterLocallyHiddenPosts<T extends { id: string }>(posts: T[]): T[] {
+function filterLocallyHiddenPosts<T extends FeedPost>(posts: T[]): T[] {
   const currentUserId = sessionStorage.getSession()?.userId;
   const visiblePosts = hiddenPostsStorage.filterVisiblePosts(
     posts,
     currentUserId,
   );
+  const endedLivePostIds = endedLivePostsStorage.getEndedPostIds(currentUserId);
+  const postsWithEndedLiveShares = visiblePosts.map(post => {
+    const sourcePostId = String(post.sharedPostId ?? '').trim();
+    if (!sourcePostId || !endedLivePostIds.has(sourcePostId)) return post;
+    return markSharedLivePreviewEnded(post, sourcePostId) as T;
+  });
   const activePosts = endedLivePostsStorage.filterVisiblePosts(
-    visiblePosts,
+    postsWithEndedLiveShares,
     currentUserId,
   );
   return applyLocalPostCaptionEdits(
@@ -889,11 +896,14 @@ export function useFeedViewModel() {
         if (!postId) return;
         const currentOwnerKey = sessionStorage.getSession()?.userId || 'guest';
         if (event?.userId && event.userId !== currentOwnerKey) return;
+        updatePostEverywhere(post =>
+          markSharedLivePreviewEnded(post, postId),
+        );
         removePostEverywhere(postId);
       },
     );
     return () => subscription.remove();
-  }, [removePostEverywhere]);
+  }, [removePostEverywhere, updatePostEverywhere]);
 
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(

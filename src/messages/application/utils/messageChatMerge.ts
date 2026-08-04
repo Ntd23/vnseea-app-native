@@ -65,6 +65,14 @@ function mergeSameChat(current: ChatItem, incoming: ChatItem) {
 
   return {
     ...newest,
+    // Message activity decides which preview wins, but the incoming server
+    // snapshot is authoritative for mutable conversation metadata. Otherwise
+    // a cached row with a newer message can keep an old group name forever.
+    name: incoming.name || newest.name,
+    username: incoming.username || newest.username,
+    avatar: incoming.avatar || newest.avatar,
+    notificationsMuted:
+      incoming.notificationsMuted ?? newest.notificationsMuted,
     isFollowing: newest.isFollowing ?? oldest.isFollowing,
     isFollower: newest.isFollower ?? oldest.isFollower,
     labels: newest.labels ?? oldest.labels,

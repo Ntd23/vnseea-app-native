@@ -58,4 +58,19 @@ describe('group conversation details', () => {
     expect(search).not.toContain('const participantId =');
     expect(media).not.toContain('const participantId =');
   });
+
+  it('refreshes and renders current group metadata instead of stale route params', () => {
+    const chat = read('src/messages/presentation/screens/ChatScreen.tsx');
+    const viewModel = read(
+      'src/messages/application/view-models/useChatViewModel.ts',
+    );
+
+    expect(chat).toContain('const displayChat = useMemo(() => {');
+    expect(chat).toContain('const name = groupInfo.name || chat.name;');
+    expect(chat).toContain('{displayChat.name}');
+    expect(chat).toContain('source={{ uri: displayChat.avatar }}');
+    expect(chat).toContain("chat.chatType !== 'group' || !isScreenFocused");
+    expect(viewModel).toContain("if (chat.chatType === 'group') {");
+    expect(viewModel).toContain('await loadGroupInfo().catch(() => undefined);');
+  });
 });

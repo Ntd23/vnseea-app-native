@@ -75,6 +75,44 @@ describe('ApiMessagesRepository conversation details', () => {
     expect(chat.notificationsMuted).toBe(true);
   });
 
+  it('paginates the group directory so renamed older groups can refresh', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      group_id: String(index + 1),
+      chat_id: String(index + 1),
+      group_name: `Group ${index + 1}`,
+      time: 1000 - index,
+    }));
+    post
+      .mockResolvedValueOnce({ api_status: 200, data: firstPage })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [
+          {
+            group_id: '90',
+            chat_id: '90',
+            group_name: 'Tên nhóm đã đổi',
+            time: 900,
+          },
+        ],
+      });
+
+    const groups = await createMessagesRepository().getGroupChats();
+
+    expect(post).toHaveBeenNthCalledWith(1, 'group_chat', {
+      type: 'get_list',
+      limit: 50,
+    });
+    expect(post).toHaveBeenNthCalledWith(2, 'group_chat', {
+      type: 'get_list',
+      limit: 50,
+      offset: 951,
+    });
+    expect(groups).toHaveLength(51);
+    expect(groups.find(group => group.groupId === '90')?.name).toBe(
+      'Tên nhóm đã đổi',
+    );
+  });
+
   it('uses the pin actor in the conversation preview instead of the raw token', async () => {
     post.mockResolvedValueOnce({
       api_status: 200,

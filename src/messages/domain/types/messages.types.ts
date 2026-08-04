@@ -75,6 +75,7 @@ export interface SharedPostMessageReference {
   postId: string;
   url: string;
   note: string;
+  isLive?: boolean;
 }
 
 export interface StoryReplyMessageReference {

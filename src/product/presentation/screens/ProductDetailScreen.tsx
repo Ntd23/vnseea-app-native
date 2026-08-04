@@ -435,50 +435,12 @@ function RelatedProductsSection({
   products,
   loading,
   onOpen,
-  currentProduct,
 }: {
   products: ProductItem[];
   loading: boolean;
   onOpen: (product: ProductItem) => void;
-  currentProduct: ProductItem;
 }) {
-  // If API returns empty, use local mock items to ensure the layout matches the screenshot
-  const displayProducts = products.length > 0 ? products : [
-    {
-      id: 9991,
-      name: currentProduct.name + " - Premium",
-      price: String(Number(currentProduct.price) * 1.15),
-      currency_symbol: currentProduct.currency_symbol || 'VNSEEA',
-      currency_code: currentProduct.currency_code || 'VNSEEA',
-      images: currentProduct.images || [],
-      location: currentProduct.location || 'Hà Nội',
-      seller: currentProduct.seller,
-      category: currentProduct.category,
-      category_name: currentProduct.category_name,
-      description: currentProduct.description,
-      time: currentProduct.time,
-      is_owner: false,
-      can_contact_seller: true,
-      can_add_to_cart: true
-    } as any,
-    {
-      id: 9992,
-      name: currentProduct.name + " - Lite",
-      price: String(Number(currentProduct.price) * 0.85),
-      currency_symbol: currentProduct.currency_symbol || 'VNSEEA',
-      currency_code: currentProduct.currency_code || 'VNSEEA',
-      images: currentProduct.images || [],
-      location: currentProduct.location || 'Hà Nội',
-      seller: currentProduct.seller,
-      category: currentProduct.category,
-      category_name: currentProduct.category_name,
-      description: currentProduct.description,
-      time: currentProduct.time,
-      is_owner: false,
-      can_contact_seller: true,
-      can_add_to_cart: true
-    } as any
-  ];
+  if (!loading && products.length === 0) return null;
 
   return (
     <View className="mt-5" style={{ marginTop: 20 }}>
@@ -505,7 +467,7 @@ function RelatedProductsSection({
       </View>
 
       <View className="flex-row flex-wrap justify-between px-4" style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 16 }}>
-        {displayProducts.map((item) => (
+        {products.map((item) => (
           <RelatedProductCard
             key={`related-${item.id}`}
             product={item}
@@ -872,7 +834,6 @@ function ProductDetailContent({
           products={relatedProducts}
           loading={isRelatedLoading}
           onOpen={handleOpenRelated}
-          currentProduct={product}
         />
       </ScrollView>
 

@@ -62,6 +62,10 @@ import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
 import {
+  parsePositiveProductUnits,
+  PRODUCT_UNITS_ERROR,
+} from '../../domain/validation/productValidation';
+import {
   useFixedBottomLayout,
   useSafeBottomPadding,
 } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
@@ -439,6 +443,7 @@ export default function CreateProductScreen() {
     submitSuccess,
     createdProductId,
     submitProduct,
+    validateForm,
     resetForm,
     isEditing,
   } = useProductViewModel(editingProduct);
@@ -710,6 +715,16 @@ export default function CreateProductScreen() {
     },
     [updateFormData],
   );
+
+  const handleSubmitProduct = useCallback(() => {
+    if (parsePositiveProductUnits(formData.units) === null) {
+      validateForm(formData);
+      Alert.alert('Số lượng không hợp lệ', PRODUCT_UNITS_ERROR);
+      return;
+    }
+
+    void submitProduct();
+  }, [formData, submitProduct, validateForm]);
 
   React.useEffect(() => {
     if (submitSuccess) {
@@ -996,8 +1011,8 @@ export default function CreateProductScreen() {
               placeholder="Số lượng khả dụng"
               placeholderTextColor="#94a3b8"
               keyboardType="numeric"
-              value={formData.units !== undefined ? String(formData.units) : ''}
-              onChangeText={val => updateFormData('units', val ? parseInt(val, 10) : undefined)}
+              value={formData.units}
+              onChangeText={val => updateFormData('units', val)}
             />
           </FieldWrapper>
 
@@ -1111,7 +1126,7 @@ export default function CreateProductScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={submitProduct}
+            onPress={handleSubmitProduct}
             disabled={isLoading}
             activeOpacity={0.8}
             style={{

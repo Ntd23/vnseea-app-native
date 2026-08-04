@@ -32,7 +32,7 @@ jest.mock('../../../../reels/infrastructure/storage/reelsReactionsStorage', () =
 
 import { backendApi } from '../../../../shared-kernel/infrastructure/api/backendApi';
 import type { CreatePostDraft } from '../../../domain/types/feed.types';
-import { createFeedRepository } from '../ApiFeedRepository';
+import { createFeedRepository, mapFeedPost } from '../ApiFeedRepository';
 
 const publisher = {
   user_id: '1',
@@ -136,6 +136,62 @@ describe('ApiFeedRepository post metadata', () => {
           username: 'tranvanb',
         },
       ],
+    });
+  });
+
+  it('keeps user-entered line breaks when creating and mapping a post', async () => {
+    const multilineText = 'Dòng đầu tiên\nDòng thứ hai\n\nĐoạn tiếp theo';
+    (backendApi.multipart as jest.Mock).mockResolvedValue({
+      api_status: 200,
+      post_data: {
+        id: '91',
+        post_id: '91',
+        user_id: '1',
+        Orginaltext: multilineText,
+        postText: multilineText,
+        postPrivacy: '0',
+        time: '1781712000',
+        postLikes: '0',
+        post_comments: '0',
+        can_delete: '1',
+        can_share: '1',
+        publisher,
+      },
+    });
+
+    const result = await createFeedRepository().createPost({
+      text: multilineText,
+      photos: [],
+      privacy: 'public',
+      isAnonymous: false,
+      taggedUsers: [],
+    });
+    const payload = (backendApi.multipart as jest.Mock).mock.calls[0][1];
+
+    expect(payload.postText).toBe(multilineText);
+    expect(result.post).toMatchObject({
+      kind: 'text',
+      caption: multilineText,
+    });
+  });
+
+  it('converts API HTML line breaks back to native text line breaks', () => {
+    const mapped = mapFeedPost({
+      id: '92',
+      post_id: '92',
+      user_id: '1',
+      postText_API:
+        'Dòng đầu tiên<br>Dòng thứ hai<br><br>Đoạn tiếp theo',
+      postPrivacy: '0',
+      time: '1781712000',
+      postLikes: '0',
+      post_comments: '0',
+      publisher,
+    });
+
+    expect(mapped).toMatchObject({
+      kind: 'text',
+      caption: 'Dòng đầu tiên\nDòng thứ hai\n\nĐoạn tiếp theo',
     });
   });
 

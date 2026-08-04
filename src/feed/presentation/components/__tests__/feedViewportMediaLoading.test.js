@@ -29,20 +29,25 @@ describe('Home feed retained media loading', () => {
     );
   });
 
-  it('keeps only completed images mounted across short recycling loops', () => {
+  it('does not let completed prefetches mount offscreen images', () => {
     const mediaImageSource = read(
       'src/feed/presentation/components/FeedMediaImage.tsx',
     );
 
-    expect(mediaImageSource).toContain('const loaded = useFeedMediaLoaded(uri);');
     expect(mediaImageSource).toContain(
-      'const shouldMountImage = enabled || loaded;',
+      'const [loadedUri, setLoadedUri] = useState<string | null>(null);',
     );
+    expect(mediaImageSource).toContain(
+      'const shouldMountImage = enabled || loadedUri === uri;',
+    );
+    expect(mediaImageSource).toContain('setLoadedUri(null);');
+    expect(mediaImageSource).toContain('setLoadedUri(uri);');
     expect(mediaImageSource).not.toContain('markFeedMediaRequested(uri);');
     expect(mediaImageSource).toContain(
       "retryAttempt > 0 ? 'reload' : 'force-cache'",
     );
     expect(mediaImageSource).toContain('releaseFeedMedia(uri);');
+    expect(mediaImageSource).toContain('onLoad={handleLoad}');
     expect(mediaImageSource).toContain('onError={handleLoadError}');
   });
 
@@ -80,7 +85,7 @@ describe('Home feed retained media loading', () => {
     expect(feedScreenSource).toContain(
       'const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 1 : 3;',
     );
-    expect(feedScreenSource).toContain('markFeedMediaLoaded(url);');
+    expect(feedScreenSource).not.toContain('markFeedMediaLoaded(url);');
   });
 
   it('discovers single-photo geometry without a scroll-idle rerender burst', () => {
