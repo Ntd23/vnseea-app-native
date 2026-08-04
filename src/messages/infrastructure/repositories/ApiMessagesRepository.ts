@@ -20,6 +20,7 @@ import {
   createMessageReplyReference,
   parseLegacyMessageReply,
 } from '../../application/replies/messageReply';
+import { replaceGroupMentionTokens } from '../../application/mentions/groupMessageMentions';
 import { mapMessageReactionSummary } from '../../domain/reactions/messageReactions';
 import type {
   ChatItem,
@@ -43,6 +44,7 @@ import type {
   MessageItem,
   MessageLabel,
   MessageLocationReference,
+  MessageMention,
   MarketplaceMessageContext,
   MessageSystemEvent,
   PinnedMessageItem,
@@ -1358,7 +1360,18 @@ function mapMessage(
         readString(raw, 'text', 'message'),
         readNumber(raw, 'time'),
       );
-  const normalizedMessage = normalizeMessageText(decodedMessage, Boolean(media));
+  const rawMentions = Array.isArray(raw.mentions)
+    ? raw.mentions
+    : Array.isArray(raw.message_mentions)
+      ? raw.message_mentions
+      : [];
+  const mentions = rawMentions
+    .map(item => mapMessageMention(asRecord(item) ?? {}))
+    .filter((item): item is MessageMention => Boolean(item));
+  const normalizedMessage = normalizeMessageText(
+    replaceGroupMentionTokens(decodedMessage, mentions),
+    Boolean(media),
+  );
   const systemEvent = mapMessageSystemEvent(raw);
   const legacyReply = systemEvent
     ? undefined
@@ -1447,6 +1460,7 @@ function mapMessage(
     senderName: getRawUserName(messageUser),
     senderAvatar:
       readString(messageUser, 'avatar', 'profile_picture') || undefined,
+    mentions,
     message: callEvent ? '' : semanticMessage,
     callEvent,
     systemEvent,
@@ -1515,6 +1529,17 @@ function mapGroupMember(raw: RawRecord, ownerId: string): GroupChatMember {
     isOwner: userId === ownerId,
     isAdmin: readBool(raw, 'is_admin') || userId === ownerId,
     isOnline: readUserOnline(raw),
+  };
+}
+
+function mapMessageMention(raw: RawRecord): MessageMention | undefined {
+  const id = readString(raw, 'user_id', 'id');
+  if (!id) return undefined;
+  return {
+    id,
+    name: getRawUserName(raw) || readString(raw, 'username') || 'Người dùng',
+    username: readString(raw, 'username'),
+    avatar: readString(raw, 'avatar', 'profile_picture') || undefined,
   };
 }
 function mapAddableUser(raw: RawRecord): GroupAddableUser {
@@ -1834,6 +1859,13 @@ export function createMessagesRepository(): MessagesRepository {
         id: target.id,
         text: textPayload,
         message_hash_id: messageHashId,
+        ...(options?.mentions?.length
+          ? {
+              mentioned_user_ids: JSON.stringify(
+                options.mentions.map(mention => mention.id),
+              ),
+            }
+          : {}),
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
           : {}),

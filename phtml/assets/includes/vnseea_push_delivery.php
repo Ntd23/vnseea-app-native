@@ -610,10 +610,25 @@ if (!function_exists('VNSEEA_NormalizeMessagePushText')) {
     function VNSEEA_NormalizeMessagePushText($text)
     {
         $text = html_entity_decode((string)$text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (strpos($text, '__VNSEEA_MINI_REPLY__:') === 0) {
+            $text = preg_replace('/^__VNSEEA_MINI_REPLY__:[^\r\n]*(?:\r?\n|$)/', '', $text, 1);
+        }
         $text = preg_replace_callback('/\[a\](.*?)\[\/a\]/i', function ($matches) {
             return urldecode($matches[1]);
         }, $text);
-        $text = preg_replace('/@\[(\d+)\]/', '@user', $text);
+        $text = preg_replace_callback('/@\[(\d+)\]/', function ($matches) {
+            $user_id = (int)$matches[1];
+            if ($user_id > 0 && function_exists('VNSEEA_GetChatUsersBatch')) {
+                $users = VNSEEA_GetChatUsersBatch(array($user_id));
+                if (!empty($users[$user_id]['name'])) {
+                    return '@' . $users[$user_id]['name'];
+                }
+                if (!empty($users[$user_id]['username'])) {
+                    return '@' . $users[$user_id]['username'];
+                }
+            }
+            return '@thành viên';
+        }, $text);
         $text = preg_replace('/#\[(\d+)\]/', '#', $text);
         $text = trim(preg_replace('/\s+/u', ' ', strip_tags($text)));
         if (function_exists('mb_substr')) {
@@ -624,14 +639,17 @@ if (!function_exists('VNSEEA_NormalizeMessagePushText')) {
 }
 
 if (!function_exists('VNSEEA_MessagePushDescriptor')) {
-    function VNSEEA_MessagePushDescriptor($message, $language = 'vi')
+    function VNSEEA_MessagePushDescriptor($message, $language = 'vi', $recipient_id = 0)
     {
         $is_vi = strpos(strtolower((string)$language), 'vi') === 0 ||
             strtolower((string)$language) === 'vietnamese';
         $type_two = !empty($message['type_two']) ? strtolower((string)$message['type_two']) : '';
         $media = !empty($message['media']) ? (string)$message['media'] : '';
         $sticker = !empty($message['stickers']) ? (string)$message['stickers'] : '';
-        $text = VNSEEA_NormalizeMessagePushText(isset($message['text']) ? $message['text'] : '');
+        $raw_text = isset($message['text']) ? (string)$message['text'] : '';
+        $text = VNSEEA_NormalizeMessagePushText($raw_text);
+        $recipient_was_mentioned = (int)$recipient_id > 0 &&
+            strpos($raw_text, '@[' . (int)$recipient_id . ']') !== false;
         $extension = strtolower(pathinfo(parse_url($media, PHP_URL_PATH), PATHINFO_EXTENSION));
         $sticker_extension = strtolower(pathinfo(parse_url($sticker, PHP_URL_PATH), PATHINFO_EXTENSION));
 
@@ -655,6 +673,13 @@ if (!function_exists('VNSEEA_MessagePushDescriptor')) {
         }
         if (strpos($type_two, 'call') !== false) {
             return array('type' => 'call_event', 'text' => $is_vi ? 'Hoạt động cuộc gọi' : 'Call activity');
+        }
+        if ($recipient_was_mentioned) {
+            $mention_label = $is_vi ? 'Đã nhắc đến bạn' : 'Mentioned you';
+            return array(
+                'type' => 'mention',
+                'text' => $text !== '' ? $mention_label . ': ' . $text : $mention_label,
+            );
         }
         if ($sticker_extension === 'gif') {
             return array('type' => 'gif', 'text' => $is_vi ? 'Đã gửi một ảnh GIF' : 'Sent a GIF');
@@ -842,7 +867,8 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
             $recipient = Wo_UserData($recipient_id);
             $descriptor = VNSEEA_MessagePushDescriptor(
                 $message,
-                !empty($recipient['language']) ? $recipient['language'] : 'vi'
+                !empty($recipient['language']) ? $recipient['language'] : 'vi',
+                $recipient_id
             );
             $payload = array(
                 'push_kind' => 'message',

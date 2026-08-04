@@ -179,6 +179,22 @@
         />
       </div>
 
+      <div v-if="mentionCandidates.length" class="chat-window-mentions" role="listbox">
+        <button
+          v-for="member in mentionCandidates"
+          :key="member.userId"
+          type="button"
+          class="chat-window-mentions__item"
+          @click="selectMention(member)"
+        >
+          <UAvatar :src="member.avatarUrl" :alt="member.name" size="sm" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-semibold text-[#1f2937]">{{ member.name }}</span>
+            <span v-if="member.username" class="block truncate text-xs text-[#64748b]">@{{ member.username }}</span>
+          </span>
+        </button>
+      </div>
+
       <MessagesChatInput
         v-model="inputModel"
         :disabled="!contact"
@@ -241,7 +257,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
 import type { MessageCallLogAction, MessageCallType } from "../../domain/types/calls.types"
-import type { MessageComposerDraft, MessageContact, MessageGroupDetails, MessageItem, MessageTabKey } from "../../domain/types/messages.types"
+import type { MessageComposerDraft, MessageContact, MessageGroupDetails, MessageGroupMember, MessageItem, MessageTabKey } from "../../domain/types/messages.types"
 import type { FeedStoryReactionType } from "../../../feed/domain/constants/story-reactions"
 import MessagesChatInput from "./ChatInput.vue"
 import MessagesChatMessageList from "./ChatMessageList.vue"
@@ -287,6 +303,7 @@ const emit = defineEmits<{
 }>()
 
 const inputModel = ref("")
+const selectedMentionUserIds = ref<number[]>([])
 
 const headerAvatarUrl = computed(() =>
   props.groupDetails?.avatarUrl || props.contact?.avatarUrl || "",
@@ -340,8 +357,48 @@ const groupOnlineMemberCount = computed(() =>
 
 const loadingLabel = computed(() => t("pages.messagesPage.loadingMessages"))
 
+const activeMentionQuery = computed(() => {
+  if (props.contact?.type !== "group") return null
+  const match = inputModel.value.match(/(?:^|\s)@([A-Za-z0-9_]*)$/)
+  return match ? match[1].toLowerCase() : null
+})
+
+const mentionCandidates = computed(() => {
+  const query = activeMentionQuery.value
+  if (query === null) return []
+  return (props.groupDetails?.members ?? [])
+    .filter(member => !member.isSelf)
+    .filter((member) => {
+      const name = member.name.toLowerCase()
+      const username = (member.username || "").toLowerCase()
+      return !query || name.includes(query) || username.includes(query)
+    })
+    .slice(0, 8)
+})
+
+function selectMention(member: MessageGroupMember) {
+  const username = member.username?.trim()
+  if (!username) return
+  inputModel.value = inputModel.value.replace(
+    /(^|\s)@[A-Za-z0-9_]*$/,
+    (_match, prefix: string) => `${prefix}@${username} `,
+  )
+  if (!selectedMentionUserIds.value.includes(member.userId)) {
+    selectedMentionUserIds.value = [...selectedMentionUserIds.value, member.userId]
+  }
+}
+
 function onSendMessage(input: MessageComposerDraft) {
-  emit("send", input)
+  const members = props.groupDetails?.members ?? []
+  const mentionedUserIds = selectedMentionUserIds.value.filter((userId) => {
+    const username = members.find(member => member.userId === userId)?.username
+    return Boolean(username && new RegExp(`@${username}(?![A-Za-z0-9_])`, "i").test(input.text))
+  })
+  emit("send", {
+    ...input,
+    mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
+  })
+  selectedMentionUserIds.value = []
 }
 
 function handleToggleInfo() {
@@ -451,5 +508,28 @@ function handleStartCall(type: MessageCallType) {
   height: 34px !important;
   justify-content: center;
   border-radius: 999px !important;
+}
+
+.chat-window-mentions {
+  max-height: 248px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-top: 1px solid #eef2f7;
+  background: #fff;
+  padding: 6px 10px;
+}
+
+.chat-window-mentions__item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 8px;
+  text-align: left;
+}
+
+.chat-window-mentions__item:hover {
+  background: #f8fafc;
 }
 </style>

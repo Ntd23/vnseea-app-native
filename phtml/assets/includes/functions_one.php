@@ -3748,7 +3748,7 @@ function Wo_RegisterNotification($data = array())
                     $send = Wo_SendMessage($send_message_data);
                 }
             }
-            if (function_exists('VNSEEA_EnqueueNotificationPush')) {
+            if (empty($data['skip_push']) && function_exists('VNSEEA_EnqueueNotificationPush')) {
                 VNSEEA_EnqueueNotificationPush($realtime_notification_id);
             }
             return true;
@@ -4459,6 +4459,152 @@ function VNSEEA_AttachMessageSystemEvent($message)
     return $message;
 }
 
+function VNSEEA_NormalizeRequestedMentionIds($value)
+{
+    if ($value === null || $value === '' || $value === array()) {
+        return array();
+    }
+    if (is_string($value)) {
+        $decoded = json_decode($value, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            $value = $decoded;
+        } else {
+            $value = preg_split('/\s*,\s*/', trim($value), -1, PREG_SPLIT_NO_EMPTY);
+        }
+    }
+    if (!is_array($value)) {
+        return null;
+    }
+
+    $ids = array();
+    foreach ($value as $user_id) {
+        if (!is_numeric($user_id) || (int)$user_id < 1) {
+            return null;
+        }
+        $ids[(int)$user_id] = (int)$user_id;
+        if (count($ids) > 20) {
+            return null;
+        }
+    }
+    return array_values($ids);
+}
+
+function VNSEEA_PrepareGroupMessageMentions($group_id, $text, $requested_user_ids = array())
+{
+    global $wo;
+
+    $group_id = (int)$group_id;
+    $text = (string)$text;
+    $requested_ids = VNSEEA_NormalizeRequestedMentionIds($requested_user_ids);
+    if ($group_id < 1 || $requested_ids === null) {
+        return array('ok' => false, 'text' => $text, 'mention_ids' => array(), 'invalid_ids' => array());
+    }
+
+    $active_member_ids = array_fill_keys(VNSEEA_GetGroupRealtimeRecipientIds($group_id), true);
+    $sender_id = !empty($wo['user']['user_id']) ? (int)$wo['user']['user_id'] : 0;
+    $invalid_ids = array();
+    foreach ($requested_ids as $user_id) {
+        if ($user_id === $sender_id || empty($active_member_ids[$user_id])) {
+            $invalid_ids[] = $user_id;
+        }
+    }
+    if (!empty($invalid_ids)) {
+        return array('ok' => false, 'text' => $text, 'mention_ids' => array(), 'invalid_ids' => $invalid_ids);
+    }
+
+    if (empty($requested_ids) && preg_match_all('/@([A-Za-z0-9_]+)/i', $text, $matches)) {
+        foreach (array_slice(array_unique($matches[1]), 0, 20) as $username) {
+            $user_id = (int)Wo_UserIdFromUsername(Wo_Secure($username));
+            if ($user_id > 0 && $user_id !== $sender_id && !empty($active_member_ids[$user_id])) {
+                $requested_ids[$user_id] = $user_id;
+            }
+        }
+        $requested_ids = array_values($requested_ids);
+    }
+
+    $users = function_exists('VNSEEA_GetChatUsersBatch') ? VNSEEA_GetChatUsersBatch($requested_ids) : array();
+    $mention_ids = array();
+    foreach ($requested_ids as $user_id) {
+        $user = !empty($users[$user_id]) ? $users[$user_id] : Wo_UserData($user_id);
+        $username = !empty($user['username']) ? (string)$user['username'] : '';
+        if ($username === '') {
+            continue;
+        }
+        $pattern = '/@' . preg_quote($username, '/') . '(?![A-Za-z0-9_])/iu';
+        $replaced = 0;
+        $text = preg_replace($pattern, '@[' . $user_id . ']', $text, -1, $replaced);
+        if ($replaced > 0 || strpos($text, '@[' . $user_id . ']') !== false) {
+            $mention_ids[$user_id] = $user_id;
+        }
+    }
+
+    return array('ok' => true, 'text' => $text, 'mention_ids' => array_values($mention_ids), 'invalid_ids' => array());
+}
+
+function VNSEEA_AttachMessageMentions($message)
+{
+    if (!is_array($message)) {
+        return $message;
+    }
+    $source_text = !empty($message['or_text']) ? (string)$message['or_text'] : (!empty($message['text']) ? (string)$message['text'] : '');
+    if (!preg_match_all('/@\[([0-9]+)\]/', $source_text, $matches)) {
+        $message['mentions'] = array();
+        return $message;
+    }
+
+    $mention_ids = array();
+    foreach ($matches[1] as $user_id) {
+        $user_id = (int)$user_id;
+        if ($user_id > 0) {
+            $mention_ids[$user_id] = $user_id;
+        }
+    }
+    $users = function_exists('VNSEEA_GetChatUsersBatch') ? VNSEEA_GetChatUsersBatch($mention_ids) : array();
+    $message['mentions'] = array();
+    foreach ($mention_ids as $user_id) {
+        $user = !empty($users[$user_id])
+            ? $users[$user_id]
+            : (function_exists('VNSEEA_GetMessageContextUser') ? VNSEEA_GetMessageContextUser($user_id) : Wo_UserData($user_id));
+        if (empty($user['user_id'])) {
+            continue;
+        }
+        $message['mentions'][] = array(
+            'user_id' => (int)$user['user_id'],
+            'name' => !empty($user['name']) ? (string)$user['name'] : (!empty($user['username']) ? (string)$user['username'] : 'Người dùng'),
+            'username' => !empty($user['username']) ? (string)$user['username'] : '',
+            'avatar' => !empty($user['avatar']) ? (string)$user['avatar'] : '',
+        );
+    }
+    return $message;
+}
+
+function VNSEEA_RegisterGroupMessageMentions($group_id, $message_id, $mention_ids)
+{
+    global $wo;
+
+    $group_id = (int)$group_id;
+    $message_id = (int)$message_id;
+    $mention_ids = VNSEEA_NormalizeRequestedMentionIds($mention_ids);
+    if ($group_id < 1 || $message_id < 1 || empty($mention_ids)) {
+        return true;
+    }
+    foreach ($mention_ids as $recipient_id) {
+        if ((int)$recipient_id === (int)$wo['user']['user_id']) {
+            continue;
+        }
+        Wo_RegisterNotification(array(
+            'recipient_id' => (int)$recipient_id,
+            'reply_id' => $message_id,
+            'group_chat_id' => $group_id,
+            'type' => 'chat_group_mention',
+            'text' => 'message',
+            'url' => 'index.php?link1=messages&group_id=' . $group_id,
+            'skip_push' => true,
+        ));
+    }
+    return true;
+}
+
 function VNSEEA_IsMarketRequestOrderHash($hash_id)
 {
     global $db;
@@ -4736,9 +4882,11 @@ function VNSEEA_AttachMessageStoryContext($message)
 
 function VNSEEA_AttachCanonicalMessageContext($message)
 {
-    return VNSEEA_AttachMessageStoryContext(
-        VNSEEA_AttachMarketplaceMessageContext(
-            VNSEEA_AttachMessageSystemEvent($message)
+    return VNSEEA_AttachMessageMentions(
+        VNSEEA_AttachMessageStoryContext(
+            VNSEEA_AttachMarketplaceMessageContext(
+                VNSEEA_AttachMessageSystemEvent($message)
+            )
         )
     );
 }

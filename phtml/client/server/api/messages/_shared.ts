@@ -21,6 +21,7 @@ import type {
   MessageCreateGroupResult,
   MessageGroupDetails,
   MessageItem,
+  MessageMention,
   MessageGroupMember,
   MessageTypingState,
   MessageThread,
@@ -94,6 +95,8 @@ type MessageThreadQuery = {
 
 type MultipartMessageInput = MessageThreadQuery & {
   text: string
+  replyId?: number
+  mentionedUserIds?: number[]
   recordFile?: string
   recordName?: string
   file?: {
@@ -111,6 +114,25 @@ const asString = (value: unknown) =>
 const asNumber = (value: unknown) => {
   const normalized = Number(value ?? 0)
   return Number.isFinite(normalized) ? normalized : 0
+}
+
+const asPositiveNumberArray = (value: unknown, limit = 20) => {
+  let input = value
+  if (typeof input === "string") {
+    const serializedInput = input
+    try {
+      input = JSON.parse(serializedInput)
+    }
+    catch {
+      input = serializedInput.split(",")
+    }
+  }
+  if (!Array.isArray(input)) return []
+  return [...new Set(
+    input
+      .map(item => Math.trunc(asNumber(item)))
+      .filter(item => item > 0),
+  )].slice(0, limit)
 }
 
 const isTruthy = (value: unknown) =>
@@ -513,7 +535,19 @@ const buildContactPreview = (
   const normalizedText = normalizeMessageText(text, message)
   const senderName = buildContactPreviewSender(message, currentUserId, fallbackName)
   const mediaPreview = buildMediaPreviewLabel(senderName, inferMediaType(message))
+  const reply = asRecord(message.reply)
+  const canonicalReplyId = asNumber(message.reply_id) || asNumber(reply.id)
+  const canonicalReplyAuthor = asNumber(reply.from_id) === currentUserId
+    ? "Bạn"
+    : buildDisplayName(asRecord(reply.user_data)) || buildDisplayName(asRecord(reply.messageUser))
   const replyMeta = parseReplyMessagePreview(normalizedText)
+    || (canonicalReplyId > 0 && Object.keys(reply).length > 0
+      ? {
+          author: canonicalReplyAuthor,
+          quote: normalizeMessageText(decryptMessageText(firstString(reply, ["or_text", "text"]), reply.time), reply),
+          body: normalizedText,
+        }
+      : null)
 
   if (replyMeta) {
     const replyAuthor = replyMeta.author || ""
@@ -764,12 +798,45 @@ const mapThreadMessage = (
   const mediaType = inferMediaType(entity)
   const senderId = asNumber(entity.from_id)
   const senderProfile = { user_id: senderId, ...messageUser, ...userData }
+  const mentions = asArray(entity.mentions ?? entity.message_mentions)
+    .map((mention) => {
+      const userId = asNumber(mention.user_id) || asNumber(mention.id)
+      const username = firstString(mention, ["username"])
+      const name = buildDisplayName(mention) || username
+      if (userId <= 0 || !name) return null
+      return {
+        userId,
+        name,
+        username: username || undefined,
+        avatarUrl: resolveMediaUrl(firstString(mention, ["avatar", "avatar_full"])) || undefined,
+      }
+    })
+    .filter(Boolean) as MessageMention[]
+  const mentionNames = new Map(mentions.map(mention => [mention.userId, mention.name]))
+  const normalizedText = normalizeMessageText(rawText, entity)
+    .replace(/@\[([0-9]+)\]/g, (token, userId) => {
+      const name = mentionNames.get(Number(userId))
+      return name ? `@${name}` : token
+    })
+  const reply = asRecord(entity.reply)
+  const replyTargetId = asNumber(entity.reply_id) || asNumber(reply.id)
+  const displayText = replyTargetId > 0 && Object.keys(reply).length > 0 && !normalizedText.startsWith(MESSAGE_REPLY_PREFIX)
+    ? `${MESSAGE_REPLY_PREFIX}${encodeURIComponent(JSON.stringify({
+        author: asNumber(reply.from_id) === currentUserId
+          ? "Bạn"
+          : buildDisplayName(asRecord(reply.user_data)) || buildDisplayName(asRecord(reply.messageUser)) || "Người dùng",
+        quote: stripHtml(decryptMessageText(firstString(reply, ["or_text", "text"]), reply.time))
+          || buildMediaPreviewLabel("", inferMediaType(reply)).replace(/^\s*đã gửi\s*/i, "")
+          || "Tin nhắn",
+        targetMessageId: replyTargetId,
+      }))}\n${normalizedText}`
+    : normalizedText
   const activeGroupCallId = asNumber(activeGroupCall?.id)
   const activeGroupCallParticipantCount = asNumber(activeGroupCall?.participant_count)
 
   return {
     id: asNumber(entity.id),
-    text: recalledPayload ? "" : normalizeMessageText(rawText, entity),
+    text: recalledPayload ? "" : displayText,
     isMine: senderId === currentUserId || asString(entity.position).startsWith("right"),
     time: firstString(entity, ["time_text"]),
     avatar: resolveMediaUrl(firstString(userData, ["avatar", "avatar_full"])
@@ -780,6 +847,7 @@ const mapThreadMessage = (
     timestamp,
     senderId,
     authorName: buildDisplayName(userData) || buildDisplayName(messageUser),
+    mentions,
     threadType,
     mediaUrl: recalledPayload ? "" : mediaUrl,
     mediaName: recalledPayload ? "" : firstString(entity, ["mediaFileName", "media_file_name", "filename"]),
@@ -1200,6 +1268,25 @@ export async function sendMessageToThread(
     return body
   }
 
+  const createApiMessageBody = (
+    fields: Record<string, unknown>,
+    file?: MultipartMessageInput["file"],
+  ) => {
+    if (!file) return fields
+    const body = new FormData()
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined && value !== null && String(value) !== "") {
+        body.append(key, String(value))
+      }
+    }
+    body.append(
+      "file",
+      new Blob([toBlobChunk(file.data)], { type: file.type || "application/octet-stream" }),
+      file.filename || "attachment",
+    )
+    return body
+  }
+
   if (input.type === "user") {
     if (!input.userId) {
       throw createError({
@@ -1224,6 +1311,7 @@ export async function sendMessageToThread(
           textSendMessage: input.text,
           "record-file": input.recordFile,
           "record-name": input.recordName,
+          reply_id: input.replyId,
           hash_id: sessionHash,
         }, input.file),
         {
@@ -1276,6 +1364,29 @@ export async function sendMessageToThread(
       })
     }
 
+    const mentionedUserIds = asPositiveNumberArray(input.mentionedUserIds)
+    const canonicalFields = {
+      type: "send",
+      id: input.groupId,
+      text: input.text,
+      message_hash_id: `${Date.now()}`,
+      reply_id: input.replyId,
+      mentioned_user_ids: mentionedUserIds.length > 0
+        ? JSON.stringify(mentionedUserIds)
+        : undefined,
+    }
+
+    if (!input.recordFile) {
+      const response = assertBackendApiSuccess(
+        await apiClient.post<BackendCollectionResponse, FormData | Record<string, unknown>>(
+          "group_chat",
+          createApiMessageBody(canonicalFields, input.file),
+        ),
+        "Unable to send group message.",
+      )
+      return normalizeCreatedMessages(extractCollectionMessages(response))
+    }
+
     let legacyResponse: { status?: number | string } | null = null
     try {
       legacyResponse = await webClient.postForm<{ status?: number | string }>(
@@ -1285,6 +1396,10 @@ export async function sendMessageToThread(
           textSendMessage: input.text,
           "record-file": input.recordFile,
           "record-name": input.recordName,
+          reply_id: input.replyId,
+          mentioned_user_ids: mentionedUserIds.length > 0
+            ? JSON.stringify(mentionedUserIds)
+            : undefined,
           hash_id: sessionHash,
         }, input.file),
         {
@@ -1455,6 +1570,8 @@ export async function parseMessageSendBody(event: H3Event): Promise<MultipartMes
       pageId: asNumber(body.pageId),
       recipientId: asNumber(body.recipientId),
       text: asString(body.text),
+      replyId: asNumber(body.replyId) || undefined,
+      mentionedUserIds: asPositiveNumberArray(body.mentionedUserIds),
       recordFile: asString(body.recordFile),
       recordName: asString(body.recordName),
       file: null,
@@ -1489,6 +1606,8 @@ export async function parseMessageSendBody(event: H3Event): Promise<MultipartMes
     pageId: asNumber(fields.pageId),
     recipientId: asNumber(fields.recipientId),
     text: asString(fields.text),
+    replyId: asNumber(fields.replyId) || undefined,
+    mentionedUserIds: asPositiveNumberArray(fields.mentionedUserIds),
     recordFile: asString(fields.recordFile),
     recordName: asString(fields.recordName),
     file,

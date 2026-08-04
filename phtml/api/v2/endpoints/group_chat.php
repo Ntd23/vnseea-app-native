@@ -688,6 +688,22 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $error_code    = 14;
             $error_message = 'you are not the channel owner';
         }
+        $reply_id = 0;
+        if (empty($error_code) && !empty($_POST['reply_id'])) {
+            if (!is_numeric($_POST['reply_id']) || (int)$_POST['reply_id'] < 1) {
+                $error_code = 16;
+                $error_message = 'reply_id must be numeric and greater than 0';
+            } else {
+                $reply_id = (int)$_POST['reply_id'];
+                $reply_message = $db->where('id', $reply_id)
+                    ->where('group_id', (int)$_POST['id'])
+                    ->getOne(T_MESSAGES);
+                if (empty($reply_message)) {
+                    $error_code = 16;
+                    $error_message = 'reply message was not found in this group';
+                }
+            }
+        }
         if (empty($error_code)) {
             $group_id   = Wo_Secure($_POST['id']);
             $mediaFilename = '';
@@ -755,6 +771,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'stickers' => $gif,
                 'lng' => $lng,
                 'lat' => $lat,
+                'reply_id' => $reply_id,
             );
             if ($is_audio_message) {
                 $message_data['type_two'] = 'audio';
@@ -764,30 +781,16 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             }
             if (empty($error_message) && !empty($_POST['text'])) {
                 $message_data['text'] = Wo_Secure($_POST['text']);
-
-                $mentions = [];
-                $mention_regex = '/@([A-Za-z0-9_]+)/i';
-                preg_match_all($mention_regex, $message_data['text'], $matches);
-                foreach ($matches[1] as $match) {
-                    $match = Wo_Secure($match);
-                    $match_user = Wo_UserData(Wo_UserIdFromUsername($match));
-                    $match_search = '@' . $match;
-                    $match_replace = '@[' . $match_user['user_id'] . ']';
-                    if (isset($match_user['user_id'])) {
-                        $message_data['text'] = str_replace($match_search, $match_replace, $message_data['text']);
-                        $mentions[] = $match_user['user_id'];
-                    }
-                }
-
-                if (isset($mentions) && is_array($mentions)) {
-                    foreach ($mentions as $mention) {
-                        $notification_data_array = array(
-                            'recipient_id' => $mention,
-                            'type' => 'chat_group_mention',
-                            'url' => 'index.php?link1=messages'
-                        );
-                        Wo_RegisterNotification($notification_data_array);
-                    }
+                $prepared_mentions = VNSEEA_PrepareGroupMessageMentions(
+                    $group_id,
+                    $message_data['text'],
+                    isset($_POST['mentioned_user_ids']) ? $_POST['mentioned_user_ids'] : array()
+                );
+                if (empty($prepared_mentions['ok'])) {
+                    $error_code = 17;
+                    $error_message = 'mentioned users must be active members of this group';
+                } else {
+                    $message_data['text'] = $prepared_mentions['text'];
                 }
             }
 
@@ -797,6 +800,11 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             }
 
             if (!empty($last_id)) {
+                VNSEEA_RegisterGroupMessageMentions(
+                    $group_id,
+                    $last_id,
+                    !empty($prepared_mentions['mention_ids']) ? $prepared_mentions['mention_ids'] : array()
+                );
                 if ($group_tab['type'] == 'secret') {
                     $db->where('group_id',$group_id)->where('from_id',$wo['user']['id'],'!=')->where('seen',0)->update(T_MESSAGES,[
                         'seen' => time(),
@@ -813,10 +821,6 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     }
                 }
 
-                if (!empty($_POST['reply_id']) && is_numeric($_POST['reply_id']) && $_POST['reply_id'] > 0) {
-                    $reply_id = Wo_Secure($_POST['reply_id']);
-                    $db->where('id',$last_id)->update(T_MESSAGES,array('reply_id' => $reply_id));
-                }
                 $message_info = array(
                     'group_id' => $group_id,
                     'id' => $last_id
