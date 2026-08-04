@@ -10,11 +10,23 @@ describe('iOS voice messages', () => {
     const recorder = read(
       'src/shared-kernel/application/hooks/useAudioRecorder.ts',
     );
+    const nativeAdapter = read(
+      'src/shared-kernel/infrastructure/audio/iosVoiceRecorder.ts',
+    );
+    const swift = read('ios/VNSEEA/VnseeaAudioRecorder.swift');
+    const bridge = read('ios/VNSEEA/VnseeaAudioRecorder.m');
 
     expect(recorder).toContain("Platform.OS === 'ios'");
     expect(recorder).toContain(".m4a`");
     expect(recorder).toContain("type: 'audio/mp4'");
     expect(recorder).toContain('validateRecordedAudioFile');
+    expect(recorder).toContain('iosVoiceRecorder.start()');
+    expect(nativeAdapter).toContain('NativeModules.VnseeaAudioRecorder');
+    expect(swift).toContain('AVAudioRecorder');
+    expect(swift).toContain('AVFormatIDKey: kAudioFormatMPEG4AAC');
+    expect(swift).toContain('.playAndRecord');
+    expect(swift).toContain('.m4a');
+    expect(bridge).toContain('RCT_EXTERN_MODULE(VnseeaAudioRecorder');
   });
 
   it('requires the mirrored backend to reject failed audio uploads', () => {

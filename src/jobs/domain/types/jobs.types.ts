@@ -121,8 +121,12 @@ export interface CreateJobResponse {
   data?: JobsItem;
   job_id?: string | number;
   post_id?: string | number;
+  error_code?: string;
   message?: string;
-  errors?: Array<{ error_text?: string }>;
+  errors?: Array<{ error_id?: string | number; error_text?: string }> | {
+    error_id?: string | number;
+    error_text?: string;
+  };
 }
 
 export interface JobsSelectOption {

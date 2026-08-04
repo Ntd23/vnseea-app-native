@@ -120,6 +120,7 @@ import {
   type SharedMapLocation,
 } from '../../../user/application/utils/mapShare';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
+import { presentLocationAccessRecovery } from '../../../shared-kernel/application/utils/locationAccessRecovery';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { areMessageReactionSummariesEqual } from '../../domain/reactions/messageReactions';
@@ -3329,11 +3330,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       prefetchStaticMapPreview(nextMapLocation);
       setSharedMapLocation(nextMapLocation);
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error && caughtError.message
-          ? caughtError.message
-          : 'Không lấy được vị trí hiện tại của bạn.';
-      Alert.alert('Không thể chia sẻ vị trí', message);
+      presentLocationAccessRecovery(caughtError);
     } finally {
       isPickingCurrentLocationRef.current = false;
       setIsPickingCurrentLocation(false);
@@ -3349,10 +3346,22 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       }
       setAttachments([]);
       await recorder.startRecording();
-    } catch {
-      Alert.alert(copy.errorTitle, copy.recordFailed);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : copy.recordFailed;
+      const code = String((caught as { code?: string } | undefined)?.code ?? '');
+      if (code.includes('permission')) {
+        Alert.alert(copy.errorTitle, message, [
+          { text: language === 'vi' ? 'Hủy' : 'Cancel', style: 'cancel' },
+          {
+            text: language === 'vi' ? 'Mở Cài đặt' : 'Open Settings',
+            onPress: () => Linking.openSettings().catch(() => undefined),
+          },
+        ]);
+      } else {
+        Alert.alert(copy.errorTitle, message);
+      }
     }
-  }, [copy.errorTitle, copy.recordFailed, recorder]);
+  }, [copy.errorTitle, copy.recordFailed, language, recorder]);
 
   const { startOutgoingCall } = useLiveKitCallSession();
   const { startGroupCall } = useGroupLiveKitCallSession();

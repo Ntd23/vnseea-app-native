@@ -1,5 +1,6 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import { Platform } from 'react-native';
 
 jest.mock('react-native-nitro-sound', () => ({
   __esModule: true,
@@ -33,10 +34,11 @@ const mockSound = jest.requireMock('react-native-nitro-sound').default as {
 describe('useAudioRecorder', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
     mockSound.stopRecorder.mockResolvedValue('file:///tmp/voice.m4a');
   });
 
-  it('deduplicates recorder starts while iOS audio setup is pending', async () => {
+  it('deduplicates recorder starts while Android audio setup is pending', async () => {
     let resolveStart: ((value: string) => void) | undefined;
     mockSound.startRecorder.mockImplementation(
       () =>

@@ -26,6 +26,10 @@ import {
 } from 'lucide-react-native';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
+import {
+  getLocationAccessRecovery,
+  presentLocationAccessRecovery,
+} from '../../../shared-kernel/application/utils/locationAccessRecovery';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
 import type {
   AddressSuggestion,
@@ -780,8 +784,10 @@ export default function PageLocationPickerModal({
         longitudeDelta: 0.006,
       });
       await reverseGeocode(coordinate, sessionIdRef.current);
-    } catch {
-      setErrorMessage(copy.locationError);
+    } catch (error) {
+      const recovery = getLocationAccessRecovery(error);
+      setErrorMessage(recovery.message || copy.locationError);
+      presentLocationAccessRecovery(error);
     } finally {
       setIsLocating(false);
     }

@@ -120,8 +120,14 @@ import MapPlaceDetailSheet, {
 } from '../components/MapPlaceDetailSheet';
 import {
   getCurrentDeviceLocation,
+  LocationAccessError,
+  type LocationAccessError as LocationAccessErrorType,
   requestAndroidLocationPermission,
 } from '../../../shared-kernel/application/utils/currentLocation';
+import {
+  getLocationAccessRecovery,
+  presentLocationAccessRecovery,
+} from '../../../shared-kernel/application/utils/locationAccessRecovery';
 import {
   readLastMapLocation,
   saveLastMapLocation,
@@ -2373,6 +2379,8 @@ export default function NearbyUsersScreen() {
   const lastDeviceHeadingStateRef = useRef<number | null>(null);
   const lastDeviceHeadingUpdatedAtRef = useRef(0);
   const [locationAllowed, setLocationAllowed] = useState(Platform.OS === 'ios');
+  const [locationAccessError, setLocationAccessError] =
+    useState<LocationAccessErrorType | null>(null);
   const [currentLocation, setCurrentLocation] = useState<LatLng | null>(
     persistedCoordinate,
   );
@@ -3558,7 +3566,12 @@ export default function NearbyUsersScreen() {
 
   const centerOnUser = useCallback(() => {
     const location = currentLocationRef.current;
-    if (!location) return;
+    if (!location) {
+      if (locationAccessError) {
+        presentLocationAccessRecovery(locationAccessError);
+      }
+      return;
+    }
 
     if (isNavigating) {
       setNavigationAutoCentering(true);
@@ -3613,6 +3626,7 @@ export default function NearbyUsersScreen() {
     routeHeading,
     setNavigationAutoCentering,
     shouldShowRoute,
+    locationAccessError,
     userSpeed,
   ]);
 
@@ -5230,8 +5244,25 @@ export default function NearbyUsersScreen() {
     if (Platform.OS !== 'android') return;
 
     requestAndroidLocationPermission()
-      .then(setLocationAllowed)
-      .catch(() => setLocationAllowed(false));
+      .then(granted => {
+        setLocationAllowed(granted);
+        setLocationAccessError(
+          granted
+            ? null
+            : new LocationAccessError(
+                'permission_denied',
+                'Location permission has not been granted.',
+              ),
+        );
+      })
+      .catch(error => {
+        setLocationAllowed(false);
+        setLocationAccessError(
+          error instanceof LocationAccessError
+            ? error
+            : new LocationAccessError('failed', String(error)),
+        );
+      });
   }, []);
 
   useEffect(() => {
@@ -5290,6 +5321,7 @@ export default function NearbyUsersScreen() {
         });
         lastPersistedLocationAtRef.current = Date.now();
         setCurrentLocation(coordinate);
+        setLocationAccessError(null);
         setLocationSource('gps');
         setHasCenteredOnUser(true);
         mapRef.current?.animateToRegion(
@@ -5306,7 +5338,13 @@ export default function NearbyUsersScreen() {
           accuracy: location.accuracy,
         }).catch(() => undefined);
       })
-      .catch(() => undefined);
+      .catch(error => {
+        setLocationAccessError(
+          error instanceof LocationAccessError
+            ? error
+            : new LocationAccessError('failed', String(error)),
+        );
+      });
 
     return () => {
       cancelled = true;
@@ -6315,14 +6353,23 @@ export default function NearbyUsersScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {!locationAllowed ? (
-        <View style={styles.permissionNotice}>
+      {!locationAllowed || locationAccessError ? (
+        <TouchableOpacity
+          activeOpacity={0.82}
+          style={styles.permissionNotice}
+          onPress={() => {
+            if (locationAccessError) {
+              presentLocationAccessRecovery(locationAccessError);
+            }
+          }}
+        >
           <MapPin size={16} color="#D97706" />
           <Text className="ml-2 flex-1 text-xs font-semibold text-amber-700">
-            Bật quyền vị trí để zoom quanh bạn trong phạm vi 1km và cập nhật chỉ
-            đường.
+            {locationAccessError
+              ? getLocationAccessRecovery(locationAccessError).message
+              : 'Bật quyền vị trí để zoom quanh bạn trong phạm vi 1km và cập nhật chỉ đường.'}
           </Text>
-        </View>
+        </TouchableOpacity>
       ) : null}
 
       {isRoutePreview && selectedPoint ? (

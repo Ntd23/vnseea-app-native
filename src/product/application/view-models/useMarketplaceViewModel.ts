@@ -12,6 +12,7 @@ import type {
  ProductItem,
 } from '../../domain/types/product.types';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
+import { getLocationAccessRecovery } from '../../../shared-kernel/application/utils/locationAccessRecovery';
 import { saveLastMapLocation } from '../../../shared-kernel/infrastructure/storage/mapLocationStorage';
 import { mapDiscoveryDistanceMeters } from '../../../user/application/utils/mapDiscoveryLocation';
 
@@ -270,14 +271,7 @@ export function useMarketplaceViewModel() {
  setDistanceLocationError(null);
  return origin;
  } catch (caughtError) {
- const rawMessage =
- caughtError instanceof Error
- ? caughtError.message
- : 'Không lấy được vị trí hiện tại của bạn.';
- const message =
- rawMessage.includes('chia sẻ vị trí') || rawMessage.includes('trong chat')
- ? 'Bạn cần cấp quyền vị trí/GPS để lọc cửa hàng lân cận.'
- : rawMessage;
+ const message = getLocationAccessRecovery(caughtError).message;
  setDistanceOrigin(null);
  setDistanceLocationError(message);
  return null;

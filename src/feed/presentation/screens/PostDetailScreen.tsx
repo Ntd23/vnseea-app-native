@@ -875,8 +875,10 @@ function PostDetailScreen() {
     setPhotoViewer(null);
   }, []);
 
-  const handleOpenShare = useCallback(() => {
-    if (!isFeedPostShareable(activePost)) return;
+  const handleOpenShare = useCallback((selectedPost?: FeedPost) => {
+    const targetPost = selectedPost ?? activePost;
+    if (!targetPost || targetPost.id !== activePost?.id) return;
+    if (!isFeedPostShareable(targetPost)) return;
     setShareModalVisible(true);
   }, [activePost]);
 
@@ -1030,6 +1032,7 @@ function PostDetailScreen() {
   const isPostDetailSwipeBackBlocked =
     reactionsSheetVisible ||
     postMenuVisible ||
+    shareModalVisible ||
     editingPost !== null ||
     pickerAnchor !== null ||
     photoViewer !== null;
@@ -1047,7 +1050,9 @@ function PostDetailScreen() {
           POST_DETAIL_BACK_GESTURE_FAIL_OFFSET_Y,
         ])
         .enabled(
-          canSwipeBackToPreviousPostScreen && !isPostDetailSwipeBackBlocked,
+          Platform.OS === 'ios' &&
+            canSwipeBackToPreviousPostScreen &&
+            !isPostDetailSwipeBackBlocked,
         )
         .onBegin(() => {
           'worklet';
@@ -1170,8 +1175,13 @@ function PostDetailScreen() {
   });
 
   const renderPostDetailSwipeBackFrame = useCallback(
-    (children: React.ReactNode) => (
-      <GestureHandlerRootView style={postDetailStyles.gestureRoot}>
+    (children: React.ReactNode) => {
+      if (Platform.OS !== 'ios') {
+        return <View style={postDetailStyles.screen}>{children}</View>;
+      }
+
+      return (
+        <GestureHandlerRootView style={postDetailStyles.gestureRoot}>
         <Reanimated.View
           pointerEvents="none"
           style={[
@@ -1194,8 +1204,9 @@ function PostDetailScreen() {
             {children}
           </Reanimated.View>
         </GestureDetector>
-      </GestureHandlerRootView>
-    ),
+        </GestureHandlerRootView>
+      );
+    },
     [
       postDetailSwipeBackCueStyle,
       postDetailSwipeBackDimStyle,
@@ -1286,7 +1297,7 @@ function PostDetailScreen() {
           onOpenPicker={handleOpenPicker}
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
-          onShare={handleOpenShare}
+          onShare={() => handleOpenShare(activePost)}
           onOpenReactions={handleOpenReactions}
           navigateToProfile={navigateToProfile}
           showIdentityHeader={false}
@@ -1304,7 +1315,7 @@ function PostDetailScreen() {
           onOpenPicker={handleOpenPicker}
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
-          onShare={handleOpenShare}
+          onShare={() => handleOpenShare(activePost)}
           onProfilePress={handleProfilePress}
           showIdentityHeader={false}
           language={language}
@@ -1325,7 +1336,7 @@ function PostDetailScreen() {
           onCommentTap={handleScrollToComments}
           commentNavigationMode="callback"
           onOpenReactions={handleOpenReactions}
-          onShare={handleOpenShare}
+          onShare={() => handleOpenShare(activePost)}
           onProfilePress={handleProfilePress}
           showIdentityHeader={false}
         />
