@@ -24,7 +24,6 @@ import {
   Dimensions,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Linking,
   Platform,
   StyleSheet,
@@ -121,6 +120,7 @@ import {
   getFeedPostCaption,
   isFeedPostCaptionEditable,
 } from '../../application/editing/postCaptionEdit';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -1359,10 +1359,10 @@ function PostDetailScreen() {
         translucent={false}
       />
 
-      <KeyboardAvoidingView
+      <KeyboardSafeView
         style={postDetailStyles.keyboardBoundary}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        enabled={Platform.OS === 'ios'}
+        behavior="padding"
+        resetOnAndroidKeyboardHide
         keyboardVerticalOffset={0}
       >
         <View
@@ -1404,6 +1404,7 @@ function PostDetailScreen() {
         <ReelCommentsSheet
           visible
           presentation="inline"
+          parentOwnsKeyboardAvoidance
           listHeaderComponent={postListHeader}
           autoFocusComposer={focusComments}
           composerFocusSignal={commentFocusSignal}
@@ -1434,7 +1435,7 @@ function PostDetailScreen() {
           onRetryFailedComment={commentVm.retryFailedComment}
           onDeleteFailedComment={commentVm.deleteFailedComment}
         />
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
 
       <PhotoViewerModal
         state={photoViewer}

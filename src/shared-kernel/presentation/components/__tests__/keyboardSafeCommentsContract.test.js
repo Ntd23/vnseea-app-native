@@ -42,12 +42,37 @@ describe('comment keyboard safety contract', () => {
     const postDetail = read(
       'src/feed/presentation/screens/PostDetailScreen.tsx',
     );
-    expect(postDetail).toContain('<KeyboardAvoidingView');
-    expect(postDetail).toContain(
-      "behavior={Platform.OS === 'ios' ? 'padding' : undefined}",
-    );
+    expect(postDetail).toContain('<KeyboardSafeView');
+    expect(postDetail).toContain('behavior="padding"');
+    expect(postDetail).toContain('parentOwnsKeyboardAvoidance');
     expect(postDetail).toContain('<ReelCommentsSheet');
     expect(postDetail).toContain('presentation="inline"');
+  });
+
+  it('uses the shared keyboard boundary for Android chat OEM keyboards', () => {
+    const chat = read('src/messages/presentation/screens/ChatScreen.tsx');
+
+    expect(chat).toContain('<KeyboardSafeView');
+    expect(chat).toContain('behavior="padding"');
+    expect(chat).not.toContain(
+      "behavior={Platform.OS === 'ios' ? 'padding' : undefined}",
+    );
+  });
+
+  it('clears Samsung keyboard padding after the Android IME is hidden', () => {
+    const keyboardSafeView = read(
+      'src/shared-kernel/presentation/components/KeyboardSafeView.tsx',
+    );
+    const chat = read('src/messages/presentation/screens/ChatScreen.tsx');
+    const postDetail = read(
+      'src/feed/presentation/screens/PostDetailScreen.tsx',
+    );
+
+    expect(keyboardSafeView).toContain('resetOnAndroidKeyboardHide');
+    expect(keyboardSafeView).toContain("Keyboard.addListener('keyboardDidShow'");
+    expect(keyboardSafeView).toContain("Keyboard.addListener('keyboardDidHide'");
+    expect(chat).toContain('resetOnAndroidKeyboardHide');
+    expect(postDetail).toContain('resetOnAndroidKeyboardHide');
   });
 
   it('keeps the Android activity resize contract enabled', () => {
@@ -62,7 +87,7 @@ describe('comment keyboard safety contract', () => {
     );
 
     expect(sharedSheet).toContain(
-      "const shouldOwnKeyboardAvoidance = isInline && Platform.OS === 'android';",
+      "isInline && Platform.OS === 'android' && !parentOwnsKeyboardAvoidance;",
     );
     expect(sharedSheet).toContain('Keyboard.metrics?.()');
     expect(sharedSheet).toContain('androidWindowScreenOffsetY');

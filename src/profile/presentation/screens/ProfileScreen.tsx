@@ -97,6 +97,7 @@ import { navigateToSettingsPanel } from '../../../navigation/settingsNavigation'
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { useDeferredVisiblePostIds } from '../../../feed/application/realtime/useDeferredVisiblePostIds';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
+import { useSafeBottomPadding } from '../../../shared-kernel/presentation/layout/useSafeBottomLayout';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
@@ -1444,6 +1445,11 @@ function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { bottomContentPadding, scrollIndicatorBottomInset } =
     useMainTabContentInsets();
+  const safeProfileBottomPadding = useSafeBottomPadding(16);
+  const profilePostsBottomPadding =
+    Platform.OS === 'android'
+      ? safeProfileBottomPadding
+      : bottomContentPadding;
   const safeTopInset =
     insets.top > 0
       ? insets.top
@@ -4407,8 +4413,8 @@ function ProfileScreen() {
   }, [storyOptionsSheet, handleNavigateToProfile]);
 
   const profilePostsListContentStyle = useMemo(
-    () => ({ paddingBottom: bottomContentPadding }),
-    [bottomContentPadding],
+    () => ({ paddingBottom: profilePostsBottomPadding }),
+    [profilePostsBottomPadding],
   );
   const profileScrollIndicatorInsets = useMemo(
     () => ({ bottom: scrollIndicatorBottomInset }),

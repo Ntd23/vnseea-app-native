@@ -33,6 +33,16 @@ describe('bottom action safe-area coverage', () => {
     expect(read(file)).toContain('useSafeBottomPadding');
   });
 
+  it('keeps the final Android profile post above the system navigation bar', () => {
+    const profile = read(
+      'src/profile/presentation/screens/ProfileScreen.tsx',
+    );
+
+    expect(profile).toContain('useSafeBottomPadding');
+    expect(profile).toContain('profilePostsBottomPadding');
+    expect(profile).toContain('Platform.OS === \'android\'');
+  });
+
   it('does not add the shared footer primitive to intentional full-screen media', () => {
     for (const file of [
       'src/stories/presentation/screens/StoryViewerScreen.tsx',

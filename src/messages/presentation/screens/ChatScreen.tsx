@@ -16,7 +16,6 @@ import {
   Animated,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -107,6 +106,7 @@ import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAu
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   createCachedVideoPosterThumbnail,
@@ -3625,10 +3625,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={CHAT_SAFE_AREA_EDGES}>
-      <KeyboardAvoidingView
+      <KeyboardSafeView
         style={styles.keyboardBoundary}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        enabled={Platform.OS === 'ios'}
+        behavior="padding"
+        resetOnAndroidKeyboardHide
         keyboardVerticalOffset={0}
       >
         {/* Header */}
@@ -4134,7 +4134,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             </TouchableOpacity>
           </Animated.View>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
       <ChatMediaViewerModal
         items={viewerMediaItems}
         index={viewerMediaIndex}
