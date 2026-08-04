@@ -91,6 +91,7 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.sharedPost?.postId === right.sharedPost?.postId &&
     left.sharedPost?.url === right.sharedPost?.url &&
     left.sharedPost?.note === right.sharedPost?.note &&
+    left.sharedPost?.isLive === right.sharedPost?.isLive &&
     left.storyReply?.storyId === right.storyReply?.storyId &&
     left.storyReply?.available === right.storyReply?.available &&
     left.storyReply?.thumbnailUrl === right.storyReply?.thumbnailUrl &&
@@ -102,6 +103,7 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.replyTo?.media === right.replyTo?.media &&
     left.replyTo?.thumbnail === right.replyTo?.thumbnail &&
     left.replyTo?.sharedPost?.postId === right.replyTo?.sharedPost?.postId &&
+    left.replyTo?.sharedPost?.isLive === right.replyTo?.sharedPost?.isLive &&
     left.replyTo?.storyReply?.storyId === right.replyTo?.storyReply?.storyId &&
     left.replyTo?.storyReply?.available ===
       right.replyTo?.storyReply?.available &&
@@ -796,6 +798,9 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
             return;
           }
           await loadPinnedMessages(false).catch(() => undefined);
+          if (chat.chatType === 'group') {
+            await loadGroupInfo().catch(() => undefined);
+          }
         }
       } finally {
         running = false;
@@ -811,7 +816,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       unsubscribe();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [loadPinnedMessages, refreshLatest]);
+  }, [chat.chatType, loadGroupInfo, loadPinnedMessages, refreshLatest]);
 
   useEffect(() => {
     const currentUserId = sessionStorage.getSession()?.userId ?? '';

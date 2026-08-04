@@ -5,6 +5,7 @@ import type { PostChangedEvent } from './postRealtimeCoordinator';
 import {
   applySharedPostSourceSnapshot,
   getPostRealtimeWatchIds,
+  markSharedLivePreviewEnded,
 } from '../sharing/sharedPostPreview';
 
 type Options = {
@@ -70,7 +71,15 @@ export function usePostRealtimeScope({
       if (event.type === 'deleted') {
         postsRef.current
           .filter(post => String(post.sharedPostId ?? '') === event.postId)
-          .forEach(post => callbacksRef.current.onDeleted?.(String(post.id)));
+          .forEach(post => {
+            if (post.sharedPost?.content.kind === 'live') {
+              callbacksRef.current.onSnapshot?.(
+                markSharedLivePreviewEnded(post, event.postId),
+              );
+              return;
+            }
+            callbacksRef.current.onDeleted?.(String(post.id));
+          });
         if (requestedIdsRef.current.has(event.postId)) {
           callbacksRef.current.onDeleted?.(event.postId);
         }

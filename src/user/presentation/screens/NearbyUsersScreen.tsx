@@ -4992,12 +4992,19 @@ export default function NearbyUsersScreen() {
       if (!selectedMapShareLocation) return;
 
       setIsMapShareSheetOpen(false);
-      navigation.navigate(ROUTES.CHAT, {
+      const params = {
         chat,
         sharedMapLocation: selectedMapShareLocation,
+      };
+      requestAnimationFrame(() => {
+        if (route.params?.returnToChat) {
+          navigation.popTo(ROUTES.CHAT, params);
+          return;
+        }
+        navigation.navigate(ROUTES.CHAT, params);
       });
     },
-    [navigation, selectedMapShareLocation],
+    [navigation, route.params?.returnToChat, selectedMapShareLocation],
   );
 
   const handleOpenSelectedPage = useCallback(() => {

@@ -25,6 +25,11 @@ export type SharedPostPreviewModel = {
   points?: string;
   location?: string;
   isVideo: boolean;
+  live?: {
+    state: 'live' | 'stale' | 'offline';
+    streamName?: string;
+    viewerCount?: number;
+  };
 };
 
 export type SharedPostOpenTarget = {
@@ -33,12 +38,17 @@ export type SharedPostOpenTarget = {
   productId?: number;
   jobId?: string;
   job?: JobsItem;
+  isLive?: boolean;
+  liveState?: 'live' | 'stale' | 'offline';
 };
 
 type SharedPostPreviewRepository = Pick<FeedRepository, 'getPostById'>;
 
 export type SharedPostPreviewLoader = {
-  load(postId: string): Promise<SharedPostPreviewModel>;
+  load(
+    postId: string,
+    options?: { force?: boolean },
+  ): Promise<SharedPostPreviewModel>;
 };
 
 function readWebPostId(candidate: string, webBaseUrl: string) {
@@ -79,6 +89,14 @@ function normalizeSharedPostNote(before: string, after: string) {
     .trim();
 }
 
+function hasLiveShareMarker(candidate: string) {
+  try {
+    return new URL(candidate).searchParams.get('live') === '1';
+  } catch {
+    return /(?:[?&])live=1(?:&|$)/i.test(candidate);
+  }
+}
+
 export function parseSharedPostMessage(
   message: string,
   webBaseUrl: string,
@@ -102,6 +120,7 @@ export function parseSharedPostMessage(
         message.slice(0, match.index),
         message.slice(match.index + rawUrl.length),
       ),
+      ...(hasLiveShareMarker(url) ? { isLive: true } : {}),
     };
   }
 
@@ -158,6 +177,28 @@ export function buildSharedPostPreviewModel(
     publisherAvatar: post.publisher.avatarUrl,
     isVideo: false,
   };
+
+  if (post.liveContext) {
+    return {
+      ...base,
+      title:
+        firstText(
+          post.liveContext.title,
+          'caption' in post ? post.caption : undefined,
+        ) || `${base.publisherName} đang phát trực tiếp`,
+      description: firstText(post.liveContext.description),
+      imageUrl: firstText(
+        post.liveContext.thumbnailUrl,
+        post.kind === 'text' ? post.photos[0] : undefined,
+      ),
+      isVideo: true,
+      live: {
+        state: post.liveContext.state,
+        streamName: post.liveContext.streamName,
+        viewerCount: post.liveContext.viewerCount,
+      },
+    };
+  }
 
   switch (post.kind) {
     case 'video':
@@ -255,8 +296,9 @@ export function createSharedPostPreviewLoader(
   const safeMaxEntries = Math.max(1, maxEntries);
 
   return {
-    load(postId) {
+    load(postId, options = {}) {
       const normalizedPostId = String(postId || '').trim();
+      if (options.force) cache.delete(normalizedPostId);
       const cached = cache.get(normalizedPostId);
       if (cached) return cached;
 

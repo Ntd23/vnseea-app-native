@@ -65,6 +65,23 @@ describe('ApiFeedRepository message sharing', () => {
     expect(payload).not.toHaveProperty('message_type');
   });
 
+  it('marks a live link sent to a one-to-one conversation', async () => {
+    await createFeedRepository().sharePost({
+      postId: '42',
+      destination: 'message',
+      recipientUserId: '8',
+      sourceKind: 'live',
+    });
+
+    expect(backendApi.post).toHaveBeenCalledWith(
+      'send-message',
+      expect.objectContaining({
+        user_id: '8',
+        text: 'https://demo.vnseea.vn/post/42?live=1',
+      }),
+    );
+  });
+
   it('sends a post link to a group conversation through group_chat', async () => {
     await createFeedRepository().sharePost({
       postId: '42',

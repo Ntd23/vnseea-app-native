@@ -8,8 +8,15 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
+  Alert: { alert: jest.fn() },
+  DeviceEventEmitter: {
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+  },
   Image: 'Image',
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    absoluteFill: {},
+    create: (styles: unknown) => styles,
+  },
   Text: 'Text',
   TouchableOpacity: 'TouchableOpacity',
   View: 'View',
@@ -20,11 +27,29 @@ jest.mock('lucide-react-native', () => ({
   BriefcaseBusiness: () => null,
   ChevronRight: () => null,
   CircleDollarSign: () => null,
+  Eye: () => null,
   FileText: () => null,
   MapPin: () => null,
   Play: () => null,
+  Radio: () => null,
   ShoppingBag: () => null,
 }));
+
+jest.mock(
+  '../../../../live/infrastructure/storage/endedLivePostsStorage',
+  () => ({
+    LOCAL_LIVE_ENDED_EVENT: 'localLiveEnded',
+    endedLivePostsStorage: {
+      hasEnded: jest.fn(() => false),
+      markEnded: jest.fn(),
+    },
+  }),
+);
+
+jest.mock(
+  '../../../../shared-kernel/infrastructure/storage/sessionStorage',
+  () => ({ sessionStorage: { getSession: () => ({ userId: 'user-1' }) } }),
+);
 
 jest.mock(
   '../../../../shared-kernel/application/hooks/useAppLanguage',
@@ -41,6 +66,7 @@ jest.mock('../../../../feed/infrastructure/repositories/ApiFeedRepository', () =
 }));
 
 import { SharedPostMessageCard } from '../SharedPostMessageCard';
+import { Alert } from 'react-native';
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -72,6 +98,10 @@ const reference = {
 };
 
 describe('SharedPostMessageCard', () => {
+  beforeEach(() => {
+    (Alert.alert as jest.Mock).mockClear();
+  });
+
   it('shows the note and replaces loading with the fetched preview', async () => {
     const request = deferred<SharedPostPreviewModel>();
     const loadPreview = jest.fn(() => request.promise);
@@ -264,5 +294,47 @@ describe('SharedPostMessageCard', () => {
       jobId: '31',
       job,
     });
+  });
+
+  it('shows an ended live card and blocks opening the room', async () => {
+    const onOpenPost = jest.fn();
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <SharedPostMessageCard
+          reference={{ ...reference, isLive: true }}
+          onOpenPost={onOpenPost}
+          loadPreview={() =>
+            Promise.resolve({
+              postId: '42',
+              kind: 'text',
+              publisherName: 'Nguyễn An',
+              title: 'Cùng trò chuyện tối nay',
+              imageUrl: 'https://cdn.vnseea.vn/live.jpg',
+              isVideo: true,
+              live: {
+                state: 'offline',
+                streamName: 'live-42',
+                viewerCount: 0,
+              },
+            })
+          }
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(textContent(renderer)).toContain('Phiên live đã kết thúc');
+    const button = renderer.root
+      .findAll(node => typeof node.props.onSingleTap === 'function')
+      .at(0);
+    button?.props.onSingleTap();
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Phiên live đã kết thúc',
+      'Bạn không thể tham gia phiên live này nữa.',
+    );
+    expect(onOpenPost).not.toHaveBeenCalled();
   });
 });

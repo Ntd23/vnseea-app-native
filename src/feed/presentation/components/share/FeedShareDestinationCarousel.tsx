@@ -29,6 +29,7 @@ interface FeedShareDestinationCarouselProps {
   selected: FeedShareCarouselDestination;
   labels: Record<FeedShareCarouselDestination, string>;
   disabled: boolean;
+  hiddenDestinations?: FeedShareCarouselDestination[];
   onSelect: (destination: FeedShareCarouselDestination) => void;
 }
 
@@ -46,8 +47,13 @@ export function FeedShareDestinationCarousel({
   selected,
   labels,
   disabled,
+  hiddenDestinations = [],
   onSelect,
 }: FeedShareDestinationCarouselProps) {
+  const visibleDestinations = DESTINATIONS.filter(
+    ({ id }) => !hiddenDestinations.includes(id),
+  );
+
   return (
     <View className="mt-5 pb-2">
       <Text className="mb-3 px-1 text-[16px] font-extrabold text-slate-900">
@@ -58,7 +64,7 @@ export function FeedShareDestinationCarousel({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.horizontalContent}
       >
-        {DESTINATIONS.map(({ id, Icon }) => {
+        {visibleDestinations.map(({ id, Icon }) => {
           const active = selected === id;
           return (
             <TouchableOpacity

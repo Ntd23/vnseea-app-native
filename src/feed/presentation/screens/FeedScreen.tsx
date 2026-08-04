@@ -2698,9 +2698,10 @@ function FeedScreen() {
         imagePrefetchInFlightCountRef.current += 1;
         Image.prefetch(url)
           .then(prefetched => {
-            if (prefetched) {
-              markFeedMediaLoaded(url);
-            } else {
+            // Prefetch warms the network/disk cache only. Do not mark the
+            // URL as retained here: retained state is consumed by media
+            // cards and would mount an offscreen native Image mid-fling.
+            if (!prefetched) {
               prefetchedImageUrlsRef.current.delete(url);
             }
           })

@@ -3414,9 +3414,29 @@ export const TextPostCard = React.memo(function TextPostCard({
 
   const handleOpenSharedPost = useCallback(
     (sourcePostId: string) => {
+      const sharedPost = post.sharedPost;
+      if (
+        sharedPost?.postId === sourcePostId &&
+        sharedPost.content.kind === 'live'
+      ) {
+        if (sharedPost.content.state === 'offline') {
+          Alert.alert(
+            language === 'vi' ? 'Phiên live đã kết thúc' : 'Live has ended',
+            language === 'vi'
+              ? 'Bạn không thể tham gia phiên live này nữa.'
+              : 'You can no longer join this live session.',
+          );
+          return;
+        }
+        const livePostId = Number(sourcePostId);
+        if (Number.isFinite(livePostId) && livePostId > 0) {
+          navigation.navigate(ROUTES.LIVE_ROOM, { postId: livePostId });
+          return;
+        }
+      }
       navigation.navigate(ROUTES.POST_DETAIL, { postId: sourcePostId });
     },
-    [navigation],
+    [language, navigation, post.sharedPost],
   );
 
   const handleOpenSharedPhoto = useCallback(

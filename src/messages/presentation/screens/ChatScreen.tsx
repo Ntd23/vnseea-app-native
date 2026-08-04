@@ -551,17 +551,17 @@ function parseSharedMapMessage(text: string): ParsedMapShareMessage | null {
   let mapSegment: (typeof segments)[number] | undefined;
   let location: SharedMapLocation | null = null;
   for (const segment of segments) {
-      if (!segment.url) continue;
-      const parsedLocation = parseMapShareUrl(segment.url);
-      if (
-        !parsedLocation ||
-        !isValidMessageLocation(
-          parsedLocation.latitude,
-          parsedLocation.longitude,
-        )
-      ) {
-        continue;
-      }
+    if (!segment.url) continue;
+    const parsedLocation = parseMapShareUrl(segment.url);
+    if (
+      !parsedLocation ||
+      !isValidMessageLocation(
+        parsedLocation.latitude,
+        parsedLocation.longitude,
+      )
+    ) {
+      continue;
+    }
     mapSegment = segment;
     location = parsedLocation;
     break;
@@ -619,6 +619,7 @@ const MapShareCard = React.memo(function MapShareCard({
     navigation.navigate(ROUTES.NEARBY_USERS, {
       initialLocation: location,
       autoRoute: !composer,
+      returnToChat: !composer,
     });
   }, [composer, location, navigation]);
 
@@ -677,16 +678,7 @@ const MapShareCard = React.memo(function MapShareCard({
   }
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      onPress={handleOpenMap}
-      onLongPress={onLongPress}
-      style={[
-        styles.mapShareCard,
-        composer ? styles.mapShareComposerCard : styles.mapShareMessageCard,
-        isSentByMe && !composer ? styles.mapShareCardSent : null,
-      ]}
-    >
+    <View style={[styles.mapShareCard, styles.mapShareComposerCard]}>
       <View style={styles.mapShareCardMainRow}>
         {location.imageUrl ? (
           <Image
@@ -696,41 +688,32 @@ const MapShareCard = React.memo(function MapShareCard({
           />
         ) : (
           <View style={styles.mapShareCardFallback}>
-            <MapPin size={24} color="#0F766E" />
+            <MapPin size={21} color="#0F766E" />
           </View>
         )}
         <View style={styles.mapShareCardCopy}>
-          <Text style={styles.mapShareCardEyebrow}>
-            {composer ? 'Địa chỉ sẽ gửi' : 'Địa điểm'}
-          </Text>
+          <Text style={styles.mapShareCardEyebrow}>Vị trí sẽ gửi</Text>
           <Text style={styles.mapShareCardTitle} numberOfLines={1}>
             {location.title || 'Địa điểm đã chọn'}
           </Text>
           <Text style={styles.mapShareCardCoordinate} numberOfLines={1}>
-            Tọa độ: {coordinateText}
+            {addressText || `Tọa độ: ${coordinateText}`}
           </Text>
-          {!!addressText && (
-            <Text style={styles.mapShareCardAddress} numberOfLines={1}>
-              {addressText}
-            </Text>
-          )}
         </View>
         {onRemove ? (
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={onRemove}
+            accessibilityRole="button"
+            accessibilityLabel="Bỏ vị trí đã chọn"
+            hitSlop={8}
             style={styles.mapShareCardClose}
           >
             <X size={16} color="#475569" />
           </TouchableOpacity>
         ) : null}
       </View>
-      {!!caption && (
-        <Text style={styles.mapShareCardCaption} numberOfLines={3}>
-          {caption}
-        </Text>
-      )}
-    </TouchableOpacity>
+    </View>
   );
 });
 
@@ -2106,6 +2089,8 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.sharedPost?.url === nextProps.message.sharedPost?.url &&
       prevProps.message.sharedPost?.note ===
         nextProps.message.sharedPost?.note &&
+      prevProps.message.sharedPost?.isLive ===
+        nextProps.message.sharedPost?.isLive &&
       prevProps.message.storyReply?.storyId ===
         nextProps.message.storyReply?.storyId &&
       prevProps.message.storyReply?.available ===
@@ -2589,7 +2574,13 @@ function MediaMessageGroup({
 
 const MemoizedMediaMessageGroup = React.memo(MediaMessageGroup);
 
-function ChatScreen({ navigation, route }: ChatScreenProps) {
+function ChatScreen(props: ChatScreenProps) {
+  return (
+    <ChatScreenContent key={String(props.route.params.chat.id)} {...props} />
+  );
+}
+
+function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   const { chat } = route.params;
   const isScreenFocused = useIsFocused();
   const language = useAppLanguage();
@@ -2600,6 +2591,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     groupInfo,
     isLoading,
     isLoadingMore,
+    isSending,
     hasMore,
     isTyping,
     isRecording,
@@ -2616,6 +2608,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     stopTyping,
     loadGroupInfo,
   } = useChatViewModel(chat, isScreenFocused);
+  const displayChat = useMemo(() => {
+    if (chat.chatType !== 'group' || !groupInfo) return chat;
+
+    const name = groupInfo.name || chat.name;
+    const avatar = groupInfo.avatar || chat.avatar;
+    if (name === chat.name && avatar === chat.avatar) return chat;
+
+    return { ...chat, name, avatar };
+  }, [chat, groupInfo]);
 
   const [text, setText] = useState('');
   const [replyingMessage, setReplyingMessage] = useState<
@@ -2634,6 +2635,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [isPickingCurrentLocation, setIsPickingCurrentLocation] =
     useState(false);
   const isPickingCurrentLocationRef = useRef(false);
+  const locationRequestIdRef = useRef(0);
+  const sendInFlightRef = useRef(false);
 
   useEffect(() => {
     if (route.params?.product) {
@@ -2698,6 +2701,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   );
 
   const recorder = useAudioRecorder();
+  const {
+    isRecording: recorderIsRecording,
+    cancelRecording: cancelRecorder,
+  } = recorder;
   const flatListRef = useRef<FlatList<ChatMessageListItem>>(null);
   const pinnedHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -2717,11 +2724,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const loadingOlderRef = useRef(false);
   const sendAnim = useRef(new Animated.Value(1)).current;
   const canSend =
-    Boolean(text.trim()) ||
-    attachments.length > 0 ||
-    recorder.isRecording ||
-    Boolean(attachedProduct) ||
-    Boolean(sharedMapLocation);
+    !isSending &&
+    !isPickingCurrentLocation &&
+    (Boolean(text.trim()) ||
+      attachments.length > 0 ||
+      recorder.isRecording ||
+      Boolean(attachedProduct) ||
+      Boolean(sharedMapLocation));
   const audioAttachment = useMemo(
     () => attachments.find(attachment => attachment.mediaType === 'audio'),
     [attachments],
@@ -2756,6 +2765,30 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const handleComposerFocus = useCallback(() => {
     setTimeout(() => scrollToLatest(true), Platform.OS === 'ios' ? 80 : 0);
   }, [scrollToLatest]);
+
+  useEffect(
+    () => () => {
+      locationRequestIdRef.current += 1;
+      isPickingCurrentLocationRef.current = false;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!sharedMapLocation) return;
+
+    // Location is a composer attachment. Dismiss the keyboard and replace
+    // incompatible attachments so the composer keeps a bounded height.
+    Keyboard.dismiss();
+    setAttachedProduct(current => (current ? undefined : current));
+    setAttachments(current => (current.length > 0 ? [] : current));
+    if (recorderIsRecording) {
+      cancelRecorder().catch(() => undefined);
+    }
+
+    const frame = requestAnimationFrame(() => scrollToLatest(false));
+    return () => cancelAnimationFrame(frame);
+  }, [cancelRecorder, recorderIsRecording, scrollToLatest, sharedMapLocation]);
 
   const handlePressReply = useCallback((originalMessageId: string) => {
     const index = findConversationMessageListItemIndex(
@@ -3019,6 +3052,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const handleOpenSharedPost = useCallback(
     (target: SharedPostOpenTarget) => {
+      if (target.isLive) {
+        if (target.liveState === 'offline') {
+          Alert.alert(
+            language === 'vi' ? 'Phiên live đã kết thúc' : 'Live has ended',
+            language === 'vi'
+              ? 'Bạn không thể tham gia phiên live này nữa.'
+              : 'You can no longer join this live session.',
+          );
+          return;
+        }
+        const livePostId = Number(target.postId);
+        if (Number.isFinite(livePostId) && livePostId > 0) {
+          navigation.navigate(ROUTES.LIVE_ROOM, { postId: livePostId });
+          return;
+        }
+      }
+
       if (
         target.kind === 'product' &&
         target.productId !== undefined &&
@@ -3040,7 +3090,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
       navigation.navigate(ROUTES.POST_DETAIL, { postId: target.postId });
     },
-    [navigation],
+    [language, navigation],
   );
 
   const handleOpenSharedPage = useCallback(
@@ -3059,110 +3109,128 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   );
 
   const handleSend = useCallback(async () => {
-    const recordedAudio = recorder.isRecording
-      ? await recorder.stopRecording()
-      : undefined;
-    const pendingAttachments = recordedAudio
-      ? [{ ...recordedAudio, mediaType: 'audio' as const }]
-      : attachments;
-
     if (
-      !text.trim() &&
-      pendingAttachments.length === 0 &&
-      !attachedProduct &&
-      !sharedMapLocation
+      sendInFlightRef.current ||
+      isSending ||
+      isPickingCurrentLocationRef.current
     ) {
       return;
     }
+    sendInFlightRef.current = true;
 
-    // Animate send button
-    Animated.sequence([
-      Animated.timing(sendAnim, {
-        toValue: 0.8,
-        duration: 50,
-        useNativeDriver: true,
-      }),
-      Animated.spring(sendAnim, {
-        toValue: 1,
-        friction: 3,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    let nextText = text;
-    let productInquiry: SendMessageOptions['productInquiry'];
-    if (attachedProduct) {
-      const currencySymbol =
-        attachedProduct.currency_symbol ||
-        attachedProduct.currency_code ||
-        attachedProduct.currency ||
-        'VNSEEA';
-      const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
-      const imageUrl = attachedProduct.images?.[0]?.image || '';
-      nextText = text.trim() || 'Mặt hàng này còn không bạn?';
-      productInquiry = {
-        productId: String(attachedProduct.id),
-        note: nextText,
-        name: attachedProduct.name,
-        price: formattedPrice,
-        image: imageUrl || undefined,
-        location: attachedProduct.location || undefined,
-      };
-
-      setAttachedProduct(undefined);
-    } else if (sharedMapLocation) {
-      const mapUrl = buildMapShareUrl(sharedMapLocation);
-      nextText = [nextText.trim(), mapUrl].filter(Boolean).join('\n');
-      setSharedMapLocation(undefined);
-    }
-
-    const replyTo = replyingMessage
-      ? createMessageReplyReference(
-          replyingMessage,
-          replyingMessage.isSentByMe
-            ? 'Bạn'
-            : replyingMessage.senderName || chat.name || 'Người dùng',
-        )
-      : undefined;
-    if (replyingMessage) setReplyingMessage(undefined);
-
-    const nextAttachments = pendingAttachments;
-    const groupableAttachmentCount = nextAttachments.filter(
-      attachment =>
-        attachment.mediaType === 'image' || attachment.mediaType === 'video',
-    ).length;
-    const mediaGroupId =
-      groupableAttachmentCount > 1
-        ? `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    try {
+      const recordedAudio = recorder.isRecording
+        ? await recorder.stopRecording()
         : undefined;
-    setText('');
-    stopTyping();
-    setAttachments([]);
+      const pendingAttachments = recordedAudio
+        ? [{ ...recordedAudio, mediaType: 'audio' as const }]
+        : attachments;
 
-    if (nextAttachments.length === 0) {
-      await sendMessage(nextText, undefined, {
-        ...(replyTo ? { replyTo } : {}),
-        ...(productInquiry ? { productInquiry } : {}),
-      });
-    } else {
-      for (const [index, attachment] of nextAttachments.entries()) {
-        const attachmentOptions: SendMessageOptions = {
-          ...(index === 0 && replyTo ? { replyTo } : {}),
-          ...(index === 0 && productInquiry ? { productInquiry } : {}),
-          ...(mediaGroupId &&
-          (attachment.mediaType === 'image' || attachment.mediaType === 'video')
-            ? { mediaGroupId }
-            : {}),
-        };
-        await sendMessage(
-          index === 0 ? nextText : '',
-          attachment,
-          attachmentOptions,
-        );
+      if (
+        !text.trim() &&
+        pendingAttachments.length === 0 &&
+        !attachedProduct &&
+        !sharedMapLocation
+      ) {
+        return;
       }
+
+      // Animate send button
+      Animated.sequence([
+        Animated.timing(sendAnim, {
+          toValue: 0.8,
+          duration: 50,
+          useNativeDriver: true,
+        }),
+        Animated.spring(sendAnim, {
+          toValue: 1,
+          friction: 3,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      let nextText = text;
+      let productInquiry: SendMessageOptions['productInquiry'];
+      if (attachedProduct) {
+        const currencySymbol =
+          attachedProduct.currency_symbol ||
+          attachedProduct.currency_code ||
+          attachedProduct.currency ||
+          'VNSEEA';
+        const formattedPrice = formatPrice(
+          attachedProduct.price,
+          currencySymbol,
+        );
+        const imageUrl = attachedProduct.images?.[0]?.image || '';
+        nextText = text.trim() || 'Mặt hàng này còn không bạn?';
+        productInquiry = {
+          productId: String(attachedProduct.id),
+          note: nextText,
+          name: attachedProduct.name,
+          price: formattedPrice,
+          image: imageUrl || undefined,
+          location: attachedProduct.location || undefined,
+        };
+
+        setAttachedProduct(undefined);
+      } else if (sharedMapLocation) {
+        const mapUrl = buildMapShareUrl(sharedMapLocation);
+        nextText = [nextText.trim(), mapUrl].filter(Boolean).join('\n');
+        setSharedMapLocation(undefined);
+      }
+
+      const replyTo = replyingMessage
+        ? createMessageReplyReference(
+            replyingMessage,
+            replyingMessage.isSentByMe
+              ? 'Bạn'
+              : replyingMessage.senderName || displayChat.name || 'Người dùng',
+          )
+        : undefined;
+      if (replyingMessage) setReplyingMessage(undefined);
+
+      const nextAttachments = pendingAttachments;
+      const groupableAttachmentCount = nextAttachments.filter(
+        attachment =>
+          attachment.mediaType === 'image' || attachment.mediaType === 'video',
+      ).length;
+      const mediaGroupId =
+        groupableAttachmentCount > 1
+          ? `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          : undefined;
+      setText('');
+      stopTyping();
+      setAttachments([]);
+
+      if (nextAttachments.length === 0) {
+        await sendMessage(nextText, undefined, {
+          ...(replyTo ? { replyTo } : {}),
+          ...(productInquiry ? { productInquiry } : {}),
+        });
+      } else {
+        for (const [index, attachment] of nextAttachments.entries()) {
+          const attachmentOptions: SendMessageOptions = {
+            ...(index === 0 && replyTo ? { replyTo } : {}),
+            ...(index === 0 && productInquiry ? { productInquiry } : {}),
+            ...(mediaGroupId &&
+            (attachment.mediaType === 'image' ||
+              attachment.mediaType === 'video')
+              ? { mediaGroupId }
+              : {}),
+          };
+          await sendMessage(
+            index === 0 ? nextText : '',
+            attachment,
+            attachmentOptions,
+          );
+        }
+      }
+    } finally {
+      sendInFlightRef.current = false;
     }
   }, [
     attachments,
+    isSending,
     recorder,
     sendMessage,
     stopTyping,
@@ -3171,7 +3239,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     attachedProduct,
     sharedMapLocation,
     replyingMessage,
-    chat.name,
+    displayChat.name,
   ]);
 
   const handleSelectOptionReply = useCallback(() => {
@@ -3303,6 +3371,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     }
 
     if (selected.length > 0) {
+      setSharedMapLocation(undefined);
       setAttachments(current => {
         const filtered = current.filter(a => a.mediaType !== 'audio');
         return [...filtered, ...selected].slice(0, MAX_MEDIA_ATTACHMENTS);
@@ -3313,10 +3382,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const handleShareCurrentLocation = useCallback(async () => {
     if (isPickingCurrentLocationRef.current) return;
 
+    const requestId = locationRequestIdRef.current + 1;
+    locationRequestIdRef.current = requestId;
+    Keyboard.dismiss();
     isPickingCurrentLocationRef.current = true;
     setIsPickingCurrentLocation(true);
     try {
       const location = await getCurrentDeviceLocation();
+      if (locationRequestIdRef.current !== requestId) return;
       const currentProfile = sessionStorage.getUserProfile();
       const nextMapLocation: SharedMapLocation = {
         title: 'Vị trí của bạn',
@@ -3329,14 +3402,17 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       prefetchStaticMapPreview(nextMapLocation);
       setSharedMapLocation(nextMapLocation);
     } catch (caughtError) {
+      if (locationRequestIdRef.current !== requestId) return;
       const message =
         caughtError instanceof Error && caughtError.message
           ? caughtError.message
           : 'Không lấy được vị trí hiện tại của bạn.';
       Alert.alert('Không thể chia sẻ vị trí', message);
     } finally {
-      isPickingCurrentLocationRef.current = false;
-      setIsPickingCurrentLocation(false);
+      if (locationRequestIdRef.current === requestId) {
+        isPickingCurrentLocationRef.current = false;
+        setIsPickingCurrentLocation(false);
+      }
     }
   }, []);
 
@@ -3347,6 +3423,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         if (audio) setAttachments([{ ...audio, mediaType: 'audio' }]);
         return;
       }
+      setSharedMapLocation(undefined);
       setAttachments([]);
       await recorder.startRecording();
     } catch {
@@ -3368,10 +3445,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, [chat.chatId, chat.chatType, chat.groupId, chat.id, chat.userId]);
 
   useEffect(() => {
-    if (chat.chatType !== 'group') return;
+    if (chat.chatType !== 'group' || !isScreenFocused) return;
 
     loadGroupInfo().catch(() => undefined);
-  }, [chat.chatType, loadGroupInfo]);
+  }, [chat.chatType, isScreenFocused, loadGroupInfo]);
 
   const handleStartConversationCall = useCallback(
     (callType: 'audio' | 'video') => {
@@ -3383,8 +3460,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         const callParams = {
           groupId,
           direction: 'outgoing' as const,
-          groupName: chat.name,
-          groupAvatar: chat.avatar,
+          groupName: displayChat.name,
+          groupAvatar: displayChat.avatar,
         };
         startGroupCall(callParams);
         navigation.navigate(ROUTES.GROUP_CALL_ROOM, callParams);
@@ -3403,8 +3480,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         direction: 'outgoing' as const,
         peer: {
           id: recipientId,
-          name: chat.name,
-          avatar: chat.avatar,
+          name: displayChat.name,
+          avatar: displayChat.avatar,
           username: chat.username,
         },
       };
@@ -3412,9 +3489,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       navigation.navigate(ROUTES.CALL_ROOM, callParams);
     },
     [
-      chat.avatar,
+      displayChat.avatar,
       chat.chatType,
-      chat.name,
+      displayChat.name,
       copy.audioCallFailedTitle,
       copy.missingGroup,
       copy.missingRecipient,
@@ -3441,7 +3518,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           >
             <MemoizedMediaMessageGroup
               messages={item.messages}
-              avatar={chat.avatar}
+              avatar={displayChat.avatar}
               onOpenMedia={handleOpenMedia}
               onLongPress={setSelectedOptionMessage}
               onDoubleTap={handleDoubleTapMessage}
@@ -3494,8 +3571,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         >
           <MemoizedMessageBubble
             message={item.message}
-            avatar={chat.avatar}
-            chatName={chat.name}
+            avatar={displayChat.avatar}
+            chatName={displayChat.name}
             showAvatar={showAvatar}
             onOpenMedia={handleOpenMedia}
             onReply={setReplyingMessage}
@@ -3511,8 +3588,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       );
     },
     [
-      chat.avatar,
-      chat.name,
+      displayChat.avatar,
+      displayChat.name,
       highlightedMessageId,
       messageItems,
       handleOpenMedia,
@@ -3534,13 +3611,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const handleOpenConversationInfo = useCallback(() => {
     if (chat.chatType === 'group') {
-      navigation.navigate(ROUTES.GROUP_INFO, { chat });
+      navigation.navigate(ROUTES.GROUP_INFO, { chat: displayChat });
       return;
     }
     if (chat.chatType === 'user' && conversationPartnerId) {
       navigation.navigate(ROUTES.CONVERSATION_DETAILS, { chat });
     }
-  }, [chat, conversationPartnerId, navigation]);
+  }, [chat, conversationPartnerId, displayChat, navigation]);
 
   const conversationSubtitle = useMemo(() => {
     if (chat.chatType === 'group') {
@@ -3551,12 +3628,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     if (chat.isOnline) {
       return language === 'vi' ? 'Đang hoạt động' : 'Active now';
     }
-    return `@${chat.username || chat.name}`;
+    return `@${chat.username || displayChat.name}`;
   }, [
     chat.chatType,
     chat.isOnline,
-    chat.name,
     chat.username,
+    displayChat.name,
     groupInfo?.memberCount,
     language,
   ]);
@@ -3567,11 +3644,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         language === 'vi' ? 'thành viên' : 'members'
       }`;
     }
-    return `@${chat.username || chat.name}`;
+    return `@${chat.username || displayChat.name}`;
   }, [
     chat.chatType,
-    chat.name,
     chat.username,
+    displayChat.name,
     groupInfo?.memberCount,
     language,
   ]);
@@ -3583,9 +3660,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         : 'This is the beginning of this group. Send the first message to start chatting!';
     }
     return language === 'vi'
-      ? `Bạn hiện đã kết nối trên VnSeea. Hãy bắt đầu cuộc trò chuyện với ${chat.name}!`
-      : `You are connected on VnSeea. Start the conversation with ${chat.name}!`;
-  }, [chat.chatType, chat.name, language]);
+      ? `Bạn hiện đã kết nối trên VnSeea. Hãy bắt đầu cuộc trò chuyện với ${displayChat.name}!`
+      : `You are connected on VnSeea. Start the conversation with ${displayChat.name}!`;
+  }, [chat.chatType, displayChat.name, language]);
 
   const conversationHeaderActions = useMemo(() => {
     if (chat.chatType !== 'user' && chat.chatType !== 'group') return [];
@@ -3648,7 +3725,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             onPress={handleOpenConversationInfo}
           >
             <Image
-              source={{ uri: chat.avatar }}
+              source={{ uri: displayChat.avatar }}
               className="h-11 w-11 rounded-full"
             />
             <View className="ml-3 flex-1">
@@ -3656,7 +3733,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 className="text-base font-bold text-gray-900"
                 numberOfLines={1}
               >
-                {chat.name}
+                {displayChat.name}
               </Text>
               <Text className="text-xs text-gray-500" numberOfLines={1}>
                 {conversationSubtitle}
@@ -3688,7 +3765,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
         <PinnedMessagesBanner
           pinnedMessages={pinnedMessages}
-          partnerName={chat.name}
+          partnerName={displayChat.name}
           isLoading={isLoadingPinnedMessages}
           onOpenMessage={messageId => {
             handleOpenPinnedMessage(messageId).catch(error => {
@@ -3732,7 +3809,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             ListHeaderComponent={
               <View className="py-2">
                 {(isTyping || isRecording) && (
-                  <TypingIndicator name={chat.name} avatar={chat.avatar} />
+                  <TypingIndicator
+                    name={displayChat.name}
+                    avatar={displayChat.avatar}
+                  />
                 )}
               </View>
             }
@@ -3747,7 +3827,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 <View className="items-center justify-center py-10 px-4">
                   <View className="relative">
                     <Image
-                      source={{ uri: chat.avatar }}
+                      source={{ uri: displayChat.avatar }}
                       className="h-24 w-24 rounded-full border-4 border-brand-on-muted shadow-md"
                     />
                     {chat.isOnline && (
@@ -3755,7 +3835,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                     )}
                   </View>
                   <Text className="mt-4 text-xl font-bold text-gray-900 text-center">
-                    {chat.name}
+                    {displayChat.name}
                   </Text>
                   <Text className="mt-1 text-sm text-gray-500 text-center">
                     {conversationFooterSubtitle}
@@ -3763,7 +3843,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <Text style={{ display: 'none' }}>
                     {chat.chatType === 'group'
                       ? `${groupInfo?.memberCount ?? ''} thành viên`
-                      : `@${chat.username || chat.name}`}
+                      : `@${chat.username || displayChat.name}`}
                   </Text>
                   <Text className="mt-3 text-xs text-gray-400 text-center max-w-[280px]">
                     {conversationIntroText}
@@ -3771,7 +3851,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <Text style={{ display: 'none' }}>
                     {chat.chatType === 'group'
                       ? 'Đây là sự bắt đầu của nhóm này. Hãy gửi tin nhắn đầu tiên để cùng trò chuyện!'
-                      : `Bạn hiện đã kết nối trên VnSeea. Hãy bắt đầu cuộc trò chuyện với ${chat.name}!`}
+                      : `Bạn hiện đã kết nối trên VnSeea. Hãy bắt đầu cuộc trò chuyện với ${displayChat.name}!`}
                   </Text>
                 </View>
               ) : null
@@ -3782,7 +3862,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <MessageCircle size={48} color="#9DA9BE" />
                 </View>
                 <Text className="text-lg font-semibold text-gray-900">
-                  {copy.hello(chat.name)}
+                  {copy.hello(displayChat.name)}
                 </Text>
                 <Text className="mt-2 text-center text-sm text-gray-500">
                   {copy.emptyHint}
@@ -3792,7 +3872,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           />
         )}
 
-        {showJumpToLatest && (
+        {showJumpToLatest &&
+        !isKeyboardVisible &&
+        !sharedMapLocation &&
+        !attachedProduct &&
+        visualAttachments.length === 0 &&
+        !audioAttachment &&
+        !replyingMessage ? (
           <TouchableOpacity
             className="absolute bottom-24 right-5 h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-lg"
             style={{ elevation: 6 }}
@@ -3804,7 +3890,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           >
             <ChevronDown size={25} color={APP_BRAND_COLOR} strokeWidth={2.6} />
           </TouchableOpacity>
-        )}
+        ) : null}
 
         {/* Error */}
         {!!error && (
@@ -4010,13 +4096,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 >
                   {replyingMessage.isSentByMe
                     ? 'Bạn'
-                    : chat.name || 'Người dùng'}
+                    : displayChat.name || 'Người dùng'}
                 </Text>
                 <Text
                   className="mt-0.5 text-[12px] leading-4 text-gray-500"
                   numberOfLines={1}
                 >
-                  {getMessageSnippet(replyingMessage, chat.name)}
+                  {getMessageSnippet(replyingMessage, displayChat.name)}
                 </Text>
               </View>
               {/* Optional Right image thumbnail in preview bar */}
@@ -4070,6 +4156,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           <TouchableOpacity
             className="mr-2 h-10 w-10 items-center justify-center rounded-full"
             activeOpacity={0.7}
+            disabled={isPickingCurrentLocation || isSending}
             onPress={() => handlePickMedia().catch(() => undefined)}
           >
             <ImagePlus size={22} color="#9DA9BE" />
@@ -4080,7 +4167,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               isPickingCurrentLocation ? 'bg-info-soft' : ''
             }`}
             activeOpacity={0.7}
-            disabled={isPickingCurrentLocation}
+            disabled={
+              isPickingCurrentLocation || isSending || recorder.isRecording
+            }
             onPress={() => handleShareCurrentLocation().catch(() => undefined)}
           >
             {isPickingCurrentLocation ? (
@@ -4112,6 +4201,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               recorder.isRecording ? 'bg-red-100' : 'bg-brand/10'
             }`}
             activeOpacity={0.7}
+            disabled={isPickingCurrentLocation || isSending}
             onPress={() => handleToggleRecording().catch(() => undefined)}
           >
             {recorder.isRecording ? (
@@ -4130,7 +4220,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               disabled={!canSend}
               onPress={() => handleSend().catch(() => undefined)}
             >
-              <Send size={18} color="#fff" />
+              {isSending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Send size={18} color="#fff" />
+              )}
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -4520,8 +4614,8 @@ const styles = StyleSheet.create({
     borderTopColor: '#F1F5F9',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
-    paddingBottom: 10,
-    paddingTop: 10,
+    paddingBottom: 6,
+    paddingTop: 6,
   },
   mapShareMessageWrap: {
     maxWidth: MAP_SHARE_CARD_WIDTH,
@@ -4540,6 +4634,10 @@ const styles = StyleSheet.create({
   },
   mapShareComposerCard: {
     width: '100%',
+    borderRadius: 14,
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 1,
   },
   mapShareMessageCard: {
     width: MAP_SHARE_CARD_WIDTH,
@@ -4552,18 +4650,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   mapShareCardImage: {
-    width: 58,
-    height: 58,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: '#DDEFEA',
   },
   mapShareCardFallback: {
-    width: 58,
-    height: 58,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#D9F8EF',
@@ -4575,7 +4673,7 @@ const styles = StyleSheet.create({
   },
   mapShareCardEyebrow: {
     color: '#0F766E',
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.2,
     textTransform: 'uppercase',
@@ -4583,13 +4681,13 @@ const styles = StyleSheet.create({
   mapShareCardTitle: {
     marginTop: 2,
     color: '#0F172A',
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '900',
   },
   mapShareCardCoordinate: {
     marginTop: 3,
     color: APP_COLORS.status.info,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
   },
   mapShareCardAddress: {

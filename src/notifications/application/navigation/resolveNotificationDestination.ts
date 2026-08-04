@@ -131,7 +131,7 @@ export function resolveNotificationDestination(
   }
 
   if (type === 'sent_u_money') {
-    return { kind: 'points' };
+    return { kind: 'balance' };
   }
 
   if (

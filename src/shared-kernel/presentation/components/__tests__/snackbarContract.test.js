@@ -45,6 +45,10 @@ describe('app-wide Snackbar contract', () => {
     expect(source).toContain('MAX_QUEUED_SNACKBARS = 3');
     expect(source).toContain('accessibilityRole="alert"');
     expect(source).toContain('duration?: SnackbarDuration');
+    expect(source).toContain('pointerEvents="auto"');
+    expect(source).toContain('testID="snackbar-close"');
+    expect(source).toContain('dismissFallbackRef');
+    expect(source).toContain('key={queue[0].id}');
   });
 
   it('does not allow screen-level toast hosts or platform-only ToastAndroid', () => {

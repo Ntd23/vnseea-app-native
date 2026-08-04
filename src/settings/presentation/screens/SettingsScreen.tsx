@@ -4795,6 +4795,14 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.MY_PHOTOS);
       }
 
+      if (id === 'post-photos') {
+        navigation.navigate(ROUTES.MY_PHOTOS);
+      }
+
+      if (id === 'watch') {
+        navigation.navigate(ROUTES.WATCH);
+      }
+
       if (id === 'albums') {
         navigation.navigate(ROUTES.ALBUMS);
       }

@@ -29,4 +29,23 @@ describe('chat shared-location Google Map preview', () => {
     expect(chatSource).toContain('navigation.navigate(ROUTES.NEARBY_USERS');
     expect(chatSource).toContain('onPress={handleOpenMap}');
   });
+
+  it('keeps the pending location compact and returns map shares to the existing chat', () => {
+    expect(chatSource).toContain('styles.mapShareComposerCard');
+    expect(chatSource).toContain('accessibilityLabel="Bỏ vị trí đã chọn"');
+    expect(chatSource).toContain('returnToChat: !composer');
+    expect(chatSource).toContain('!isPickingCurrentLocation &&');
+    expect(chatSource).toContain(
+      'key={String(props.route.params.chat.id)}',
+    );
+
+    const nearbySource = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'src/user/presentation/screens/NearbyUsersScreen.tsx',
+      ),
+      'utf8',
+    );
+    expect(nearbySource).toContain('navigation.popTo(ROUTES.CHAT, params)');
+  });
 });

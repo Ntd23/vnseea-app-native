@@ -1,17 +1,19 @@
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   BarChart3,
   BriefcaseBusiness,
   CalendarDays,
   ChevronRight,
+  Eye,
   Globe2,
   Lock,
   MapPin,
   Megaphone,
   Package,
   Play,
+  Radio,
   Users,
 } from 'lucide-react-native';
 import type { SharedPostPreviewModel } from '../../domain/types/feed.types';
@@ -173,6 +175,26 @@ export function SharedPostPreviewCard({
     taggedUsers: model.taggedUsers,
     location: model.location,
   });
+  const isLiveContent = content.kind === 'live';
+  const liveEnded = isLiveContent && content.state === 'offline';
+  const liveTitle = isLiveContent
+    ? content.title ||
+      (language === 'vi'
+        ? `${model.publisher.name || 'VNSEEA'} đang phát trực tiếp`
+        : `${model.publisher.name || 'VNSEEA'} is live`)
+    : '';
+  const handleOpenPost = () => {
+    if (liveEnded) {
+      Alert.alert(
+        language === 'vi' ? 'Phiên live đã kết thúc' : 'Live has ended',
+        language === 'vi'
+          ? 'Bạn không thể tham gia phiên live này nữa.'
+          : 'You can no longer join this live session.',
+      );
+      return;
+    }
+    onOpenPost?.(model.postId);
+  };
 
   return (
     <View
@@ -181,7 +203,7 @@ export function SharedPostPreviewCard({
     >
       <Pressable
         disabled={!onOpenPost}
-        onPress={() => onOpenPost?.(model.postId)}
+        onPress={handleOpenPost}
         style={styles.header}
       >
         {groupContext ? (
@@ -298,10 +320,10 @@ export function SharedPostPreviewCard({
         </View>
       </Pressable>
 
-      {model.caption ? (
+      {model.caption && !isLiveContent ? (
         <Pressable
           disabled={!onOpenPost}
-          onPress={() => onOpenPost?.(model.postId)}
+          onPress={handleOpenPost}
           style={styles.captionWrap}
         >
           <Text style={styles.caption}>{model.caption}</Text>
@@ -320,7 +342,7 @@ export function SharedPostPreviewCard({
           {content.linkPreview ? (
             <Pressable
               disabled={!onOpenPost}
-              onPress={() => onOpenPost?.(model.postId)}
+              onPress={handleOpenPost}
               style={styles.linkPreview}
             >
               {content.linkPreview.image ? (
@@ -340,11 +362,129 @@ export function SharedPostPreviewCard({
         </>
       ) : null}
 
+      {isLiveContent ? (
+        <Pressable
+          disabled={!onOpenPost}
+          onPress={handleOpenPost}
+          style={styles.liveCard}
+          accessibilityRole="button"
+          accessibilityLabel={
+            liveEnded
+              ? language === 'vi'
+                ? 'Phiên live đã kết thúc'
+                : 'Live has ended'
+              : language === 'vi'
+                ? 'Xem trực tiếp'
+                : 'Watch live'
+          }
+        >
+          <View style={styles.liveMedia}>
+            {content.thumbnailUrl ? (
+              <RetainedSharedPreviewImage
+                uri={content.thumbnailUrl}
+                style={styles.image}
+                mediaEnabled={mediaEnabled}
+                forceMediaFallback={forceMediaFallback}
+                onAssetSettled={onAssetSettled}
+              />
+            ) : (
+              <View style={styles.liveMediaFallback}>
+                <Radio size={44} color="#FFFFFF" strokeWidth={1.9} />
+              </View>
+            )}
+            <View style={styles.liveShade} />
+            <View
+              style={[
+                styles.liveStateBadge,
+                liveEnded ? styles.liveEndedBadge : null,
+              ]}
+            >
+              <View
+                style={[
+                  styles.livePulse,
+                  liveEnded ? styles.liveEndedPulse : null,
+                ]}
+              />
+              <Text style={styles.liveStateText}>
+                {liveEnded
+                  ? language === 'vi'
+                    ? 'ĐÃ KẾT THÚC'
+                    : 'ENDED'
+                  : language === 'vi'
+                    ? 'TRỰC TIẾP'
+                    : 'LIVE'}
+              </Text>
+            </View>
+            {!liveEnded && content.viewerCount !== undefined ? (
+              <View style={styles.liveViewerBadge}>
+                <Eye size={13} color="#FFFFFF" />
+                <Text style={styles.liveViewerText}>
+                  {Math.max(0, content.viewerCount).toLocaleString()}
+                </Text>
+              </View>
+            ) : null}
+            <View
+              style={[
+                styles.livePlayBadge,
+                liveEnded ? styles.livePlayBadgeEnded : null,
+              ]}
+            >
+              {liveEnded ? (
+                <Radio size={25} color="#FFFFFF" />
+              ) : (
+                <Play size={24} color="#FFFFFF" fill="#FFFFFF" />
+              )}
+            </View>
+          </View>
+          <View style={styles.liveCopy}>
+            <Text style={styles.liveTitle} numberOfLines={2}>
+              {liveTitle}
+            </Text>
+            {content.description ? (
+              <Text style={styles.liveDescription} numberOfLines={2}>
+                {content.description}
+              </Text>
+            ) : null}
+            <View style={styles.liveFooter}>
+              <View
+                style={[
+                  styles.liveFooterIcon,
+                  liveEnded ? styles.liveFooterIconEnded : null,
+                ]}
+              >
+                <Radio
+                  size={15}
+                  color={liveEnded ? '#64748B' : '#DC2626'}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.liveFooterText,
+                  liveEnded ? styles.liveFooterTextEnded : null,
+                ]}
+              >
+                {liveEnded
+                  ? language === 'vi'
+                    ? 'Phiên live đã kết thúc'
+                    : 'This live has ended'
+                  : language === 'vi'
+                    ? 'Nhấn để xem trực tiếp'
+                    : 'Tap to watch live'}
+              </Text>
+              <ChevronRight
+                size={17}
+                color={liveEnded ? '#94A3B8' : '#DC2626'}
+              />
+            </View>
+          </View>
+        </Pressable>
+      ) : null}
+
       {content.kind === 'video'
         ? mediaSlot ?? (
             <Pressable
               disabled={!onOpenPost}
-              onPress={() => onOpenPost?.(model.postId)}
+              onPress={handleOpenPost}
               style={styles.videoFallback}
             >
               {content.thumbnailUrl ? (
@@ -366,7 +506,7 @@ export function SharedPostPreviewCard({
       {content.kind === 'poll' ? (
         <Pressable
           disabled={!onOpenPost}
-          onPress={() => onOpenPost?.(model.postId)}
+          onPress={handleOpenPost}
           style={styles.poll}
         >
           <View style={styles.attachmentHeading}>
@@ -388,7 +528,7 @@ export function SharedPostPreviewCard({
       {content.kind === 'attachment' ? (
         <Pressable
           disabled={!onOpenPost}
-          onPress={() => onOpenPost?.(model.postId)}
+          onPress={handleOpenPost}
           style={[
             styles.attachment,
             isCompactAttachment ? styles.productAttachment : null,
@@ -656,6 +796,137 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0F172A',
+  },
+  liveCard: {
+    overflow: 'hidden',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  liveMedia: {
+    position: 'relative',
+    aspectRatio: 16 / 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+  },
+  liveMediaFallback: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E293B',
+  },
+  liveShade: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(2,6,23,0.28)',
+  },
+  liveStateBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#DC2626',
+  },
+  liveEndedBadge: {
+    backgroundColor: 'rgba(51,65,85,0.94)',
+  },
+  livePulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+  },
+  liveEndedPulse: {
+    backgroundColor: '#CBD5E1',
+  },
+  liveStateText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.45,
+  },
+  liveViewerBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(15,23,42,0.76)',
+  },
+  liveViewerText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  livePlayBadge: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.88)',
+    backgroundColor: 'rgba(220,38,38,0.88)',
+  },
+  livePlayBadgeEnded: {
+    backgroundColor: 'rgba(51,65,85,0.86)',
+  },
+  liveCopy: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 13,
+  },
+  liveTitle: {
+    color: '#0F172A',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '900',
+  },
+  liveDescription: {
+    marginTop: 4,
+    color: '#64748B',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  liveFooter: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 11,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+  },
+  liveFooterIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+  },
+  liveFooterIconEnded: {
+    backgroundColor: '#F1F5F9',
+  },
+  liveFooterText: {
+    flex: 1,
+    marginLeft: 8,
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  liveFooterTextEnded: {
+    color: '#64748B',
   },
   playBadge: {
     position: 'absolute',

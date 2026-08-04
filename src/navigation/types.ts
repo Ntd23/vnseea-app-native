@@ -53,6 +53,7 @@ export type MainTabParamList = {
     | {
         initialLocation?: SharedMapLocation;
         autoRoute?: boolean;
+        returnToChat?: boolean;
       }
     | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
@@ -183,6 +184,7 @@ export type RootStackParamList = {
     | {
         initialLocation?: SharedMapLocation;
         autoRoute?: boolean;
+        returnToChat?: boolean;
       }
     | undefined;
   [ROUTES.ACTIVITY_CENTER]:
@@ -311,6 +313,7 @@ export type RootStackParamList = {
     postId: number;
     isHost?: boolean;
     liveSession?: LiveSession;
+    initialCameraFacing?: 'front' | 'back';
   };
   [ROUTES.GO_LIVE]: undefined;
   [ROUTES.POKE]: undefined;

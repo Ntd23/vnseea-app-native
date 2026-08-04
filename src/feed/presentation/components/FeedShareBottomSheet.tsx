@@ -14,6 +14,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -240,20 +241,36 @@ function buildOptimisticStory({
 export interface FeedShareBottomSheetProps {
   visible: boolean;
   post?: FeedPost;
+  page?: PagesItem;
   onClose: () => void;
-  onInternalShare: (input: SharePostInput) => Promise<FeedPost>;
+  onInternalShare?: (input: SharePostInput) => Promise<FeedPost>;
+  onInternalPageShare?: (input: SharePageInput) => Promise<unknown>;
   onShared?: (post: FeedPost) => void;
+}
+
+export interface SharePageInput {
+  page: PagesItem;
+  destination: 'timeline' | 'page' | 'group' | 'message';
+  text?: string;
+  pageId?: string;
+  groupId?: string;
+  recipientUserId?: string;
+  recipientGroupId?: string;
 }
 
 export function FeedShareBottomSheet({
   visible,
   post,
+  page,
   onClose,
   onInternalShare,
+  onInternalPageShare,
   onShared,
 }: FeedShareBottomSheetProps) {
   const canShare = isFeedPostShareable(post);
-  const shareVisible = visible && canShare;
+  const pageUrl = page?.url?.trim() || '';
+  const pageCanShare = Boolean(page && pageUrl);
+  const shareVisible = visible && (page ? pageCanShare : canShare);
   const language = useAppLanguage();
   const copy = getShareCopy(language);
   const insets = useSafeAreaInsets();
@@ -261,6 +278,20 @@ export function FeedShareBottomSheet({
   const pagesVm = useMyPagesViewModel();
   const groupsVm = useMyGroupsViewModel();
   const { copyToClipboard, sharePost } = useShareViewModel();
+  const pageTitle = page?.pageTitle || page?.pageName || 'Trang';
+  const pageShareSuccess = language === 'vi' ? 'Đã chia sẻ trang.' : 'Page shared.';
+  const pageShareFailed =
+    language === 'vi' ? 'Không thể chia sẻ trang.' : 'Unable to share page.';
+  const pageNotePlaceholder =
+    language === 'vi'
+      ? 'Thêm lời nhắn (không bắt buộc)'
+      : 'Add a note (optional)';
+  const sheetTitle = page
+    ? language === 'vi'
+      ? 'Chia sẻ trang'
+      : 'Share page'
+    : copy.title;
+  const shareSourceCanShare = page ? pageCanShare : canShare;
 
   const [note, setNote] = useState('');
   const [target, setTarget] = useState<InternalShareTarget>('timeline');
@@ -488,7 +519,9 @@ export function FeedShareBottomSheet({
     opacity: backdropOpacity.value,
   }));
 
-  const selectedPage = pageChoices.find(page => page.id === selectedPageId);
+  const selectedPage = pageChoices.find(
+    pageChoice => pageChoice.id === selectedPageId,
+  );
   const selectedGroup = groupChoices.find(
     group => group.id === selectedGroupId,
   );
@@ -509,8 +542,9 @@ export function FeedShareBottomSheet({
       ? copy.shareGroup
       : copy.shareNow;
   const isPrimaryShareDisabled =
-    !canShare ||
+    !shareSourceCanShare ||
     isSharing ||
+    (page ? !onInternalPageShare : !onInternalShare) ||
     !currentUserVm.user?.userId ||
     (target === 'page' && !selectedPageId) ||
     (target === 'group' && !selectedGroupId);
@@ -564,6 +598,23 @@ export function FeedShareBottomSheet({
   );
 
   const handleCopyLink = useCallback(async () => {
+    if (page) {
+      if (!pageUrl || isSharing) return;
+      setIsSharing(true);
+      setError(null);
+      try {
+        const copied = await copyToClipboard(pageUrl, 'page');
+        if (!copied) throw new Error(copy.copyFailed);
+        showToast({ message: copy.copied, type: 'success' });
+        onClose();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : copy.copyFailed);
+      } finally {
+        setIsSharing(false);
+      }
+      return;
+    }
+
     if (!canShare || !post || isSharing) return;
     setIsSharing(true);
     setError(null);
@@ -577,9 +628,31 @@ export function FeedShareBottomSheet({
     } finally {
       setIsSharing(false);
     }
-  }, [canShare, copy, copyToClipboard, isSharing, onClose, post]);
+  }, [canShare, copy, copyToClipboard, isSharing, onClose, page, pageUrl, post]);
 
   const handleExternalShare = useCallback(async () => {
+    if (page) {
+      if (!pageUrl || isSharing) return;
+      setIsSharing(true);
+      setError(null);
+      try {
+        const result = await Share.share({
+          title: pageTitle,
+          message: [pageTitle, pageUrl].filter(Boolean).join('\n'),
+          url: pageUrl,
+        });
+        if (String(result.action).startsWith('shared')) {
+          showToast({ message: pageShareSuccess, type: 'success' });
+        }
+        onClose();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : pageShareFailed);
+      } finally {
+        setIsSharing(false);
+      }
+      return;
+    }
+
     if (!canShare || !post || isSharing) return;
     setIsSharing(true);
     setError(null);
@@ -598,7 +671,7 @@ export function FeedShareBottomSheet({
     } finally {
       setIsSharing(false);
     }
-  }, [canShare, copy, isSharing, onClose, post, sharePost]);
+  }, [canShare, copy, isSharing, onClose, page, pageShareFailed, pageShareSuccess, pageTitle, pageUrl, post, sharePost]);
 
   const handleStoryShare = useCallback(async () => {
     if (!canShare || !post || !currentUserVm.user) {
@@ -631,7 +704,44 @@ export function FeedShareBottomSheet({
   ]);
 
   const handlePrimaryShare = useCallback(async () => {
+    if (page) {
+      if (
+        !pageCanShare ||
+        !onInternalPageShare ||
+        isPrimaryShareDisabled ||
+        target === 'story'
+      ) {
+        return;
+      }
+      setIsSharing(true);
+      setError(null);
+      try {
+        const destination = target as 'timeline' | 'page' | 'group';
+        const input: SharePageInput = {
+          page,
+          destination,
+          text: note,
+        };
+        if (destination === 'timeline') {
+          input.pageId = undefined;
+        } else if (destination === 'page') {
+          input.pageId = selectedPageId || undefined;
+        } else if (destination === 'group') {
+          input.groupId = selectedGroupId || undefined;
+        }
+        await onInternalPageShare(input);
+        showToast({ message: pageShareSuccess, type: 'success' });
+        onClose();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : pageShareFailed);
+      } finally {
+        setIsSharing(false);
+      }
+      return;
+    }
+
     if (!canShare || !post || isPrimaryShareDisabled) return;
+    if (!onInternalShare) return;
     setIsSharing(true);
     setError(null);
     try {
@@ -646,6 +756,7 @@ export function FeedShareBottomSheet({
         postId: post.id,
         destination,
         text: note,
+        sourceKind: post.liveContext ? 'live' : undefined,
       };
       if (destination === 'timeline') {
         input.userId = currentUserVm.user?.userId;
@@ -680,8 +791,13 @@ export function FeedShareBottomSheet({
     isPrimaryShareDisabled,
     note,
     onClose,
+    onInternalPageShare,
     onInternalShare,
     onShared,
+    page,
+    pageCanShare,
+    pageShareFailed,
+    pageShareSuccess,
     post,
     selectedGroupId,
     selectedPageId,
@@ -689,7 +805,77 @@ export function FeedShareBottomSheet({
   ]);
 
   const handleSendMessages = useCallback(async () => {
-    if (!canShare || !post || isSharing || messageRecipientIdsToSend.length === 0) return;
+    if (page) {
+      if (
+        !pageCanShare ||
+        !onInternalPageShare ||
+        isSharing ||
+        messageRecipientIdsToSend.length === 0
+      ) {
+        return;
+      }
+      setIsSharing(true);
+      setError(null);
+      try {
+        const results = await sendPostShareToMessageRecipients({
+          recipientIds: messageRecipientIdsToSend,
+          concurrency: MESSAGE_SHARE_CONCURRENCY,
+          send: recipientKey => {
+            const chat = messageChatsByRecipientKey.get(recipientKey);
+            const recipient = chat ? getMessageShareRecipient(chat) : null;
+            if (!recipient) {
+              throw new Error(copy.selectMessageRecipient);
+            }
+            return onInternalPageShare({
+              page,
+              destination: 'message',
+              ...(recipient.kind === 'group'
+                ? { recipientGroupId: recipient.targetId }
+                : { recipientUserId: recipient.targetId }),
+              text: note,
+            });
+          },
+          onStatusChange: (recipientId, status) => {
+            setMessageRecipientStatuses(current => ({
+              ...current,
+              [recipientId]: status,
+            }));
+          },
+        });
+        const failedCount = results.filter(
+          result => result.status === 'failed',
+        ).length;
+        if (failedCount > 0) {
+          setError(
+            copy.messagePartialFailure(
+              selectedMessageRecipientIds.length - failedCount,
+              failedCount,
+            ),
+          );
+          return;
+        }
+        showToast({
+          message: copy.messageShareSuccess(selectedMessageRecipientIds.length),
+          type: 'success',
+        });
+        onClose();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : pageShareFailed);
+      } finally {
+        setIsSharing(false);
+      }
+      return;
+    }
+
+    if (
+      !canShare ||
+      !post ||
+      isSharing ||
+      messageRecipientIdsToSend.length === 0
+    ) {
+      return;
+    }
+    if (!onInternalShare) return;
     setIsSharing(true);
     setError(null);
     try {
@@ -705,6 +891,7 @@ export function FeedShareBottomSheet({
           return onInternalShare({
             postId: post.id,
             destination: 'message',
+            sourceKind: post.liveContext ? 'live' : undefined,
             ...(recipient.kind === 'group'
               ? { recipientGroupId: recipient.targetId }
               : { recipientUserId: recipient.targetId }),
@@ -749,14 +936,18 @@ export function FeedShareBottomSheet({
     messageChatsByRecipientKey,
     note,
     onClose,
+    onInternalPageShare,
     onInternalShare,
+    page,
+    pageCanShare,
+    pageShareFailed,
     post,
     selectedMessageRecipientIds.length,
   ]);
 
   const handleDestinationSelect = useCallback(
     (destination: FeedShareCarouselDestination) => {
-      if (!canShare || isSharing) return;
+      if (!shareSourceCanShare || isSharing) return;
       setError(null);
       if (destination === 'copy') {
         handleCopyLink().catch(() => undefined);
@@ -768,10 +959,10 @@ export function FeedShareBottomSheet({
       }
       setTarget(destination);
     },
-    [canShare, handleCopyLink, handleExternalShare, isSharing],
+    [handleCopyLink, handleExternalShare, isSharing, shareSourceCanShare],
   );
 
-  if (!mounted || !post || !canShare) return null;
+  if (!mounted || (!post && !page) || !shareSourceCanShare) return null;
 
   return (
     <Modal
@@ -814,7 +1005,7 @@ export function FeedShareBottomSheet({
             <View className="min-h-[52px] flex-row items-center justify-between px-4">
               <View className="w-9" />
               <Text className="flex-1 text-center text-[17px] font-extrabold text-slate-900">
-                {copy.title}
+                {sheetTitle}
               </Text>
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -839,7 +1030,7 @@ export function FeedShareBottomSheet({
               displayName={currentUserVm.user?.name || copy.myProfile}
               targetLabel={targetLabel}
               note={note}
-              notePlaceholder={copy.addNotePlaceholder}
+              notePlaceholder={page ? pageNotePlaceholder : copy.addNotePlaceholder}
               ctaLabel={primaryButtonLabel}
               isSubmitting={isSharing}
               disabled={isPrimaryShareDisabled}
@@ -896,6 +1087,7 @@ export function FeedShareBottomSheet({
               selected={target}
               labels={destinationLabels}
               disabled={isSharing}
+              hiddenDestinations={page || post?.liveContext ? ['story'] : []}
               onSelect={handleDestinationSelect}
             />
           </ScrollView>

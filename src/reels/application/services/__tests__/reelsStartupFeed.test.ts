@@ -43,6 +43,7 @@ import type { ReelsItem } from '../../../domain/types/reels.types';
 import {
   fetchReelsStartupPage,
   getReelsStartupSnapshot,
+  mapFeedVideoPostToReel,
   mergeFeedVideoPostSnapshotIntoReel,
   mergeReelsStartupItems,
   resetReelsStartupMemoryCacheForTests,
@@ -108,6 +109,15 @@ describe('reels startup feed', () => {
 
     expect(snapshot.items.map(item => item.id)).toEqual(['home-1']);
     expect(snapshot.hasMore).toBe(true);
+  });
+
+  it('marks a shared Home video as reposted in Reels', () => {
+    const reelItem = mapFeedVideoPostToReel({
+      ...createFeedVideo('shared-video'),
+      sharedPostId: 'original-video',
+    });
+
+    expect(reelItem.isReposted).toBe(true);
   });
 
   it('keeps the currently rendered order while refreshing item data in place', () => {

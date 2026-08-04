@@ -12,13 +12,19 @@ describe('ChatScreen reply swipe direction', () => {
     const source = read('src/messages/presentation/screens/ChatScreen.tsx');
 
     expect(source).toContain('CornerUpRight');
-    expect(source).toContain('const ReplySwipeIcon = isSentByMe ? CornerUpRight : CornerUpLeft;');
-    expect(source).toContain('const isReplySwipe = isSentByMe ? dx > 10 : dx < -10;');
+    expect(source).toContain(
+      'const ReplySwipeIcon = isSentByMe ? CornerUpRight : CornerUpLeft;',
+    );
+    expect(source).toContain(
+      'const isReplySwipe = isSentByMe ? dx > 10 : dx < -10;',
+    );
     expect(source).toContain('const shouldOpenReply = isSentByMe');
     expect(source).toContain('? drag > replySwipeTriggerDistance');
     expect(source).toContain(': drag < -replySwipeTriggerDistance;');
     expect(source).toContain('...(isSentByMe ? { left: 16 } : { right: 16 })');
-    expect(source).toContain("flexDirection: isSentByMe ? 'row' : 'row-reverse'");
+    expect(source).toContain(
+      "flexDirection: isSentByMe ? 'row' : 'row-reverse'",
+    );
     expect(source).toContain('zIndex: 30');
     expect(source).toContain("backgroundColor: 'rgba(239, 246, 255, 0.96)'");
     expect(source).not.toContain('if (drag > 45 && onReply)');
@@ -62,7 +68,9 @@ describe('ChatScreen reply swipe direction', () => {
   it('lets shared-location cards enter reply by swipe or long press', () => {
     const source = read('src/messages/presentation/screens/ChatScreen.tsx');
 
-    expect(source).toContain('onMoveShouldSetPanResponderCapture: (_, gestureState) =>');
+    expect(source).toContain(
+      'onMoveShouldSetPanResponderCapture: (_, gestureState) =>',
+    );
     expect(source).toMatch(
       /function MapShareCard\([\s\S]*?onLongPress\?: \(\) => void;[\s\S]*?<TouchableOpacity[\s\S]*?onLongPress=\{onLongPress\}/,
     );
@@ -77,12 +85,18 @@ describe('ChatScreen reply swipe direction', () => {
     expect(source).toContain('createCachedVideoPosterThumbnail');
     expect(source).toContain('getCachedVideoPosterThumbnail');
     expect(source).toContain('const posterCacheKey = cacheKey || uri;');
-    expect(source).toContain('const [generatedPosterUri, setGeneratedPosterUri] = useState');
+    expect(source).toContain(
+      'const [generatedPosterUri, setGeneratedPosterUri] = useState',
+    );
     expect(source).toContain('const [posterSize, setPosterSize] = useState');
     expect(source).toContain('Image.getSize(');
     expect(source).toContain('const videoFrameSize = useMemo');
-    expect(source).toContain('const maxWidth = Math.min(Math.max(viewportWidth - 116, 210), 328);');
-    expect(source).toContain('const maxHeight = Math.min(Math.max(viewportHeight * 0.32, 250), 380);');
+    expect(source).toContain(
+      'const maxWidth = Math.min(Math.max(viewportWidth - 116, 210), 328);',
+    );
+    expect(source).toContain(
+      'const maxHeight = Math.min(Math.max(viewportHeight * 0.32, 250), 380);',
+    );
     expect(source).toContain('videoPreviewShell');
     expect(source).toContain('cacheKey={message.id}');
     expect(source).not.toContain('Nhấn để xem');
@@ -104,21 +118,29 @@ describe('ChatScreen reply swipe direction', () => {
     expect(source).not.toContain('Mặt hàng này còn không bạn yêu');
     expect(source).not.toContain('Cho mình xin thêm thông tin nhé con vợ');
     expect(source).not.toContain('Hàng hiệu à');
-    expect(source).not.toMatch(/Quick Option Suggestion Chips[\s\S]*<ScrollView[\s\S]*horizontal/);
+    expect(source).not.toMatch(
+      /Quick Option Suggestion Chips[\s\S]*<ScrollView[\s\S]*horizontal/,
+    );
   });
 
   it('previews shared map locations above the composer instead of dropping encoded text into input', () => {
     const chatSource = read('src/messages/presentation/screens/ChatScreen.tsx');
-    const nearbySource = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+    const nearbySource = read(
+      'src/user/presentation/screens/NearbyUsersScreen.tsx',
+    );
 
     expect(chatSource).toContain('type ParsedMapShareMessage');
     expect(chatSource).toContain('function MapShareCard');
-    expect(chatSource).toContain('const [sharedMapLocation, setSharedMapLocation]');
+    expect(chatSource).toContain(
+      'const [sharedMapLocation, setSharedMapLocation]',
+    );
     expect(chatSource).toContain('parseSharedMapMessage(initialText)');
     expect(chatSource).toContain('buildMapShareUrl(sharedMapLocation)');
     expect(chatSource).toContain('styles.mapShareComposerWrap');
     expect(chatSource).toContain('styles.mapShareMessageCard');
-    expect(nearbySource).toContain('sharedMapLocation: selectedMapShareLocation');
+    expect(nearbySource).toContain(
+      'sharedMapLocation: selectedMapShareLocation',
+    );
     expect(nearbySource).not.toContain('initialText: selectedMapShareText');
   });
 });

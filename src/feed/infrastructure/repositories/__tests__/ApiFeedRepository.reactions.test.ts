@@ -38,6 +38,7 @@ jest.mock(
 
 import { apiRoutes } from '../../../../shared-kernel/application/constants/route-registry';
 import { backendApi } from '../../../../shared-kernel/infrastructure/api/backendApi';
+import { reelsReactionsStorage } from '../../../../reels/infrastructure/storage/reelsReactionsStorage';
 import { createFeedRepository } from '../ApiFeedRepository';
 
 describe('ApiFeedRepository post reactions', () => {
@@ -125,5 +126,52 @@ describe('ApiFeedRepository post reactions', () => {
     expect(result.users).toHaveLength(1);
     expect(result.nextOffset).toBe('22');
     expect(result.reachedEnd).toBe(false);
+  });
+
+  it('sends the numeric wire id and persists a successful live reaction', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({ api_status: 200 });
+
+    await expect(
+      createFeedRepository().setReaction('post-42', 'love'),
+    ).resolves.toEqual({ reaction: 'love' });
+
+    expect(backendApi.post).toHaveBeenCalledWith(apiRoutes.feed.postActions, {
+      action: 'reaction',
+      post_id: 'post-42',
+      reaction: '2',
+    });
+    expect(reelsReactionsStorage.set).toHaveBeenCalledWith(
+      'viewer-1',
+      'post-42',
+      'love',
+    );
+  });
+
+  it('omits the wire reaction and clears the cache when toggling off', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({ api_status: '200' });
+
+    await expect(
+      createFeedRepository().setReaction('post-42', null),
+    ).resolves.toEqual({ reaction: null });
+
+    expect(backendApi.post).toHaveBeenCalledWith(apiRoutes.feed.postActions, {
+      action: 'reaction',
+      post_id: 'post-42',
+    });
+    expect(reelsReactionsStorage.set).toHaveBeenCalledWith(
+      'viewer-1',
+      'post-42',
+      null,
+    );
+  });
+
+  it('rejects a failed reaction response without updating the cache', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({ api_status: 400 });
+
+    await expect(
+      createFeedRepository().setReaction('post-42', 'haha'),
+    ).rejects.toThrow('Không gửi được biểu cảm');
+
+    expect(reelsReactionsStorage.set).not.toHaveBeenCalled();
   });
 });
