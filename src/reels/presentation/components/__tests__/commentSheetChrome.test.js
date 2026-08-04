@@ -206,6 +206,28 @@ describe('iOS comment sheet chrome', () => {
     expect(modalSource).not.toContain("backgroundColor: '#393939'");
   });
 
+  it('embeds the Reels composer inside the existing iOS modal so the input can focus', () => {
+    const sheetSource = read(
+      'src/reels/presentation/components/ReelCommentsSheet.tsx',
+    );
+    const modalSource = read(
+      'src/reels/presentation/components/ReelCommentComposerModal.tsx',
+    );
+
+    expect(sheetSource).toContain(
+      "const embedsComposerInSheet = !isInline && Platform.OS === 'ios'",
+    );
+    expect(sheetSource).toContain(
+      '{embedsComposerInSheet ? composerModalElement : null}',
+    );
+    expect(sheetSource).toContain(
+      '{!embedsComposerInSheet ? composerModalElement : null}',
+    );
+    expect(modalSource).toContain('embedded?: boolean');
+    expect(modalSource).toContain('if (embedded)');
+    expect(modalSource).toContain('style={styles.embeddedRoot}');
+  });
+
   it('puts the iOS bottom safe-area padding inside the composer dock', () => {
     const source = read(
       'src/reels/presentation/components/ReelCommentsSheet.tsx',

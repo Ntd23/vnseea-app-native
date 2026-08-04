@@ -23,6 +23,40 @@ describe('requestCallMediaPermissions', () => {
     expect(request).toHaveBeenCalledWith({ name: 'microphone' });
   });
 
+  it('requests microphone permission for iOS voice recordings', async () => {
+    const request = jest.fn().mockResolvedValue(true);
+
+    jest.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+      PermissionsAndroid: {},
+    }));
+    jest.doMock('@livekit/react-native-webrtc', () => ({
+      permissions: { request },
+    }));
+
+    const { requestMicrophonePermission } = require('../microphonePermission');
+
+    await expect(requestMicrophonePermission()).resolves.toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({ name: 'microphone' });
+  });
+
+  it('reports denied microphone permission for iOS voice recordings', async () => {
+    const request = jest.fn().mockResolvedValue(false);
+
+    jest.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+      PermissionsAndroid: {},
+    }));
+    jest.doMock('@livekit/react-native-webrtc', () => ({
+      permissions: { request },
+    }));
+
+    const { requestMicrophonePermission } = require('../microphonePermission');
+
+    await expect(requestMicrophonePermission()).resolves.toBe(false);
+  });
+
   it('requests microphone and camera permission on iOS video calls', async () => {
     const request = jest.fn().mockResolvedValue(true);
 

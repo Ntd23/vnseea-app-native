@@ -68,6 +68,33 @@ $resolve_reply_post_id = function ($reply_id) use ($resolve_comment_post_id) {
     return !empty($reply['comment_id']) ? $resolve_comment_post_id($reply['comment_id']) : 0;
 };
 
+$share_comment_audio = function ($upload) {
+    if (empty($upload['tmp_name']) || (int)($upload['size'] ?? 0) < 1 ||
+        (!empty($upload['error']) && (int)$upload['error'] !== UPLOAD_ERR_OK)) {
+        return false;
+    }
+
+    $extension = strtolower(pathinfo((string)($upload['name'] ?? ''), PATHINFO_EXTENSION));
+    if (!in_array($extension, array('mp3', 'wav', 'ogg', 'm4a', 'mp4', 'aac'), true)) {
+        return false;
+    }
+
+    $fileInfo = array(
+        'file' => $upload['tmp_name'],
+        'name' => $upload['name'],
+        'size' => $upload['size'],
+        'type' => $upload['type'],
+        'types' => 'mp3,wav,ogg,m4a,mp4,aac'
+    );
+    $fileInfo['is_sound'] = 1;
+    $media = Wo_ShareFile($fileInfo);
+    if ($media === false || empty($media['filename'])) {
+        return false;
+    }
+
+    return $media['filename'];
+};
+
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
     if ($_POST['type'] == 'create') {
@@ -97,15 +124,18 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     }
                 }
                 if (!empty($_FILES["audio"])) {
-                    $fileInfo         = array(
-                        'file' => $_FILES["audio"]["tmp_name"],
-                        'name' => $_FILES['audio']['name'],
-                        'size' => $_FILES["audio"]["size"],
-                        'type' => $_FILES["audio"]["type"],
-                        'types' => 'mp3,wav'
-                    );
-                    $media            = Wo_ShareFile($fileInfo);
-                    $record = $media['filename'];
+                    $record = $share_comment_audio($_FILES['audio']);
+                    if ($record === false) {
+                        $response_data = array(
+                            'api_status' => 400,
+                            'errors' => array(
+                                'error_id' => 10,
+                                'error_text' => 'Could not upload the voice comment.'
+                            )
+                        );
+                        echo json_encode($response_data, JSON_PRETTY_PRINT);
+                        exit();
+                    }
                 }
                 if (empty($comment_image) && empty($_POST['text']) && empty($record)) {
                     $error_code    = 5;
@@ -221,7 +251,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     }
 
     if ($_POST['type'] == 'create_reply') {
-        if (!empty($_POST['comment_id']) && (!empty($_POST['text']) || !empty($_FILES['image']))) {
+        if (!empty($_POST['comment_id']) && (!empty($_POST['text']) || !empty($_FILES['image']) || !empty($_FILES['audio']))) {
             $realtime_post_id = $resolve_comment_post_id($_POST['comment_id']);
             $page_id = '';
             if (!empty($_POST['page_id'])) {
@@ -239,6 +269,23 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 $media    = Wo_ShareFile($fileInfo);
                 if (!empty($media)) {
                     $comment_image    = $media['filename'];
+                }
+            }
+            if (!empty($_FILES["audio"])) {
+                $comment_audio = $share_comment_audio($_FILES['audio']);
+                if ($comment_audio === false) {
+                    $response_data = array(
+                        'api_status' => 400,
+                        'errors' => array(
+                            'error_id' => 10,
+                            'error_text' => 'Could not upload the voice comment.'
+                        )
+                    );
+                    echo json_encode($response_data, JSON_PRETTY_PRINT);
+                    exit();
+                }
+                if (!empty($comment_audio)) {
+                    $comment_image = $comment_audio;
                 }
             }
             if (empty($comment_image) && empty($_POST['text'])) {

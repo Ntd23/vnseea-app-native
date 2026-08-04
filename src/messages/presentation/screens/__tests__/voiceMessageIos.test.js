@@ -27,4 +27,24 @@ describe('iOS voice messages', () => {
     expect(group).toContain("$message_data['type_two'] = 'audio'");
     expect(group).toContain("$media === false");
   });
+
+  it('uses the cross-platform recorder for iOS voice comments', () => {
+    const commentsSheet = read(
+      'src/reels/presentation/components/ReelCommentsSheet.tsx',
+    );
+    const iosRecorder = read(
+      'src/shared-kernel/application/hooks/useCommentAudioRecorder.ios.ts',
+    );
+    const androidRecorder = read(
+      'src/shared-kernel/application/hooks/useCommentAudioRecorder.ts',
+    );
+    const commentsEndpoint = read('phtml/api/v2/endpoints/comments.php');
+
+    expect(commentsSheet).toContain('useCommentAudioRecorder');
+    expect(commentsSheet).not.toContain('useWavAudioRecorder');
+    expect(iosRecorder).toContain('useAudioRecorder');
+    expect(androidRecorder).toContain('useWavAudioRecorder');
+    expect(commentsEndpoint).toContain('mp3,wav,ogg,m4a,mp4,aac');
+    expect(commentsEndpoint).toContain("$media === false");
+  });
 });
