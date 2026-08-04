@@ -32,6 +32,7 @@ export async function validateRecordedAudioFile(uri: string) {
 
 export function useAudioRecorder() {
   const mountedRef = useRef(true);
+  const startingRef = useRef(false);
   const recordingRef = useRef(false);
   const [isRecording, setIsRecording] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
@@ -48,30 +49,39 @@ export function useAudioRecorder() {
   }, []);
 
   const startRecording = useCallback(async () => {
-    if (recordingRef.current) return;
-    const allowed = await requestMicrophonePermission();
-    if (!allowed) {
-      throw new Error('Bạn cần cấp quyền mic để ghi âm tin nhắn.');
-    }
-
-    setDurationMs(0);
-    Sound.removeRecordBackListener();
-    Sound.addRecordBackListener(event => {
-      if (mountedRef.current) setDurationMs(event.currentPosition);
-    });
+    if (startingRef.current || recordingRef.current) return;
+    startingRef.current = true;
     try {
+      const allowed = await requestMicrophonePermission();
+      if (!allowed) {
+        throw new Error('Bạn cần cấp quyền mic để ghi âm tin nhắn.');
+      }
+
+      setDurationMs(0);
+      Sound.removeRecordBackListener();
+      Sound.addRecordBackListener(event => {
+        if (mountedRef.current) setDurationMs(event.currentPosition);
+      });
       await Sound.startRecorder(undefined, {
         AudioSourceAndroid: AudioSourceAndroidType.MIC,
         OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
         AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
         AudioQuality: 'medium',
       });
+
+      if (!mountedRef.current) {
+        await Sound.stopRecorder().catch(() => undefined);
+        Sound.removeRecordBackListener();
+        return;
+      }
+      recordingRef.current = true;
+      setIsRecording(true);
     } catch (error) {
       Sound.removeRecordBackListener();
       throw error;
+    } finally {
+      startingRef.current = false;
     }
-    recordingRef.current = true;
-    if (mountedRef.current) setIsRecording(true);
   }, []);
 
   const stopRecording = useCallback(async (): Promise<AudioAttachment | null> => {

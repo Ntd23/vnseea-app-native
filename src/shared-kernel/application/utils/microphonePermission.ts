@@ -3,6 +3,9 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { permissions as mediaPermissions } from '@livekit/react-native-webrtc';
 
 export async function requestMicrophonePermission() {
+  if (Platform.OS === 'ios') {
+    return Boolean(await mediaPermissions.request({ name: 'microphone' }));
+  }
   if (Platform.OS !== 'android') return true;
 
   const permission = PermissionsAndroid.PERMISSIONS.RECORD_AUDIO;

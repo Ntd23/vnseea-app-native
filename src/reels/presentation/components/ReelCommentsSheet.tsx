@@ -100,7 +100,7 @@ import {
   formatAudioDuration,
   pickSupportedAudioFile,
 } from '../../../shared-kernel/application/utils/audioFiles';
-import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
+import { useCommentAudioRecorder } from '../../../shared-kernel/application/hooks/useCommentAudioRecorder';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
@@ -724,14 +724,14 @@ function ReelCommentsSheetBase({
   const sheetBottomPadding =
     Platform.OS === 'ios' || isInlineKeyboardVisible ? 0 : bottomSafeInset;
   const composerBottomPadding = isInlineKeyboardVisible ? 6 : bottomSafeInset;
-  const wavRecorder = useWavAudioRecorder();
+  const commentAudioRecorder = useCommentAudioRecorder();
   const {
     isRecording: isWavRecording,
     durationMs: wavDurationMs,
     startRecording: startWavRecording,
     stopRecording: stopWavRecording,
     cancelRecording: cancelWavRecording,
-  } = wavRecorder;
+  } = commentAudioRecorder;
   const [draft, setDraft] = useState('');
   const [draftMentions, setDraftMentions] = useState<CommentMention[]>([]);
   const [mentionSuggestions, setMentionSuggestions] = useState<
@@ -2075,6 +2075,63 @@ function ReelCommentsSheetBase({
   const SheetSurface = (
     isInline ? View : Animated.View
   ) as React.ComponentType<any>;
+  const embedsComposerInSheet = !isInline && Platform.OS === 'ios';
+  const composerModalElement = !isInline ? (
+    <ReelCommentComposerModal
+      embedded={embedsComposerInSheet}
+      visible={isComposerModalVisible && visible && isScreenFocused}
+      avatarUrl={composerAvatarUrl || AVATAR_FALLBACK}
+      value={draft}
+      placeholder={composerPlaceholder}
+      editable={!isWavRecording}
+      submitDisabled={isSubmitDisabled}
+      imageDisabled={Boolean(editingComment)}
+      recordingDisabled={Boolean(editingComment || replyingTo)}
+      pendingImage={pendingImage}
+      pendingAudio={pendingAudio}
+      isRecording={isWavRecording}
+      recordingLabel={copy.recordingText.replace(
+        '{duration}',
+        formatAudioDuration(wavDurationMs),
+      )}
+      contextLabel={
+        editingComment
+          ? getEditingCommentLabel(language)
+          : replyingTo
+          ? `${copy.replyingBanner} ${getReplyTargetDisplayName(
+              replyingTo,
+              language,
+            )}`
+          : undefined
+      }
+      contextSnippet={editingComment?.text || replyingSnippet}
+      mentionSuggestionsVisible={isMentionSuggestionsActive}
+      mentionSuggestionsLoading={isLoadingMentionSuggestions}
+      mentionSuggestions={mentionSuggestions}
+      focusSignal={composerModalFocusSignal}
+      onChangeText={handleDraftChange}
+      onClose={handleCloseComposer}
+      onSubmit={handleSubmit}
+      onInsertEmoji={handleInsertQuickEmoji}
+      onInsertMention={handleInsertMention}
+      onSelectMention={handleSelectMention}
+      onPickImage={handlePickImage}
+      onToggleRecording={handleToggleAudioRecording}
+      onRemoveImage={() => setPendingImage(null)}
+      onRemoveAudio={() => setPendingAudio(null)}
+      onCancelRecording={() => {
+        cancelWavRecording().catch(() => undefined);
+        setComposerModalFocusSignal(current => current + 1);
+      }}
+      onCancelContext={
+        editingComment
+          ? handleCancelEdit
+          : replyingTo
+          ? handleCancelReplyMode
+          : undefined
+      }
+    />
+  ) : null;
 
   return (
     <>
@@ -2666,62 +2723,9 @@ function ReelCommentsSheetBase({
             restoreComposerAfterPhotoPicker();
           }}
         />
+        {embedsComposerInSheet ? composerModalElement : null}
       </PresentationRoot>
-      {!isInline ? (
-        <ReelCommentComposerModal
-          visible={isComposerModalVisible && visible && isScreenFocused}
-          avatarUrl={composerAvatarUrl || AVATAR_FALLBACK}
-          value={draft}
-          placeholder={composerPlaceholder}
-          editable={!isWavRecording}
-          submitDisabled={isSubmitDisabled}
-          imageDisabled={Boolean(editingComment)}
-          recordingDisabled={Boolean(editingComment || replyingTo)}
-          pendingImage={pendingImage}
-          pendingAudio={pendingAudio}
-          isRecording={isWavRecording}
-          recordingLabel={copy.recordingText.replace(
-            '{duration}',
-            formatAudioDuration(wavDurationMs),
-          )}
-          contextLabel={
-            editingComment
-              ? getEditingCommentLabel(language)
-              : replyingTo
-              ? `${copy.replyingBanner} ${getReplyTargetDisplayName(
-                  replyingTo,
-                  language,
-                )}`
-              : undefined
-          }
-          contextSnippet={editingComment?.text || replyingSnippet}
-          mentionSuggestionsVisible={isMentionSuggestionsActive}
-          mentionSuggestionsLoading={isLoadingMentionSuggestions}
-          mentionSuggestions={mentionSuggestions}
-          focusSignal={composerModalFocusSignal}
-          onChangeText={handleDraftChange}
-          onClose={handleCloseComposer}
-          onSubmit={handleSubmit}
-          onInsertEmoji={handleInsertQuickEmoji}
-          onInsertMention={handleInsertMention}
-          onSelectMention={handleSelectMention}
-          onPickImage={handlePickImage}
-          onToggleRecording={handleToggleAudioRecording}
-          onRemoveImage={() => setPendingImage(null)}
-          onRemoveAudio={() => setPendingAudio(null)}
-          onCancelRecording={() => {
-            cancelWavRecording().catch(() => undefined);
-            setComposerModalFocusSignal(current => current + 1);
-          }}
-          onCancelContext={
-            editingComment
-              ? handleCancelEdit
-              : replyingTo
-              ? handleCancelReplyMode
-              : undefined
-          }
-        />
-      ) : null}
+      {!embedsComposerInSheet ? composerModalElement : null}
     </>
   );
 }

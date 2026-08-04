@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -44,6 +45,7 @@ const COMPOSER_FALLBACK_REVEAL_MS = 120;
 
 interface Props {
   visible: boolean;
+  embedded?: boolean;
   avatarUrl: string;
   value: string;
   placeholder: string;
@@ -77,6 +79,7 @@ interface Props {
 
 export function ReelCommentComposerModal({
   visible,
+  embedded = false,
   avatarUrl,
   value,
   placeholder,
@@ -501,21 +504,7 @@ export function ReelCommentComposerModal({
 
   if (!visible) return null;
 
-  // On Android, leaving navigationBarTranslucent unset keeps this dialog in
-  // the normal window so SOFT_INPUT_ADJUST_RESIZE can resize it consistently
-  // across OEM keyboards. React Native enables edge-to-edge whenever
-  // `navigationBarTranslucent` is true, which can let the IME overlap the
-  // composer on some Android versions/ROMs.
-  return (
-    <Modal
-      visible
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      presentationStyle="overFullScreen"
-      hardwareAccelerated
-      onRequestClose={handleClose}
-    >
+  const composerContent = (
       <View className="flex-1 justify-end" onLayout={handleRootLayout}>
         <Pressable className="absolute inset-0" onPress={handleClose}>
           <Animated.View
@@ -733,6 +722,39 @@ export function ReelCommentComposerModal({
           </View>
         </Animated.View>
       </View>
+  );
+
+  if (embedded) {
+    return (
+      <View style={styles.embeddedRoot} pointerEvents="box-none">
+        {composerContent}
+      </View>
+    );
+  }
+
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      navigationBarTranslucent
+      presentationStyle="overFullScreen"
+      hardwareAccelerated
+      onRequestClose={handleClose}
+    >
+      {composerContent}
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  embeddedRoot: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 20000,
+  },
+});
