@@ -248,13 +248,18 @@ export function useMessagesViewModel() {
     isSyncingLatestChatsRef.current = true;
 
     try {
-      const latestChats = await repository.getChats({
-        includeDiscovery: false,
-        latestOnly: true,
-      });
+      const [latestChats, groupChats] = await Promise.all([
+        repository.getChats({
+          includeDiscovery: false,
+          latestOnly: true,
+        }),
+        // A renamed group may sit outside the latest message page. Refresh the
+        // group directory as well so realtime invalidations update its name.
+        repository.getGroupChats().catch(() => []),
+      ]);
 
       setState(prev => {
-        const chats = mergeChatItems(prev.chats, latestChats);
+        const chats = mergeChatItems(prev.chats, latestChats, groupChats);
 
         return {
           ...prev,

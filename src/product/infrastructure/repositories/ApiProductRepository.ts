@@ -8,6 +8,7 @@ import type {
   AddToCartResponse,
   ProductsResponse,
 } from '../../domain/types/product.types';
+import { assertPositiveProductUnits } from '../../domain/validation/productValidation';
 
 type RawCartProduct = {
   id?: unknown;
@@ -104,6 +105,7 @@ async function increaseExistingCartQuantity(productId: number, qty: number) {
 }
 
 function buildProductFormData(input: CreateProductInput) {
+  const units = assertPositiveProductUnits(input.units);
   const formData: Record<string, unknown> = {
     product_title: input.product_title,
     product_category: input.product_category,
@@ -111,6 +113,7 @@ function buildProductFormData(input: CreateProductInput) {
     product_price: input.product_price,
     product_location: input.product_location,
     product_type: input.product_type ?? 0,
+    units,
   };
 
   if (input.product_id !== undefined) {
@@ -129,9 +132,6 @@ function buildProductFormData(input: CreateProductInput) {
   }
   if (input.lng) {
     formData.lng = input.lng;
-  }
-  if (input.units !== undefined) {
-    formData.units = input.units;
   }
   if (input.product_sub_category) {
     formData.product_sub_category = input.product_sub_category;

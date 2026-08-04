@@ -51,6 +51,15 @@ describe('shared post messages', () => {
     });
   });
 
+  it('recognizes a live marker on a shared post URL', () => {
+    expect(
+      parseSharedPostMessage(
+        'Xem live nay https://demo.vnseea.vn/post/42?live=1',
+        WEB_BASE_URL,
+      ),
+    ).toMatchObject({ postId: '42', isLive: true });
+  });
+
   it('ignores foreign hosts and non-post links', () => {
     expect(
       parseSharedPostMessage(
@@ -155,6 +164,32 @@ describe('shared post messages', () => {
     }
   });
 
+  it('builds a live preview with stream state and viewer count', () => {
+    expect(
+      buildSharedPostPreviewModel(
+        post({
+          liveContext: {
+            state: 'live',
+            streamName: 'live-42',
+            title: 'Cung tro chuyen',
+            thumbnailUrl: 'https://cdn.vnseea.vn/live.jpg',
+            viewerCount: 18,
+          },
+        }),
+      ),
+    ).toMatchObject({
+      postId: '42',
+      title: 'Cung tro chuyen',
+      imageUrl: 'https://cdn.vnseea.vn/live.jpg',
+      isVideo: true,
+      live: {
+        state: 'live',
+        streamName: 'live-42',
+        viewerCount: 18,
+      },
+    });
+  });
+
   it('deduplicates in-flight preview requests and evicts the oldest entry', async () => {
     const getPostById = jest.fn(async (postId: string) => ({
       post: post({ id: postId }),
@@ -184,6 +219,20 @@ describe('shared post messages', () => {
 
     await expect(loader.load('9')).rejects.toThrow('network');
     await expect(loader.load('9')).resolves.toMatchObject({ postId: '9' });
+    expect(getPostById).toHaveBeenCalledTimes(2);
+  });
+
+  it('forces a fresh preview request for live-state polling', async () => {
+    const getPostById = jest.fn(async () => ({
+      post: post({}),
+      comments: [],
+    }));
+    const loader = createSharedPostPreviewLoader({ getPostById }, 100);
+
+    await loader.load('42');
+    await loader.load('42');
+    await loader.load('42', { force: true });
+
     expect(getPostById).toHaveBeenCalledTimes(2);
   });
 });

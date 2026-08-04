@@ -1099,21 +1099,42 @@ async function fetchLatestCachedChats() {
 }
 
 async function fetchGroupChats() {
-  const response = await apiBridge.post<{
-    data?: unknown[];
-    groups?: unknown[];
-  }>(apiRoutes.messages.groupChat, {
-    type: 'get_list',
-    limit: 50,
-  });
-  const rawGroups = response.data ?? response.groups ?? [];
-  return rawGroups
-    .map(item => ({
-      ...(asRecord(item) ?? {}),
-      chat_type: 'group',
-    }))
-    .map(mapChat)
-    .filter(chat => chat.groupId || chat.userId);
+  const chats: ChatItem[] = [];
+  let offset = 0;
+
+  for (let page = 0; page < MAX_CACHED_CHAT_PAGES; page += 1) {
+    const response = await apiBridge.post<{
+      data?: unknown[];
+      groups?: unknown[];
+    }>(apiRoutes.messages.groupChat, {
+      type: 'get_list',
+      limit: CHAT_PAGE_SIZE,
+      ...(offset > 0 ? { offset } : {}),
+    });
+    const rawGroups = response.data ?? response.groups ?? [];
+    const nextPage = rawGroups
+      .map(item => ({
+        ...(asRecord(item) ?? {}),
+        chat_type: 'group',
+      }))
+      .map(mapChat)
+      .filter(chat => chat.groupId || chat.userId);
+
+    chats.push(...nextPage);
+    if (rawGroups.length < CHAT_PAGE_SIZE || nextPage.length === 0) break;
+
+    const nextOffset = Math.min(
+      ...nextPage
+        .map(chat => chat.paginationCursorTime ?? chat.lastMessageTime)
+        .filter(value => value > 0),
+    );
+    if (!Number.isFinite(nextOffset) || nextOffset <= 0 || nextOffset === offset) {
+      break;
+    }
+    offset = nextOffset;
+  }
+
+  return mergeChats(chats);
 }
 
 async function createGroupChatRequest(input: CreateGroupChatInput) {

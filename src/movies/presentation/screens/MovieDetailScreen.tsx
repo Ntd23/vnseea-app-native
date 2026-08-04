@@ -1,9 +1,17 @@
 // English description: Displays movie metadata, playback, related movies, sharing, and comments.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
+  Platform,
   ScrollView,
   Share,
   Text,
@@ -34,6 +42,7 @@ import { KeyboardSafeView } from '../../../shared-kernel/presentation/components
 import { CommentMentionText } from '../../../reels/presentation/components/CommentMentionText';
 
 type MovieDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.MOVIE_DETAIL>;
+const COMMENT_INPUT_REVEAL_DELAYS_MS = [0, 80, 220, 420] as const;
 
 export default function MovieDetailScreen() {
   const navigation = useNavigation<any>();
@@ -44,6 +53,7 @@ export default function MovieDetailScreen() {
   const [commentText, setCommentText] = useState('');
   const scrollViewRef = useRef<ScrollView>(null);
   const commentInputRef = useRef<TextInput>(null);
+  const commentRevealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const {
     comments,
     isLoadingComments,
@@ -61,15 +71,40 @@ export default function MovieDetailScreen() {
   const sendComment = async () => {
     if (await submitComment(commentText)) setCommentText('');
   };
-  const revealCommentInput = useCallback(() => {
-    const input = commentInputRef.current;
-    if (!input) return;
-    scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
-      input,
-      24,
-      true,
-    );
+  const clearCommentRevealTimers = useCallback(() => {
+    commentRevealTimersRef.current.forEach(clearTimeout);
+    commentRevealTimersRef.current = [];
   }, []);
+
+  const revealCommentInput = useCallback(() => {
+    clearCommentRevealTimers();
+    commentRevealTimersRef.current = COMMENT_INPUT_REVEAL_DELAYS_MS.map(
+      delay =>
+        setTimeout(() => {
+          const input = commentInputRef.current;
+          if (!input?.isFocused()) return;
+          scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+            input,
+            24,
+            true,
+          );
+        }, delay),
+    );
+  }, [clearCommentRevealTimers]);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const showSubscription = Keyboard.addListener(
+      showEvent,
+      revealCommentInput,
+    );
+
+    return () => {
+      showSubscription.remove();
+      clearCommentRevealTimers();
+    };
+  }, [clearCommentRevealTimers, revealCommentInput]);
 
   return (
     <KeyboardSafeView style={{ flex: 1, backgroundColor: '#edf2ff' }}>

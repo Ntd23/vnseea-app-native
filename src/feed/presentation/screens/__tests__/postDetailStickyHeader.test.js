@@ -50,6 +50,12 @@ describe('PostDetail sticky identity header', () => {
   it('dismisses the keyboard when the fixed header is touched', () => {
     expect(detail).toContain('const handleDismissKeyboardFromContent = useCallback');
     expect(detail).toContain('onTouchStart={handleDismissKeyboardFromContent}');
+    expect(detail).toContain(
+      'Pressable as GesturePressable',
+    );
+    expect(detail).toContain(
+      'simultaneousWithExternalGesture={postDetailSwipeBackGesture}',
+    );
   });
 
   it('uses the Feed post menu permissions and keeps back only for unavailable state', () => {

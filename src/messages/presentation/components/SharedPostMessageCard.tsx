@@ -1,7 +1,9 @@
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  DeviceEventEmitter,
   Image,
   StyleSheet,
   Text,
@@ -12,9 +14,11 @@ import {
   BriefcaseBusiness,
   ChevronRight,
   CircleDollarSign,
+  Eye,
   FileText,
   MapPin,
   Play,
+  Radio,
   ShoppingBag,
 } from 'lucide-react-native';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
@@ -26,6 +30,11 @@ import {
   type SharedPostPreviewModel,
 } from '../../application/shared-posts/sharedPostMessage';
 import type { SharedPostMessageReference } from '../../domain/types/messages.types';
+import {
+  endedLivePostsStorage,
+  LOCAL_LIVE_ENDED_EVENT,
+} from '../../../live/infrastructure/storage/endedLivePostsStorage';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { DoubleTapTouchable } from './DoubleTapTouchable';
 
 const sharedPostPreviewLoader = createSharedPostPreviewLoader(
@@ -37,7 +46,10 @@ type SharedPostMessageCardProps = {
   onOpenPost: (target: SharedPostOpenTarget) => void;
   onLongPress?: () => void;
   onDoubleTap?: () => void;
-  loadPreview?: (postId: string) => Promise<SharedPostPreviewModel>;
+  loadPreview?: (
+    postId: string,
+    options?: { force?: boolean },
+  ) => Promise<SharedPostPreviewModel>;
 };
 
 type PreviewState =
@@ -91,6 +103,25 @@ const JOB_CARD_COPY = {
     salary: 'Salary',
     negotiable: 'Negotiable',
     details: 'View job details',
+  },
+} as const;
+
+const LIVE_COPY = {
+  vi: {
+    live: 'TRỰC TIẾP',
+    ended: 'ĐÃ KẾT THÚC',
+    watch: 'Nhấn để xem trực tiếp',
+    endedMessage: 'Phiên live đã kết thúc',
+    endedDescription: 'Bạn không thể tham gia phiên live này nữa.',
+    fallbackTitle: 'Phiên phát trực tiếp',
+  },
+  en: {
+    live: 'LIVE',
+    ended: 'ENDED',
+    watch: 'Tap to watch live',
+    endedMessage: 'Live has ended',
+    endedDescription: 'You can no longer join this live session.',
+    fallbackTitle: 'Live session',
   },
 } as const;
 
@@ -358,6 +389,103 @@ function PreviewDetails({
   );
 }
 
+function LivePreview({
+  preview,
+  colors,
+  language,
+  ended,
+}: {
+  preview: SharedPostPreviewModel;
+  colors: PreviewColors;
+  language: keyof typeof LIVE_COPY;
+  ended: boolean;
+}) {
+  const copy = LIVE_COPY[language];
+  return (
+    <>
+      <View className="relative h-[166px] items-center justify-center overflow-hidden bg-slate-950">
+        {preview.imageUrl ? (
+          <Image
+            source={{ uri: preview.imageUrl }}
+            className="absolute inset-0 h-full w-full"
+            resizeMode="cover"
+          />
+        ) : (
+          <Radio size={42} color="#FFFFFF" strokeWidth={1.8} />
+        )}
+        <View style={styles.liveShade} />
+        <View
+          className="absolute left-3 top-3 flex-row items-center rounded-lg px-2.5 py-1.5"
+          style={{ backgroundColor: ended ? '#475569' : '#DC2626' }}
+        >
+          <View
+            className="mr-1.5 h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: ended ? '#CBD5E1' : '#FFFFFF' }}
+          />
+          <Text className="text-[10px] font-black tracking-[0.5px] text-white">
+            {ended ? copy.ended : copy.live}
+          </Text>
+        </View>
+        {!ended && preview.live?.viewerCount !== undefined ? (
+          <View className="absolute right-3 top-3 flex-row items-center rounded-lg bg-slate-950/75 px-2.5 py-1.5">
+            <Eye size={12} color="#FFFFFF" />
+            <Text className="ml-1.5 text-[10px] font-extrabold text-white">
+              {Math.max(0, preview.live.viewerCount).toLocaleString()}
+            </Text>
+          </View>
+        ) : null}
+        <View
+          className="h-14 w-14 items-center justify-center rounded-full border-2 border-white/90"
+          style={{ backgroundColor: ended ? '#475569DD' : '#DC2626E6' }}
+        >
+          {ended ? (
+            <Radio size={24} color="#FFFFFF" />
+          ) : (
+            <Play size={23} color="#FFFFFF" fill="#FFFFFF" />
+          )}
+        </View>
+      </View>
+
+      <View className="px-3.5 pb-3.5 pt-3">
+        <Text
+          className="text-[15px] font-extrabold leading-5"
+          style={{ color: colors.primary }}
+          numberOfLines={2}
+        >
+          {preview.title || copy.fallbackTitle}
+        </Text>
+        {preview.description ? (
+          <Text
+            className="mt-1 text-[12px] leading-4"
+            style={{ color: colors.secondary }}
+            numberOfLines={2}
+          >
+            {preview.description}
+          </Text>
+        ) : null}
+        <View
+          className="mt-2.5 flex-row items-center border-t pt-2.5"
+          style={{ borderColor: colors.border }}
+        >
+          <View
+            className="h-7 w-7 items-center justify-center rounded-full"
+            style={{ backgroundColor: ended ? colors.fallback : '#FEF2F2' }}
+          >
+            <Radio size={14} color={ended ? colors.secondary : '#DC2626'} />
+          </View>
+          <Text
+            className="ml-2 min-w-0 flex-1 text-[11.5px] font-extrabold"
+            style={{ color: ended ? colors.secondary : '#DC2626' }}
+          >
+            {ended ? copy.endedMessage : copy.watch}
+          </Text>
+          <ChevronRight size={16} color={ended ? '#94A3B8' : '#DC2626'} />
+        </View>
+      </View>
+    </>
+  );
+}
+
 export function SharedPostMessageCard({
   reference,
   onOpenPost,
@@ -367,14 +495,30 @@ export function SharedPostMessageCard({
 }: SharedPostMessageCardProps) {
   const language = useAppLanguage();
   const { isDark } = useAppTheme();
+  const currentUserId = sessionStorage.getSession()?.userId;
   const [state, setState] = useState<PreviewState>({ status: 'loading' });
+  const [hasEndedLocally, setHasEndedLocally] = useState(() =>
+    endedLivePostsStorage.hasEnded(reference.postId, currentUserId),
+  );
+
+  const recordLiveEnded = useCallback(() => {
+    setHasEndedLocally(true);
+    endedLivePostsStorage.markEnded(reference.postId, currentUserId);
+  }, [currentUserId, reference.postId]);
 
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
     loadPreview(reference.postId).then(
       preview => {
-        if (!cancelled) setState({ status: 'ready', preview });
+        if (cancelled) return;
+        setState({ status: 'ready', preview });
+        if (
+          preview.live?.state === 'offline' ||
+          (reference.isLive && !preview.live)
+        ) {
+          recordLiveEnded();
+        }
       },
       () => {
         if (!cancelled) setState({ status: 'error' });
@@ -383,7 +527,59 @@ export function SharedPostMessageCard({
     return () => {
       cancelled = true;
     };
-  }, [loadPreview, reference.postId]);
+  }, [loadPreview, recordLiveEnded, reference.isLive, reference.postId]);
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      LOCAL_LIVE_ENDED_EVENT,
+      (event: { postId?: string; userId?: string }) => {
+        if (String(event?.postId ?? '') !== String(reference.postId)) return;
+        const ownerKey = currentUserId || 'guest';
+        if (event?.userId && event.userId !== ownerKey) return;
+        setHasEndedLocally(true);
+      },
+    );
+    return () => subscription.remove();
+  }, [currentUserId, reference.postId]);
+
+  const previewIsLive =
+    state.status === 'ready' && Boolean(state.preview.live);
+  const isLiveShare = Boolean(reference.isLive || previewIsLive);
+  const liveEnded =
+    hasEndedLocally ||
+    (state.status === 'ready' && state.preview.live?.state === 'offline');
+
+  useEffect(() => {
+    if (!isLiveShare || liveEnded) return;
+    let cancelled = false;
+    const refreshLivePreview = () => {
+      loadPreview(reference.postId, { force: true }).then(
+        preview => {
+          if (cancelled) return;
+          setState({ status: 'ready', preview });
+          if (
+            preview.live?.state === 'offline' ||
+            !preview.live
+          ) {
+            recordLiveEnded();
+          }
+        },
+        () => undefined,
+      );
+    };
+    const timer = setInterval(refreshLivePreview, 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [
+    isLiveShare,
+    liveEnded,
+    loadPreview,
+    recordLiveEnded,
+    reference.isLive,
+    reference.postId,
+  ]);
 
   const colors = useMemo(
     () => ({
@@ -404,8 +600,47 @@ export function SharedPostMessageCard({
           productId: state.preview.productId,
           jobId: state.preview.jobId,
           job: state.preview.job,
+          ...(isLiveShare
+            ? {
+                isLive: true,
+                liveState: liveEnded
+                  ? ('offline' as const)
+                  : state.preview.live?.state || ('stale' as const),
+              }
+            : {}),
         }
-      : { postId: reference.postId };
+      : {
+          postId: reference.postId,
+          ...(isLiveShare
+            ? {
+                isLive: true,
+                liveState: liveEnded
+                  ? ('offline' as const)
+                  : ('stale' as const),
+              }
+            : {}),
+        };
+  const fallbackLivePreview: SharedPostPreviewModel = {
+    postId: reference.postId,
+    kind: 'text',
+    publisherName: 'VNSEEA',
+    title: LIVE_COPY[language].fallbackTitle,
+    isVideo: true,
+    live: {
+      state: liveEnded ? 'offline' : 'stale',
+      viewerCount: 0,
+    },
+  };
+  const handleOpenPost = () => {
+    if (liveEnded) {
+      Alert.alert(
+        LIVE_COPY[language].endedMessage,
+        LIVE_COPY[language].endedDescription,
+      );
+      return;
+    }
+    onOpenPost(openTarget);
+  };
 
   return (
     <View style={styles.container}>
@@ -422,7 +657,7 @@ export function SharedPostMessageCard({
         accessibilityRole="button"
         accessibilityLabel="Mở bài viết"
         activeOpacity={0.86}
-        onSingleTap={() => onOpenPost(openTarget)}
+        onSingleTap={handleOpenPost}
         onDoubleTap={onDoubleTap}
         onLongPress={onLongPress}
         className="overflow-hidden rounded-2xl border"
@@ -435,6 +670,15 @@ export function SharedPostMessageCard({
           >
             <ActivityIndicator color={APP_BRAND_COLOR} />
           </View>
+        ) : isLiveShare ? (
+          <LivePreview
+            preview={
+              state.status === 'ready' ? state.preview : fallbackLivePreview
+            }
+            colors={colors}
+            language={language}
+            ended={liveEnded}
+          />
         ) : state.status === 'error' ? (
           <View className="min-h-[132px] items-center justify-center px-5 py-6">
             <View
@@ -507,5 +751,9 @@ const styles = StyleSheet.create({
   container: {
     width: 272,
     maxWidth: '100%',
+  },
+  liveShade: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(2,6,23,0.3)',
   },
 });

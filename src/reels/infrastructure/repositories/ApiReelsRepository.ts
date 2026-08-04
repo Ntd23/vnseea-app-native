@@ -135,6 +135,19 @@ function readOptionalBool(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function readRecord(
+  raw: Record<string, unknown>,
+  ...keys: string[]
+): Record<string, unknown> | null {
+  for (const key of keys) {
+    const value = raw[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
 function getRawReelsCursor(rawList: Array<Record<string, unknown>>) {
   const minRawId = rawList
     .map(raw => Number(readString(raw, 'id', 'post_id')))
@@ -350,6 +363,12 @@ function extractMyReaction(raw: Record<string, unknown>): ReactionType | null {
 }
 
 function mapReel(raw: Record<string, unknown>): ReelsItem {
+  const sharedInfo = readRecord(raw, 'shared_info', 'sharedInfo');
+  const sharedPostId =
+    readString(raw, 'shared_post_id', 'sharedPostId') ||
+    (sharedInfo ? readString(sharedInfo, 'id', 'post_id') : '');
+  const isReposted = Boolean(sharedInfo || sharedPostId);
+  const mediaSource = sharedInfo ?? raw;
   const realPublisherRaw =
     (raw.publisher as Record<string, unknown> | undefined) ??
     (raw.user_data as Record<string, unknown> | undefined) ??
@@ -389,7 +408,8 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     backendCanShare === true &&
     decodedPrivacy.isValid &&
     decodedPrivacy.audience === 'public' &&
-    !isAnonymous;
+    !isAnonymous &&
+    !isReposted;
   const publisherRaw = isAnonymous ? undefined : realPublisherRaw;
 
   const postId = readString(raw, 'id', 'post_id');
@@ -440,10 +460,10 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
 
   return {
     id: postId,
-    videoUrl: normalizeMediaUrl(readString(raw, 'postFile')),
+    videoUrl: normalizeMediaUrl(readString(mediaSource, 'postFile')),
     thumbnailUrl: normalizeMediaUrl(
       readString(
-        raw,
+        mediaSource,
         'postFileThumb',
         'postFileThumbnail',
         'video_thumb',
@@ -452,7 +472,10 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
         'thumb',
       ),
     ),
-    caption: cleanCaption(readString(raw, 'postText')) || undefined,
+    caption:
+      cleanCaption(readString(raw, 'postText')) ||
+      cleanCaption(readString(mediaSource, 'postText')) ||
+      undefined,
     privacy: decodedPrivacy.audience,
     privacyContract,
     isAnonymous,
@@ -461,6 +484,7 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     canShareKnown: backendCanShare !== undefined,
     postedAt: readNumber(raw, 'time') || undefined,
     publisher: mapPublisher(publisherRaw),
+    isReposted,
     likeCount,
     commentCount: readNumber(raw, 'post_comments', 'commentCount'),
     viewCount: readNumber(raw, 'videoViews'),
@@ -737,12 +761,10 @@ async function fetchReelsPage(
       const rawId = readString(raw, 'id', 'post_id');
       if (rawId) lastProcessedCursor = rawId;
 
-      if (readString(raw, 'postFile')) {
-        const mapped = mapReel(raw);
-        if (mapped.videoUrl && !seenIds.has(mapped.id)) {
-          seenIds.add(mapped.id);
-          items.push(mapped);
-        }
+      const mapped = mapReel(raw);
+      if (mapped.videoUrl && !seenIds.has(mapped.id)) {
+        seenIds.add(mapped.id);
+        items.push(mapped);
       }
 
       if (items.length >= limit) break;

@@ -10,8 +10,9 @@ import type {
   LiveSession,
 } from '../../domain/types/live.types';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
-import { createFeedRepository } from '../../../feed';
+import { createFeedRepository, type SharePostInput } from '../../../feed';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
 import {
   endedLivePostsStorage,
   LOCAL_LIVE_ENDED_EVENT,
@@ -502,10 +503,16 @@ export function useLiveRoomViewModel(
   initialSession?: LiveSession,
 ) {
   const repository = useMemo(() => createLiveRepository(), []);
+  const feedRepository = useMemo(() => createFeedRepository(), []);
+  const sessionUserId = sessionStorage.getSession()?.userId;
   const [streamInfo, setStreamInfo] = useState<LiveStreamItem | null>(null);
   const [comments, setComments] = useState<LiveStreamComment[]>([]);
   const [viewerCount, setViewerCount] = useState(0);
   const [reactionsCount, setReactionsCount] = useState(0);
+  const [myReaction, setMyReaction] = useState<ReactionType | null>(() =>
+    reelsReactionsStorage.get(sessionUserId, String(postId)),
+  );
+  const [isReacting, setIsReacting] = useState(false);
   const [reactionEvents, setReactionEvents] = useState<LiveReactionEvent[]>([]);
   const [state, setState] = useState<LiveStreamState>('stale');
   const [isLoading, setIsLoading] = useState(true);
@@ -517,6 +524,15 @@ export function useLiveRoomViewModel(
   const liveSessionRef = useRef<LiveSession | null>(initialSession ?? null);
   const stateRef = useRef<LiveStreamState>('stale');
   const activePostIdRef = useRef(postId);
+  const commentsRef = useRef<LiveStreamComment[]>([]);
+  const reactionsCountRef = useRef(0);
+  const myReactionRef = useRef<ReactionType | null>(myReaction);
+  const reactionMutationIdRef = useRef(0);
+  const latestReactionMutationByPostRef = useRef(new Map<number, number>());
+  const pendingReactionRef = useRef<{
+    postId: number;
+    promise: Promise<void>;
+  } | null>(null);
   const pendingLiveStateCheckRef = useRef<{
     postId: number;
     promise: Promise<LiveStreamState>;
@@ -560,9 +576,22 @@ export function useLiveRoomViewModel(
 
   useEffect(() => {
     activePostIdRef.current = postId;
+    reactionMutationIdRef.current += 1;
+    pendingReactionRef.current = null;
     pendingLiveStateCheckRef.current = null;
     setStreamInfo(null);
+    commentsRef.current = [];
     setComments([]);
+    setViewerCount(0);
+    reactionsCountRef.current = 0;
+    setReactionsCount(0);
+    const cachedReaction = reelsReactionsStorage.get(
+      sessionStorage.getSession()?.userId,
+      String(postId),
+    );
+    myReactionRef.current = cachedReaction;
+    setMyReaction(cachedReaction);
+    setIsReacting(false);
     seenReactionEventsRef.current.clear();
     setReactionEvents([]);
     setHasLoadedComments(false);
@@ -691,9 +720,15 @@ export function useLiveRoomViewModel(
   const refreshComments = useCallback(
     async (onlyNew = false) => {
       if (!postId || postId <= 0) return;
+      const reactionMutationIdAtRequestStart = reactionMutationIdRef.current;
+      const reactionWasPendingAtRequestStart =
+        pendingReactionRef.current?.postId === postId;
       try {
         const latestId = onlyNew
-          ? Math.max(0, ...comments.map(comment => Number(comment.id) || 0))
+          ? Math.max(
+              0,
+              ...commentsRef.current.map(comment => Number(comment.id) || 0),
+            )
           : 0;
         const result = await repository.getComments(postId, {
           offset: latestId || undefined,
@@ -701,16 +736,28 @@ export function useLiveRoomViewModel(
           page: isHost ? 'live' : 'story',
         });
         if (activePostIdRef.current !== postId) return;
-        setComments(prev =>
-          mergeComments(onlyNew ? prev : [], result.comments),
-        );
+        setComments(prev => {
+          const nextComments = mergeComments(
+            onlyNew ? prev : [],
+            result.comments,
+          );
+          commentsRef.current = nextComments;
+          return nextComments;
+        });
         setViewerCount(result.viewerCount);
         updateLiveState(result.state);
         setHasLoadedComments(true);
-        if (result.reactionsCount !== undefined) {
+        if (
+          result.reactionsCount !== undefined &&
+          (isHost || result.reactionsCount > 0) &&
+          !reactionWasPendingAtRequestStart &&
+          pendingReactionRef.current?.postId !== postId &&
+          reactionMutationIdRef.current === reactionMutationIdAtRequestStart
+        ) {
+          reactionsCountRef.current = result.reactionsCount;
           setReactionsCount(result.reactionsCount);
         }
-        collectReactionEvents(result.reactionEvents, onlyNew && isHost);
+        collectReactionEvents(result.reactionEvents, onlyNew);
       } catch (err: any) {
         if (activePostIdRef.current !== postId) return;
         console.warn('[LiveRoom] comments error:', err);
@@ -719,14 +766,7 @@ export function useLiveRoomViewModel(
         }
       }
     },
-    [
-      collectReactionEvents,
-      comments,
-      isHost,
-      postId,
-      repository,
-      updateLiveState,
-    ],
+    [collectReactionEvents, isHost, postId, repository, updateLiveState],
   );
 
   useEffect(() => {
@@ -766,12 +806,89 @@ export function useLiveRoomViewModel(
     }
   }, [isHost, postId, repository, updateLiveState]);
 
+  const react = useCallback(
+    (reaction: ReactionType): Promise<void> => {
+      const pending = pendingReactionRef.current;
+      if (pending?.postId === postId) return pending.promise;
+
+      const requestPostId = postId;
+      const mutationId = reactionMutationIdRef.current + 1;
+      reactionMutationIdRef.current = mutationId;
+      latestReactionMutationByPostRef.current.set(requestPostId, mutationId);
+      const previousReaction = myReactionRef.current;
+      const previousCount = reactionsCountRef.current;
+      const targetReaction = previousReaction === reaction ? null : reaction;
+      const countDelta =
+        Number(targetReaction !== null) - Number(previousReaction !== null);
+      const nextCount = Math.max(0, previousCount + countDelta);
+
+      myReactionRef.current = targetReaction;
+      reactionsCountRef.current = nextCount;
+      setMyReaction(targetReaction);
+      setReactionsCount(nextCount);
+      setIsReacting(true);
+      DeviceEventEmitter.emit('postReactionChanged', {
+        postId: String(requestPostId),
+        myReaction: targetReaction,
+        likeCount: nextCount,
+        topReactions: targetReaction ? [targetReaction] : [],
+      });
+
+      const request = feedRepository
+        .setReaction(String(requestPostId), targetReaction)
+        .then(() => undefined)
+        .catch(mutationError => {
+          const isLatestMutationForPost =
+            latestReactionMutationByPostRef.current.get(requestPostId) ===
+            mutationId;
+          if (isLatestMutationForPost) {
+            if (activePostIdRef.current === requestPostId) {
+              myReactionRef.current = previousReaction;
+              reactionsCountRef.current = previousCount;
+              setMyReaction(previousReaction);
+              setReactionsCount(previousCount);
+            }
+            DeviceEventEmitter.emit('postReactionChanged', {
+              postId: String(requestPostId),
+              myReaction: previousReaction,
+              likeCount: previousCount,
+              topReactions: previousReaction ? [previousReaction] : [],
+            });
+          }
+          throw mutationError;
+        })
+        .finally(() => {
+          if (
+            latestReactionMutationByPostRef.current.get(requestPostId) ===
+            mutationId
+          ) {
+            latestReactionMutationByPostRef.current.delete(requestPostId);
+          }
+          if (pendingReactionRef.current?.promise === request) {
+            pendingReactionRef.current = null;
+            if (
+              activePostIdRef.current === requestPostId &&
+              reactionMutationIdRef.current === mutationId
+            ) {
+              setIsReacting(false);
+            }
+          }
+        });
+
+      pendingReactionRef.current = { postId: requestPostId, promise: request };
+      return request;
+    },
+    [feedRepository, postId],
+  );
+
   return {
     streamInfo,
     liveSession,
     comments,
     viewerCount,
     reactionsCount,
+    myReaction,
+    isReacting,
     reactionEvents,
     state,
     isHost,
@@ -789,17 +906,10 @@ export function useLiveRoomViewModel(
       },
       [postId, repository],
     ),
-    react: useCallback(
-      async (reaction: ReactionType) => {
-        try {
-          const feedRepo = createFeedRepository();
-          await feedRepo.setReaction(String(postId), reaction);
-          setReactionsCount(prev => prev + 1);
-        } catch (err) {
-          console.error('[LiveRoom] react error:', err);
-        }
-      },
-      [postId],
+    react,
+    sharePost: useCallback(
+      (input: SharePostInput) => feedRepository.sharePost(input),
+      [feedRepository],
     ),
     leave,
   };

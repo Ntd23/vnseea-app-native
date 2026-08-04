@@ -53,6 +53,16 @@ export type ProfileMediaActivity =
   | 'updated_profile_picture'
   | 'updated_cover_photo';
 
+export interface FeedLiveContext {
+  state: 'live' | 'stale' | 'offline';
+  streamName?: string;
+  title?: string;
+  description?: string;
+  thumbnailUrl?: string;
+  viewerCount?: number;
+  startedAt?: number;
+}
+
 export interface FeedPostPermissionCarrier {
   permissions?: FeedPostPermissions;
   /** Group identity shown above the member publisher on Home feed cards. */
@@ -61,6 +71,7 @@ export interface FeedPostPermissionCarrier {
   privacyContract?: ContentAudienceWireContract;
   sharedPostId?: string;
   sharedPost?: SharedPostPreviewModel;
+  liveContext?: FeedLiveContext;
   activity?: ProfileMediaActivity;
   feeling?: PostFeeling;
   taggedUsers?: PostTaggedUser[];
@@ -85,6 +96,15 @@ export type SharedPostPreviewContent =
       kind: 'video';
       videoUrl: string;
       thumbnailUrl?: string;
+    }
+  | {
+      kind: 'live';
+      state: FeedLiveContext['state'];
+      streamName?: string;
+      title: string;
+      description?: string;
+      thumbnailUrl?: string;
+      viewerCount?: number;
     }
   | {
       kind: 'poll';

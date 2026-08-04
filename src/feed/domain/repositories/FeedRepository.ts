@@ -36,6 +36,7 @@ export type FeedRecommendationEvent =
 export interface SharePostInput {
   postId: string;
   destination: FeedShareDestination;
+  sourceKind?: 'live';
   text?: string;
   userId?: string;
   pageId?: string;

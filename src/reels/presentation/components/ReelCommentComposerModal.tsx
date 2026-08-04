@@ -25,6 +25,7 @@ import { APP_COLORS } from '../../../shared-kernel/presentation/theme/appColors'
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { CommentMentionSuggestions } from './CommentMentionSuggestions';
+import { resolveKeyboardHeightFromFrame } from './keyboardMetrics';
 
 const QUICK_COMMENT_EMOJIS = [
   '😁',
@@ -181,17 +182,25 @@ export function ReelCommentComposerModal({
     (allowAndroidManualLift = false, duration = 70) => {
       if (!visibleRef.current || closeAnimationInFlightRef.current) return;
       const keyboardMetrics = Keyboard.metrics?.();
+      const screenHeight = Dimensions.get('screen').height;
       const windowViewportReduction = Math.max(
         0,
         baseViewportHeightRef.current - Dimensions.get('window').height,
       );
       const inferredKeyboardHeight =
         windowViewportReduction > 96 ? windowViewportReduction : 0;
-      const nextHeight = Math.max(
-        0,
-        keyboardMetrics?.height ?? keyboardHeightRef.current,
-        inferredKeyboardHeight,
-      );
+      const nextHeight =
+        Platform.OS === 'android'
+          ? resolveKeyboardHeightFromFrame(
+              keyboardMetrics,
+              screenHeight,
+              Math.max(keyboardHeightRef.current, inferredKeyboardHeight),
+            )
+          : Math.max(
+              0,
+              keyboardMetrics?.height ?? keyboardHeightRef.current,
+              inferredKeyboardHeight,
+            );
       if (nextHeight <= 0) return;
       animatePanelForKeyboard(
         nextHeight,
@@ -314,9 +323,18 @@ export function ReelCommentComposerModal({
         0,
         baseViewportHeightRef.current - nextViewportHeight,
       );
+      const keyboardMetrics = Keyboard.metrics?.();
+      const metricKeyboardHeight =
+        Platform.OS === 'android'
+          ? resolveKeyboardHeightFromFrame(
+              keyboardMetrics,
+              Dimensions.get('screen').height,
+              0,
+            )
+          : keyboardMetrics?.height ?? 0;
       const measuredKeyboardHeight = Math.max(
         0,
-        Keyboard.metrics?.()?.height ?? 0,
+        metricKeyboardHeight,
         keyboardHeightRef.current,
         viewportReduction > 96 ? viewportReduction : 0,
       );
@@ -357,18 +375,29 @@ export function ReelCommentComposerModal({
       if (closeAnimationInFlightRef.current) return;
       clearKeyboardSyncTimers();
       const keyboardMetrics = Keyboard.metrics?.();
+      const screenHeight = Dimensions.get('screen').height;
       const windowViewportReduction = Math.max(
         0,
         baseViewportHeightRef.current - Dimensions.get('window').height,
       );
       const inferredKeyboardHeight =
         windowViewportReduction > 96 ? windowViewportReduction : 0;
-      const nextHeight = Math.max(
-        0,
-        event.endCoordinates?.height ?? 0,
-        keyboardMetrics?.height ?? 0,
-        inferredKeyboardHeight,
-      );
+      const nextHeight =
+        Platform.OS === 'android'
+          ? resolveKeyboardHeightFromFrame(
+              event.endCoordinates,
+              screenHeight,
+              Math.max(
+                keyboardMetrics?.height ?? 0,
+                inferredKeyboardHeight,
+              ),
+            )
+          : Math.max(
+              0,
+              event.endCoordinates?.height ?? 0,
+              keyboardMetrics?.height ?? 0,
+              inferredKeyboardHeight,
+            );
       const duration =
         event.duration && event.duration > 0
           ? event.duration
@@ -388,11 +417,14 @@ export function ReelCommentComposerModal({
           duration,
         );
       } else {
+        // Give the normal Android dialog window a chance to honor adjustResize
+        // before applying a manual translation. OEMs that still do not resize
+        // are covered by the delayed sync fallback below.
         animatePanelForKeyboard(
           nextHeight,
           viewportHeightRef.current,
           isRepeatedKeyboardShow ? 90 : duration,
-          true,
+          false,
         );
         keyboardSyncTimersRef.current = [
           setTimeout(
@@ -469,13 +501,17 @@ export function ReelCommentComposerModal({
 
   if (!visible) return null;
 
+  // On Android, leaving navigationBarTranslucent unset keeps this dialog in
+  // the normal window so SOFT_INPUT_ADJUST_RESIZE can resize it consistently
+  // across OEM keyboards. React Native enables edge-to-edge whenever
+  // `navigationBarTranslucent` is true, which can let the IME overlap the
+  // composer on some Android versions/ROMs.
   return (
     <Modal
       visible
       transparent
       animationType="none"
       statusBarTranslucent
-      navigationBarTranslucent
       presentationStyle="overFullScreen"
       hardwareAccelerated
       onRequestClose={handleClose}

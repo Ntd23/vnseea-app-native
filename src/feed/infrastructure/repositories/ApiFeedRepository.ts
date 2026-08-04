@@ -51,6 +51,7 @@ import type {
   CreatePostDraft,
   CreatePostResult,
   FeedGroupContext,
+  FeedLiveContext,
   FeedPost,
   FeedPublisher,
   FeedAdPost,
@@ -653,17 +654,33 @@ function readNumber(raw: Record<string, unknown>, ...keys: string[]) {
 function cleanCaption(raw: string) {
   if (!raw) return '';
   return raw
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(?:p|div|li|blockquote|h[1-6])\s*>/gi, '\n')
     .replace(/<[^>]*>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (entity, code) => {
+      const value = Number.parseInt(code, 16);
+      return Number.isInteger(value) && value >= 0 && value <= 0x10ffff
+        ? String.fromCodePoint(value)
+        : entity;
+    })
+    .replace(/&#(\d+);/g, (entity, code) => {
+      const value = Number(code);
+      return Number.isInteger(value) && value >= 0 && value <= 0x10ffff
+        ? String.fromCodePoint(value)
+        : entity;
+    })
     .replace(/@\[\d+\]/g, '')
     .replace(/#\[\d+\]/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -881,7 +898,7 @@ function mapAdPost(raw: Record<string, unknown>): FeedAdPost {
  *      strings + slashes after the extension so signed-CDN URLs work.
  */
 function looksLikeVideo(raw: Record<string, unknown>): boolean {
-  if (looksLikeAd(raw)) return false;
+  if (looksLikeAd(raw) || looksLikeLive(raw)) return false;
   const postType = readString(raw, 'postType').toLowerCase();
   const file = normalizePlayableMediaUrl(readString(raw, 'postFile'));
   if (!file) return false;
@@ -891,6 +908,67 @@ function looksLikeVideo(raw: Record<string, unknown>): boolean {
 
 function looksLikeLive(raw: Record<string, unknown>): boolean {
   return readString(raw, 'postType', 'post_type').toLowerCase() === 'live';
+}
+
+function mapFeedLiveContext(
+  raw: Record<string, unknown>,
+): FeedLiveContext | undefined {
+  if (!looksLikeLive(raw)) return undefined;
+
+  const explicitState = readString(
+    raw,
+    'stream_state',
+    'live_state',
+    'still_live',
+  )
+    .trim()
+    .toLowerCase();
+  const stillLive = readOptionalBool(raw, 'still_live');
+  const isOffline =
+    readBool(raw, 'live_ended') ||
+    stillLive === false ||
+    ['offline', 'ended', 'deleted', '0'].includes(explicitState);
+  const state: FeedLiveContext['state'] = isOffline
+    ? 'offline'
+    : ['stale', 'waiting', 'pending'].includes(explicitState)
+    ? 'stale'
+    : 'live';
+  const caption = readPostCaption(raw);
+  const [titleLine, ...descriptionLines] = caption
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+  const thumbnailUrl = normalizeMediaUrl(
+    readString(raw, 'postFileThumb', 'live_bg', 'postPhoto'),
+  );
+
+  return {
+    state,
+    streamName: readString(raw, 'stream_name', 'stream') || undefined,
+    title: titleLine || undefined,
+    description: descriptionLines.join('\n').trim() || undefined,
+    thumbnailUrl: thumbnailUrl || undefined,
+    viewerCount: readNumber(
+      raw,
+      'live_sub_users',
+      'live_viewers',
+      'viewer_count',
+      'viewerCount',
+      'watching_count',
+    ),
+    startedAt: readNumber(raw, 'live_time', 'time') || undefined,
+  };
+}
+
+function markLiveShareUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    url.searchParams.set('live', '1');
+    return url.toString();
+  } catch {
+    const separator = rawUrl.includes('?') ? '&' : '?';
+    return `${rawUrl}${separator}live=1`;
+  }
 }
 
 // ── Photo URL extraction for text/photo posts ────────────────────────────
@@ -1061,7 +1139,8 @@ function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   const hasLinkPreview = Boolean(readString(raw, 'postLink'));
   const shared = readSharedInfo(raw);
   const hasSharedContent = shared
-    ? looksLikeVideo(shared) ||
+    ? looksLikeLive(shared) ||
+      looksLikeVideo(shared) ||
       looksLikePoll(shared) ||
       looksLikeTextOrPhoto(shared)
     : false;
@@ -1174,6 +1253,7 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     kind: 'text',
     id: postId,
     permissions: presentation.permissions,
+    liveContext: mapFeedLiveContext(raw),
     groupContext: mapPostGroupContext(raw),
     activity: mapProfileMediaActivity(readString(raw, 'postType', 'post_type')),
     caption,
@@ -1204,6 +1284,9 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
 function mapSharedPostPreview(
   raw: Record<string, unknown>,
 ): SharedPostPreviewModel {
+  if (looksLikeLive(raw)) {
+    return buildSharedPostPreviewModel(mapTextPostBase(raw));
+  }
   if (looksLikeVideo(raw)) {
     return buildSharedPostPreviewModel(mapVideoPost(raw));
   }
@@ -3427,7 +3510,11 @@ export function createFeedRepository(): FeedRepository {
           throw new Error('Thiếu hoặc trùng đích nhận chia sẻ qua tin nhắn.');
         }
 
-        const shareUrl = await getShareableUrl(input.postId, 'post');
+        const rawShareUrl = await getShareableUrl(input.postId, 'post');
+        const shareUrl =
+          input.sourceKind === 'live'
+            ? markLiveShareUrl(rawShareUrl)
+            : rawShareUrl;
         const note = input.text?.trim();
         const messageBody = note ? `${note}\n\n${shareUrl}` : shareUrl;
 

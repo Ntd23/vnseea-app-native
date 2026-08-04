@@ -62,6 +62,7 @@ import {
   MessageCircle,
   Play,
   Forward,
+  Repeat2,
 } from 'lucide-react-native';
 import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
 import { isReelShareable } from '../../domain/policies/reelPrivacy';
@@ -87,12 +88,14 @@ const REEL_ITEM_COPY = {
     share: 'Chia sẻ',
     anonymous: 'Ẩn danh',
     originalSound: 'Âm thanh gốc',
+    reposted: 'Đã đăng lại',
   },
   en: {
     save: 'Save',
     share: 'Share',
     anonymous: 'Anonymous',
     originalSound: 'Original sound',
+    reposted: 'Reposted',
   },
 };
 
@@ -798,6 +801,116 @@ function ReelItemBase({
     [isCurrent, item.thumbnailUrl],
   );
 
+  // Keep the native player element stable while Reel chrome changes. A first
+  // reaction replaces the outline heart with an Image and updates likeCount;
+  // without this boundary that harmless UI update also re-renders the native
+  // TextureView, which can briefly detach or blank on Android. Only actual
+  // playback inputs are allowed to rebuild this element.
+  const videoPlayer = useMemo(() => {
+    if (!shouldMount || !videoSource) return null;
+
+    return (
+      <VideoPlayer
+        key={`${item.id}:${playerAttempt}`}
+        ref={videoRef}
+        source={videoSource}
+        style={StyleSheet.absoluteFill}
+        resizeMode="contain"
+        shutterColor="transparent"
+        // Don't use `repeat` prop here. When autoScrollEnabled flips
+        // false -> true mid-playback, react-native-video doesn't reliably
+        // turn off the active loop, so onEnd never fires and the user
+        // gets stuck on the last video. We handle looping ourselves in
+        // onEnd by seeking back to 0.
+        repeat={false}
+        paused={!playing}
+        muted={isMuted || !isActive}
+        ignoreSilentSwitch="ignore"
+        playInBackground={false}
+        playWhenInactive={false}
+        progressUpdateInterval={250}
+        useTextureView={Platform.OS === 'android'}
+        renderLoader={renderVideoLoader}
+        onLoadStart={() => {
+          setIsReady(false);
+          setHasRenderedFirstFrame(false);
+          setIsBuffering(true);
+        }}
+        onReadyForDisplay={markVideoDisplayed}
+        onLoad={data => {
+          markVideoReady();
+          const naturalAspectRatio = getReelVideoNaturalAspectRatio(data);
+          setVideoNaturalAspectRatio(naturalAspectRatio);
+          if (data?.duration) {
+            const nextDuration = Number(data.duration);
+            durationRef.current = nextDuration;
+            setDuration(previous =>
+              previous === nextDuration ? previous : nextDuration,
+            );
+            playbackProgress.value = Math.min(
+              1,
+              Math.max(0, currentTimeRef.current / nextDuration),
+            );
+          }
+        }}
+        onBuffer={({ isBuffering: nextIsBuffering }) => {
+          setIsBuffering(nextIsBuffering);
+        }}
+        onProgress={data => {
+          if (!isSeekingRef.current && data?.currentTime !== undefined) {
+            const nextTime = data.currentTime;
+            if (nextTime > 0.25) {
+              setHasRenderedFirstFrame(true);
+              clearEndSuppression();
+              videoRetryCountRef.current = 0;
+              setIsBuffering(false);
+            }
+            currentTimeRef.current = nextTime;
+            if (durationRef.current > 0) {
+              playbackProgress.value = Math.min(
+                1,
+                Math.max(0, nextTime / durationRef.current),
+              );
+            }
+            setVideoPlaybackTime(item.id, nextTime);
+          }
+        }}
+        onEnd={() => {
+          if (suppressNextEndRef.current) {
+            clearEndSuppression();
+            resetPlaybackToStart(true);
+            return;
+          }
+          const didAdvance = onVideoEndRef.current?.(index) ?? false;
+          if (didAdvance) {
+            startEndSuppression();
+            resetPlaybackToStart(true);
+          } else {
+            resetPlaybackToStart(true);
+          }
+        }}
+        onError={handleVideoError}
+      />
+    );
+  }, [
+    clearEndSuppression,
+    handleVideoError,
+    index,
+    isActive,
+    isMuted,
+    item.id,
+    markVideoDisplayed,
+    markVideoReady,
+    playbackProgress,
+    playerAttempt,
+    playing,
+    renderVideoLoader,
+    resetPlaybackToStart,
+    shouldMount,
+    startEndSuppression,
+    videoSource,
+  ]);
+
   // Each reel needs a unique SVG gradient ID — if two SVGs share the same
   // id the wrong gradient can bleed across items.
   const gradId = `rg-${item.id}`;
@@ -824,89 +937,7 @@ function ReelItemBase({
 
         {/* ── Video — mounted only when in the ±1 preload window ─────── */}
         <Animated.View style={[styles.videoFrame, videoFrameAnimatedStyle]}>
-          {shouldMount && videoSource ? (
-            <VideoPlayer
-              key={`${item.id}:${playerAttempt}`}
-              ref={videoRef}
-              source={videoSource}
-              style={StyleSheet.absoluteFill}
-              resizeMode="contain"
-              shutterColor="transparent"
-              // Don't use `repeat` prop here. When autoScrollEnabled flips
-              // false → true mid-playback, react-native-video doesn't reliably
-              // turn off the active loop, so onEnd never fires and the user
-              // gets stuck on the last video. We handle looping ourselves in
-              // onEnd by seeking back to 0.
-              repeat={false}
-              paused={!playing}
-              muted={isMuted || !isActive}
-              ignoreSilentSwitch="ignore"
-              playInBackground={false}
-              playWhenInactive={false}
-              progressUpdateInterval={250}
-              useTextureView={Platform.OS === 'android'}
-              renderLoader={renderVideoLoader}
-              onLoadStart={() => {
-                setIsReady(false);
-                setHasRenderedFirstFrame(false);
-                setIsBuffering(true);
-              }}
-              onReadyForDisplay={markVideoDisplayed}
-              onLoad={data => {
-                markVideoReady();
-                const naturalAspectRatio = getReelVideoNaturalAspectRatio(data);
-                setVideoNaturalAspectRatio(naturalAspectRatio);
-                if (data?.duration) {
-                  const nextDuration = Number(data.duration);
-                  durationRef.current = nextDuration;
-                  setDuration(previous =>
-                    previous === nextDuration ? previous : nextDuration,
-                  );
-                  playbackProgress.value = Math.min(
-                    1,
-                    Math.max(0, currentTimeRef.current / nextDuration),
-                  );
-                }
-              }}
-              onBuffer={({ isBuffering: nextIsBuffering }) => {
-                setIsBuffering(nextIsBuffering);
-              }}
-              onProgress={data => {
-                if (!isSeekingRef.current && data?.currentTime !== undefined) {
-                  const nextTime = data.currentTime;
-                  if (nextTime > 0.25) {
-                    setHasRenderedFirstFrame(true);
-                    clearEndSuppression();
-                    videoRetryCountRef.current = 0;
-                    setIsBuffering(false);
-                  }
-                  currentTimeRef.current = nextTime;
-                  if (durationRef.current > 0) {
-                    playbackProgress.value = Math.min(
-                      1,
-                      Math.max(0, nextTime / durationRef.current),
-                    );
-                  }
-                  setVideoPlaybackTime(item.id, nextTime);
-                }
-              }}
-              onEnd={() => {
-                if (suppressNextEndRef.current) {
-                  clearEndSuppression();
-                  resetPlaybackToStart(true);
-                  return;
-                }
-                const didAdvance = onVideoEndRef.current?.(index) ?? false;
-                if (didAdvance) {
-                  startEndSuppression();
-                  resetPlaybackToStart(true);
-                } else {
-                  resetPlaybackToStart(true);
-                }
-              }}
-              onError={handleVideoError}
-            />
-          ) : null}
+          {videoPlayer}
         </Animated.View>
 
         {/* ── Tap surface ─────────────────────────────────────────────────
@@ -1170,6 +1201,12 @@ function ReelItemBase({
             {item.publisher.isVerified ? (
               <View style={styles.verifiedBadge}>
                 <Text style={styles.verifiedTick}>✓</Text>
+              </View>
+            ) : null}
+            {item.isReposted ? (
+              <View style={styles.repostedBadge}>
+                <Repeat2 size={13} color="rgba(255,255,255,0.9)" />
+                <Text style={styles.repostedText}>{copy.reposted}</Text>
               </View>
             ) : null}
           </TouchableOpacity>
@@ -1624,6 +1661,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   verifiedTick: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  repostedBadge: {
+    marginLeft: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  repostedText: {
+    marginLeft: 4,
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   caption: {
     color: 'rgba(255,255,255,0.9)',
     fontSize: 15,

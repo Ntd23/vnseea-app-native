@@ -105,7 +105,7 @@ export interface CreateProductInput {
   currency?: string;
   lat?: string;
   lng?: string;
-  units?: number;
+  units: number;
   product_sub_category?: string;
 }
 

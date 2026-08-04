@@ -134,4 +134,39 @@ describe('message chat merge', () => {
       }),
     ]);
   });
+
+  it('takes a renamed group from the incoming snapshot without losing newer message activity', () => {
+    const cachedGroup = chat({
+      id: 'group:20',
+      chatType: 'group',
+      groupId: '20',
+      userId: '20',
+      name: 'Tên nhóm cũ',
+      avatar: 'old-avatar.jpg',
+      lastMessageId: '102',
+      lastMessage: 'Tin nhắn mới nhất',
+      lastMessageTime: 300,
+    });
+    const refreshedGroup = chat({
+      id: 'group:20',
+      chatType: 'group',
+      groupId: '20',
+      userId: '20',
+      name: 'Tên nhóm mới',
+      avatar: 'new-avatar.jpg',
+      lastMessageId: '101',
+      lastMessage: 'Tin nhắn cũ hơn',
+      lastMessageTime: 200,
+    });
+
+    expect(mergeChatItems([cachedGroup], [refreshedGroup])).toEqual([
+      expect.objectContaining({
+        name: 'Tên nhóm mới',
+        avatar: 'new-avatar.jpg',
+        lastMessageId: '102',
+        lastMessage: 'Tin nhắn mới nhất',
+        lastMessageTime: 300,
+      }),
+    ]);
+  });
 });

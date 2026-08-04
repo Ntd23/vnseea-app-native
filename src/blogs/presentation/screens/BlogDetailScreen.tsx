@@ -3,12 +3,20 @@ import {
   APP_BRAND_COLOR,
   APP_COLORS,
 } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Image,
   ImageBackground,
+  Keyboard,
   Linking,
+  Platform,
   ScrollView,
   Share,
   Text,
@@ -51,6 +59,7 @@ type BlogDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.BLOG_DETAIL>;
 
 const BRAND = APP_BRAND_COLOR;
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1495020689067-958852a7765e?q=80&w=1400&auto=format&fit=crop';
+const COMMENT_INPUT_REVEAL_DELAYS_MS = [0, 80, 220, 420] as const;
 
 const categoryKeyMap: Record<string, string> = {
   vehicles: 'categoryVehicles',
@@ -200,6 +209,7 @@ function BlogDetailScreen() {
   const [commentText, setCommentText] = useState('');
   const scrollViewRef = useRef<ScrollView>(null);
   const commentInputRef = useRef<TextInput>(null);
+  const commentRevealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const copy = getBlogsCopy(language);
 
   const article = vm.article;
@@ -230,15 +240,40 @@ function BlogDetailScreen() {
     if (ok) setCommentText('');
   }, [commentText, vm]);
 
-  const revealCommentInput = useCallback(() => {
-    const input = commentInputRef.current;
-    if (!input) return;
-    scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
-      input,
-      24,
-      true,
-    );
+  const clearCommentRevealTimers = useCallback(() => {
+    commentRevealTimersRef.current.forEach(clearTimeout);
+    commentRevealTimersRef.current = [];
   }, []);
+
+  const revealCommentInput = useCallback(() => {
+    clearCommentRevealTimers();
+    commentRevealTimersRef.current = COMMENT_INPUT_REVEAL_DELAYS_MS.map(
+      delay =>
+        setTimeout(() => {
+          const input = commentInputRef.current;
+          if (!input?.isFocused()) return;
+          scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+            input,
+            24,
+            true,
+          );
+        }, delay),
+    );
+  }, [clearCommentRevealTimers]);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const showSubscription = Keyboard.addListener(
+      showEvent,
+      revealCommentInput,
+    );
+
+    return () => {
+      showSubscription.remove();
+      clearCommentRevealTimers();
+    };
+  }, [clearCommentRevealTimers, revealCommentInput]);
 
   if (vm.isLoading) {
     return (

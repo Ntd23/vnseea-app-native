@@ -124,6 +124,17 @@ describe('navigateToNotification', () => {
     );
   });
 
+  it('opens the wallet for a received-money notification', async () => {
+    const navigation = { navigate: jest.fn() };
+
+    await navigateToNotification(
+      notification({ type: 'sent_u_money' }),
+      navigation,
+    );
+
+    expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.MY_BALANCE);
+  });
+
   it('opens a Story notification at the exact active segment', async () => {
     const navigation = { navigate: jest.fn() };
     const stories = [

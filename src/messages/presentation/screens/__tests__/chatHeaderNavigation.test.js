@@ -42,8 +42,8 @@ describe('ChatScreen header navigation', () => {
       '{conversationHeaderActions.map',
     );
 
-    expect(detailsPressable).toContain('source={{ uri: chat.avatar }}');
-    expect(detailsPressable).toContain('{chat.name}');
+    expect(detailsPressable).toContain('source={{ uri: displayChat.avatar }}');
+    expect(detailsPressable).toContain('{displayChat.name}');
     expect(detailsPressable).toContain('{conversationSubtitle}');
   });
 
@@ -73,7 +73,7 @@ describe('ChatScreen header navigation', () => {
 
     expect(handlerBlock).toContain("if (chat.chatType === 'group')");
     expect(handlerBlock).toContain(
-      'navigation.navigate(ROUTES.GROUP_INFO, { chat });',
+      'navigation.navigate(ROUTES.GROUP_INFO, { chat: displayChat });',
     );
     expect(handlerBlock).not.toContain('handleOpenGroupInfo();');
   });
