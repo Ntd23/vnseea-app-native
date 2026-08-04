@@ -23,6 +23,7 @@ import {
   markFeedMediaLoaded,
   useFeedMediaLoaded,
 } from '../../application/state/feedMediaLoadState';
+import { PostTaggedUsersSheet } from './PostTaggedUsersSheet';
 
 type Props = {
   model: SharedPostPreviewModel;
@@ -145,6 +146,7 @@ export function SharedPostPreviewCard({
   onAssetSettled,
   mediaEnabled = true,
 }: Props) {
+  const [taggedUsersVisible, setTaggedUsersVisible] = React.useState(false);
   const content = model.content;
   const storyMode = mode === 'story';
   const language = useAppLanguage();
@@ -295,6 +297,11 @@ export function SharedPostPreviewCard({
                             isEmphasized
                               ? styles.publisherActivityStrong
                               : styles.publisherActivity
+                          }
+                          onPress={
+                            segment.kind === 'tagged_users'
+                              ? () => setTaggedUsersVisible(true)
+                              : undefined
                           }
                         >
                           {segment.text}
@@ -638,6 +645,11 @@ export function SharedPostPreviewCard({
           )}
         </Pressable>
       ) : null}
+      <PostTaggedUsersSheet
+        visible={taggedUsersVisible}
+        users={model.taggedUsers ?? []}
+        onClose={() => setTaggedUsersVisible(false)}
+      />
     </View>
   );
 }

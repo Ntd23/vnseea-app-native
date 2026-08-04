@@ -91,7 +91,9 @@ import {
 } from '../components/MessageReactions';
 import type {
   MessageAttachment,
+  GroupChatMember,
   MessageItem,
+  MessageMention,
   MarketplaceMessageContext,
   MessageReplyReference,
   SendMessageOptions,
@@ -133,6 +135,15 @@ import {
   buildChatMessageListItems,
   type ChatMessageListItem,
 } from '../../application/utils/messageMediaGrouping';
+import {
+  filterSelectedGroupMentions,
+  findActiveGroupMention,
+  insertGroupMention,
+} from '../../application/mentions/groupMessageMentions';
+import {
+  resolveConversationMessageAvatar,
+  shouldShowConversationMessageAvatar,
+} from '../../application/utils/groupMessagePresentation';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -2620,6 +2631,14 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   }, [chat, groupInfo]);
 
   const [text, setText] = useState('');
+  const [composerSelection, setComposerSelection] = useState({
+    start: 0,
+    end: 0,
+  });
+  const [selectedMentions, setSelectedMentions] = useState<MessageMention[]>(
+    [],
+  );
+  const composerInputRef = useRef<TextInput>(null);
   const [replyingMessage, setReplyingMessage] = useState<
     MessageItem | undefined
   >(undefined);
@@ -2732,6 +2751,27 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       recorder.isRecording ||
       Boolean(attachedProduct) ||
       Boolean(sharedMapLocation));
+  const activeGroupMention = useMemo(
+    () =>
+      chat.chatType === 'group'
+        ? findActiveGroupMention(text, composerSelection.end)
+        : undefined,
+    [chat.chatType, composerSelection.end, text],
+  );
+  const groupMentionCandidates = useMemo(() => {
+    if (!activeGroupMention || !groupInfo) return [];
+    const currentUserId = sessionStorage.getSession()?.userId ?? '';
+    const query = activeGroupMention.query.toLocaleLowerCase('vi-VN');
+    return groupInfo.members
+      .filter(member => member.id !== currentUserId && Boolean(member.username))
+      .filter(member => {
+        if (!query) return true;
+        return `${member.name} ${member.username}`
+          .toLocaleLowerCase('vi-VN')
+          .includes(query);
+      })
+      .slice(0, 8);
+  }, [activeGroupMention, groupInfo]);
   const audioAttachment = useMemo(
     () => attachments.find(attachment => attachment.mediaType === 'audio'),
     [attachments],
@@ -3104,9 +3144,43 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   const handleChangeText = useCallback(
     (nextText: string) => {
       setText(nextText);
+      setSelectedMentions(current =>
+        filterSelectedGroupMentions(nextText, current),
+      );
       notifyTyping(nextText);
     },
     [notifyTyping],
+  );
+
+  const handleSelectGroupMention = useCallback(
+    (member: GroupChatMember) => {
+      if (!activeGroupMention) return;
+      const result = insertGroupMention(
+        text,
+        activeGroupMention,
+        member,
+        selectedMentions.map(mention => mention.id),
+      );
+      const mention: MessageMention = {
+        id: member.id,
+        name: member.name,
+        username: member.username,
+        avatar: member.avatar || undefined,
+      };
+      setText(result.text);
+      setComposerSelection({ start: result.cursor, end: result.cursor });
+      requestAnimationFrame(() => {
+        composerInputRef.current?.setNativeProps({
+          selection: { start: result.cursor, end: result.cursor },
+        });
+      });
+      setSelectedMentions(current => {
+        const byId = new Map(current.map(item => [item.id, item]));
+        byId.set(mention.id, mention);
+        return [...byId.values()];
+      });
+      notifyTyping(result.text);
+    }, [activeGroupMention, notifyTyping, selectedMentions, text],
   );
 
   const handleSend = useCallback(async () => {
@@ -3188,6 +3262,10 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               : replyingMessage.senderName || displayChat.name || 'Người dùng',
           )
         : undefined;
+      const mentions = filterSelectedGroupMentions(
+        nextText,
+        selectedMentions,
+      );
       if (replyingMessage) setReplyingMessage(undefined);
 
       const nextAttachments = pendingAttachments;
@@ -3200,18 +3278,22 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
           ? `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
           : undefined;
       setText('');
+      setComposerSelection({ start: 0, end: 0 });
+      setSelectedMentions([]);
       stopTyping();
       setAttachments([]);
 
       if (nextAttachments.length === 0) {
         await sendMessage(nextText, undefined, {
           ...(replyTo ? { replyTo } : {}),
+          ...(mentions.length ? { mentions } : {}),
           ...(productInquiry ? { productInquiry } : {}),
         });
       } else {
         for (const [index, attachment] of nextAttachments.entries()) {
           const attachmentOptions: SendMessageOptions = {
             ...(index === 0 && replyTo ? { replyTo } : {}),
+            ...(index === 0 && mentions.length ? { mentions } : {}),
             ...(index === 0 && productInquiry ? { productInquiry } : {}),
             ...(mediaGroupId &&
             (attachment.mediaType === 'image' ||
@@ -3241,6 +3323,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     sharedMapLocation,
     replyingMessage,
     displayChat.name,
+    selectedMentions,
   ]);
 
   const handleSelectOptionReply = useCallback(() => {
@@ -3531,7 +3614,10 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
           >
             <MemoizedMediaMessageGroup
               messages={item.messages}
-              avatar={displayChat.avatar}
+              avatar={resolveConversationMessageAvatar(
+                displayChat,
+                item.messages[0],
+              )}
               onOpenMedia={handleOpenMedia}
               onLongPress={setSelectedOptionMessage}
               onDoubleTap={handleDoubleTapMessage}
@@ -3569,8 +3655,16 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               );
               if (currentIndex <= 0) return true;
               const successor = messageItems[currentIndex - 1];
-              if (!successor || successor.kind !== 'message') return true;
-              return successor.message.isSentByMe;
+              const adjacentMessage = successor
+                ? successor.kind === 'message'
+                  ? successor.message
+                  : successor.messages[0]
+                : undefined;
+              return shouldShowConversationMessageAvatar(
+                displayChat,
+                item.message,
+                adjacentMessage,
+              );
             })()
           : false;
 
@@ -3584,7 +3678,10 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         >
           <MemoizedMessageBubble
             message={item.message}
-            avatar={displayChat.avatar}
+            avatar={resolveConversationMessageAvatar(
+              displayChat,
+              item.message,
+            )}
             chatName={displayChat.name}
             showAvatar={showAvatar}
             onOpenMedia={handleOpenMedia}
@@ -3601,8 +3698,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       );
     },
     [
-      displayChat.avatar,
-      displayChat.name,
+      displayChat,
       highlightedMessageId,
       messageItems,
       handleOpenMedia,
@@ -4162,6 +4258,54 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         ) : null}
 
         {/* Input Bar */}
+        {activeGroupMention && groupMentionCandidates.length > 0 ? (
+          <View className="max-h-56 border-t border-gray-200 bg-white px-2 py-2">
+            <FlatList
+              data={groupMentionCandidates}
+              keyExtractor={member => member.id}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              renderItem={({ item: member }) => (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  className="flex-row items-center rounded-xl px-2 py-2.5"
+                  onPress={() => handleSelectGroupMention(member)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Nhắc đến ${member.name}`}
+                >
+                  {member.avatar ? (
+                    <Image
+                      source={{ uri: member.avatar }}
+                      className="h-10 w-10 rounded-full bg-slate-100"
+                    />
+                  ) : (
+                    <View className="h-10 w-10 items-center justify-center rounded-full bg-brand/10">
+                      <Text className="font-bold text-brand">
+                        {(member.name || member.username)
+                          .charAt(0)
+                          .toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View className="ml-3 min-w-0 flex-1">
+                    <Text
+                      className="text-[14px] font-semibold text-slate-900"
+                      numberOfLines={1}
+                    >
+                      {member.name}
+                    </Text>
+                    <Text
+                      className="mt-0.5 text-[12px] text-slate-500"
+                      numberOfLines={1}
+                    >
+                      @{member.username}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        ) : null}
         <View
           className="flex-row items-end border-t border-gray-200 bg-white px-3 py-2"
           style={chatInputBarStyle}
@@ -4199,12 +4343,16 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
             />
           ) : (
             <TextInput
+              ref={composerInputRef}
               className="mr-2 max-h-28 flex-1 rounded-full bg-gray-100 px-4 py-2.5 text-[15px] text-gray-900"
               placeholder={copy.inputPlaceholder}
               placeholderTextColor="#9DA9BE"
               multiline
               value={text}
               onChangeText={handleChangeText}
+              onSelectionChange={event =>
+                setComposerSelection(event.nativeEvent.selection)
+              }
               onFocus={handleComposerFocus}
             />
           )}

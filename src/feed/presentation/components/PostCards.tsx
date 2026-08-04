@@ -111,6 +111,7 @@ import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState'
 import { FeedMediaImage } from './FeedMediaImage';
 import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
 import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
+import { PostTaggedUsersSheet } from './PostTaggedUsersSheet';
 import { parseSharedPageMessage } from '../../../messages/application/shared-pages/sharedPageMessage';
 import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
 
@@ -2656,6 +2657,7 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   containerClassName?: string;
   showGroupContext?: boolean;
 }) {
+  const [taggedUsersVisible, setTaggedUsersVisible] = useState(false);
   const handleMorePress = useCallback(() => {
     if (post) {
       onMorePress?.(post);
@@ -2680,11 +2682,8 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   const hasActivity = Boolean(activityLabel || postActivity.fullText);
   const showTaggedUsers = useCallback(() => {
     if (!post?.taggedUsers?.length) return;
-    Alert.alert(
-      copy.language === 'vi' ? 'Những người được gắn thẻ' : 'Tagged people',
-      post.taggedUsers.map(user => user.name).join('\n'),
-    );
-  }, [copy.language, post?.taggedUsers]);
+    setTaggedUsersVisible(true);
+  }, [post?.taggedUsers]);
 
   if (showGroupContext && post?.groupContext) {
     return (
@@ -2703,7 +2702,8 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   }
 
   return (
-    <View className={containerClassName}>
+    <>
+      <View className={containerClassName}>
       <TouchableOpacity
         className="min-w-0 flex-1 flex-row items-center"
         activeOpacity={0.8}
@@ -2797,7 +2797,13 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
           <MoreHorizontal size={22} color="#94A3B8" />
         </TouchableOpacity>
       )}
-    </View>
+      </View>
+      <PostTaggedUsersSheet
+        visible={taggedUsersVisible}
+        users={post?.taggedUsers ?? []}
+        onClose={() => setTaggedUsersVisible(false)}
+      />
+    </>
   );
 });
 

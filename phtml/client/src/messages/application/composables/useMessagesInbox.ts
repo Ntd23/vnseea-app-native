@@ -13,10 +13,7 @@ import type {
 } from "../../domain/types/messages.types"
 import type { FeedStoryReactionType } from "../../../feed/domain/constants/story-reactions"
 import { createApiMessagesRepository } from "../../infrastructure/repositories/ApiMessagesRepository"
-import {
-  buildReplyMessageText,
-  getMessageDisplayText,
-} from "../utils/message-bubble-content"
+import { getMessageDisplayText } from "../utils/message-bubble-content"
 
 type MessageFeedbackTone = "neutral" | "success" | "warning" | "error"
 type QueuedMessageDraft = {
@@ -730,6 +727,8 @@ export function useMessagesInbox(
         text: input.text,
         file: input.file,
         record: uploadedRecord,
+        replyId: input.replyId,
+        mentionedUserIds: input.mentionedUserIds,
       })
       if (buildContactKey(selectedContact.value) === contactKey) {
         thread.value = {
@@ -766,20 +765,15 @@ export function useMessagesInbox(
       return
     }
 
-    const text = buildReplyMessageText({
-      text: input.text,
-      target: replyTarget.value,
-      author: replyAuthor.value,
-      fallbackLabel: t("navigation.chatWidget.replyingToMessage"),
-    })
-
     sendQueue.value.push({
       contact,
       contactKey: buildContactKey(contact),
       input: {
-        text,
+        text: input.text.trim(),
         file: input.file,
         record: input.record,
+        replyId: replyTarget.value?.id,
+        mentionedUserIds: input.mentionedUserIds,
       },
     })
 

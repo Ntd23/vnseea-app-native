@@ -186,6 +186,37 @@ describe('ApiMessagesRepository message replies', () => {
     );
   });
 
+  it('parses the inline reply envelope produced by older Nuxt clients', async () => {
+    const payload = encodeURIComponent(
+      JSON.stringify({
+        author: 'Người gửi Web',
+        quote: 'Tin nhắn gốc',
+        targetMessageId: 91,
+      }),
+    );
+    post.mockResolvedValueOnce({
+      data: {
+        messages: [
+          rawMessage('92', {
+            group_id: '9',
+            or_text: `__VNSEEA_MINI_REPLY__:${payload}\nTôi đồng ý`,
+          }),
+        ],
+      },
+    });
+
+    const [message] = await createMessagesRepository().getMessages(groupChat());
+
+    expect(message.message).toBe('Tôi đồng ý');
+    expect(message.replyTo).toEqual(
+      expect.objectContaining({
+        messageId: '91',
+        senderName: 'Người gửi Web',
+        text: 'Tin nhắn gốc',
+      }),
+    );
+  });
+
   it('uses the reply body instead of the legacy envelope in the conversation list', async () => {
     const legacyReply = [
       '↪️ *Trả lời tin nhắn:*',
@@ -300,6 +331,56 @@ describe('ApiMessagesRepository message replies', () => {
     expect(post.mock.calls[0][1].text).not.toContain('Trả lời tin nhắn');
     expect(response.sentMessages[0].replyTo).toEqual(
       expect.objectContaining({ messageId: '11', contentKind: 'text' }),
+    );
+  });
+
+  it('sends selected group mention ids and maps canonical mention users', async () => {
+    post.mockResolvedValueOnce({
+      api_status: 200,
+      data: [
+        rawMessage('61', {
+          group_id: '9',
+          or_text: 'Chào @[2]',
+          mentions: [
+            {
+              user_id: '2',
+              name: 'Người được nhắc',
+              username: 'member_two',
+              avatar: 'upload/photos/member.jpg',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const response = await createMessagesRepository().sendMessage(
+      groupChat(),
+      'Chào @member_two',
+      undefined,
+      {
+        mentions: [
+          {
+            id: '2',
+            name: 'Người được nhắc',
+            username: 'member_two',
+          },
+        ],
+      },
+    );
+
+    expect(post).toHaveBeenCalledWith(
+      'group_chat',
+      expect.objectContaining({
+        mentioned_user_ids: JSON.stringify(['2']),
+      }),
+    );
+    expect(response.sentMessages?.[0]).toEqual(
+      expect.objectContaining({
+        message: 'Chào @Người được nhắc',
+        mentions: [
+          expect.objectContaining({ id: '2', username: 'member_two' }),
+        ],
+      }),
     );
   });
 });

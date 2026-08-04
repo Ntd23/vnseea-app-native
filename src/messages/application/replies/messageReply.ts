@@ -5,6 +5,7 @@ import type {
 import { describeMessageTextContent } from '../preview/messageContentDescriptor';
 
 const LEGACY_REPLY_TITLE = 'Trả lời tin nhắn';
+const NUXT_INLINE_REPLY_PREFIX = '__VNSEEA_MINI_REPLY__:';
 
 type LegacyReplyMediaType = 'image' | 'video' | 'audio' | 'file' | 'call';
 
@@ -94,6 +95,47 @@ export function parseLegacyMessageReply(
   value: string,
   webBaseUrl: string,
 ): { body: string; replyTo: MessageReplyReference } | undefined {
+  const [inlineReplyLine, ...inlineBodyLines] = value.split('\n');
+  if (inlineReplyLine?.startsWith(NUXT_INLINE_REPLY_PREFIX)) {
+    try {
+      const payload = JSON.parse(
+        decodeURIComponent(
+          inlineReplyLine.slice(NUXT_INLINE_REPLY_PREFIX.length),
+        ),
+      ) as {
+        author?: string;
+        quote?: string;
+        targetMessageId?: string | number;
+        mediaUrl?: string;
+        mediaType?: string;
+      };
+      const mediaType = normalizeLegacyMediaType(payload.mediaType ?? '');
+      const text = String(payload.quote ?? '').trim();
+      const content = inferLegacyContentKind(text, mediaType, webBaseUrl);
+      const messageId = String(payload.targetMessageId ?? '').trim();
+      if (!messageId) return undefined;
+
+      return {
+        body: inlineBodyLines.join('\n').trim(),
+        replyTo: {
+          messageId,
+          senderId: '',
+          senderName: String(payload.author ?? '').trim() || 'Người dùng',
+          text,
+          contentKind: content.contentKind,
+          media: payload.mediaUrl || undefined,
+          mediaType: mediaType === 'call' ? undefined : mediaType,
+          thumbnail: mediaType === 'image' ? payload.mediaUrl : undefined,
+          sharedPost: content.sharedPost,
+          link: content.link,
+          location: content.location,
+        },
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
   if (!value.includes(LEGACY_REPLY_TITLE)) return undefined;
 
   const senderMatch = value.match(/👉\s*\*(.*?)\*:\s*([\s\S]*?)\s*🆔/);

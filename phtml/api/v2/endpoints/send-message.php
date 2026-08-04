@@ -42,6 +42,26 @@ if (empty($error_code)) {
         $error_message = 'Recipient user not found';
     } else {
         $story_reply = null;
+        $reply_id = 0;
+        if (isset($_POST['reply_id']) && $_POST['reply_id'] !== '') {
+            if (!is_numeric($_POST['reply_id']) || (int)$_POST['reply_id'] < 1) {
+                $error_code = 10;
+                $error_message = 'Reply message is invalid.';
+            } else {
+                $reply_id = (int)$_POST['reply_id'];
+                $reply_message = $db->where('id', $reply_id)->getOne(T_MESSAGES);
+                $sender_id = (int)$wo['user']['user_id'];
+                $belongs_to_conversation = !empty($reply_message) &&
+                    empty($reply_message->group_id) &&
+                    empty($reply_message->page_id) &&
+                    (((int)$reply_message->from_id === $sender_id && (int)$reply_message->to_id === (int)$recipient_id) ||
+                        ((int)$reply_message->from_id === (int)$recipient_id && (int)$reply_message->to_id === $sender_id));
+                if (!$belongs_to_conversation) {
+                    $error_code = 10;
+                    $error_message = 'Reply message was not found in this conversation.';
+                }
+            }
+        }
         if (isset($_POST['story_id']) && $_POST['story_id'] !== '') {
             if (!is_numeric($_POST['story_id']) || (int)$_POST['story_id'] < 1 || !empty($_POST['product_id'])) {
                 $error_code = 9;
@@ -125,6 +145,7 @@ if (empty($error_code)) {
                 'stickers' => $gif,
                 'lng' => $lng,
                 'lat' => $lat,
+                'reply_id' => $reply_id,
             );
     		if (!empty($_POST['text']) || (isset($_POST['text']) && $_POST['text'] === '0') ) {
     		 	$message_data['text'] = Wo_Secure($_POST['text']);
@@ -167,16 +188,13 @@ if (empty($error_code)) {
                             'stickers' => '',
 	                            'text' => Wo_Secure($product_note),
 	                            'type_two' => 'product_inquiry',
-	                            'product_id' => $product_id
+	                            'product_id' => $product_id,
+                                'reply_id' => $reply_id
                         ));
 	        }
         }
         if (!empty($last_id)) {
-            if (!empty($_POST['reply_id']) && is_numeric($_POST['reply_id']) && $_POST['reply_id'] > 0) {
-                $reply_id = Wo_Secure($_POST['reply_id']);
-                $db->where('id',$last_id)->update(T_MESSAGES,array('reply_id' => $reply_id));
-            }
-        	$message_info = array(
+            $message_info = array(
                 'user_id' => $recipient_id,
                 'message_id' => $last_id
             );

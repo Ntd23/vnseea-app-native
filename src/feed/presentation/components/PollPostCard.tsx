@@ -60,6 +60,7 @@ import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { buildPostActivityContext } from '../../application/composer/postActivityContext';
 import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
 import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
+import { PostTaggedUsersSheet } from './PostTaggedUsersSheet';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -336,6 +337,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   const [voters, setVoters] = React.useState<PollVoter[]>([]);
   const [votersLoading, setVotersLoading] = React.useState(false);
   const [votersError, setVotersError] = React.useState<string | null>(null);
+  const [taggedUsersVisible, setTaggedUsersVisible] = React.useState(false);
 
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
@@ -546,6 +548,11 @@ export const PollPostCard = React.memo(function PollPostCard({
                               ? 'font-semibold text-[#050505]'
                               : 'font-normal text-[#65676B]'
                           }
+                          onPress={
+                            segment.kind === 'tagged_users'
+                              ? () => setTaggedUsersVisible(true)
+                              : undefined
+                          }
                         >
                           {segment.text}
                         </Text>
@@ -705,6 +712,12 @@ export const PollPostCard = React.memo(function PollPostCard({
           ) : null}
         </FeedGlassActionBar>
       )}
+
+      <PostTaggedUsersSheet
+        visible={taggedUsersVisible}
+        users={post.taggedUsers ?? []}
+        onClose={() => setTaggedUsersVisible(false)}
+      />
 
       <Modal
         visible={votersVisible}

@@ -87,6 +87,13 @@ export type MessageGroupDetails = {
   members: MessageGroupMember[]
 }
 
+export type MessageMention = {
+  userId: number
+  name: string
+  username?: string
+  avatarUrl?: string
+}
+
 export type MessageItem = {
   id: number
   text: string
@@ -100,6 +107,7 @@ export type MessageItem = {
   senderId?: number
   senderIsOnline?: boolean
   authorName?: string
+  mentions?: MessageMention[]
   threadType?: MessageThreadType
   mediaUrl?: string
   mediaName?: string
@@ -141,12 +149,16 @@ export type MessageComposerDraft = {
   text: string
   file?: File | null
   record?: MessageRecordDraft | null
+  replyId?: number
+  mentionedUserIds?: number[]
 }
 
 export type MessageSendDraft = {
   text: string
   file?: File | null
   record?: UploadedMessageRecord | null
+  replyId?: number
+  mentionedUserIds?: number[]
 }
 
 export type MessageThread = {

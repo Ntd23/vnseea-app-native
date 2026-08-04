@@ -163,8 +163,16 @@ export interface MessageReplyReference {
   storyReply?: StoryReplyMessageReference;
 }
 
+export interface MessageMention {
+  id: string;
+  name: string;
+  username: string;
+  avatar?: string;
+}
+
 export interface SendMessageOptions {
   replyTo?: MessageReplyReference;
+  mentions?: MessageMention[];
   /** Identifier shared by media selected in one send action. */
   mediaGroupId?: string;
   productInquiry?: {
@@ -192,6 +200,7 @@ export interface MessageItem {
   toId: string;
   senderName?: string;
   senderAvatar?: string;
+  mentions?: MessageMention[];
   message: string;
   callEvent?: MessageCallEvent;
   systemEvent?: MessageSystemEvent;

@@ -611,6 +611,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         link: textDescriptor.link,
         location: textDescriptor.location,
         marketplaceContext,
+        mentions: options?.mentions,
         replyTo: options?.replyTo,
         reactions: createEmptyMessageReactionSummary(),
         time: Math.floor(Date.now() / 1000),

@@ -99,6 +99,10 @@ const createSingleSendBody = (
     if (thread.groupId) formData.append("groupId", String(thread.groupId))
     if (thread.pageId) formData.append("pageId", String(thread.pageId))
     if (thread.recipientId) formData.append("recipientId", String(thread.recipientId))
+    if (input.replyId) formData.append("replyId", String(input.replyId))
+    if (input.mentionedUserIds?.length) {
+      formData.append("mentionedUserIds", JSON.stringify(normalizeRecipientIds(input.mentionedUserIds)))
+    }
 
     if (input.record?.url) formData.append("recordFile", input.record.url)
     if (input.record?.name) formData.append("recordName", input.record.name)
@@ -110,6 +114,10 @@ const createSingleSendBody = (
   return {
     ...thread,
     text,
+    replyId: input.replyId,
+    mentionedUserIds: input.mentionedUserIds?.length
+      ? normalizeRecipientIds(input.mentionedUserIds)
+      : undefined,
     ...createRecordPayload(input.record),
   }
 }
