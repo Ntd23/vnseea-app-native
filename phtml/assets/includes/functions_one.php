@@ -3224,7 +3224,7 @@ function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $ki
             }
         }
     }
-    $internal_url = trim(!empty($realtime_config['internal_url']) ? $realtime_config['internal_url'] : (!empty($realtime_config['public_url']) ? $realtime_config['public_url'] : 'http://127.0.0.1:3015'));
+    $internal_url = trim(!empty($realtime_config['internal_url']) ? $realtime_config['internal_url'] : (!empty($realtime_config['public_url']) ? $realtime_config['public_url'] : 'http://127.0.0.1:3025'));
     $secret = trim((string) $realtime_config['secret']);
     if (empty($internal_url) || empty($secret) || empty($recipient_id)) {
         return false;
@@ -3384,7 +3384,7 @@ function Wo_PublishRealtimePostChange($post_id, $mutation)
             }
         }
     }
-    $internal_url = trim(!empty($realtime_config['internal_url']) ? $realtime_config['internal_url'] : (!empty($realtime_config['public_url']) ? $realtime_config['public_url'] : 'http://127.0.0.1:3015'));
+    $internal_url = trim(!empty($realtime_config['internal_url']) ? $realtime_config['internal_url'] : (!empty($realtime_config['public_url']) ? $realtime_config['public_url'] : 'http://127.0.0.1:3025'));
     $secret = trim((string) $realtime_config['secret']);
     if (empty($internal_url) || empty($secret) || !function_exists('curl_init')) {
         return false;
