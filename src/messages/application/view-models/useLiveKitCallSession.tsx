@@ -53,9 +53,6 @@ import {
 } from '../../infrastructure/calls/nativeCallService';
 import {
   connectLiveKitCallRealtime,
-  emitLiveKitCallAnswered,
-  emitLiveKitCallClosed,
-  emitLiveKitCallCreated,
   onLiveKitCallAnswered,
   onLiveKitCallClosed,
   onLiveKitCallDeclined,
@@ -2176,16 +2173,6 @@ export function LiveKitCallSessionProvider({
           callId: current.callId,
           status,
         });
-        const recipientId = current.peer?.id || current.recipientId;
-        if (recipientId) {
-          emitLiveKitCallClosed({
-            callId: current.callId,
-            callType: current.callType,
-            recipientId,
-            status,
-            duration: durationSeconds(),
-          });
-        }
       }
       if (current.callId) {
         await repository
@@ -3249,14 +3236,6 @@ export function LiveKitCallSessionProvider({
           sessionRef.current = next;
           return next;
         });
-        emitLiveKitCallCreated({
-          callId: nextCallId,
-          callType: params.callType,
-          recipientId,
-          roomName: created.roomName,
-          peer: params.peer ?? created.peer,
-        });
-
         const checkAnsweredAndJoin = async () => {
           const activeSession = sessionRef.current;
           const roomState = activeRoomRef.current?.state;
@@ -3321,13 +3300,6 @@ export function LiveKitCallSessionProvider({
           async function closeIfStillUnanswered() {
             if (await checkAnsweredAndJoin()) return;
 
-            emitLiveKitCallClosed({
-              callId: nextCallId,
-              callType: params.callType,
-              recipientId,
-              status: 'no_answer',
-              duration: 0,
-            });
             await repository
               .closeCall({
                 callId: nextCallId,
@@ -3455,19 +3427,6 @@ export function LiveKitCallSessionProvider({
           serverNow: answerTiming.serverNow,
           serverNowMs: answerTiming.serverNowMs,
         });
-        if (call.peer.id) {
-          emitLiveKitCallAnswered({
-            callId: call.callId,
-            callType: call.callType,
-            recipientId: call.peer.id,
-            startedAt: answerTiming.startedAt,
-            startedAtMs: answerTiming.startedAtMs,
-            serverNow: answerTiming.serverNow,
-            serverNowMs: answerTiming.serverNowMs,
-            elapsedSeconds: answerTiming.elapsedSeconds,
-            elapsedMs: answerTiming.elapsedMs,
-          });
-        }
         await connectPayload(
           call.callId,
           call.callType,

@@ -117,58 +117,112 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 	    			}
 	    		}
 
-	    		if (!empty($_POST['description'])) {
-	    			$insert_array['description'] = Wo_Secure($_POST['description']);
-	    		}
+			if (!empty($_POST['description'])) {
+				$insert_array['description'] = Wo_Secure($_POST['description']);
+			}
 
-	    		$insert_array['image'] = '';
+			$insert_array['image'] = '';
+                $uploaded_image = '';
+                $job_upload_failed = false;
 
-	    		if (!empty($_POST['image_type']) && $_POST['image_type'] == 'cover') {
-	    			$insert_array['image'] = $page_data->cover;
+			if (!empty($_POST['image_type']) && $_POST['image_type'] == 'cover' && !empty($page_data->cover)) {
+				$insert_array['image'] = $page_data->cover;
                     $insert_array['image_type'] = 'cover';
-	    		}
-	    		elseif (!empty($_POST['image_type']) && $_POST['image_type'] == 'upload' && !empty($_FILES['thumbnail'])) {
-	    			$fileInfo      = array(
-                        'file' => $_FILES["thumbnail"]["tmp_name"],
-                        'name' => $_FILES['thumbnail']['name'],
-                        'size' => $_FILES["thumbnail"]["size"],
-                        'type' => $_FILES["thumbnail"]["type"],
-                        'types' => 'jpeg,jpg,png,bmp'
+			}
+			elseif (!empty($_POST['image_type']) && $_POST['image_type'] == 'upload') {
+                    if (empty($_FILES['thumbnail']) || empty($_FILES['thumbnail']['tmp_name'])) {
+                        $job_upload_failed = true;
+                    }
+                    else {
+				    $fileInfo = array(
+                            'file' => $_FILES["thumbnail"]["tmp_name"],
+                            'name' => $_FILES['thumbnail']['name'],
+                            'size' => $_FILES["thumbnail"]["size"],
+                            'type' => $_FILES["thumbnail"]["type"],
+                            'types' => 'jpeg,jpg,png,bmp'
+                        );
+                        $media = Wo_ShareFile($fileInfo);
+                        if (empty($media) || empty($media['filename'])) {
+                            $job_upload_failed = true;
+                        }
+                        else {
+                            $uploaded_image = $media['filename'];
+                            $insert_array['image'] = $uploaded_image;
+                            $insert_array['image_type'] = 'upload';
+                        }
+                    }
+			}
+
+                if ($job_upload_failed) {
+                    $response_data = array(
+                        'api_status' => 422,
+                        'error_code' => 'job_upload_failed',
+                        'message' => 'Unable to upload the selected job image.',
+                        'errors' => array(
+                            'error_id' => 'job_upload_failed',
+                            'error_text' => 'Unable to upload the selected job image.'
+                        )
                     );
-                    $media         = Wo_ShareFile($fileInfo);
-                    $insert_array['image'] = $media['filename'];
-                    $insert_array['image_type'] = 'upload';
-	    		}
+                }
+                else {
+			    $insert_array['page_id'] = $page_data->page_id;
+				$insert_array['user_id'] = $page_data->user_id;
+				$insert_array['time'] = time();
 
-	    		if (!empty($insert_array['image'])) {
+                    $db->startTransaction();
+                    $job_create_committed = false;
+                    try {
+				    $job_id = $db->insert(T_JOB, $insert_array);
+                        if (empty($job_id)) {
+                            throw new RuntimeException('job_insert_failed');
+                        }
 
-	    			$insert_array['page_id'] = $page_data->page_id;
-		    		$insert_array['user_id'] = $page_data->user_id;
-		    		$insert_array['time'] = time();
-
-		    		$job_id = $db->insert(T_JOB,$insert_array);
-
-		    		$post_id = $db->insert(T_POSTS,array('page_id' => $page_data->page_id,
-				    	                                 'postText' => $insert_array['title'],
-				    	                                 'job_id' => $job_id,
-                                                         'postType' => 'job'));
-		    		$db->where('id',$post_id)->update(T_POSTS,array('post_id' => $post_id));
-
-		    		if (!empty($post_id)) {
-		    			$post = Wo_PostData($post_id);
-		    			if (!empty($post['job']) && !empty($post['job']['image'])) {
-		    				$post['job']['image'] = Wo_GetMedia($post['job']['image']);
-		    			}
-		    			$response_data = array(
-                                    'api_status' => 200,
-                                    'data' => $post
-                                );
-		    		}
-	    		}
-	    		else{
-	    			$error_code    = 7;
-		            $error_message = 'Unable to upload a file: This file type is not supported.';
-	    		}
+				    $post_id = $db->insert(T_POSTS, array(
+                            'page_id' => $page_data->page_id,
+                            'postText' => $insert_array['title'],
+                            'job_id' => $job_id,
+                            'postType' => 'job'
+                        ));
+                        if (empty($post_id)) {
+                            throw new RuntimeException('job_post_insert_failed');
+                        }
+                        if (!$db->where('id', $post_id)->update(T_POSTS, array('post_id' => $post_id))) {
+                            throw new RuntimeException('job_post_finalize_failed');
+                        }
+                        if (!$db->commit()) {
+                            throw new RuntimeException('job_commit_failed');
+                        }
+                        $job_create_committed = true;
+                    }
+                    catch (Throwable $exception) {
+                        $db->rollback();
+                        if ($uploaded_image !== '') {
+                            @Wo_DeleteFromToS3($uploaded_image);
+                        }
+                        error_log('[vnseea_job_create] code=' . $exception->getMessage());
+                        $response_data = array(
+                            'api_status' => 500,
+                            'error_code' => 'job_create_failed',
+                            'message' => 'Unable to create the job right now.',
+                            'errors' => array(
+                                'error_id' => 'job_create_failed',
+                                'error_text' => 'Unable to create the job right now.'
+                            )
+                        );
+                    }
+                    if ($job_create_committed) {
+				    $post = Wo_PostData($post_id);
+				    if (!empty($post['job']) && !empty($post['job']['image'])) {
+					    $post['job']['image'] = Wo_GetMedia($post['job']['image']);
+				    }
+				    $response_data = array(
+                            'api_status' => 200,
+                            'job_id' => $job_id,
+                            'post_id' => $post_id,
+                            'data' => $post
+                        );
+                    }
+                }
 	    	}
 	    	else{
 	    		$error_code    = 6;

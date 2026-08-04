@@ -93,6 +93,33 @@ describe('getCurrentDeviceLocation performance behavior', () => {
     expect(getCurrentLocation).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ['permission_denied', 'permission_denied'],
+    ['provider_unavailable', 'services_disabled'],
+    ['timeout', 'timeout'],
+  ])(
+    'preserves native location failure %s as typed code %s',
+    async (nativeCode, expectedCode) => {
+      const nativeError = Object.assign(new Error('native failure'), {
+        code: nativeCode,
+      });
+      const getCurrentLocation = jest.fn().mockRejectedValue(nativeError);
+      mockAndroidLocation(getCurrentLocation);
+
+      const { getCurrentDeviceLocation, isLocationAccessError } = require('../currentLocation');
+
+      await expect(getCurrentDeviceLocation()).rejects.toMatchObject({
+        name: 'LocationAccessError',
+        code: expectedCode,
+      });
+      try {
+        await getCurrentDeviceLocation();
+      } catch (error) {
+        expect(isLocationAccessError(error)).toBe(true);
+      }
+    },
+  );
+
   it('requests fine and coarse permission together and accepts coarse-only access', async () => {
     const getCurrentLocation = jest.fn();
     const check = jest.fn().mockResolvedValue(false);
@@ -109,6 +136,24 @@ describe('getCurrentDeviceLocation performance behavior', () => {
       'android.permission.ACCESS_FINE_LOCATION',
       'android.permission.ACCESS_COARSE_LOCATION',
     ]);
+  });
+
+  it('throws a typed permission error when Android permission is denied', async () => {
+    const getCurrentLocation = jest.fn();
+    const check = jest.fn().mockResolvedValue(false);
+    const { requestMultiple } = mockAndroidLocation(getCurrentLocation, check);
+    requestMultiple.mockResolvedValue({
+      'android.permission.ACCESS_FINE_LOCATION': 'denied',
+      'android.permission.ACCESS_COARSE_LOCATION': 'denied',
+    });
+
+    const { getCurrentDeviceLocation } = require('../currentLocation');
+
+    await expect(getCurrentDeviceLocation()).rejects.toMatchObject({
+      name: 'LocationAccessError',
+      code: 'permission_denied',
+    });
+    expect(getCurrentLocation).not.toHaveBeenCalled();
   });
 
   it('does not prompt again when coarse location is already granted', async () => {

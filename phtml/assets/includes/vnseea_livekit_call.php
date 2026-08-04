@@ -34,6 +34,110 @@ if (!function_exists('Wo_CanonicalLiveKitActionSecret')) {
     }
 }
 
+if (!function_exists('Wo_CanonicalRealtimeRelayConfig')) {
+    function Wo_CanonicalRealtimeRelayConfig()
+    {
+        static $config = null;
+        if ($config !== null) {
+            return $config;
+        }
+
+        $config = array(
+            'internal_url' => trim((string) getenv('REALTIME_INTERNAL_URL')),
+            'secret' => trim((string) getenv('REALTIME_SECRET'))
+        );
+        $env_path = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'client' . DIRECTORY_SEPARATOR . '.env';
+        if (file_exists($env_path) && is_readable($env_path)) {
+            $lines = @file($env_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ((array) $lines as $line) {
+                $line = trim((string) $line);
+                if ($line === '' || strpos($line, '#') === 0 || strpos($line, '=') === false) {
+                    continue;
+                }
+                list($key, $value) = array_pad(explode('=', $line, 2), 2, '');
+                $key = trim($key);
+                $value = trim($value, " \t\n\r\0\x0B\"'");
+                if ($key === 'REALTIME_INTERNAL_URL' && $config['internal_url'] === '') {
+                    $config['internal_url'] = $value;
+                }
+                if ($key === 'REALTIME_SECRET' && $config['secret'] === '') {
+                    $config['secret'] = $value;
+                }
+            }
+        }
+        if ($config['internal_url'] === '') {
+            $config['internal_url'] = 'http://127.0.0.1:3025';
+        }
+        return $config;
+    }
+}
+
+if (!function_exists('Wo_PublishCanonicalLiveKitPayload')) {
+    function Wo_PublishCanonicalLiveKitPayload($payload)
+    {
+        $config = Wo_CanonicalRealtimeRelayConfig();
+        if (empty($config['internal_url']) || empty($config['secret']) || !function_exists('curl_init')) {
+            return null;
+        }
+
+        $endpoint = rtrim($config['internal_url'], '/') . '/internal/livekit-call/publish';
+        $ch = curl_init($endpoint);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Content-Type: application/json; charset=utf-8',
+            'X-Realtime-Secret: ' . $config['secret']
+        ));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 250);
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 750);
+        curl_setopt($ch, CURLOPT_NOSIGNAL, true);
+        $result = curl_exec($ch);
+        $error = curl_error($ch);
+        $status = intval(curl_getinfo($ch, CURLINFO_HTTP_CODE));
+        curl_close($ch);
+
+        if (function_exists('Wo_VnseeaCallDebugLog')) {
+            Wo_VnseeaCallDebugLog('call_realtime_publish', array(
+                'event' => !empty($payload['event']) ? $payload['event'] : '',
+                'call_id' => !empty($payload['call_id']) ? $payload['call_id'] : '',
+                'context' => !empty($payload['context']) ? $payload['context'] : 'direct',
+                'http_status' => $status,
+                'error' => $error !== '' ? $error : '-',
+                'response_present' => $result !== false && $result !== '' ? 1 : 0
+            ));
+        }
+        return $status >= 200 && $status < 300;
+    }
+}
+
+if (!function_exists('Wo_CanonicalLiveKitGroupRecipientIds')) {
+    function Wo_CanonicalLiveKitGroupRecipientIds($group_call)
+    {
+        global $sqlConnect;
+        $call_id = intval(!empty($group_call['id']) ? $group_call['id'] : 0);
+        $recipient_ids = array();
+        if (!empty($group_call['created_by'])) {
+            $recipient_ids[intval($group_call['created_by'])] = true;
+        }
+        if ($call_id > 0 && defined('T_GROUP_CALL_PARTICIPANTS')) {
+            $query = mysqli_query(
+                $sqlConnect,
+                "SELECT `user_id` FROM " . T_GROUP_CALL_PARTICIPANTS . " WHERE `call_id` = '{$call_id}'"
+            );
+            if (!empty($query)) {
+                while ($row = mysqli_fetch_assoc($query)) {
+                    $user_id = intval(!empty($row['user_id']) ? $row['user_id'] : 0);
+                    if ($user_id > 0) {
+                        $recipient_ids[$user_id] = true;
+                    }
+                }
+            }
+        }
+        return array_map('strval', array_keys($recipient_ids));
+    }
+}
+
 if (!function_exists('Wo_CanonicalLiveKitSignActionToken')) {
     function Wo_CanonicalLiveKitSignActionToken($payload)
     {
@@ -149,23 +253,6 @@ if (!function_exists('Wo_SendCanonicalLiveKitCallPush')) {
 if (!function_exists('Wo_PublishCanonicalLiveKitIncomingCall')) {
     function Wo_PublishCanonicalLiveKitIncomingCall($call_id, $call_type, $caller, $recipient, $room_name)
     {
-        global $wo;
-        $secret = Wo_CanonicalLiveKitActionSecret();
-        if ($secret === '') {
-            return null;
-        }
-
-        $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
-            ? (!empty($wo['config']['nodejs_ssl_port']) ? intval($wo['config']['nodejs_ssl_port']) : 0)
-            : (!empty($wo['config']['nodejs_port']) ? intval($wo['config']['nodejs_port']) : 0);
-        $endpoint = $port > 0 ? 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish' : '';
-        if (!empty($wo['config']['livekit_socket_internal_url'])) {
-            $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
-        }
-        if ($endpoint === '') {
-            return null;
-        }
-
         $caller_data = Wo_CanonicalLiveKitUser($caller);
         $payload = array(
             'event' => 'incoming',
@@ -177,55 +264,14 @@ if (!function_exists('Wo_PublishCanonicalLiveKitIncomingCall')) {
             'room_name' => $room_name,
             'peer' => $caller_data
         );
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $endpoint);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/json; charset=utf-8',
-            'X-Vnseea-Internal-Secret: ' . hash_hmac('sha256', 'vnseea-livekit-internal', $secret)
-        ));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
-        $result = curl_exec($ch);
-        $error = curl_error($ch);
-        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if (function_exists('Wo_VnseeaCallDebugLog')) {
-            Wo_VnseeaCallDebugLog('call_realtime_publish', array(
-                'call_id' => $call_id,
-                'call_type' => $call_type,
-                'http_status' => intval($status),
-                'error' => $error !== '' ? $error : '-',
-                'response_present' => $result !== false && $result !== '' ? 1 : 0
-            ));
-        }
-
-        return intval($status) >= 200 && intval($status) < 300;
+        return Wo_PublishCanonicalLiveKitPayload($payload);
     }
 }
 
 if (!function_exists('Wo_PublishCanonicalLiveKitCallState')) {
     function Wo_PublishCanonicalLiveKitCallState($event, $call_source, $call_type, $extra = array())
     {
-        global $wo;
         if (empty($call_source) || !is_array($call_source)) {
-            return null;
-        }
-        $secret = Wo_CanonicalLiveKitActionSecret();
-        if ($secret === '') {
-            return null;
-        }
-        $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
-            ? intval(!empty($wo['config']['nodejs_ssl_port']) ? $wo['config']['nodejs_ssl_port'] : 0)
-            : intval(!empty($wo['config']['nodejs_port']) ? $wo['config']['nodejs_port'] : 0);
-        $endpoint = $port > 0 ? 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish' : '';
-        if (!empty($wo['config']['livekit_socket_internal_url'])) {
-            $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
-        }
-        if ($endpoint === '') {
             return null;
         }
         $payload = array_merge(array(
@@ -236,21 +282,7 @@ if (!function_exists('Wo_PublishCanonicalLiveKitCallState')) {
             'to_id' => (string) intval($call_source['to_id']),
             'provider' => 'livekit',
         ), is_array($extra) ? $extra : array());
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $endpoint);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/json; charset=utf-8',
-            'X-Vnseea-Internal-Secret: ' . hash_hmac('sha256', 'vnseea-livekit-internal', $secret)
-        ));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
-        curl_exec($ch);
-        $status = intval(curl_getinfo($ch, CURLINFO_HTTP_CODE));
-        curl_close($ch);
-        return $status >= 200 && $status < 300;
+        return Wo_PublishCanonicalLiveKitPayload($payload);
     }
 }
 
@@ -300,22 +332,7 @@ if (!function_exists('Wo_CanonicalLiveKitGroupCallUuid')) {
 if (!function_exists('Wo_PublishCanonicalLiveKitGroupState')) {
     function Wo_PublishCanonicalLiveKitGroupState($event, $group_call, $extra = array())
     {
-        global $wo;
         if (empty($group_call) || !is_array($group_call)) {
-            return null;
-        }
-        $secret = Wo_CanonicalLiveKitActionSecret();
-        if ($secret === '') {
-            return null;
-        }
-        $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
-            ? intval(!empty($wo['config']['nodejs_ssl_port']) ? $wo['config']['nodejs_ssl_port'] : 0)
-            : intval(!empty($wo['config']['nodejs_port']) ? $wo['config']['nodejs_port'] : 0);
-        $endpoint = $port > 0 ? 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish' : '';
-        if (!empty($wo['config']['livekit_socket_internal_url'])) {
-            $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
-        }
-        if ($endpoint === '') {
             return null;
         }
         $server_now = time();
@@ -338,21 +355,10 @@ if (!function_exists('Wo_PublishCanonicalLiveKitGroupState')) {
             'elapsed' => $started_at > 0 ? max(0, $server_now - $started_at) : 0,
             'elapsed_ms' => $started_at_ms > 0 ? max(0, $server_now_ms - $started_at_ms) : 0,
         ), is_array($extra) ? $extra : array());
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $endpoint);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/json; charset=utf-8',
-            'X-Vnseea-Internal-Secret: ' . hash_hmac('sha256', 'vnseea-livekit-internal', $secret)
-        ));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
-        curl_exec($ch);
-        $status = intval(curl_getinfo($ch, CURLINFO_HTTP_CODE));
-        curl_close($ch);
-        return $status >= 200 && $status < 300;
+        if (empty($payload['recipient_ids'])) {
+            $payload['recipient_ids'] = Wo_CanonicalLiveKitGroupRecipientIds($group_call);
+        }
+        return Wo_PublishCanonicalLiveKitPayload($payload);
     }
 }
 

@@ -2,7 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { InteractionManager } from 'react-native';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
-import { onUserOnlineStatus } from '../../infrastructure/realtime/liveKitCallRealtime';
+import {
+  onUserOnlineStatus,
+  watchUserOnlineStatuses,
+} from '../../infrastructure/realtime/liveKitCallRealtime';
 import type {
   ChatItem,
   CreateGroupChatInput,
@@ -711,6 +714,16 @@ export function useMessagesViewModel() {
 
   useEffect(() => {
     syncUnreadBadgeCount(state.chats);
+  }, [state.chats]);
+
+  useEffect(() => {
+    watchUserOnlineStatuses(
+      state.chats
+        .filter(chat => chat.chatType === 'user')
+        .map(chat => chat.userId)
+        .filter(Boolean),
+    );
+    return () => watchUserOnlineStatuses([]);
   }, [state.chats]);
 
   useEffect(() => {

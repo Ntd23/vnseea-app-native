@@ -9,6 +9,57 @@ export type CurrentDeviceLocation = {
   timestamp?: number;
 };
 
+export type LocationAccessErrorCode =
+  | 'permission_denied'
+  | 'services_disabled'
+  | 'timeout'
+  | 'unavailable'
+  | 'failed';
+
+export class LocationAccessError extends Error {
+  readonly code: LocationAccessErrorCode;
+
+  constructor(code: LocationAccessErrorCode, message: string) {
+    super(message);
+    this.name = 'LocationAccessError';
+    this.code = code;
+  }
+}
+
+export function isLocationAccessError(
+  error: unknown,
+): error is LocationAccessError {
+  return error instanceof LocationAccessError;
+}
+
+function readNativeErrorCode(error: unknown) {
+  if (!error || typeof error !== 'object' || !('code' in error)) return '';
+  return String((error as { code?: unknown }).code ?? '').trim();
+}
+
+function readErrorMessage(error: unknown) {
+  return error instanceof Error && error.message
+    ? error.message
+    : 'Không lấy được vị trí hiện tại của bạn.';
+}
+
+export function normalizeLocationAccessError(error: unknown) {
+  if (isLocationAccessError(error)) return error;
+
+  const nativeCode = readNativeErrorCode(error);
+  const code: LocationAccessErrorCode =
+    nativeCode === 'permission_denied'
+      ? 'permission_denied'
+      : nativeCode === 'provider_unavailable'
+        ? 'services_disabled'
+        : nativeCode === 'timeout'
+          ? 'timeout'
+          : nativeCode === 'unavailable'
+            ? 'unavailable'
+            : 'failed';
+  return new LocationAccessError(code, readErrorMessage(error));
+}
+
 type CurrentLocationNativeModule = {
   getCurrentLocation(timeoutMs: number): Promise<CurrentDeviceLocation>;
 };
@@ -102,7 +153,10 @@ function normalizeLocation(value: CurrentDeviceLocation) {
 async function getAndroidCurrentLocation(timeoutMs: number) {
   const granted = await requestAndroidLocationPermission();
   if (!granted) {
-    throw new Error('Bạn cần cấp quyền vị trí để chia sẻ vị trí hiện tại.');
+    throw new LocationAccessError(
+      'permission_denied',
+      'Bạn cần cấp quyền vị trí để sử dụng tính năng này.',
+    );
   }
 
   const nativeModule = getNativeCurrentLocationModule();
@@ -112,7 +166,11 @@ async function getAndroidCurrentLocation(timeoutMs: number) {
     );
   }
 
-  return normalizeLocation(await nativeModule.getCurrentLocation(timeoutMs));
+  try {
+    return normalizeLocation(await nativeModule.getCurrentLocation(timeoutMs));
+  } catch (error) {
+    throw normalizeLocationAccessError(error);
+  }
 }
 
 function getIosCurrentLocation(timeoutMs: number) {
@@ -158,16 +216,20 @@ function getIosCurrentLocation(timeoutMs: number) {
 }
 
 async function requestCurrentDeviceLocation(timeoutMs: number) {
-  if (Platform.OS === 'android') {
-    return getAndroidCurrentLocation(timeoutMs);
-  }
+  try {
+    if (Platform.OS === 'android') {
+      return await getAndroidCurrentLocation(timeoutMs);
+    }
 
-  const nativeModule = getNativeCurrentLocationModule();
-  if (nativeModule) {
-    return normalizeLocation(await nativeModule.getCurrentLocation(timeoutMs));
-  }
+    const nativeModule = getNativeCurrentLocationModule();
+    if (nativeModule) {
+      return normalizeLocation(await nativeModule.getCurrentLocation(timeoutMs));
+    }
 
-  return getIosCurrentLocation(timeoutMs);
+    return await getIosCurrentLocation(timeoutMs);
+  } catch (error) {
+    throw normalizeLocationAccessError(error);
+  }
 }
 
 export async function getCurrentDeviceLocation(timeoutMs = DEFAULT_TIMEOUT_MS) {

@@ -31,7 +31,7 @@ module.exports = {
       },
     },
     {
-      name: "vnseea-realtime",
+      name: process.env.REALTIME_PROCESS_NAME || "vnseea-realtime",
       cwd: clientRoot,
       script: path.join(clientRoot, "realtime", "notification-server.mjs"),
       interpreter: "node",
@@ -43,7 +43,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         REALTIME_HOST: process.env.REALTIME_HOST || "0.0.0.0",
-        REALTIME_PORT: process.env.REALTIME_PORT || "3015",
+        REALTIME_PORT: process.env.REALTIME_PORT || "3025",
         REALTIME_SECRET: process.env.REALTIME_SECRET,
         REALTIME_CORS_ORIGIN: process.env.REALTIME_CORS_ORIGIN || process.env.NUXT_PUBLIC_SITE_URL,
       },

@@ -67,6 +67,21 @@ function normalizeUrl(url: string): string {
   return normalizeConfiguredUrl(url) ?? '';
 }
 
+function createJobApiError(response: CreateJobResponse): Error & { code?: string } {
+  const errors = Array.isArray(response.errors)
+    ? response.errors[0]
+    : response.errors;
+  const message = String(
+    response.message ?? errors?.error_text ?? 'Tạo việc làm thất bại',
+  );
+  const error = new Error(message) as Error & { code?: string };
+  const code = response.error_code ?? errors?.error_id;
+  if (code !== undefined && code !== null && String(code).trim()) {
+    error.code = String(code);
+  }
+  return error;
+}
+
 export function createJobsRepository(): JobsRepository {
   return {
     async getMetadata() {
@@ -191,8 +206,7 @@ export function createJobsRepository(): JobsRepository {
         ]);
 
         if (response.api_status !== 200 && response.api_status !== '200') {
-          const errorMsg = (response as any).errors?.[0]?.error_text ?? 'Tạo việc làm thất bại';
-          throw new Error(errorMsg);
+          throw createJobApiError(response);
         }
 
         const rawData = response.data as unknown;

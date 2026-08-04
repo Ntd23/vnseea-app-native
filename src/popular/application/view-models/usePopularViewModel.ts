@@ -2,12 +2,12 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { createPopularRepository } from '../../infrastructure/repositories/ApiPopularRepository';
-import type { PopularPost } from '../../domain/types/popular.types';
+import type { FeedPost } from '../../../feed/domain/types/feed.types';
 
 const repository = createPopularRepository();
 
 export function usePopularViewModel() {
-  const [posts, setPosts] = useState<PopularPost[]>([]);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,10 +29,25 @@ export function usePopularViewModel() {
     void loadMostLiked();
   }, [loadMostLiked]);
 
+  const updatePost = useCallback(
+    (postId: string, update: (post: FeedPost) => FeedPost) => {
+      setPosts(current =>
+        current.map(post => (post.id === postId ? update(post) : post)),
+      );
+    },
+    [],
+  );
+
+  const removePost = useCallback((postId: string) => {
+    setPosts(current => current.filter(post => post.id !== postId));
+  }, []);
+
   return {
     posts,
     isLoading,
     error,
     reload: loadMostLiked,
+    updatePost,
+    removePost,
   };
 }

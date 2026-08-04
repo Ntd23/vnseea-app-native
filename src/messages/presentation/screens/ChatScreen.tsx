@@ -16,7 +16,6 @@ import {
   Animated,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -107,6 +106,7 @@ import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAu
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   createCachedVideoPosterThumbnail,
@@ -120,6 +120,7 @@ import {
   type SharedMapLocation,
 } from '../../../user/application/utils/mapShare';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
+import { presentLocationAccessRecovery } from '../../../shared-kernel/application/utils/locationAccessRecovery';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { areMessageReactionSummariesEqual } from '../../domain/reactions/messageReactions';
@@ -3426,10 +3427,22 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       setSharedMapLocation(undefined);
       setAttachments([]);
       await recorder.startRecording();
-    } catch {
-      Alert.alert(copy.errorTitle, copy.recordFailed);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : copy.recordFailed;
+      const code = String((caught as { code?: string } | undefined)?.code ?? '');
+      if (code.includes('permission')) {
+        Alert.alert(copy.errorTitle, message, [
+          { text: language === 'vi' ? 'Hủy' : 'Cancel', style: 'cancel' },
+          {
+            text: language === 'vi' ? 'Mở Cài đặt' : 'Open Settings',
+            onPress: () => Linking.openSettings().catch(() => undefined),
+          },
+        ]);
+      } else {
+        Alert.alert(copy.errorTitle, message);
+      }
     }
-  }, [copy.errorTitle, copy.recordFailed, recorder]);
+  }, [copy.errorTitle, copy.recordFailed, language, recorder]);
 
   const { startOutgoingCall } = useLiveKitCallSession();
   const { startGroupCall } = useGroupLiveKitCallSession();
@@ -3702,10 +3715,10 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={CHAT_SAFE_AREA_EDGES}>
-      <KeyboardAvoidingView
+      <KeyboardSafeView
         style={styles.keyboardBoundary}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        enabled={Platform.OS === 'ios'}
+        behavior="padding"
+        resetOnAndroidKeyboardHide
         keyboardVerticalOffset={0}
       >
         {/* Header */}
@@ -4228,7 +4241,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
             </TouchableOpacity>
           </Animated.View>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
       <ChatMediaViewerModal
         items={viewerMediaItems}
         index={viewerMediaIndex}

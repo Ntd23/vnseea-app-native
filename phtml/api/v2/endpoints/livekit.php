@@ -318,61 +318,11 @@ function Wo_ApiLiveKitVerifyActionToken($token) {
     return $payload;
 }
 
-function Wo_ApiLiveKitInternalSecret() {
-    $secret = Wo_ApiLiveKitActionSecret();
-    return $secret === '' ? '' : hash_hmac('sha256', 'vnseea-livekit-internal', $secret);
-}
-
 function Wo_ApiLiveKitPublishRealtime($event, $call_source, $call_type, $extra = array()) {
-    global $wo;
     if (empty($call_source) || !is_array($call_source)) {
-        return;
+        return null;
     }
-    $secret = Wo_ApiLiveKitInternalSecret();
-    if ($secret === '') {
-        return;
-    }
-    $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
-        ? (!empty($wo['config']['nodejs_ssl_port']) ? intval($wo['config']['nodejs_ssl_port']) : 0)
-        : (!empty($wo['config']['nodejs_port']) ? intval($wo['config']['nodejs_port']) : 0);
-    if ($port <= 0) {
-        return;
-    }
-    $endpoint = 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish';
-    if (!empty($wo['config']['livekit_socket_internal_url'])) {
-        $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
-    }
-    $payload = array_merge(array(
-        'event' => $event,
-        'call_id' => (string) Wo_ApiLiveKitSourceId($call_source),
-        'call_type' => $call_type,
-        'from_id' => (string) intval(!empty($call_source['from_id']) ? $call_source['from_id'] : 0),
-        'to_id' => (string) intval(!empty($call_source['to_id']) ? $call_source['to_id'] : 0)
-    ), $extra);
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $endpoint);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        'Content-Type: application/json; charset=utf-8',
-        'X-Vnseea-Internal-Secret: ' . $secret
-    ));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
-    $result = curl_exec($ch);
-    $error = curl_error($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    error_log('[livekit_publish] event=' . $event .
-        ' call_id=' . $payload['call_id'] .
-        ' from_id=' . $payload['from_id'] .
-        ' to_id=' . $payload['to_id'] .
-        ' endpoint=' . $endpoint .
-        ' http=' . intval($status) .
-        ' error=' . ($error ? $error : '-') .
-        ' body=' . substr((string) $result, 0, 160));
+    return Wo_PublishCanonicalLiveKitCallState($event, $call_source, $call_type, $extra);
 }
 
 function Wo_ApiLiveKitTimingFields($timing) {

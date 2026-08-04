@@ -7,6 +7,7 @@ import Sound, {
 } from 'react-native-nitro-sound';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import type { AudioAttachment } from '../../domain/types/audio.types';
+import { iosVoiceRecorder } from '../../infrastructure/audio/iosVoiceRecorder';
 import { requestMicrophonePermission } from '../utils/microphonePermission';
 
 function withFileScheme(uri: string) {
@@ -34,50 +35,85 @@ export function useAudioRecorder() {
   const mountedRef = useRef(true);
   const startingRef = useRef(false);
   const recordingRef = useRef(false);
+  const startedAtRef = useRef(0);
+  const durationRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const [isRecording, setIsRecording] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
+
+  const clearDurationTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = undefined;
+    }
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      Sound.removeRecordBackListener();
+      clearDurationTimer();
       if (recordingRef.current) {
-        Sound.stopRecorder().catch(() => undefined);
+        if (Platform.OS === 'ios') {
+          iosVoiceRecorder.cancel().catch(() => undefined);
+        } else {
+          Sound.removeRecordBackListener();
+          Sound.stopRecorder().catch(() => undefined);
+        }
       }
     };
-  }, []);
+  }, [clearDurationTimer]);
 
   const startRecording = useCallback(async () => {
     if (startingRef.current || recordingRef.current) return;
     startingRef.current = true;
     try {
-      const allowed = await requestMicrophonePermission();
+      const allowed = Platform.OS === 'ios'
+        ? await iosVoiceRecorder.requestPermission()
+        : await requestMicrophonePermission();
       if (!allowed) {
         throw new Error('Bạn cần cấp quyền mic để ghi âm tin nhắn.');
       }
 
+      durationRef.current = 0;
       setDurationMs(0);
-      Sound.removeRecordBackListener();
-      Sound.addRecordBackListener(event => {
-        if (mountedRef.current) setDurationMs(event.currentPosition);
-      });
-      await Sound.startRecorder(undefined, {
-        AudioSourceAndroid: AudioSourceAndroidType.MIC,
-        OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
-        AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
-        AudioQuality: 'medium',
-      });
+      if (Platform.OS === 'ios') {
+        await iosVoiceRecorder.start();
+      } else {
+        Sound.removeRecordBackListener();
+        Sound.addRecordBackListener(event => {
+          durationRef.current = event.currentPosition;
+          if (mountedRef.current) setDurationMs(event.currentPosition);
+        });
+        await Sound.startRecorder(undefined, {
+          AudioSourceAndroid: AudioSourceAndroidType.MIC,
+          OutputFormatAndroid: OutputFormatAndroidType.MPEG_4,
+          AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
+          AudioQuality: 'medium',
+        });
+      }
 
       if (!mountedRef.current) {
-        await Sound.stopRecorder().catch(() => undefined);
-        Sound.removeRecordBackListener();
+        if (Platform.OS === 'ios') {
+          await iosVoiceRecorder.cancel().catch(() => undefined);
+        } else {
+          await Sound.stopRecorder().catch(() => undefined);
+          Sound.removeRecordBackListener();
+        }
         return;
       }
       recordingRef.current = true;
+      startedAtRef.current = Date.now();
+      if (Platform.OS === 'ios') {
+        timerRef.current = setInterval(() => {
+          const nextDuration = Date.now() - startedAtRef.current;
+          durationRef.current = nextDuration;
+          if (mountedRef.current) setDurationMs(nextDuration);
+        }, 250);
+      }
       setIsRecording(true);
     } catch (error) {
-      Sound.removeRecordBackListener();
+      if (Platform.OS !== 'ios') Sound.removeRecordBackListener();
       throw error;
     } finally {
       startingRef.current = false;
@@ -87,10 +123,18 @@ export function useAudioRecorder() {
   const stopRecording = useCallback(async (): Promise<AudioAttachment | null> => {
     if (!recordingRef.current) return null;
     let uri = '';
+    let recordedDuration = durationRef.current;
     try {
-      uri = await Sound.stopRecorder();
+      if (Platform.OS === 'ios') {
+        const result = await iosVoiceRecorder.stop();
+        uri = result.uri;
+        recordedDuration = result.durationMs || recordedDuration;
+      } else {
+        uri = await Sound.stopRecorder();
+      }
     } finally {
-      Sound.removeRecordBackListener();
+      clearDurationTimer();
+      if (Platform.OS !== 'ios') Sound.removeRecordBackListener();
       recordingRef.current = false;
       if (mountedRef.current) setIsRecording(false);
     }
@@ -103,20 +147,26 @@ export function useAudioRecorder() {
           ? `voice-${Date.now()}.m4a`
           : `voice-${Date.now()}.mp4`,
       type: 'audio/mp4',
-      durationMs,
+      durationMs: recordedDuration,
     };
-  }, [durationMs]);
+  }, [clearDurationTimer]);
 
   const cancelRecording = useCallback(async () => {
     if (!recordingRef.current) return;
-    await Sound.stopRecorder().catch(() => undefined);
-    Sound.removeRecordBackListener();
+    if (Platform.OS === 'ios') {
+      await iosVoiceRecorder.cancel().catch(() => undefined);
+    } else {
+      await Sound.stopRecorder().catch(() => undefined);
+      Sound.removeRecordBackListener();
+    }
+    clearDurationTimer();
     recordingRef.current = false;
+    durationRef.current = 0;
     if (mountedRef.current) {
       setIsRecording(false);
       setDurationMs(0);
     }
-  }, []);
+  }, [clearDurationTimer]);
 
   return {
     isRecording,

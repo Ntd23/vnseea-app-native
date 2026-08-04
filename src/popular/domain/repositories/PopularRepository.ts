@@ -1,7 +1,7 @@
 // Popular Repository Interface
 
-import type { PopularPost } from '../types/popular.types';
+import type { FeedPost } from '../../../feed/domain/types/feed.types';
 
 export interface PopularRepository {
-  getMostLiked(): Promise<PopularPost[]>;
+  getMostLiked(): Promise<FeedPost[]>;
 }

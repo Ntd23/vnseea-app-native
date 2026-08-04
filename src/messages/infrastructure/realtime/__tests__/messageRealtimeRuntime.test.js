@@ -7,8 +7,14 @@ const sourcePath = path.resolve(
 );
 
 describe('message realtime runtime', () => {
-  it('uses Socket.IO v4 without changing the legacy call transport', () => {
+  it('uses one Socket.IO v4 transport for messages, presence and calls', () => {
     const source = fs.readFileSync(sourcePath, 'utf8');
+    const packageJson = JSON.parse(
+      fs.readFileSync(
+        path.resolve(__dirname, '../../../../../package.json'),
+        'utf8',
+      ),
+    );
     const callSource = fs.readFileSync(
       path.resolve(__dirname, '../liveKitCallRealtime.ts'),
       'utf8',
@@ -19,7 +25,14 @@ describe('message realtime runtime', () => {
     expect(source).toContain("nextSocket.on('messages:count'");
     expect(source).toContain("nextSocket.on('message:typing'");
     expect(source).toContain("nextSocket.on('message:typing-stop'");
-    expect(callSource).toContain("require('socket.io-client')");
+    expect(callSource).toContain('connectMessageRealtime');
+    expect(callSource).toContain('subscribeToMessageRealtimeEvent');
+    expect(callSource).not.toContain("require('socket.io-client')");
+    expect(callSource).not.toContain('/mobile-socket/socket.io');
+    expect(packageJson.dependencies['socket.io-client']).toBeUndefined();
+    expect(packageJson.dependencies['socket.io-client-v4']).toBe(
+      'npm:socket.io-client@4.8.3',
+    );
   });
 
   it('debounces invalidations and exposes connection state for fallback polling', () => {

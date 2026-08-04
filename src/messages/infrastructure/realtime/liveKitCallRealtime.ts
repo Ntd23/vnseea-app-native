@@ -1,4 +1,4 @@
-// Description: Provides foreground socket signaling for chat typing and LiveKit call state.
+// Description: Maps canonical LiveKit call events from the shared Socket.IO v4 runtime.
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
@@ -12,19 +12,15 @@ import type {
   GroupLiveKitParticipant,
   IncomingGroupLiveKitCall,
 } from '../../domain/types/groupCall.types';
-
-type SocketLike = {
-  connected?: boolean;
-  connect: () => void;
-  disconnect: () => void;
-  emit: (event: string, payload?: unknown, callback?: () => void) => void;
-  on: (event: string, listener: (payload?: unknown) => void) => SocketLike;
-  off?: (event: string, listener: (payload?: unknown) => void) => SocketLike;
-  removeListener?: (
-    event: string,
-    listener: (payload?: unknown) => void,
-  ) => SocketLike;
-};
+import {
+  connectMessageRealtime,
+  disconnectMessageRealtime,
+  emitMessageTyping,
+  emitMessageTypingDone,
+  onMessageTyping,
+  subscribeToMessageRealtimeEvent,
+  watchMessagePresence,
+} from './messageRealtimeRuntime';
 
 export type LiveKitCallRealtimeTiming = {
   startedAt?: number;
@@ -58,35 +54,10 @@ export type GroupLiveKitCallRealtimeEvent = LiveKitCallRealtimeTiming & {
   activeUserId?: string;
 };
 
-export type LiveKitCallCreatedPayload = {
-  callId: string;
-  callType: LiveKitCallType;
-  recipientId: string;
-  roomName: string;
-  peer?: LiveKitCallPeer;
-};
-
-export type LiveKitCallAnsweredPayload = LiveKitCallRealtimeTiming & {
-  callId: string;
-  callType: LiveKitCallType;
-  recipientId: string;
-};
-
-export type LiveKitCallClosedPayload = {
-  callId: string;
-  callType: LiveKitCallType;
-  recipientId: string;
-  status: 'ended' | 'cancelled' | 'declined' | 'no_answer' | 'missed';
-  duration: number;
-};
-
 export type ChatTypingRealtimeEvent = {
   recipientId: string;
   senderId: string;
   isTyping: boolean;
-  rawStatus?: number;
-  image?: string;
-  typingAsset?: string;
 };
 
 export type UserOnlineStatusRealtimeEvent = {
@@ -96,7 +67,6 @@ export type UserOnlineStatusRealtimeEvent = {
 
 type Listener<T> = (event: T) => void;
 type EventName =
-  | 'typing'
   | 'userStatus'
   | 'incoming'
   | 'answered'
@@ -105,26 +75,13 @@ type EventName =
   | 'groupIncoming'
   | 'groupSync'
   | 'groupClosed';
-type SocketIoClient = (
-  uri: string,
-  options: Record<string, unknown>,
-) => SocketLike;
-type WebRealtimeTokenResponse = {
-  token?: string;
-  enabled?: boolean;
-  url?: string;
-};
 type WebTypingStateResponse = {
   enabled?: boolean;
   typing?: boolean;
   activeUserIds?: Array<number | string>;
 };
 
-const SOCKET_PATH = '/mobile-socket/socket.io';
-const socketIoClient = require('socket.io-client') as SocketIoClient;
-
 const listeners = {
-  typing: new Set<Listener<ChatTypingRealtimeEvent>>(),
   userStatus: new Set<Listener<UserOnlineStatusRealtimeEvent>>(),
   incoming: new Set<Listener<IncomingLiveKitCall>>(),
   answered: new Set<Listener<LiveKitCallRealtimeEvent>>(),
@@ -135,18 +92,7 @@ const listeners = {
   groupClosed: new Set<Listener<GroupLiveKitCallRealtimeEvent>>(),
 };
 
-let socket: SocketLike | null = null;
-let socketToken = '';
-let joinedToken = '';
-let pendingEmits: Array<{ event: string; payload: Record<string, unknown> }> =
-  [];
-let webTypingSocket: SocketLike | null = null;
-let webTypingAccessToken = '';
-let webTypingConnecting = false;
-let pendingWebTypingEmits: Array<{
-  event: 'message:typing' | 'message:typing-stop';
-  payload: Record<string, unknown>;
-}> = [];
+let realtimeUnsubscribers: Array<() => void> = [];
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -203,15 +149,10 @@ function mapGroupParticipant(value: unknown): GroupLiveKitParticipant {
   };
 }
 
-function mapGroupParticipants(value: unknown): GroupLiveKitParticipant[] {
-  return Array.isArray(value) ? value.map(mapGroupParticipant) : [];
-}
-
 function mapIncomingCall(value: unknown): IncomingLiveKitCall | null {
   const raw = asRecord(value);
   const callId = readString(raw.call_id ?? raw.callId);
   if (!callId) return null;
-
   return {
     callId,
     callType: normalizeCallType(raw.call_type ?? raw.callType),
@@ -229,7 +170,6 @@ function mapIncomingGroupCall(value: unknown): IncomingGroupLiveKitCall | null {
   const callId = readString(raw.call_id ?? raw.callId);
   const groupId = readString(raw.group_id ?? raw.groupId);
   if (!callId || !groupId) return null;
-
   const ringMode = readString(raw.ring_mode ?? raw.ringMode);
   return {
     callId,
@@ -255,7 +195,6 @@ function mapRealtimeEvent(value: unknown): LiveKitCallRealtimeEvent | null {
   const raw = asRecord(value);
   const callId = readString(raw.call_id ?? raw.callId);
   if (!callId) return null;
-
   return {
     callId,
     callType: normalizeCallType(raw.call_type ?? raw.callType),
@@ -281,14 +220,15 @@ function mapGroupRealtimeEvent(
   const callId = readString(raw.call_id ?? raw.callId);
   const groupId = readString(raw.group_id ?? raw.groupId);
   if (!callId || !groupId) return null;
-
   return {
     callId,
     groupId,
     callType: 'video',
     status: readString(raw.status ?? raw.call_status),
     group: raw.group ? mapGroup(raw.group) : undefined,
-    participants: mapGroupParticipants(raw.participants),
+    participants: Array.isArray(raw.participants)
+      ? raw.participants.map(mapGroupParticipant)
+      : [],
     participantCount: readNumber(raw.participant_count ?? raw.participantCount),
     startedAt: readNumber(raw.started_at ?? raw.startedAt),
     startedAtMs: readNumber(raw.started_at_ms ?? raw.startedAtMs),
@@ -302,60 +242,51 @@ function mapGroupRealtimeEvent(
   };
 }
 
-function mapTypingEvent(value: unknown): ChatTypingRealtimeEvent | null {
-  const raw = asRecord(value);
-  const senderId = readString(raw.sender_id ?? raw.senderId);
-  const recipientId = readString(
-    raw.recipient_id ?? raw.recipientId ?? raw.group_id ?? raw.groupId,
-  );
-  if (!senderId || !recipientId) return null;
-
-  const rawStatus = readNumber(raw.is_typing ?? raw.isTyping);
-  return {
-    recipientId,
-    senderId,
-    rawStatus,
-    isTyping: rawStatus === 200,
-    image: readString(raw.img ?? raw.image) || undefined,
-    typingAsset: readString(raw.typing) || undefined,
-  };
-}
-
-function mapUserStatusEvent(
-  value: unknown,
-  isOnline: boolean,
-): UserOnlineStatusRealtimeEvent | null {
-  const raw = asRecord(value);
-  const userId = readString(raw.user_id ?? raw.userId ?? raw.id);
-  if (!userId) return null;
-
-  return {
-    userId,
-    isOnline,
-  };
-}
-
-function removeSocketListener(
-  target: SocketLike | null,
-  event: string,
-  listener: (payload?: unknown) => void,
-) {
-  if (!target) return;
-  if (target.off) {
-    target.off(event, listener);
-    return;
-  }
-  target.removeListener?.(event, listener);
-}
-
 function dispatch<T>(eventName: EventName, payload: T) {
   for (const listener of listeners[eventName] as Set<Listener<T>>) {
     listener(payload);
   }
 }
 
-function socketUrl() {
-  return (apiConfig.socketUrl || apiConfig.webBaseUrl).replace(/\/+$/, '');
+function bindCanonicalEvents() {
+  if (realtimeUnsubscribers.length > 0) return;
+  realtimeUnsubscribers = [
+    subscribeToMessageRealtimeEvent('message:presence', payload => {
+      const raw = asRecord(payload);
+      const userId = readString(raw.userId ?? raw.user_id);
+      if (userId && typeof raw.online === 'boolean') {
+        dispatch('userStatus', { userId, isOnline: raw.online });
+      }
+    }),
+    subscribeToMessageRealtimeEvent('livekit_call_incoming', payload => {
+      const call = mapIncomingCall(payload);
+      if (call) dispatch('incoming', call);
+    }),
+    subscribeToMessageRealtimeEvent('livekit_call_answered', payload => {
+      const event = mapRealtimeEvent(payload);
+      if (event) dispatch('answered', event);
+    }),
+    subscribeToMessageRealtimeEvent('livekit_call_declined', payload => {
+      const event = mapRealtimeEvent(payload);
+      if (event) dispatch('declined', event);
+    }),
+    subscribeToMessageRealtimeEvent('livekit_call_closed', payload => {
+      const event = mapRealtimeEvent(payload);
+      if (event) dispatch('closed', event);
+    }),
+    subscribeToMessageRealtimeEvent('livekit_group_call_incoming', payload => {
+      const call = mapIncomingGroupCall(payload);
+      if (call) dispatch('groupIncoming', call);
+    }),
+    subscribeToMessageRealtimeEvent('livekit_group_call_sync', payload => {
+      const event = mapGroupRealtimeEvent(payload);
+      if (event) dispatch('groupSync', event);
+    }),
+    subscribeToMessageRealtimeEvent('livekit_group_call_closed', payload => {
+      const event = mapGroupRealtimeEvent(payload);
+      if (event) dispatch('groupClosed', event);
+    }),
+  ];
 }
 
 function nuxtApiUrl(path: string) {
@@ -373,329 +304,12 @@ function groupIdFromRecipientId(recipientId: string) {
   return recipientId.replace(/^group/i, '');
 }
 
-function describeSocketError(value: unknown) {
-  const raw = asRecord(value);
-  const context = asRecord(raw.context);
-  return {
-    message: readString(raw.message),
-    type: readString(raw.type),
-    description: readString(raw.description),
-    status: readNumber(context.status),
-    responseText: readString(context.responseText).slice(0, 160),
-    socketUrl: socketUrl(),
-  };
-}
-
-function buildJoinPayload(token: string) {
-  return {
-    username: '',
-    user_id: token,
-    recipient_ids: [],
-    recipient_group_ids: [],
-  };
-}
-
-function flushPendingEmits() {
-  const currentSocket = socket;
-  if (!currentSocket || !currentSocket.connected) return;
-  if (!socketToken || joinedToken !== socketToken) return;
-
-  const nextPending = pendingEmits;
-  pendingEmits = [];
-  for (const item of nextPending) {
-    currentSocket.emit(item.event, item.payload);
-  }
-}
-
-function joinSocket(nextSocket: SocketLike) {
-  const token = sessionStorage.getAccessToken();
-  if (!token) return;
-
-  socketToken = token;
-  nextSocket.emit('join', buildJoinPayload(token), () => {
-    if (socket !== nextSocket) return;
-    joinedToken = token;
-    console.log('[LiveKitRealtime] joined socket');
-    flushPendingEmits();
-  });
-}
-
-function bindSocketEvents(nextSocket: SocketLike) {
-  nextSocket.on('connect', () => {
-    console.log('[LiveKitRealtime] socket connected');
-    joinedToken = '';
-    joinSocket(nextSocket);
-  });
-  nextSocket.on('connect_error', payload => {
-    console.warn(
-      '[LiveKitRealtime] socket connect_error',
-      describeSocketError(payload),
-    );
-  });
-  nextSocket.on('disconnect', payload => {
-    console.warn('[LiveKitRealtime] socket disconnected', payload);
-  });
-  nextSocket.on('typing', payload => {
-    const event = mapTypingEvent(payload);
-    if (event) dispatch('typing', event);
-  });
-  nextSocket.on('on_user_loggedin', payload => {
-    const event = mapUserStatusEvent(payload, true);
-    if (event) dispatch('userStatus', event);
-  });
-  nextSocket.on('on_user_loggedoff', payload => {
-    const event = mapUserStatusEvent(payload, false);
-    if (event) dispatch('userStatus', event);
-  });
-  nextSocket.on('livekit_call_incoming', payload => {
-    console.log('[LiveKitRealtime] incoming event received');
-    const call = mapIncomingCall(payload);
-    if (call) dispatch('incoming', call);
-  });
-  nextSocket.on('livekit_call_answered', payload => {
-    console.log('[LiveKitRealtime] answered event received');
-    const event = mapRealtimeEvent(payload);
-    if (event) dispatch('answered', event);
-  });
-  nextSocket.on('livekit_call_declined', payload => {
-    console.log('[LiveKitRealtime] declined event received');
-    const event = mapRealtimeEvent(payload);
-    if (event) dispatch('declined', event);
-  });
-  nextSocket.on('livekit_call_closed', payload => {
-    console.log('[LiveKitRealtime] closed event received');
-    const event = mapRealtimeEvent(payload);
-    if (event) dispatch('closed', event);
-  });
-  nextSocket.on('livekit_group_call_incoming', payload => {
-    console.log('[LiveKitRealtime] group incoming event received');
-    const call = mapIncomingGroupCall(payload);
-    if (call) dispatch('groupIncoming', call);
-  });
-  nextSocket.on('livekit_group_call_sync', payload => {
-    console.log('[LiveKitRealtime] group sync event received');
-    const event = mapGroupRealtimeEvent(payload);
-    if (event) dispatch('groupSync', event);
-  });
-  nextSocket.on('livekit_group_call_closed', payload => {
-    console.log('[LiveKitRealtime] group closed event received');
-    const event = mapGroupRealtimeEvent(payload);
-    if (event) dispatch('groupClosed', event);
-  });
-}
-
-function dispatchWebTypingPayload(payload: unknown, isTyping: boolean) {
-  const raw = asRecord(payload);
-  const senderId = readString(raw.senderId ?? raw.userId);
-  const groupId = readString(raw.groupId);
-
-  if (groupId) {
-    dispatch('typing', {
-      recipientId: `group${groupId}`,
-      senderId,
-      isTyping,
-    });
-    return;
-  }
-
-  if (!senderId) return;
-  dispatch('typing', {
-    recipientId: senderId,
-    senderId,
-    isTyping,
-  });
-}
-
-function flushPendingWebTypingEmits() {
-  const currentSocket = webTypingSocket;
-  if (!currentSocket?.connected) return;
-
-  const nextPending = pendingWebTypingEmits;
-  pendingWebTypingEmits = [];
-  for (const item of nextPending) {
-    currentSocket.emit(item.event, item.payload);
-  }
-}
-
-function bindWebTypingSocketEvents(nextSocket: SocketLike) {
-  nextSocket.on('connect', () => {
-    flushPendingWebTypingEmits();
-  });
-  nextSocket.on('disconnect', () => {
-    webTypingSocket = null;
-  });
-  nextSocket.on('connect_error', payload => {
-    console.warn(
-      '[LiveKitRealtime] web typing socket connect_error',
-      describeSocketError(payload),
-    );
-    webTypingSocket = null;
-  });
-  nextSocket.on('message:typing', payload => {
-    dispatchWebTypingPayload(payload, true);
-  });
-  nextSocket.on('message:typing-stop', payload => {
-    dispatchWebTypingPayload(payload, false);
-  });
-}
-
-async function requestWebRealtimeToken(accessToken: string) {
-  const response = await fetch(nuxtApiUrl('realtime/token'), {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) return null;
-  const data = (await response.json()) as WebRealtimeTokenResponse;
-  if (!data.enabled || !data.token || !data.url) return null;
-  return {
-    token: data.token,
-    url: data.url.replace(/\/+$/, ''),
-  };
-}
-
-async function connectWebMessageTypingRealtime() {
-  const accessToken = sessionStorage.getAccessToken();
-  if (!accessToken || webTypingConnecting) return;
-
-  if (webTypingSocket && webTypingAccessToken === accessToken) {
-    if (!webTypingSocket.connected) webTypingSocket.connect();
-    return;
-  }
-
-  webTypingConnecting = true;
-  try {
-    const auth = await requestWebRealtimeToken(accessToken);
-    if (!auth) return;
-
-    webTypingSocket?.disconnect();
-    webTypingAccessToken = accessToken;
-    webTypingSocket = socketIoClient(auth.url, {
-      auth: {
-        token: auth.token,
-      },
-      transports: ['websocket'],
-      timeout: 5000,
-      reconnection: true,
-    });
-    bindWebTypingSocketEvents(webTypingSocket);
-  } catch (error) {
-    console.warn('[LiveKitRealtime] web typing socket create failed', error);
-    webTypingSocket = null;
-  } finally {
-    webTypingConnecting = false;
-  }
-}
-
-export function connectLiveKitCallRealtime() {
-  const token = sessionStorage.getAccessToken();
-  if (!token) return null;
-
-  if (socket && socketToken === token) {
-    if (!socket.connected) socket.connect();
-    else if (joinedToken !== token) joinSocket(socket);
-    return socket;
-  }
-
-  socket?.disconnect();
-  socketToken = token;
-  joinedToken = '';
-  pendingEmits = [];
-  try {
-    console.log('[LiveKitRealtime] connecting socket', {
-      socketUrl: socketUrl(),
-      path: SOCKET_PATH,
-    });
-    socket = socketIoClient(socketUrl(), {
-      path: SOCKET_PATH,
-      transports: ['websocket'],
-      upgrade: false,
-      forceNew: true,
-      reconnection: true,
-      query: {
-        hash: token,
-      },
-    });
-  } catch (error) {
-    console.warn('[LiveKitRealtime] socket create failed', error);
-    socket = null;
-    return null;
-  }
-  bindSocketEvents(socket);
-  return socket;
-}
-
-export function disconnectLiveKitCallRealtime() {
-  socket?.disconnect();
-  webTypingSocket?.disconnect();
-  socket = null;
-  webTypingSocket = null;
-  socketToken = '';
-  joinedToken = '';
-  webTypingAccessToken = '';
-  pendingEmits = [];
-  pendingWebTypingEmits = [];
-}
-
-function emitChatRealtimeEvent(event: string, recipientId: string) {
-  if (!recipientId) return;
-  emitLiveKitCallRealtimeEvent(event, {
-    recipient_id: recipientId,
-  });
-
-  if (!isGroupRecipientId(recipientId)) {
-    emitWebMessageTypingEvent(
-      event === 'typing' ? 'message:typing' : 'message:typing-stop',
-      { recipientId },
-    );
-  }
-}
-
-function emitLiveKitCallRealtimeEvent(
-  event: string,
-  payload: Record<string, unknown>,
-) {
-  const token = sessionStorage.getAccessToken();
-  const currentSocket = connectLiveKitCallRealtime();
-  if (!token || !currentSocket) return;
-
-  const nextPayload = {
-    ...payload,
-    user_id: token,
-  };
-
-  if (currentSocket.connected && joinedToken === token) {
-    currentSocket.emit(event, nextPayload);
-    return;
-  }
-
-  pendingEmits.push({ event, payload: nextPayload });
-}
-
-function emitWebMessageTypingEvent(
-  event: 'message:typing' | 'message:typing-stop',
-  payload: Record<string, unknown>,
-) {
-  const currentSocket = webTypingSocket;
-  if (currentSocket?.connected) {
-    currentSocket.emit(event, payload);
-    return;
-  }
-
-  pendingWebTypingEmits.push({ event, payload });
-  connectWebMessageTypingRealtime().catch(() => undefined);
-}
-
 async function postNuxtTypingApi(
   path: string,
   body: Record<string, unknown>,
 ): Promise<WebTypingStateResponse | null> {
   const accessToken = sessionStorage.getAccessToken();
   if (!accessToken) return null;
-
   const response = await fetch(nuxtApiUrl(path), {
     method: 'POST',
     headers: {
@@ -705,14 +319,28 @@ async function postNuxtTypingApi(
     },
     body: JSON.stringify(body),
   });
-
   if (!response.ok) return null;
   return (await response.json()) as WebTypingStateResponse;
 }
 
+export function connectLiveKitCallRealtime() {
+  bindCanonicalEvents();
+  connectMessageRealtime();
+}
+
+export function disconnectLiveKitCallRealtime() {
+  realtimeUnsubscribers.splice(0).forEach(unsubscribe => unsubscribe());
+  watchMessagePresence([]);
+  disconnectMessageRealtime();
+}
+
+export function watchUserOnlineStatuses(userIds: Array<string | number>) {
+  bindCanonicalEvents();
+  watchMessagePresence(userIds);
+}
+
 export function updateWebTypingState(recipientId: string, isTyping: boolean) {
   if (!recipientId) return;
-
   if (isGroupRecipientId(recipientId)) {
     const groupId = Number(groupIdFromRecipientId(recipientId));
     if (Number.isFinite(groupId) && groupId > 0) {
@@ -723,7 +351,6 @@ export function updateWebTypingState(recipientId: string, isTyping: boolean) {
     }
     return;
   }
-
   const userId = Number(recipientId);
   if (Number.isFinite(userId) && userId > 0) {
     postNuxtTypingApi('messages/typing', {
@@ -735,7 +362,6 @@ export function updateWebTypingState(recipientId: string, isTyping: boolean) {
 
 export async function getWebTypingState(recipientId: string) {
   if (!recipientId) return null;
-
   if (isGroupRecipientId(recipientId)) {
     const groupId = Number(groupIdFromRecipientId(recipientId));
     if (!Number.isFinite(groupId) || groupId <= 0) return null;
@@ -744,7 +370,6 @@ export async function getWebTypingState(recipientId: string) {
       groupId,
     });
   }
-
   const userId = Number(recipientId);
   if (!Number.isFinite(userId) || userId <= 0) return null;
   return postNuxtTypingApi('messages/typing', {
@@ -754,12 +379,7 @@ export async function getWebTypingState(recipientId: string) {
 }
 
 export function onChatTyping(listener: Listener<ChatTypingRealtimeEvent>) {
-  listeners.typing.add(listener);
-  connectLiveKitCallRealtime();
-  connectWebMessageTypingRealtime().catch(() => undefined);
-  return () => {
-    listeners.typing.delete(listener);
-  };
+  return onMessageTyping(listener);
 }
 
 export function onUserOnlineStatus(
@@ -772,13 +392,8 @@ export function onUserOnlineStatus(
   };
 }
 
-export function emitChatTyping(recipientId: string) {
-  emitChatRealtimeEvent('typing', recipientId);
-}
-
-export function emitChatTypingDone(recipientId: string) {
-  emitChatRealtimeEvent('typing_done', recipientId);
-}
+export const emitChatTyping = emitMessageTyping;
+export const emitChatTypingDone = emitMessageTypingDone;
 
 export function onLiveKitCallIncoming(listener: Listener<IncomingLiveKitCall>) {
   listeners.incoming.add(listener);
@@ -846,54 +461,4 @@ export function onLiveKitGroupCallClosed(
   return () => {
     listeners.groupClosed.delete(listener);
   };
-}
-
-export function emitLiveKitCallCreated(payload: LiveKitCallCreatedPayload) {
-  emitLiveKitCallRealtimeEvent('livekit_call_created', {
-    call_id: payload.callId,
-    call_type: payload.callType,
-    to_id: payload.recipientId,
-    room_name: payload.roomName,
-    peer: payload.peer,
-  });
-}
-
-export function emitLiveKitCallAnswered(payload: LiveKitCallAnsweredPayload) {
-  emitLiveKitCallRealtimeEvent('livekit_call_answered', {
-    call_id: payload.callId,
-    call_type: payload.callType,
-    to_id: payload.recipientId,
-    started_at: payload.startedAt,
-    started_at_ms: payload.startedAtMs,
-    server_now: payload.serverNow,
-    server_now_ms: payload.serverNowMs,
-    elapsed: payload.elapsedSeconds,
-    elapsed_ms: payload.elapsedMs,
-  });
-}
-
-export function emitLiveKitCallClosed(payload: LiveKitCallClosedPayload) {
-  emitLiveKitCallRealtimeEvent('livekit_call_closed', {
-    call_id: payload.callId,
-    call_type: payload.callType,
-    to_id: payload.recipientId,
-    status: payload.status,
-    duration: payload.duration,
-  });
-}
-
-export function emitLiveKitCallDeclined(
-  payload: Omit<LiveKitCallClosedPayload, 'status'>,
-) {
-  emitLiveKitCallClosed({
-    ...payload,
-    status: 'declined',
-  });
-}
-
-export function removeLiveKitCallRealtimeListener(
-  event: string,
-  listener: (payload?: unknown) => void,
-) {
-  removeSocketListener(socket, event, listener);
 }

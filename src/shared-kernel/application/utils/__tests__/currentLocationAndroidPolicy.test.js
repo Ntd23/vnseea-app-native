@@ -14,9 +14,9 @@ describe('Android current-location integration policy', () => {
     );
 
     expect(screen).toContain('requestAndroidLocationPermission');
-    expect(screen).toContain(
-      'requestAndroidLocationPermission()\n      .then(setLocationAllowed)',
-    );
+    expect(screen).toContain('setLocationAllowed(granted)');
+    expect(screen).toContain("new LocationAccessError(\n                'permission_denied'");
+    expect(screen).toContain('presentLocationAccessRecovery(locationAccessError)');
     expect(screen).not.toContain('PermissionsAndroid.request(');
   });
 

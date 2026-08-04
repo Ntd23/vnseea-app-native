@@ -448,6 +448,7 @@ interface Props {
   sheetHeight?: string | number;
   backdropColor?: string;
   composerAvatarUrl?: string;
+  parentOwnsKeyboardAvoidance?: boolean;
 }
 
 function formatCount(count: number) {
@@ -612,9 +613,11 @@ function ReelCommentsSheetBase({
   sheetHeight = '72%',
   backdropColor = 'rgba(0,0,0,0.36)',
   composerAvatarUrl,
+  parentOwnsKeyboardAvoidance = false,
 }: Props) {
   const isInline = presentation === 'inline';
-  const shouldOwnKeyboardAvoidance = isInline && Platform.OS === 'android';
+  const shouldOwnKeyboardAvoidance =
+    isInline && Platform.OS === 'android' && !parentOwnsKeyboardAvoidance;
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
   const navigation = useNavigation<any>();

@@ -1,290 +1,82 @@
-// Description: Popular screen showing most liked/trending posts from the API
-import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
+// Renders popular content through the same interactive cards used by Feed.
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
+  Alert,
   FlatList,
-  Image,
   RefreshControl,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  ArrowLeft,
-  Globe,
-  Heart,
-  MessageCircle,
-  MoreHorizontal,
-  Share2,
-  TrendingUp,
-} from 'lucide-react-native';
+import { ArrowLeft, TrendingUp } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { usePopularViewModel } from '../../application/view-models/usePopularViewModel';
-import type { PopularPost } from '../../domain/types/popular.types';
+import { useSharedValue } from 'react-native-reanimated';
 import type { RootStackParamList } from '../../../navigation/types';
-import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToPostComments } from '../../../navigation/postNavigation';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import type {
+  FeedJobPost,
+  FeedPollPost,
+  FeedPost,
+  FeedProductPost,
+  FeedTextPost,
+  FeedVideoPost,
+} from '../../../feed/domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import {
-  FEED_REACTION_IMAGES,
-  isFeedReactionType,
-} from '../../../feed/presentation/components/FeedReactionAssets';
+  FEED_COPY,
+  HomeVideoPostCard,
+  ReactionPickerOverlay,
+  TextPostCard,
+} from '../../../feed/presentation/components/PostCards';
+import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
+import {
+  FeedJobPostCard,
+  FeedProductPostCard,
+} from '../../../feed/presentation/components/FeedCommercePostCards';
+import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
+import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
+import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
+import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
+import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { usePopularViewModel } from '../../application/view-models/usePopularViewModel';
 
 type PopularNav = NativeStackNavigationProp<RootStackParamList>;
 
-// ── Format helpers ─────────────────────────────────────────────────────────
-function formatCount(count: number) {
-  if (!Number.isFinite(count) || count <= 0) return '0';
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
-  return String(count);
-}
+const feedRepository = createFeedRepository();
+const pollRepository = createPollRepository();
 
-function formatPostTime(timestamp?: string | number) {
-  if (!timestamp) return 'Vừa xong';
-  const numTs = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
-  if (isNaN(numTs)) return timestamp?.toString() || 'Vừa xong';
-  const now = Math.floor(Date.now() / 1000);
-  const diff = Math.max(0, now - numTs);
-  if (diff < 60) return 'Vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
-  return new Date(numTs * 1000).toLocaleDateString('vi-VN');
-}
-
-function getTopReactions(
-  reactionsCount: Record<string, number> | undefined,
-): ReactionType[] {
-  if (!reactionsCount) return [];
-  const supported: Array<[ReactionType, number]> = [];
-  Object.entries(reactionsCount).forEach(([type, count]) => {
-    if (isFeedReactionType(type) && typeof count === 'number' && count > 0) {
-      supported.push([type, count]);
-    }
-  });
-  return supported
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 3)
-    .map(([type]) => type);
-}
-
-// ── Reaction Summary Row (Facebook-style) ── */
-function ReactionSummary({
-  reactionsCount,
-  likeCount,
-}: {
-  reactionsCount: Record<string, number> | undefined;
-  likeCount: number;
-}) {
-  const total = reactionsCount
-    ? Object.values(reactionsCount).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)
-    : likeCount;
-
-  if (total <= 0) return null;
-
-  const topTypes = getTopReactions(reactionsCount);
-
-  return (
-    <View className="mb-3 flex-row items-center justify-between">
-      {/* Left: stacked reaction badges */}
-      <View className="flex-row items-center">
-        {topTypes.map((type, index) => (
-          <View
-            key={type}
-            className="h-5 w-5 items-center justify-center rounded-full border border-white bg-white"
-            style={{
-              marginLeft: index > 0 ? -4 : 0,
-              zIndex: topTypes.length - index,
-            }}
-          >
-            <Image
-              source={FEED_REACTION_IMAGES[type]}
-              style={{ width: 17, height: 17 }}
-              resizeMode="contain"
-            />
-          </View>
-        ))}
-        <Text className="ml-2 text-caption-secondary">{formatCount(total)}</Text>
-      </View>
-    </View>
+function withReaction(
+  post: FeedPost,
+  reaction: ReactionType | null,
+): FeedPost {
+  if (!('myReaction' in post) || !('likeCount' in post)) return post;
+  const previous = post.myReaction;
+  const nextCount = Math.max(
+    0,
+    post.likeCount + (previous ? -1 : 0) + (reaction ? 1 : 0),
   );
+  const nextTop = reaction
+    ? [reaction, ...post.topReactions.filter(item => item !== reaction)].slice(0, 3)
+    : post.topReactions.filter(item => item !== previous);
+  return {
+    ...post,
+    myReaction: reaction,
+    isLiked: Boolean(reaction),
+    likeCount: nextCount,
+    topReactions: nextTop,
+  } as FeedPost;
 }
 
-/* ── Post Card ── */
-function PostCard({ item, isFirst }: { item: PopularPost; isFirst?: boolean }) {
-  // Calculate total reactions from reactionsCount
-  const reactionsCount = item.reactionsCount;
-  const totalReactions = reactionsCount
-    ? Object.values(reactionsCount).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)
-    : 0;
-
-  // Calculate like count - use reactionsCount or fall back to direct fields
-  const likeCount = totalReactions > 0
-    ? totalReactions
-    : item.commentsCount || 0; // Fallback
-
-  // Get media URL - check postFile first (which should be normalized by now)
-  const mediaUrl = item.postFile || item.postFileUrl || '';
-  const hasMedia = Boolean(mediaUrl);
-
-  // Get publisher info
-  const publisherName = item.publisher?.name || item.publisher?.username || 'Người dùng';
-  const publisherAvatar = item.publisher?.avatarUrl || '';
-  const publisherId = item.publisher?.id || '';
-
-  // Get post time
-  const postTime = item.time_text || item.time || '';
-
-  // Get stats
-  const commentCount = item.commentsCount ?? 0;
-  const sharesCount = item.sharesCount ?? 0;
-
-  // Get top reactions
-  const topReactions = getTopReactions(reactionsCount);
-
-  console.log('[PopularScreen] PostCard:', {
-    id: item.post_id,
-    postText: item.postText?.substring(0, 50),
-    mediaUrl: mediaUrl?.substring(0, 50),
-    reactionsCount,
-    likeCount,
-    commentCount,
-    sharesCount,
-    publisher: publisherName,
-  });
-
-  return (
-    <View className="surface-card mx-4 mb-4 overflow-hidden rounded-2xl">
-      <View className="p-4">
-        {/* Header */}
-        <View className="mb-3 flex-row items-center justify-between">
-          <TouchableOpacity className="flex-row items-center" activeOpacity={0.8}>
-            {publisherAvatar ? (
-              <Image
-                source={{ uri: publisherAvatar }}
-                className="h-10 w-10 rounded-full"
-                resizeMode="cover"
-              />
-            ) : (
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
-                <Text className="text-sm font-bold text-white">
-                  {publisherName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-            <View className="ml-3">
-              <View className="flex-row items-center">
-                <Text className="text-title-primary font-semibold">
-                  {publisherName}
-                </Text>
-                <View className="ml-2 flex-row items-center rounded-full bg-[#eef0ff] px-2 py-0.5">
-                  <TrendingUp size={10} color={APP_BRAND_COLOR} />
-                  <Text className="ml-1 text-[10px] font-medium text-brand">Xu hướng</Text>
-                </View>
-              </View>
-              <View className="mt-0.5 flex-row items-center">
-                <Text className="text-xs text-[#94a3b8]">{formatPostTime(postTime)}</Text>
-                <Text className="mx-1 text-xs text-[#94a3b8]">•</Text>
-                <Globe size={11} color="#94a3b8" />
-              </View>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <MoreHorizontal size={20} color="#94A3B8" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Caption */}
-        {item.postText ? (
-          <Text className="text-body text-primary leading-relaxed" numberOfLines={6}>
-            {item.postText}
-          </Text>
-        ) : null}
-      </View>
-
-      {/* Media */}
-      {hasMedia && (
-        <Image
-          source={{ uri: mediaUrl }}
-          className="w-full"
-          style={{ height: 280 }}
-          resizeMode="cover"
-        />
-      )}
-
-      {/* Reaction summary */}
-      <View className="px-4 pt-3">
-        <ReactionSummary reactionsCount={reactionsCount} likeCount={likeCount} />
-
-        {/* Stats row */}
-        <View className="mb-3 flex-row items-center justify-between border-b border-slate-200 pb-3">
-          <View className="flex-row items-center gap-1">
-            {/* Show actual reaction emojis if available */}
-            {topReactions.length > 0 ? (
-              <View className="flex-row">
-                {topReactions.slice(0, 3).map((type, idx) => (
-                  <View
-                    key={type}
-                    className="mr-1 h-5 w-5 items-center justify-center rounded-full border border-white bg-white"
-                  >
-                    <Image
-                      source={FEED_REACTION_IMAGES[type]}
-                      style={{ width: 17, height: 17 }}
-                      resizeMode="contain"
-                    />
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <View className="mr-1 h-5 w-5 items-center justify-center rounded-full border border-white bg-white">
-                <Image
-                  source={FEED_REACTION_IMAGES.like}
-                  style={{ width: 17, height: 17 }}
-                  resizeMode="contain"
-                />
-              </View>
-            )}
-            <Text className="text-caption-secondary">
-              {formatCount(totalReactions)} lượt thích
-            </Text>
-          </View>
-          <View className="flex-row items-center gap-3">
-            <Text className="text-caption-secondary">
-              {formatCount(commentCount)} bình luận
-            </Text>
-            <Text className="text-caption-secondary">
-              {formatCount(sharesCount)} chia sẻ
-            </Text>
-          </View>
-        </View>
-
-        {/* Action buttons */}
-        <View className="flex-row items-center justify-between pb-2">
-          <TouchableOpacity className="flex-row items-center" activeOpacity={0.75}>
-            <Heart size={20} color="#64748b" />
-            <Text className="ml-2 text-caption-primary font-medium">Thích</Text>
-          </TouchableOpacity>
-          <TouchableOpacity className="flex-row items-center" activeOpacity={0.75}>
-            <MessageCircle size={20} color="#64748b" />
-            <Text className="ml-2 text-caption-primary font-medium">Bình luận</Text>
-          </TouchableOpacity>
-          <TouchableOpacity className="flex-row items-center" activeOpacity={0.75}>
-            <Share2 size={20} color="#64748b" />
-            <Text className="ml-2 text-caption-primary font-medium">Chia sẻ</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/* ── Loading Skeleton ── */
 function LoadingSkeleton() {
   return (
-    <View className="mx-4 mb-4 overflow-hidden rounded-2xl">
+    <View className="mb-3 bg-white">
       <View className="flex-row items-center p-4">
         <View className="h-10 w-10 rounded-full bg-gray-200" />
         <View className="ml-3 flex-1">
@@ -293,93 +85,258 @@ function LoadingSkeleton() {
         </View>
       </View>
       <View className="h-64 bg-gray-100" />
-      <View className="p-4">
-        <View className="mb-3 h-4 w-24 rounded bg-gray-200" />
-        <View className="h-8 flex-row items-center justify-between border-t border-slate-200 pt-3">
-          <View className="h-6 w-16 rounded bg-gray-200" />
-          <View className="h-6 w-20 rounded bg-gray-200" />
-          <View className="h-6 w-16 rounded bg-gray-200" />
-        </View>
-      </View>
     </View>
   );
 }
 
-/* ── Main Screen ── */
 function PopularScreen() {
   const navigation = useNavigation<PopularNav>();
-  const { posts, isLoading, error, reload } = usePopularViewModel();
+  const language = useAppLanguage();
+  const copy = FEED_COPY[language];
+  const { posts, isLoading, error, reload, updatePost, removePost } =
+    usePopularViewModel();
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    postId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [sharePost, setSharePost] = useState<FeedPost | undefined>();
+  const [menuPost, setMenuPost] = useState<FeedPost | null>(null);
+  const [reactionsPostId, setReactionsPostId] = useState<string | null>(null);
+  const gestureX = useSharedValue(0);
+  const gestureY = useSharedValue(0);
+  const gestureActive = useSharedValue(false);
+  const hasDragged = useSharedValue(false);
 
-  console.log('[PopularScreen] Posts count:', posts.length);
-  console.log('[PopularScreen] First post:', posts[0] ? {
-    id: posts[0].post_id,
-    text: posts[0].postText?.substring(0, 50),
-    media: posts[0].postFile?.substring(0, 50),
-    reactions: posts[0].reactionsCount,
-    comments: posts[0].commentsCount,
-  } : null);
-
-  const renderItem = useCallback(
-    ({ item, index }: { item: PopularPost; index: number }) => (
-      <PostCard item={item} isFirst={index === 0} />
-    ),
-    [],
+  const handleToggleReaction = useCallback(
+    async (postId: string, selected: ReactionType) => {
+      const current = posts.find(post => post.id === postId);
+      if (!current || !('myReaction' in current)) return;
+      const previous = current.myReaction;
+      const next = previous === selected ? null : selected;
+      updatePost(postId, post => withReaction(post, next));
+      try {
+        const result = await feedRepository.setReaction(postId, next);
+        if (result.reaction !== next) {
+          updatePost(postId, post => withReaction(post, result.reaction));
+        }
+      } catch (caught) {
+        updatePost(postId, post => withReaction(post, previous));
+        Alert.alert(
+          language === 'vi' ? 'Không thể thả cảm xúc' : 'Could not react',
+          caught instanceof Error ? caught.message : copy.reportErrorMessage,
+        );
+      }
+    },
+    [copy.reportErrorMessage, language, posts, updatePost],
   );
 
-  const keyExtractor = useCallback((item: PopularPost) => String(item.post_id), []);
+  const handleOpenPicker = useCallback((postId: string, x: number, y: number) => {
+    setPickerAnchor({ postId, x, y });
+  }, []);
 
-  const renderEmpty = () => (
-    <View className="flex-1 items-center justify-center py-20">
-      <TrendingUp size={48} color="#94a3b8" />
-      <Text className="mt-4 text-body text-secondary">
-        Chưa có bài viết xu hướng nào
-      </Text>
-    </View>
+  const handlePickReaction = useCallback(
+    (reaction: ReactionType) => {
+      if (!pickerAnchor) return;
+      handleToggleReaction(pickerAnchor.postId, reaction).catch(() => undefined);
+      setPickerAnchor(null);
+    },
+    [handleToggleReaction, pickerAnchor],
+  );
+
+  const handleOpenPost = useCallback(
+    (post: FeedPost) => {
+      navigation.navigate(ROUTES.POST_DETAIL, { postId: post.id, post });
+    },
+    [navigation],
+  );
+
+  const handleCommentTap = useCallback(
+    (postId: string) => {
+      const post = posts.find(item => item.id === postId);
+      navigateToPostComments(navigation, postId, post);
+    },
+    [navigation, posts],
+  );
+
+  const handleProfilePress = useCallback(
+    (userId: string) => navigateToUserProfile(navigation, userId),
+    [navigation],
+  );
+
+  const handleVote = useCallback(
+    async (_postId: string, optionId: string) => {
+      try {
+        await pollRepository.votePoll(optionId);
+        await reload();
+      } catch (caught) {
+        Alert.alert(
+          language === 'vi' ? 'Không thể bình chọn' : 'Could not vote',
+          caught instanceof Error ? caught.message : copy.reportErrorMessage,
+        );
+      }
+    },
+    [copy.reportErrorMessage, language, reload],
+  );
+
+  const renderFallbackPost = useCallback(
+    (post: FeedPost) => (
+      <TouchableOpacity
+        activeOpacity={0.85}
+        className="mb-3 bg-white px-4 py-5"
+        onPress={() => handleOpenPost(post)}
+      >
+        <Text className="text-base font-bold text-slate-900" numberOfLines={1}>
+          {post.publisher.name || copy.userFallback}
+        </Text>
+        <Text className="mt-2 text-sm text-slate-600">
+          {language === 'vi' ? 'Xem nội dung bài viết' : 'View post content'}
+        </Text>
+      </TouchableOpacity>
+    ),
+    [copy.userFallback, handleOpenPost, language],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: FeedPost }) => {
+      const sharedProps = {
+        copy,
+        onReact: handleToggleReaction,
+        onOpenPicker: handleOpenPicker,
+        onCommentTap: handleCommentTap,
+        onShare: (post: FeedPost) => setSharePost(post),
+        onOpenReactions: (postId: string) => setReactionsPostId(postId),
+        navigateToProfile: handleProfilePress,
+        onOpenPostMenu: (post: FeedPost) => setMenuPost(post),
+      };
+
+      switch (item.kind) {
+        case 'video':
+          return (
+            <HomeVideoPostCard
+              {...sharedProps}
+              post={item as FeedVideoPost}
+              isScreenFocused
+            />
+          );
+        case 'text':
+          return (
+            <TextPostCard
+              {...sharedProps}
+              post={item as FeedTextPost}
+              onPhotoPress={post => handleOpenPost(post)}
+              onPostPress={handleOpenPost}
+            />
+          );
+        case 'poll':
+          return (
+            <PollPostCard
+              post={item as FeedPollPost}
+              language={language}
+              onVote={handleVote}
+              onReact={handleToggleReaction}
+              onOpenPicker={handleOpenPicker}
+              onCommentTap={handleCommentTap}
+              onShare={post => setSharePost(post)}
+              onProfilePress={handleProfilePress}
+              onMorePress={post => setMenuPost(post)}
+            />
+          );
+        case 'product':
+          return (
+            <FeedProductPostCard
+              post={item as FeedProductPost}
+              onPress={product =>
+                navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+                  productId: product.id,
+                  product,
+                })
+              }
+              onProfilePress={handleProfilePress}
+              onSharePost={post => setSharePost(post)}
+            />
+          );
+        case 'job':
+          return (
+            <FeedJobPostCard
+              post={item as FeedJobPost}
+              copy={copy}
+              onPress={job =>
+                navigation.navigate(ROUTES.JOB_DETAIL, {
+                  jobId: String(job.id),
+                  job,
+                })
+              }
+              onSharePost={post => setSharePost(post)}
+            />
+          );
+        default:
+          return renderFallbackPost(item);
+      }
+    },
+    [
+      copy,
+      handleCommentTap,
+      handleOpenPicker,
+      handleOpenPost,
+      handleProfilePress,
+      handleToggleReaction,
+      handleVote,
+      language,
+      navigation,
+      renderFallbackPost,
+    ],
   );
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" />
-
-      {/* Top App Bar */}
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={APP_BRAND_COLOR} />
       <View className="surface-brand flex-row items-center px-4 py-3">
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <ArrowLeft size={24} color="#ffffff" />
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <ArrowLeft size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="flex-1 text-center text-heading text-inverse">
-          Xu hướng
+          {language === 'vi' ? 'Bài viết phổ biến' : 'Popular posts'}
         </Text>
-        <View className="w-10" />
+        <View className="w-6" />
       </View>
 
-      {/* Content */}
       {error ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-body text-center text-error mb-4">
-            Đã xảy ra lỗi: {error}
-          </Text>
+          <Text className="mb-4 text-center text-body text-error">{error}</Text>
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => void reload()}
-            className="rounded-full bg-[#eef0ff] px-6 py-3">
-            <Text className="text-body font-semibold text-brand">Thử lại</Text>
+            className="rounded-full bg-brand-soft px-6 py-3"
+          >
+            <Text className="font-semibold text-brand">
+              {language === 'vi' ? 'Thử lại' : 'Retry'}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : (
         <FlatList
           data={posts}
           renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerClassName="py-4"
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ paddingVertical: 12 }}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             isLoading ? (
-              <View>{[1, 2, 3].map((i) => <LoadingSkeleton key={i} />)}</View>
+              <View>{[1, 2, 3].map(item => <LoadingSkeleton key={item} />)}</View>
             ) : (
-              renderEmpty()
+              <View className="items-center justify-center py-20">
+                <TrendingUp size={48} color="#94A3B8" />
+                <Text className="mt-4 text-body text-secondary">
+                  {language === 'vi'
+                    ? 'Chưa có bài viết phổ biến'
+                    : 'No popular posts yet'}
+                </Text>
+              </View>
             )
           }
           refreshControl={
@@ -392,6 +349,45 @@ function PopularScreen() {
           }
         />
       )}
+
+      <FeedShareBottomSheet
+        visible={Boolean(sharePost)}
+        post={sharePost}
+        onClose={() => setSharePost(undefined)}
+        onInternalShare={input => feedRepository.sharePost(input)}
+      />
+      <PostReactionsSheet
+        visible={Boolean(reactionsPostId)}
+        postId={reactionsPostId}
+        onClose={() => setReactionsPostId(null)}
+      />
+      <ReactionPickerOverlay
+        anchor={pickerAnchor}
+        onPick={handlePickReaction}
+        onDismiss={() => setPickerAnchor(null)}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+        hasDragged={hasDragged}
+      />
+      <PostMenuActionSheet
+        visible={Boolean(menuPost)}
+        post={menuPost}
+        onClose={() => setMenuPost(null)}
+        canDelete={menuPost?.permissions?.canDelete === true}
+        onSave={async postId => {
+          const result = await feedRepository.savePost(postId);
+          updatePost(postId, post => ({ ...post, isSaved: result.saved }));
+        }}
+        onHide={postId => removePost(postId)}
+        onDelete={async postId => {
+          const result = await feedRepository.deletePost(postId);
+          if (!result.deleted) throw new Error('Không thể xóa bài viết.');
+          removePost(postId);
+        }}
+        onReport={(postId, input) => feedRepository.reportPost(postId, input).then(() => undefined)}
+        onReportHide={postId => removePost(postId)}
+      />
     </SafeAreaView>
   );
 }

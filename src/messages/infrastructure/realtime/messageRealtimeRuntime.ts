@@ -33,6 +33,16 @@ export type MessageTypingRealtimeEvent = {
   isTyping: boolean;
 };
 
+export type MessageRealtimeEventName =
+  | 'message:presence'
+  | 'livekit_call_incoming'
+  | 'livekit_call_answered'
+  | 'livekit_call_declined'
+  | 'livekit_call_closed'
+  | 'livekit_group_call_incoming'
+  | 'livekit_group_call_sync'
+  | 'livekit_group_call_closed';
+
 const socketModule = require('socket.io-client-v4') as {
   io?: SocketFactory;
   default?: SocketFactory;
@@ -47,6 +57,20 @@ const invalidationListeners = new Set<
 >();
 const connectionListeners = new Set<(connected: boolean) => void>();
 const typingListeners = new Set<(event: MessageTypingRealtimeEvent) => void>();
+const eventListeners = new Map<
+  MessageRealtimeEventName,
+  Set<(payload: unknown) => void>
+>();
+const forwardedEventNames: MessageRealtimeEventName[] = [
+  'message:presence',
+  'livekit_call_incoming',
+  'livekit_call_answered',
+  'livekit_call_declined',
+  'livekit_call_closed',
+  'livekit_group_call_incoming',
+  'livekit_group_call_sync',
+  'livekit_group_call_closed',
+];
 
 let socket: SocketLike | null = null;
 let accessToken = '';
@@ -58,6 +82,7 @@ let pendingTypingEvents: Array<{
   event: 'message:typing' | 'message:typing-stop';
   recipientId: string;
 }> = [];
+let watchedPresenceUserIds: string[] = [];
 
 function nuxtApiUrl(path: string) {
   return `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/_api/${path.replace(
@@ -123,9 +148,23 @@ function publishTyping(payload: unknown, isTyping: boolean) {
   typingListeners.forEach(listener => listener(event));
 }
 
+function emitPresenceWatch(nextSocket: SocketLike) {
+  nextSocket.emit('message:presence:watch', {
+    userIds: watchedPresenceUserIds,
+  });
+}
+
+function publishForwardedEvent(
+  eventName: MessageRealtimeEventName,
+  payload: unknown,
+) {
+  eventListeners.get(eventName)?.forEach(listener => listener(payload));
+}
+
 function bindSocket(nextSocket: SocketLike) {
   nextSocket.on('connect', () => {
     setConnected(true);
+    emitPresenceWatch(nextSocket);
     pendingTypingEvents.splice(0).forEach(pending => {
       nextSocket.emit(pending.event, { recipientId: pending.recipientId });
     });
@@ -138,6 +177,11 @@ function bindSocket(nextSocket: SocketLike) {
   nextSocket.on('message:typing-stop', payload =>
     publishTyping(payload, false),
   );
+  forwardedEventNames.forEach(eventName => {
+    nextSocket.on(eventName, payload =>
+      publishForwardedEvent(eventName, payload),
+    );
+  });
 }
 
 async function ensureConnected() {
@@ -173,10 +217,61 @@ async function ensureConnected() {
 
 AppState.addEventListener('change', nextState => {
   appState = nextState;
-  if (nextState === 'active' && invalidationListeners.size > 0) {
+  if (
+    nextState === 'active' &&
+    (invalidationListeners.size > 0 ||
+      connectionListeners.size > 0 ||
+      typingListeners.size > 0 ||
+      eventListeners.size > 0)
+  ) {
     ensureConnected().catch(() => undefined);
   }
 });
+
+export function connectMessageRealtime() {
+  ensureConnected().catch(() => undefined);
+}
+
+export function disconnectMessageRealtime() {
+  socket?.disconnect();
+  socket = null;
+  accessToken = '';
+  connecting = false;
+  pendingTypingEvents = [];
+  watchedPresenceUserIds = [];
+  setConnected(false);
+}
+
+export function subscribeToMessageRealtimeEvent(
+  eventName: MessageRealtimeEventName,
+  listener: (payload: unknown) => void,
+) {
+  const listeners = eventListeners.get(eventName) ?? new Set();
+  listeners.add(listener);
+  eventListeners.set(eventName, listeners);
+  ensureConnected().catch(() => undefined);
+  return () => {
+    const currentListeners = eventListeners.get(eventName);
+    currentListeners?.delete(listener);
+    if (currentListeners?.size === 0) {
+      eventListeners.delete(eventName);
+    }
+  };
+}
+
+export function watchMessagePresence(userIds: Array<string | number>) {
+  watchedPresenceUserIds = Array.from(
+    new Set(
+      userIds
+        .map(userId => String(userId).trim())
+        .filter(userId => /^[1-9][0-9]*$/.test(userId)),
+    ),
+  ).slice(0, 200);
+  ensureConnected().catch(() => undefined);
+  if (socket?.connected) {
+    emitPresenceWatch(socket);
+  }
+}
 
 export function subscribeToMessageInvalidations(
   listener: (event: MessageRealtimeInvalidation) => void,

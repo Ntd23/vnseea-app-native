@@ -23,16 +23,18 @@ describe('ChatScreen input safe area', () => {
     expect(source).toContain('style={chatInputBarStyle}');
   });
 
-  it('uses one iOS keyboard boundary without applying the bottom inset twice', () => {
+  it('uses one cross-platform keyboard boundary without applying the bottom inset twice', () => {
     const source = read('src/messages/presentation/screens/ChatScreen.tsx');
 
     expect(source).toContain('const CHAT_SAFE_AREA_EDGES: Edge[] =');
     expect(source).toContain("Platform.OS === 'ios' ? ['top', 'left', 'right'] : ROOT_SAFE_AREA_EDGES");
     expect(source).toContain('edges={CHAT_SAFE_AREA_EDGES}');
+    expect(source).toContain("import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';");
+    expect(source).toContain('<KeyboardSafeView');
     expect(source).toContain('style={styles.keyboardBoundary}');
-    expect(source).toContain("behavior={Platform.OS === 'ios' ? 'padding' : undefined}");
-    expect(source).toContain("enabled={Platform.OS === 'ios'}");
+    expect(source).toContain('behavior="padding"');
     expect(source).toContain('keyboardVerticalOffset={0}');
+    expect(source).not.toContain('<KeyboardAvoidingView');
     expect(source).toMatch(
       /Keyboard\.addListener\(\s*'keyboardWillChangeFrame'/,
     );

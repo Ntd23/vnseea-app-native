@@ -99,6 +99,10 @@ function CreateJobScreen() {
   const [jobTitle, setJobTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  const [jobCoordinate, setJobCoordinate] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [jobType, setJobType] = useState<JobType>('full_time');
   const [category, setCategory] = useState('');
   const [minimumSalary, setMinimumSalary] = useState('');
@@ -241,9 +245,11 @@ function CreateJobScreen() {
     try {
       const result = await createJob({
         jobTitle: jobTitle.trim(),
-        description: description.trim(),
-        location: location.trim(),
-        jobType,
+            description: description.trim(),
+            location: location.trim(),
+            lat: jobCoordinate?.latitude.toString(),
+            lng: jobCoordinate?.longitude.toString(),
+            jobType,
         category,
         pageId: selectedPageId,
         minimum: minimumValue,
@@ -278,8 +284,8 @@ function CreateJobScreen() {
         title: createdJob?.title || jobTitle.trim(),
         description: createdJob?.description || description.trim(),
         location: createdJob?.location || location.trim(),
-        lat: createdJob?.lat,
-        lng: createdJob?.lng,
+            lat: createdJob?.lat ?? (jobCoordinate ? String(jobCoordinate.latitude) : undefined),
+            lng: createdJob?.lng ?? (jobCoordinate ? String(jobCoordinate.longitude) : undefined),
         minimum: createdJob?.minimum ?? minimumValue,
         maximum: createdJob?.maximum ?? maximumValue,
         salary_date: createdJob?.salary_date || salaryDate || undefined,
@@ -338,7 +344,7 @@ function CreateJobScreen() {
     } catch (err: any) {
       Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', err?.message || (copy.saveError || 'Không thể tạo việc làm. Vui lòng thử lại.'));
     }
-  }, [jobTitle, description, location, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, currency, questions, imageType, thumbnail, createJob, navigation, copy, language, selectedPage, previewImage, jobTypeLabels, categoryLabels]);
+      }, [jobTitle, description, location, jobCoordinate, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, currency, questions, imageType, thumbnail, createJob, navigation, copy, language, selectedPage, previewImage, jobTypeLabels, categoryLabels]);
 
   const hasFormData = jobTitle || description || location || category || selectedPageId;
 
@@ -376,12 +382,23 @@ function CreateJobScreen() {
           {/* Location with Google Places Autocomplete */}
           <View className="mb-4 z-50">
             <Text className="mb-1.5 text-sm font-bold text-slate-700">{copy.locationLabel || "Địa điểm"}</Text>
-            <AddressAutocomplete
-              value={location}
-              onChangeText={setLocation}
-              onSelectPlace={(place) => {
-                setLocation(place.description);
-              }}
+                <AddressAutocomplete
+                  value={location}
+                  onChangeText={(text) => {
+                    setLocation(text);
+                    setJobCoordinate(null);
+                  }}
+                  onSelectPlace={(place) => {
+                    setLocation(place.description);
+                    if (typeof place.lat === 'number' && typeof place.lng === 'number') {
+                      setJobCoordinate({
+                        latitude: place.lat,
+                        longitude: place.lng,
+                      });
+                    } else {
+                      setJobCoordinate(null);
+                    }
+                  }}
               placeholder={language === "vi" ? "VD: Quận 1, TP. HCM" : "e.g. District 1, HCMC"}
             />
           </View>

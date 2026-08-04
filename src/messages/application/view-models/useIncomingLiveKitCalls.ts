@@ -9,7 +9,6 @@ import { useGroupLiveKitCallSession } from './useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from './useLiveKitCallSession';
 import {
   connectLiveKitCallRealtime,
-  emitLiveKitCallDeclined,
   onLiveKitCallClosed,
   onLiveKitCallAnswered,
   onLiveKitCallDeclined,
@@ -235,12 +234,6 @@ export function useIncomingLiveKitCalls() {
     if (!call) return;
 
     dismissNativeIncomingCall(call.callId);
-    emitLiveKitCallDeclined({
-      callId: call.callId,
-      callType: call.callType,
-      recipientId: call.peer.id,
-      duration: 0,
-    });
     repository
       .closeCall({
         callId: call.callId,
@@ -527,12 +520,6 @@ export function useIncomingLiveKitCalls() {
             ).catch(() => undefined);
             return;
           }
-          emitLiveKitCallDeclined({
-            callId: nativeCall.callId,
-            callType: nativeCall.callType,
-            recipientId: nativeCall.peer?.id ?? '',
-            duration: 0,
-          });
           repository
             .closeCall({
               callId: nativeCall.callId,
