@@ -76,6 +76,27 @@ function rawAd(id: number) {
   };
 }
 
+function rawPersonalJobPost(id: number) {
+  return {
+    ...rawTextPost(id),
+    postText: 'Thư ký',
+    postType: 'job',
+    job_id: '23',
+    job: {
+      id: '23',
+      post_id: String(id),
+      user_id: 'author-1',
+      page_id: '0',
+      title: 'Thư ký',
+      description: 'Mô tả công việc',
+      location: 'Hà Nội',
+      job_type: 'full_time',
+      category: '13',
+      time: 1781712000 - id,
+    },
+  };
+}
+
 describe('ApiFeedRepository pagination performance', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -210,6 +231,30 @@ describe('ApiFeedRepository pagination performance', () => {
       apiRoutes.feed.recommended,
       expect.objectContaining({ limit: 8, source: 'all' }),
     );
+  });
+
+  it('keeps personal job posts as job cards in the light Feed pipeline', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: 200,
+      data: [rawPersonalJobPost(4880)],
+      next_cursor: '4880',
+      reached_end: true,
+    });
+
+    const page = await createFeedRepository().getLightPostsPage(
+      1,
+      undefined,
+      'all',
+      1,
+    );
+
+    expect(page.posts).toEqual([
+      expect.objectContaining({
+        kind: 'job',
+        id: '4880',
+        job: expect.objectContaining({ id: '23', title: 'Thư ký' }),
+      }),
+    ]);
   });
 
   it('returns a usable partial recommended page without waiting for legacy fan-out', async () => {

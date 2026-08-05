@@ -1,5 +1,4 @@
 // Description: Renders the VNSEEA job detail screen with real API data from job listing.
-import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -25,17 +24,20 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import type { JobsItem } from '../../domain/types/jobs.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getJobsCopy } from '../../application/i18n/jobsCopy';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { createJobsRepository } from '../../infrastructure/repositories/ApiJobsRepository';
+import { formatJobSalaryAmount } from '../../application/formatters/jobSalary';
+import { isJobOwnedByUser } from '../../domain/policies/jobOwnership';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 type JobDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type JobDetailRoute = RouteProp<RootStackParamList, 'JobDetail'>;
 
-const BRAND = APP_BRAND_COLOR;
 const jobsRepository = createJobsRepository();
 
 function formatTimeAgo(timestamp: number, copy: Record<string, string>): string {
@@ -53,12 +55,6 @@ function formatTimeAgo(timestamp: number, copy: Record<string, string>): string 
   return `${Math.floor(diff / 31536000)} ${copy.yearsAgo || 'năm trước'}`;
 }
 
-function getCurrencySymbol(currency?: string): string {
-  if (!currency || currency === 'USD') return '$';
-  if (currency === 'VND') return '₫';
-  return currency;
-}
-
 function JobDetailScreen() {
   const navigation = useNavigation<JobDetailNav>();
   const route = useRoute<JobDetailRoute>();
@@ -68,7 +64,13 @@ function JobDetailScreen() {
   const [isDeleting, setIsDeleting] = React.useState(false);
 
   const handleApply = () => {
-    Alert.alert(copy.applyNow || 'Ứng tuyển', language === 'vi' ? 'Vui lòng hoàn thành thông tin ứng tuyển cho công việc này.' : 'Please complete the application information for this job.');
+    if (!job || job.apply) return;
+    navigation.navigate(ROUTES.JOB_APPLY, { job });
+  };
+
+  const handleApplicants = () => {
+    if (!job) return;
+    navigation.navigate(ROUTES.JOB_APPLICANTS, { job });
   };
 
   const handleDelete = () => {
@@ -122,9 +124,10 @@ function JobDetailScreen() {
   const jobTypeLabel = job.job_type_label || job.job_type;
   const categoryLabel = job.category_label || job.category || (copy.other || 'Khác');
   const companyName = job.page?.page_title || job.page?.page_name || (copy.company || 'Công ty');
-  const isOwner = Boolean(job.page?.is_page_onwer);
-  const currencySymbol = job.currency_symbol || getCurrencySymbol(job.currency);
-  const salaryPeriod = job.salary_date_label || job.salary_date || '';
+  const isOwner = isJobOwnedByUser(
+    job,
+    sessionStorage.getSession()?.userId,
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: '#eef3ff' }}>
@@ -187,22 +190,42 @@ function JobDetailScreen() {
             </View>
           </View>
 
-          <Pressable
-            className={`mt-7 min-h-[42px] flex-row items-center justify-center rounded-md ${isOwner ? 'bg-[#ff5252]' : 'bg-[#ff9999]'}`}
-            onPress={isOwner ? handleDelete : handleApply}
-            disabled={isDeleting || (!isOwner && job.apply)}
-          >
-            {isDeleting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                {isOwner ? <Trash2 size={15} color="#FFFFFF" /> : <Users size={15} color="#FFFFFF" />}
-                <Text className="ml-2 text-[12px] font-bold text-white">
-                  {isOwner ? (copy.delete || 'Xóa bỏ') : job.apply ? (language === 'vi' ? 'Đã ứng tuyển' : 'Applied') : (copy.applyNow || 'Ứng tuyển ngay')}
+          {isOwner ? (
+            <View className="mt-7 flex-row gap-2">
+              <Pressable
+                className="min-h-[44px] flex-1 flex-row items-center justify-center rounded-md bg-brand"
+                onPress={handleApplicants}
+              >
+                <Users size={17} color="#FFFFFF" />
+                <Text className="ml-2 text-[13px] font-bold text-white">
+                  {copy.applicantsCount.replace('{count}', String(job.apply_count ?? 0))}
                 </Text>
-              </>
-            )}
-          </Pressable>
+              </Pressable>
+              <Pressable
+                className="h-11 w-11 items-center justify-center rounded-md border border-red-200 bg-red-50"
+                onPress={handleDelete}
+                disabled={isDeleting}
+                accessibilityLabel={copy.deleteJob}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color="#DC2626" />
+                ) : (
+                  <Trash2 size={18} color="#DC2626" />
+                )}
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              className={`mt-7 min-h-[44px] flex-row items-center justify-center rounded-md ${job.apply ? 'bg-slate-300' : 'bg-brand'}`}
+              onPress={handleApply}
+              disabled={job.apply}
+            >
+              <Users size={16} color="#FFFFFF" />
+              <Text className="ml-2 text-[13px] font-bold text-white">
+                {job.apply ? copy.alreadyApplied : copy.applyNow}
+              </Text>
+            </Pressable>
+          )}
 
           <View className="mt-4 rounded-md bg-slate-100 p-4">
             <View className="flex-row items-center">
@@ -210,7 +233,9 @@ function JobDetailScreen() {
               <View className="ml-2">
                 <Text className="text-[13px] font-bold text-slate-700">{language === 'vi' ? 'Tối thiểu' : 'Minimum'}</Text>
                 <Text className="mt-1 text-[13px] text-slate-600">
-                  {job.minimum ? `${currencySymbol}${job.minimum} ${salaryPeriod}` : (copy.negotiable || 'Thương lượng')}
+                  {job.minimum
+                    ? formatJobSalaryAmount(job, job.minimum, language)
+                    : (copy.negotiable || 'Thương lượng')}
                 </Text>
               </View>
             </View>
@@ -219,7 +244,9 @@ function JobDetailScreen() {
               <View className="ml-2">
                 <Text className="text-[13px] font-bold text-slate-700">{language === 'vi' ? 'Tối đa' : 'Maximum'}</Text>
                 <Text className="mt-1 text-[13px] text-slate-600">
-                  {job.maximum ? `${currencySymbol}${job.maximum} ${salaryPeriod}` : (copy.negotiable || 'Thương lượng')}
+                  {job.maximum
+                    ? formatJobSalaryAmount(job, job.maximum, language)
+                    : (copy.negotiable || 'Thương lượng')}
                 </Text>
               </View>
             </View>

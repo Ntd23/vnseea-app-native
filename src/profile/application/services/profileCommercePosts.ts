@@ -140,7 +140,15 @@ function mergeCommercePostWithExisting(
 
   const permissions = existingPost.permissions ?? commercePost.permissions;
   if (commercePost.kind === 'job') {
-    return { ...commercePost, permissions };
+    return {
+      ...commercePost,
+      postedAt: existingPost.postedAt ?? commercePost.postedAt,
+      publisher:
+        existingPost.kind === 'job'
+          ? existingPost.publisher
+          : commercePost.publisher,
+      permissions,
+    };
   }
 
   if (!('likeCount' in existingPost)) {
@@ -239,8 +247,10 @@ async function loadOwnedPageJobs(
     .filter(job => profileJobBelongsToUser(job, userId));
   const pageIds = new Set(await loadOwnedPageIds());
   cachedJobs.forEach(job => {
-    if (job.page_id) pageIds.add(String(job.page_id));
-    if (job.page?.page_id) pageIds.add(String(job.page.page_id));
+    const jobPageId = positiveId(job.page_id);
+    const nestedPageId = positiveId(job.page?.page_id);
+    if (jobPageId) pageIds.add(jobPageId);
+    if (nestedPageId) pageIds.add(nestedPageId);
   });
 
   if (pageIds.size === 0) {

@@ -16,6 +16,7 @@ export interface JobsItem {
   category: string;
   category_label?: string;
   currency?: string;
+  currency_code?: string;
   currency_symbol?: string;
   image: string;
   image_type?: string;
@@ -25,6 +26,7 @@ export interface JobsItem {
   post_id?: string | number;
   apply?: boolean;
   apply_count?: number;
+  questions?: JobQuestion[];
   url?: string;
   page?: {
     page_id: string | number;
@@ -36,6 +38,60 @@ export interface JobsItem {
     user_id: string | number;
     is_page_onwer?: boolean;
   };
+}
+
+export type JobQuestionKey = 'one' | 'two' | 'three';
+export type JobQuestionType =
+  | 'free_text_question'
+  | 'yes_no_question'
+  | 'multiple_choice_question';
+
+export interface JobQuestion {
+  key: JobQuestionKey;
+  prompt: string;
+  type: JobQuestionType;
+  options: Array<{ value: string; label: string }>;
+}
+
+export interface JobApplicationDraft {
+  userName: string;
+  phoneNumber: string;
+  email: string;
+  location: string;
+  position: string;
+  workplace: string;
+  experienceDescription: string;
+  experienceStartDate: string;
+  experienceEndDate: string;
+  currentlyWork: boolean;
+  answers: Partial<Record<JobQuestionKey, string>>;
+}
+
+export type JobApplicationPayload = JobApplicationDraft;
+
+export interface JobApplicant {
+  id: string;
+  userId: string;
+  name: string;
+  username: string;
+  avatar: string;
+  phoneNumber: string;
+  email: string;
+  location: string;
+  position: string;
+  workplace: string;
+  experienceDescription: string;
+  experienceStartDate: string;
+  experienceEndDate: string;
+  currentlyWork: boolean;
+  appliedAt: number;
+  answers: Partial<Record<JobQuestionKey, string>>;
+}
+
+export interface JobApplicantsPage {
+  items: JobApplicant[];
+  nextCursor?: string;
+  hasMore: boolean;
 }
 
 export interface JobsListResponse {
@@ -95,7 +151,7 @@ export interface CreateJobPayload {
   location: string;
   jobType: JobType;
   category: string;
-  pageId: string | number;
+  pageId?: string | number;
   lat?: string;
   lng?: string;
   minimum?: number;
@@ -143,6 +199,12 @@ export interface JobsMetadata {
   questionTypes: JobsSelectOption[];
   imageTypes: JobsSelectOption[];
   canCreate: boolean;
+  currentUser?: {
+    name: string;
+    email: string;
+    phoneNumber: string;
+    address: string;
+  };
   ownedPages: Array<{
     page_id: string | number;
     page_name: string;
@@ -160,5 +222,11 @@ export interface JobsMetadataResponse {
   question_types?: JobsSelectOption[];
   image_types?: JobsSelectOption[];
   can_create?: boolean;
+  current_user?: {
+    name?: string;
+    email?: string;
+    phone_number?: string;
+    address?: string;
+  };
   owned_pages?: JobsMetadata['ownedPages'];
 }

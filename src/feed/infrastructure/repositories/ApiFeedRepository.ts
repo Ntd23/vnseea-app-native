@@ -69,6 +69,7 @@ import type {
 } from '../../domain/types/feed.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
+import { mapJobQuestions } from '../../../jobs/application/mappers/jobQuestions';
 import { buildSharedPostPreviewModel } from '../../application/sharing/sharedPostPreview';
 import { mapProfileMediaActivity } from '../../application/mappers/profileMediaActivity';
 import {
@@ -1132,6 +1133,7 @@ function extractLinkPreview(
 function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   if (looksLikeAd(raw)) return false;
   if (looksLikeLive(raw)) return false;
+  if (looksLikeJobPost(raw)) return false;
   if (looksLikeVideo(raw)) return false;
   const text = readString(raw, 'postText').trim();
   const hasPhoto = extractPhotoUrls(raw).length > 0;
@@ -1195,7 +1197,7 @@ function rawPostKey(raw: Record<string, unknown>): string {
   return readString(raw, 'id', 'post_id') || JSON.stringify(raw).slice(0, 80);
 }
 
-function mapProfilePost(
+function mapStandardContextPost(
   raw: Record<string, unknown>,
 ): FeedTextPost | FeedVideoPost | FeedPollPost {
   if (readSharedInfo(raw)) {
@@ -1214,6 +1216,12 @@ function mapProfilePost(
   }
   const base = mapTextPostBase(raw);
   return { ...base, caption: base.caption ?? 'Đã tạo một bài viết' };
+}
+
+function mapProfilePost(
+  raw: Record<string, unknown>,
+): FeedTextPost | FeedVideoPost | FeedPollPost | FeedJobPost {
+  return looksLikeJobPost(raw) ? mapJobPost(raw) : mapStandardContextPost(raw);
 }
 
 function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
@@ -1505,6 +1513,7 @@ function mapJobPost(raw: Record<string, unknown>): FeedJobPost {
     category_label:
       readString(job, 'category_label') || readString(job, 'category'),
     currency: readString(job, 'currency') || undefined,
+    currency_code: readString(job, 'currency_code') || undefined,
     currency_symbol: readString(job, 'currency_symbol') || undefined,
     image: jobImage,
     image_type: readString(job, 'image_type') || undefined,
@@ -1514,6 +1523,7 @@ function mapJobPost(raw: Record<string, unknown>): FeedJobPost {
     post_id: postId || undefined,
     apply: readBool(job, 'apply'),
     apply_count: readNumber(job, 'apply_count'),
+    questions: mapJobQuestions(job),
     url: readString(job, 'url') || undefined,
     page: page
       ? {
@@ -2606,6 +2616,7 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
   const buckets = {
     ad: 0,
     live: 0,
+    job: 0,
     poll: 0,
     text: 0,
     video: 0,
@@ -2620,6 +2631,9 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
     if (looksLikeAd(item)) {
       posts.push(mapAdPost(item));
       buckets.ad += 1;
+    } else if (looksLikeJobPost(item)) {
+      posts.push(mapJobPost(item));
+      buckets.job += 1;
     } else if (looksLikePoll(item)) {
       posts.push(mapPollPost(item));
       buckets.poll += 1;
@@ -2679,6 +2693,8 @@ export function createFeedRepository(): FeedRepository {
 
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
+        } else if (looksLikeJobPost(item)) {
+          posts.push(mapJobPost(item));
         } else if (looksLikeVideo(item)) {
           posts.push(mapVideoPost(item));
         } else if (looksLikePoll(item)) {
@@ -2717,6 +2733,8 @@ export function createFeedRepository(): FeedRepository {
 
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
+        } else if (looksLikeJobPost(item)) {
+          posts.push(mapJobPost(item));
         } else if (looksLikeVideo(item)) {
           posts.push(mapVideoPost(item));
         } else if (looksLikePoll(item)) {
@@ -2746,6 +2764,8 @@ export function createFeedRepository(): FeedRepository {
 
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
+        } else if (looksLikeJobPost(item)) {
+          posts.push(mapJobPost(item));
         } else if (looksLikePoll(item)) {
           posts.push(mapPollPost(item));
         } else if (looksLikeTextOrPhoto(item)) {
@@ -3260,7 +3280,7 @@ export function createFeedRepository(): FeedRepository {
         .filter(item => !looksLikeAd(item))
         .map(item => {
           try {
-            return mapProfilePost(item);
+            return mapStandardContextPost(item);
           } catch (err) {
             console.warn('[ApiFeedRepository] skip page post', {
               pageId,
@@ -3299,7 +3319,7 @@ export function createFeedRepository(): FeedRepository {
         .filter(item => !looksLikeAd(item))
         .map(item => {
           try {
-            return mapProfilePost(item);
+            return mapStandardContextPost(item);
           } catch (err) {
             console.warn('[ApiFeedRepository] skip group post', {
               groupId,
@@ -3338,7 +3358,7 @@ export function createFeedRepository(): FeedRepository {
         .filter(item => !looksLikeAd(item))
         .map(item => {
           try {
-            return mapProfilePost(item);
+            return mapStandardContextPost(item);
           } catch (err) {
             console.warn('[ApiFeedRepository] skip event post', {
               eventId,

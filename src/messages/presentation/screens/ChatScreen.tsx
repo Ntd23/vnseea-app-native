@@ -136,6 +136,7 @@ import {
   type ChatMessageListItem,
 } from '../../application/utils/messageMediaGrouping';
 import {
+  buildGroupMentionTextSegments,
   filterSelectedGroupMentions,
   findActiveGroupMention,
   insertGroupMention,
@@ -355,6 +356,8 @@ function formatMessageTime(timestamp: number) {
 type LinkTextSegment = {
   text: string;
   url?: string;
+  isMention?: boolean;
+  mentionId?: string;
 };
 
 function normalizeDetectedUrl(url: string) {
@@ -405,15 +408,31 @@ function LinkifiedText({
   className,
   style,
   linkColor = APP_COLORS.status.info,
+  mentionColor = APP_BRAND_COLOR,
+  mentions = [],
   numberOfLines,
 }: {
   text: string;
   className?: string;
   style?: StyleProp<TextStyle>;
   linkColor?: string;
+  mentionColor?: string;
+  mentions?: MessageMention[];
   numberOfLines?: number;
 }) {
-  const segments = useMemo(() => splitLinkTextSegments(text), [text]);
+  const segments = useMemo<LinkTextSegment[]>(() => {
+    const nextSegments: LinkTextSegment[] = [];
+    for (const segment of splitLinkTextSegments(text)) {
+      if (segment.url) {
+        nextSegments.push(segment);
+      } else {
+        nextSegments.push(
+          ...buildGroupMentionTextSegments(segment.text, mentions),
+        );
+      }
+    }
+    return nextSegments;
+  }, [mentions, text]);
   const navigation = useNavigation<any>();
 
   const handleOpenUrl = useCallback(
@@ -440,6 +459,13 @@ function LinkifiedText({
             key={`${segment.url}-${index}`}
             style={[styles.inlineLink, { color: linkColor }]}
             onPress={() => handleOpenUrl(segment.url!)}
+          >
+            {segment.text}
+          </Text>
+        ) : segment.isMention ? (
+          <Text
+            key={`mention-${segment.mentionId ?? index}-${index}`}
+            style={[styles.inlineMention, { color: mentionColor }]}
           >
             {segment.text}
           </Text>
@@ -1276,10 +1302,12 @@ function ReplyMessageBubble({
   reply,
   replyText,
   isSentByMe,
+  mentions,
 }: {
   reply: MessageReplyReference;
   replyText: string;
   isSentByMe: boolean;
+  mentions?: MessageMention[];
 }) {
   const previewText = getMessageReplyPreviewText(reply);
   const previewImage = reply.thumbnail || reply.media;
@@ -1361,6 +1389,8 @@ function ReplyMessageBubble({
           text={replyText}
           className={`text-[15px] leading-5 mt-1.5 ${replyTextColor}`}
           linkColor={isSentByMe ? '#FFFFFF' : APP_COLORS.status.info}
+          mentionColor={isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR}
+          mentions={mentions}
         />
       )}
     </View>
@@ -1975,6 +2005,7 @@ function MessageBubble({
                                 reply={replyInfo}
                                 replyText={visibleMessageText}
                                 isSentByMe={Boolean(isSentByMe)}
+                                mentions={message.mentions}
                               />
                             </TouchableOpacity>
                           </View>
@@ -1990,6 +2021,7 @@ function MessageBubble({
                               reply={replyInfo}
                               replyText={visibleMessageText}
                               isSentByMe={Boolean(isSentByMe)}
+                              mentions={message.mentions}
                             />
                           </TouchableOpacity>
                         )
@@ -2008,6 +2040,10 @@ function MessageBubble({
                             text={visibleMessageText}
                             className={messageTextClassName}
                             linkColor={messageLinkColor}
+                            mentionColor={
+                              isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR
+                            }
+                            mentions={message.mentions}
                           />
                           </View>
                         ) : (
@@ -2015,6 +2051,10 @@ function MessageBubble({
                             text={visibleMessageText}
                             className={messageTextClassName}
                             linkColor={messageLinkColor}
+                            mentionColor={
+                              isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR
+                            }
+                            mentions={message.mentions}
                           />
                         ))
                       )}
@@ -2482,6 +2522,9 @@ function MediaMessageGroup({
   const captions = orderedMessages
     .map(message => message.message.trim())
     .filter(Boolean);
+  const captionMentions = orderedMessages.flatMap(
+    message => message.mentions ?? [],
+  );
   const deliveryState = messages.find(
     message => message.deliveryState,
   )?.deliveryState;
@@ -2569,6 +2612,10 @@ function MediaMessageGroup({
                   ? '#ffffff'
                   : APP_COLORS.status.info
               }
+              mentionColor={
+                newestMessage.isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR
+              }
+              mentions={captionMentions}
             />
           </View>
         ) : null}
@@ -2763,7 +2810,11 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     const currentUserId = sessionStorage.getSession()?.userId ?? '';
     const query = activeGroupMention.query.toLocaleLowerCase('vi-VN');
     return groupInfo.members
-      .filter(member => member.id !== currentUserId && Boolean(member.username))
+      .filter(
+        member =>
+          member.id !== currentUserId &&
+          Boolean(member.name || member.username),
+      )
       .filter(member => {
         if (!query) return true;
         return `${member.name} ${member.username}`
@@ -4518,6 +4569,10 @@ const styles = StyleSheet.create({
   },
   inlineLink: {
     fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  inlineMention: {
+    fontWeight: '800',
     textDecorationLine: 'underline',
   },
   mediaCaptionBubble: {

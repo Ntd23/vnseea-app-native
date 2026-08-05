@@ -1,6 +1,14 @@
 // English description: Defines the contract for jobs data access.
 
-import type { CreateJobPayload, CreateJobResponse, JobsItem, JobsMetadata, JobType } from '../types/jobs.types';
+import type {
+  CreateJobPayload,
+  CreateJobResponse,
+  JobApplicationPayload,
+  JobApplicantsPage,
+  JobsItem,
+  JobsMetadata,
+  JobType,
+} from '../types/jobs.types';
 
 export interface JobsRepository {
   /**
@@ -24,6 +32,13 @@ export interface JobsRepository {
    * @param payload - job creation data
    */
   createJob(payload: CreateJobPayload): Promise<CreateJobResponse>;
+
+  applyToJob(jobId: string | number, payload: JobApplicationPayload): Promise<void>;
+
+  getJobApplicants(
+    jobId: string | number,
+    options?: { limit?: number; cursor?: string },
+  ): Promise<JobApplicantsPage>;
 
   deleteJob(postId: string | number): Promise<boolean>;
 }

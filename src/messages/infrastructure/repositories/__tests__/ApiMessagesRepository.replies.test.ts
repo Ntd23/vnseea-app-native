@@ -355,7 +355,7 @@ describe('ApiMessagesRepository message replies', () => {
 
     const response = await createMessagesRepository().sendMessage(
       groupChat(),
-      'Chào @member_two',
+      'Chào @Người được nhắc',
       undefined,
       {
         mentions: [
@@ -371,6 +371,7 @@ describe('ApiMessagesRepository message replies', () => {
     expect(post).toHaveBeenCalledWith(
       'group_chat',
       expect.objectContaining({
+        text: 'Chào @[2]',
         mentioned_user_ids: JSON.stringify(['2']),
       }),
     );

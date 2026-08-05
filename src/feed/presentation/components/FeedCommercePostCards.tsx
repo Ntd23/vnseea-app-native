@@ -4,6 +4,7 @@ import React, { useCallback, useMemo } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import {
   Image,
+  StyleSheet,
   Text,
   View,
   type GestureResponderEvent,
@@ -12,10 +13,11 @@ import { Briefcase, Globe, MapPin, Share2 } from 'lucide-react-native';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import {
   JOB_TYPE_VIETNAMESE,
-  SALARY_DATE_OPTIONS,
   type JobsItem,
   type JobType,
 } from '../../../jobs/domain/types/jobs.types';
+import { formatJobSalaryRange } from '../../../jobs/application/formatters/jobSalary';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type {
   FeedJobPost,
   FeedPost,
@@ -38,6 +40,14 @@ import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigati
 
 const FALLBACK_AVATAR =
   'https://cdn-icons-png.flaticon.com/512/847/847969.png';
+
+const styles = StyleSheet.create({
+  jobShareButton: {
+    flex: 0,
+    height: 44,
+    width: 44,
+  },
+});
 
 const FeedCommerceAvatar = React.memo(function FeedCommerceAvatar({
   uri,
@@ -91,27 +101,6 @@ export const FeedProductPostCard = React.memo(function FeedProductPostCard({
   );
 });
 
-function formatSalary(job: JobsItem, copy: FeedCopy) {
-  const minimum = Number(job.minimum) || 0;
-  const maximum = Number(job.maximum) || 0;
-  const currency = job.currency || '';
-  const salaryDate = job.salary_date
-    ? SALARY_DATE_OPTIONS[job.salary_date] || job.salary_date
-    : '';
-
-  if (!minimum && !maximum) return copy.negotiable;
-
-  const formatNumber = (value: number) => value.toLocaleString('vi-VN');
-  const range =
-    minimum && maximum
-      ? `${formatNumber(minimum)} - ${formatNumber(maximum)}`
-      : formatNumber(minimum || maximum);
-
-  return `${range}${currency ? ` ${currency}` : ''}${
-    salaryDate ? ` / ${salaryDate}` : ''
-  }`;
-}
-
 function getJobTypeLabel(jobType: string, copy: FeedCopy) {
   return (
     JOB_TYPE_VIETNAMESE[jobType as JobType] || jobType || copy.jobTypeFallback
@@ -129,6 +118,7 @@ export const FeedJobPostCard = React.memo(function FeedJobPostCard({
   onPress: (job: JobsItem) => void;
   onSharePost: (post: FeedPost) => void;
 }) {
+  const language = useAppLanguage();
   const mediaVisible = useFeedPostMediaVisible(post.id);
   const job = post.job;
   const avatar = job.page?.avatar || post.publisher.avatarUrl;
@@ -220,8 +210,8 @@ export const FeedJobPostCard = React.memo(function FeedJobPostCard({
         </FeedMediaFrame>
       )}
 
-      <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
-        <View className="mr-4 flex-1">
+      <FeedGlassActionBar className="border-t border-[#dddfe2] px-4 py-3">
+        <View className="mr-3 min-w-0 flex-1">
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             {copy.salary}
           </Text>
@@ -229,28 +219,28 @@ export const FeedJobPostCard = React.memo(function FeedJobPostCard({
             className="mt-0.5 text-sm font-bold text-[#111827]"
             numberOfLines={1}
           >
-            {formatSalary(job, copy)}
+            {formatJobSalaryRange(job, language)}
           </Text>
         </View>
 
-        <View className="flex-row items-center">
+        <View className="flex-shrink-0 flex-row items-center">
           {canShare ? (
             <FeedGlassActionButton
               accessibilityRole="button"
               accessibilityLabel={copy.share}
               activeOpacity={0.8}
-              className="mr-2 rounded-lg border border-[#dbe3ef] bg-white px-3 py-2"
+              className="mr-2 h-11 w-11 items-center justify-center rounded-lg border border-[#dbe3ef] bg-white"
               onPress={handleSharePress}
+              style={styles.jobShareButton}
             >
-              <Share2 size={16} color="#64748B" strokeWidth={2.2} />
-              <Text className="ml-1.5 text-sm font-bold text-[#475569]">
-                {copy.share}
-              </Text>
+              <Share2 size={18} color="#64748B" strokeWidth={2.2} />
             </FeedGlassActionButton>
           ) : null}
 
-          <View className="rounded-lg bg-[#e7f0ff] px-4 py-2">
-            <Text className="text-sm font-bold text-brand">{copy.viewJob}</Text>
+          <View className="rounded-lg bg-brand-soft px-3 py-2.5">
+            <Text className="text-sm font-bold text-brand" numberOfLines={1}>
+              {copy.viewJob}
+            </Text>
           </View>
         </View>
       </FeedGlassActionBar>
