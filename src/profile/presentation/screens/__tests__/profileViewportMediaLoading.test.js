@@ -8,17 +8,17 @@ function read(relativePath) {
 }
 
 describe('Profile viewport media loading', () => {
-  it('renders profile media ahead of the viewport and keeps rows attached', () => {
+  it('renders profile rows ahead while mounting heavy media only when visible', () => {
     const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
     expect(source).toContain('<HomeVideoPostCard');
     expect(source).toContain('<TextPostCard');
-    expect(source).not.toContain('deferMediaUntilVisible');
+    expect(source).toContain('deferMediaUntilVisible');
     expect(source).toContain(
       'const PROFILE_POST_DRAW_DISTANCE = PROFILE_IS_ANDROID',
     );
     expect(source).toContain(
-      '? Math.max(1200, Math.round(SCREEN_HEIGHT * 1.5))',
+      '? Math.max(2100, Math.round(SCREEN_HEIGHT * 2.6))',
     );
     expect(source).toContain('removeClippedSubviews={false}');
     expect(source).toContain(

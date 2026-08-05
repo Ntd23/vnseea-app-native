@@ -8,7 +8,7 @@ describe('feed network policy', () => {
       mode: 'normal',
       pageSize: 20,
       revealBatchSize: 10,
-      bufferTarget: 40,
+      bufferTarget: 20,
     });
 
     policy.recordSuccess(2_000, 1_000);
@@ -17,7 +17,7 @@ describe('feed network policy', () => {
       mode: 'constrained',
       pageSize: 10,
       revealBatchSize: 10,
-      bufferTarget: 20,
+      bufferTarget: 10,
     });
   });
 

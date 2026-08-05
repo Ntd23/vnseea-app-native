@@ -17,6 +17,9 @@ describe('Marketplace VNSEEA point price', () => {
   const productCard = read(
     'src/product/presentation/components/ProductPostCard.tsx',
   );
+  const productDetail = read(
+    'src/product/presentation/screens/ProductDetailScreen.tsx',
+  );
 
   it('adds an optional VNSEEA point-price input to the product form', () => {
     expect(createScreen).toContain('Giá điểm VNSEEA (không bắt buộc)');
@@ -28,15 +31,21 @@ describe('Marketplace VNSEEA point price', () => {
 
   it('passes the existing point field through create and edit requests', () => {
     expect(viewModel).toContain('points: state.formData.points.trim()');
-    expect(repository).toContain('formData.points = input.points');
-    expect(repository).toContain('record.product_points');
+    expect(repository).toContain('formData.product_point = input.points');
+    expect(repository).toContain('record.point ??');
   });
 
-  it('shows VNSEEA only on marketplace cards that have a point price', () => {
+  it('shows VNSEEA below VND on every product card that has a point price', () => {
     expect(productCard).toContain('formatProductPoints(product)');
-    expect(productCard).toContain(
+    expect(productCard).not.toContain(
       'marketplaceFloatingActions && productPointsLabel',
     );
+    expect(productCard).toContain('productPointsLabel ? (');
     expect(productCard).toContain('{productPointsLabel}');
+  });
+
+  it('shows VNSEEA below VND on product detail and related products', () => {
+    expect(productDetail).toContain('formatProductPoints(product)');
+    expect(productDetail).toContain('{pointsLabel}');
   });
 });

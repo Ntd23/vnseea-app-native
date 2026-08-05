@@ -11,7 +11,7 @@ const NORMAL_POLICY: FeedPaginationPolicy = {
   mode: 'normal',
   pageSize: 20,
   revealBatchSize: 10,
-  bufferTarget: 40,
+  bufferTarget: 20,
 };
 
 const CONSTRAINED_POLICY: FeedPaginationPolicy = {
@@ -20,7 +20,7 @@ const CONSTRAINED_POLICY: FeedPaginationPolicy = {
   // Keep one network page together. Splitting it into 5+5 caused two full
   // feed-list rebuilds and made a slow connection look like a short feed.
   revealBatchSize: 10,
-  bufferTarget: 20,
+  bufferTarget: 10,
 };
 
 const SLOW_REQUEST_MS = 1_800;
