@@ -20,6 +20,7 @@ import type { SharedMapLocation } from '../user/application/utils/mapShare';
 import type { OrdersItem } from '../orders/domain/types/orders.types';
 import type { FundingItem } from '../funding/domain/types/funding.types';
 import type { ActivityCenterTab } from '../activity/domain/types/activity.types';
+import type { JobsItem } from '../jobs/domain/types/jobs.types';
 
 export type SettingsScreenRouteParams = {
   initialPanel?: SettingsPanelRouteParam;
@@ -251,7 +252,9 @@ export type RootStackParamList = {
   [ROUTES.MOVIE_DETAIL]: { movie: import('../movies/domain/types/movies.types').MovieItem };
   [ROUTES.CREATE_MOVIE]: undefined;
   [ROUTES.JOBS]: undefined;
-  [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };
+  [ROUTES.JOB_DETAIL]: { jobId?: string; job?: JobsItem };
+  [ROUTES.JOB_APPLY]: { job: JobsItem };
+  [ROUTES.JOB_APPLICANTS]: { job: JobsItem };
   [ROUTES.CREATE_JOB]: { pageId?: string; pageName?: string } | undefined;
   [ROUTES.EARNINGS]: undefined;
   [ROUTES.AFFILIATES]: undefined;

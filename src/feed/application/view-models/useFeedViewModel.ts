@@ -146,8 +146,7 @@ function isLightFeedPost(
   return (
     post.kind !== 'video' &&
     post.kind !== 'product' &&
-    post.kind !== 'event' &&
-    post.kind !== 'job'
+    post.kind !== 'event'
   );
 }
 

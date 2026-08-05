@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__, 3) . '/assets/includes/vnseea_job_applications.php';
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -27,11 +28,18 @@ $question_type = array('free_text_question','yes_no_question','multiple_choice_q
 
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'create') {
-    	if (!empty($_POST['job_title']) && !empty($_POST['description']) && !empty($_POST['location']) && !empty($_POST['job_type']) && in_array($_POST['job_type'], $job_type) && !empty($_POST['category']) && in_array($_POST['category'], array_keys($wo['job_categories'])) && !empty($_POST['page_id'])) {
+        if (!empty($_POST['job_title']) && !empty($_POST['description']) && !empty($_POST['location']) && !empty($_POST['job_type']) && in_array($_POST['job_type'], $job_type) && !empty($_POST['category']) && in_array($_POST['category'], array_keys($wo['job_categories']))) {
+            $page_id = 0;
+            $page_data = null;
+            $page_requested = isset($_POST['page_id']) && trim((string)$_POST['page_id']) !== '' && trim((string)$_POST['page_id']) !== '0';
+            $page_owner_valid = !$page_requested;
+            if ($page_requested && is_numeric($_POST['page_id']) && (int)$_POST['page_id'] > 0) {
+                $page_id = (int)Wo_Secure($_POST['page_id']);
+                $page_data = $db->where('page_id', $page_id)->getOne(T_PAGES);
+                $page_owner_valid = !empty($page_data) && (int)$page_data->user_id === (int)$wo['user']['id'];
+            }
 
-    		$page_data = $db->where('page_id',Wo_Secure($_POST['page_id']))->getOne(T_PAGES);
-
-    		if (!empty($page_data) && $page_data->user_id == $wo['user']['id']) {
+        if ($page_owner_valid) {
 
 	    		$insert_array = array();
 
@@ -125,8 +133,11 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 $uploaded_image = '';
                 $job_upload_failed = false;
 
-			if (!empty($_POST['image_type']) && $_POST['image_type'] == 'cover' && !empty($page_data->cover)) {
-				$insert_array['image'] = $page_data->cover;
+			if (!empty($_POST['image_type']) && $_POST['image_type'] == 'cover') {
+                    $owner_cover = $page_id > 0
+                        ? (!empty($page_data->cover) ? $page_data->cover : '')
+                        : (!empty($wo['user']['cover_org']) ? $wo['user']['cover_org'] : (!empty($wo['user']['cover']) ? $wo['user']['cover'] : ''));
+				$insert_array['image'] = $owner_cover;
                     $insert_array['image_type'] = 'cover';
 			}
 			elseif (!empty($_POST['image_type']) && $_POST['image_type'] == 'upload') {
@@ -165,8 +176,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     );
                 }
                 else {
-			    $insert_array['page_id'] = $page_data->page_id;
-				$insert_array['user_id'] = $page_data->user_id;
+                    $insert_array['page_id'] = $page_id;
+				$insert_array['user_id'] = $page_id > 0 ? (int)$page_data->user_id : (int)$wo['user']['id'];
 				$insert_array['time'] = time();
 
                     $db->startTransaction();
@@ -178,10 +189,13 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                         }
 
 				    $post_id = $db->insert(T_POSTS, array(
-                            'page_id' => $page_data->page_id,
+                            'page_id' => $page_id,
+                            'user_id' => $page_id > 0 ? 0 : $wo['user']['id'],
                             'postText' => $insert_array['title'],
                             'job_id' => $job_id,
-                            'postType' => 'job'
+                            'postType' => 'job',
+                            'postPrivacy' => '0',
+                            'time' => time()
                         ));
                         if (empty($post_id)) {
                             throw new RuntimeException('job_post_insert_failed');
@@ -285,134 +299,135 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     }
 
     if ($_POST['type'] == 'apply') {
-    	if (!empty($_POST['job_id']) && is_numeric($_POST['job_id']) && $_POST['job_id'] > 0) {
-	    	$job = Wo_GetJobById($_POST['job_id']);
-	    	if (!empty($job) && !empty($_POST['user_name']) && !empty($_POST['phone_number']) && !empty($_POST['location']) && !empty($_POST['email']) && $job['apply'] == false) {
-	    		$insert = true;
-	    		$insert_data = array();
+        if (!empty($_POST['job_id']) && is_numeric($_POST['job_id']) && $_POST['job_id'] > 0) {
+            $job = Wo_GetJobById($_POST['job_id']);
+            if (empty($job)) {
+                $response_data = array(
+                    'api_status' => 404,
+                    'error_code' => 'job_not_found',
+                    'message' => 'Job not found.'
+                );
+            } elseif (VNSEEA_CanManageJobApplications($job, $wo['user']['id'])) {
+                $response_data = array(
+                    'api_status' => 403,
+                    'error_code' => 'job_owner_cannot_apply',
+                    'message' => 'You cannot apply to your own job.'
+                );
+            } elseif (
+                VNSEEA_IsValidJobApplicationContact($_POST)
+                && empty($job['apply'])
+            ) {
+                $insert = true;
+                $insert_data = array();
 
-	    		if (!empty($job['question_one'])) {
-	    			if ($job['question_one_type'] == 'yes_no_question' && !empty($_POST['question_one_answer']) && in_array($_POST['question_one_answer'], array('yes','no'))) {
-	    				$insert_data['question_one_answer'] = Wo_Secure($_POST['question_one_answer']);
-	    			}
-	    			elseif ($job['question_one_type'] == 'multiple_choice_question' && in_array($_POST['question_one_answer'], array_keys($job['question_one_answers']))) {
-	    				$insert_data['question_one_answer'] = Wo_Secure($_POST['question_one_answer']);
-	    			}
-	    			elseif ($job['question_one_type'] == 'free_text_question' && !empty($_POST['question_one_answer'])) {
-	    				$insert_data['question_one_answer'] = Wo_Secure($_POST['question_one_answer']);
-	    			}
-	    			else{
-	    				$insert = false;
-	    			}
-	    		}
+                foreach (array('one', 'two', 'three') as $question_key) {
+                    $question_field = 'question_' . $question_key;
+                    if (empty($job[$question_field])) {
+                        continue;
+                    }
+                    $answer_field = $question_field . '_answer';
+                    $validated_answer = VNSEEA_ValidateJobQuestionAnswer(
+                        isset($job[$question_field . '_type']) ? $job[$question_field . '_type'] : '',
+                        isset($job[$question_field . '_answers']) ? $job[$question_field . '_answers'] : array(),
+                        isset($_POST[$answer_field]) ? $_POST[$answer_field] : ''
+                    );
+                    if ($validated_answer === false) {
+                        $insert = false;
+                        break;
+                    }
+                    $insert_data[$answer_field] = Wo_Secure($validated_answer);
+                }
 
+                if ($insert) {
+                    $insert_data['user_name'] = Wo_Secure($_POST['user_name']);
+                    $insert_data['phone_number'] = Wo_Secure($_POST['phone_number']);
+                    $insert_data['location'] = Wo_Secure($_POST['location']);
+                    $insert_data['email'] = Wo_Secure($_POST['email']);
+                    $insert_data['job_id'] = Wo_Secure($_POST['job_id']);
+                    $insert_data['user_id'] = $wo['user']['id'];
+                    $insert_data['page_id'] = $job['page_id'];
+                    $insert_data['time'] = time();
 
-	    		if (!empty($job['question_two'])) {
-	    			if ($job['question_two_type'] == 'yes_no_question' && in_array($_POST['question_two_answer'], array('yes','no'))) {
-	    				$insert_data['question_two_answer'] = Wo_Secure($_POST['question_two_answer']);
-	    			}
-	    			elseif ($job['question_two_type'] == 'multiple_choice_question' && in_array($_POST['question_two_answer'], array_keys($job['question_two_answers']))) {
-	    				$insert_data['question_two_answer'] = Wo_Secure($_POST['question_two_answer']);
-	    			}
-	    			elseif ($job['question_two_type'] == 'free_text_question') {
-	    				$insert_data['question_two_answer'] = Wo_Secure($_POST['question_two_answer']);
-	    			}
-	    			else{
-	    				$insert = false;
-	    			}
-	    		}
+                    if (!empty($_POST['position'])) {
+                        $insert_data['position'] = Wo_Secure($_POST['position']);
+                    }
+                    if (!empty($_POST['where_did_you_work'])) {
+                        $insert_data['where_did_you_work'] = Wo_Secure($_POST['where_did_you_work']);
+                    }
+                    if (!empty($_POST['experience_description'])) {
+                        $insert_data['experience_description'] = Wo_Secure($_POST['experience_description']);
+                    }
+                    if (
+                        !empty($_POST['position'])
+                        && !empty($_POST['where_did_you_work'])
+                        && !empty($_POST['experience_start_date'])
+                    ) {
+                        $insert_data['experience_start_date'] = Wo_Secure($_POST['experience_start_date']);
+                    } else {
+                        $insert_data['experience_start_date'] = '';
+                    }
+                    if (!empty($_POST['i_currently_work']) && $_POST['i_currently_work'] === 'on') {
+                        $insert_data['experience_end_date'] = '';
+                    } elseif (
+                        !empty($_POST['position'])
+                        && !empty($_POST['where_did_you_work'])
+                        && !empty($_POST['experience_end_date'])
+                    ) {
+                        $insert_data['experience_end_date'] = Wo_Secure($_POST['experience_end_date']);
+                    } else {
+                        $insert_data['experience_end_date'] = '';
+                    }
 
-	    		if (!empty($job['question_three'])) {
-	    			if ($job['question_three_type'] == 'yes_no_question' && in_array($_POST['question_three_answer'], array('yes','no'))) {
-	    				$insert_data['question_three_answer'] = Wo_Secure($_POST['question_three_answer']);
-	    			}
-	    			elseif ($job['question_three_type'] == 'multiple_choice_question' && in_array($_POST['question_three_answer'], array_keys($job['question_three_answers']))) {
-	    				$insert_data['question_three_answer'] = Wo_Secure($_POST['question_three_answer']);
-	    			}
-	    			elseif ($job['question_three_type'] == 'free_text_question') {
-	    				$insert_data['question_three_answer'] = Wo_Secure($_POST['question_three_answer']);
-	    			}
-	    			else{
-	    				$insert = false;
-	    			}
-	    		}
-
-	    		if ($insert == true) {
-	    			$insert_data['user_name'] = Wo_Secure($_POST['user_name']);
-	    			$insert_data['phone_number'] = Wo_Secure($_POST['phone_number']);
-	    			$insert_data['location'] = Wo_Secure($_POST['location']);
-	    			$insert_data['email'] = Wo_Secure($_POST['email']);
-	    			$insert_data['job_id'] = Wo_Secure($_POST['job_id']);
-	    			$insert_data['user_id'] = $wo['user']['id'];
-	    			$insert_data['page_id'] = $job['page_id'];
-	                $insert_data['time'] = time();
-
-	    			if (!empty($_POST['position'])) {
-	    				$insert_data['position'] = Wo_Secure($_POST['position']);
-	    			}
-
-	    			if (!empty($_POST['where_did_you_work'])) {
-	    				$insert_data['where_did_you_work'] = Wo_Secure($_POST['where_did_you_work']);
-	    			}
-
-	    			if (!empty($_POST['experience_description'])) {
-	    				$insert_data['experience_description'] = Wo_Secure($_POST['experience_description']);
-	    			}
-	                if (!empty($_POST['position']) && !empty($_POST['where_did_you_work']) && !empty($_POST['experience_start_date'])) {
-	                    $insert_data['experience_start_date'] = Wo_Secure($_POST['experience_start_date']);
-	                }
-	                else{
-	                    $insert_data['experience_start_date'] = '';
-	                }
-
-	    			if (!empty($_POST['i_currently_work']) && $_POST['i_currently_work'] == 'on') {
-	    				$insert_data['experience_end_date'] = '';
-	    			}
-	    			else{
-	                    if (!empty($_POST['position']) && !empty($_POST['where_did_you_work']) && !empty($_POST['experience_end_date'])) {
-	                        $insert_data['experience_end_date'] = Wo_Secure($_POST['experience_end_date']);
-	                    }
-	                    else{
-	                        $insert_data['experience_end_date'] = '';
-	                    }
-	    			}
-
-	    			$db->insert(T_JOB_APPLY,$insert_data);
-
-	                $notification_data_array = array(
-	                    'recipient_id' => $job['page']['user_id'],
-	                    'type' => 'apply_job',
-	                    'url' => 'index.php?link1=timeline&u=' . $job['page']['page_name'].'&type=job_apply&id='.$insert_data['job_id']
-	                );
-	                Wo_RegisterNotification($notification_data_array);
-
-	                $response_data = array(
-			                        'api_status' => 200,
-			                        'message_data' => 'Applied job successfully'
-			                    );
-	    		}
-	    		else{
-	    			if ($job['apply'] == true) {
-	    				$error_code    = 11;
-					    $error_message = 'You applied this job before';
-	    			}
-	    			else{
-	    				$error_code    = 10;
-					    $error_message = 'Please answer the question';
-	    			}
-	    		}
-	    	}
-	    	else{
-	    		$error_code    = 5;
-	            $error_message = 'Please check your details.';
-	    	}
-	    }
-	    else{
-	    	$error_code    = 8;
-		    $error_message = 'job_id can not be empty';
-	    }
+                    $application_id = $db->insert(T_JOB_APPLY, $insert_data);
+                    if (empty($application_id)) {
+                        $response_data = array(
+                            'api_status' => 500,
+                            'error_code' => 'job_application_failed',
+                            'message' => 'Unable to submit the application.'
+                        );
+                    } else {
+                        $recipient_id = VNSEEA_GetJobOwnerId($job);
+                        if ($recipient_id > 0) {
+                            Wo_RegisterNotification(array(
+                                'recipient_id' => $recipient_id,
+                                'type' => 'apply_job',
+                                'url' => 'index.php?link1=post&id=' . (!empty($job['post_id']) ? $job['post_id'] : 0)
+                            ));
+                        }
+                        $response_data = array(
+                            'api_status' => 200,
+                            'application_id' => $application_id,
+                            'message_data' => 'Applied job successfully'
+                        );
+                    }
+                } else {
+                    $response_data = array(
+                        'api_status' => 422,
+                        'error_code' => 'job_answers_invalid',
+                        'message' => 'Please answer every job question.'
+                    );
+                }
+            } else {
+                $response_data = !empty($job['apply'])
+                    ? array(
+                        'api_status' => 409,
+                        'error_code' => 'job_already_applied',
+                        'message' => 'You applied to this job before.'
+                    )
+                    : array(
+                        'api_status' => 422,
+                        'error_code' => 'job_application_invalid',
+                        'message' => 'Please check your application details.'
+                    );
+            }
+        } else {
+            $response_data = array(
+                'api_status' => 422,
+                'error_code' => 'job_id_required',
+                'message' => 'job_id can not be empty'
+            );
+        }
     }
-
     if ($_POST['type'] == 'search') {
     	$offset = (!empty($_POST['offset']) && is_numeric($_POST['offset']) && $_POST['offset'] > 0 ? Wo_Secure($_POST['offset']) : 0);
         $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0 && $_POST['limit'] <= 50 ? Wo_Secure($_POST['limit']) : 20);
@@ -449,30 +464,57 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     }
 
     if ($_POST['type'] == 'get_apply') {
-    	if (!empty($_POST['job_id']) && is_numeric($_POST['job_id']) && $_POST['job_id'] > 0) {
+        if (!empty($_POST['job_id']) && is_numeric($_POST['job_id']) && $_POST['job_id'] > 0) {
+            $offset = (
+                !empty($_POST['offset'])
+                && is_numeric($_POST['offset'])
+                && $_POST['offset'] > 0
+            ) ? Wo_Secure($_POST['offset']) : 0;
+            $limit = (
+                !empty($_POST['limit'])
+                && is_numeric($_POST['limit'])
+                && $_POST['limit'] > 0
+                && $_POST['limit'] <= 50
+            ) ? Wo_Secure($_POST['limit']) : 20;
+            $job_id = Wo_Secure($_POST['job_id']);
+            $job = Wo_GetJobById($job_id);
 
-    		$offset = (!empty($_POST['offset']) && is_numeric($_POST['offset']) && $_POST['offset'] > 0 ? Wo_Secure($_POST['offset']) : 0);
-	        $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0 && $_POST['limit'] <= 50 ? Wo_Secure($_POST['limit']) : 20);
-	        $job_id = Wo_Secure($_POST['job_id']);
-
-	        $job_apply = Wo_GetApplyJob(array('job_id' => $job_id,'offset' => $offset,'limit' => $limit));
-	        foreach ($job_apply as $key => $value) {
-	        	foreach ($non_allowed as $key4 => $value4) {
-                  unset($job_apply[$key]['user_data'][$value4]);
+            if (empty($job)) {
+                $response_data = array(
+                    'api_status' => 404,
+                    'error_code' => 'job_not_found',
+                    'message' => 'Job not found.'
+                );
+            } elseif (!VNSEEA_CanManageJobApplications($job, $wo['user']['id'])) {
+                $response_data = array(
+                    'api_status' => 403,
+                    'error_code' => 'job_applicants_forbidden',
+                    'message' => 'You cannot view these applicants.'
+                );
+            } else {
+                $job_apply = Wo_GetApplyJob(array(
+                    'job_id' => $job_id,
+                    'offset' => $offset,
+                    'limit' => $limit
+                ));
+                foreach ($job_apply as $key => $value) {
+                    foreach ($non_allowed as $field) {
+                        unset($job_apply[$key]['user_data'][$field]);
+                    }
                 }
-	        }
-
-	        $response_data = array(
-                                    'api_status' => 200,
-                                    'data' => $job_apply
-                                );
-    	}
-    	else{
-	    	$error_code    = 8;
-		    $error_message = 'job_id can not be empty';
-	    }
+                $response_data = array(
+                    'api_status' => 200,
+                    'data' => $job_apply
+                );
+            }
+        } else {
+            $response_data = array(
+                'api_status' => 422,
+                'error_code' => 'job_id_required',
+                'message' => 'job_id can not be empty'
+            );
+        }
     }
-
     if ($_POST['type'] == 'get') {
     	if (!empty($_POST['page_id']) && is_numeric($_POST['page_id']) && $_POST['page_id'] > 0) {
     		$page_id = Wo_Secure($_POST['page_id']);

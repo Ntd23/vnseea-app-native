@@ -363,6 +363,16 @@ function Wo_GetCurrencyRule($currency = 0)
 
 	return $rule;
 }
+function VNSEEA_HydrateJobCurrency($job)
+{
+	if (!is_array($job)) {
+		return $job;
+	}
+	$rule = Wo_GetCurrencyRule(isset($job['currency']) ? $job['currency'] : 0);
+	$job['currency_code'] = $rule['code'];
+	$job['currency_symbol'] = $rule['symbol'];
+	return $job;
+}
 function Wo_FormatIndianCurrency($value, $decimals = 2, $decimal_sep = '.', $thousand_sep = ',')
 {
 	$formatted = number_format((float) $value, $decimals, '.', '');
@@ -7936,7 +7946,7 @@ function Wo_GetPageJobs($page_id)
 	$data    = array();
 	if (!empty($jobs)) {
 		foreach ($jobs as $key => $value) {
-			$data[$key] = (array) $value;
+			$data[$key] = VNSEEA_HydrateJobCurrency((array) $value);
 			if (!empty($data[$key]['question_one_answers'])) {
 				$data[$key]['question_one_answers'] = json_decode($data[$key]['question_one_answers'], true);
 			}
@@ -7971,6 +7981,7 @@ function Wo_GetJobById($job_id)
 	if (mysqli_num_rows($sql)) {
 		$jobs = mysqli_fetch_assoc($sql);
 		if (!empty($jobs)) {
+			$jobs = VNSEEA_HydrateJobCurrency($jobs);
 			$page = Wo_PageData($jobs['page_id']);
 			if (!empty($jobs['question_one_answers'])) {
 				$jobs['question_one_answers'] = json_decode($jobs['question_one_answers'], true);
@@ -8002,6 +8013,7 @@ function Wo_GetJobById($job_id)
 			$query_one           = " SELECT `id` FROM " . T_POSTS . " WHERE job_id = '{$job_id}'";
 			$sql                 = mysqli_query($sqlConnect, $query_one);
 			$fetched_data        = mysqli_fetch_assoc($sql);
+			$jobs['post_id']     = !empty($fetched_data) ? (int) $fetched_data['id'] : 0;
 			$jobs['url']         = Wo_SeoLink('index.php?link1=post&id=' . (!empty($fetched_data) ? $fetched_data['id'] : 0));
 			$jobs['apply_count'] = $job_apply;
 		}

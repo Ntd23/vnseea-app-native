@@ -45,6 +45,7 @@ jest.mock(
 const {
   clearProfileCommercePostsCache,
   loadProfileCommercePosts,
+  mergeProfileCommercePosts,
   profileProductBelongsToUser,
 } = require('../profileCommercePosts') as typeof import('../profileCommercePosts');
 
@@ -150,6 +151,60 @@ describe('profileCommercePosts', () => {
 
     expect(mockGetPageJobs).toHaveBeenCalledWith('17', 20, 0);
     expect(posts).toEqual([expect.objectContaining({ kind: 'job', id: '80' })]);
+  });
+
+  it('does not request page jobs for a cached personal job with page id zero', async () => {
+    mockGetCachedJobs.mockReturnValue([
+      job({
+        page_id: '0',
+        page: undefined,
+        user_id: '42',
+        post_id: '4880',
+      }),
+    ]);
+
+    const posts = await loadProfileCommercePosts({
+      userId: 42,
+      includeOwnedPageJobs: true,
+      sellerFallback: 'Seller',
+      employerFallback: 'Employer',
+    });
+
+    expect(mockGetPageJobs).not.toHaveBeenCalled();
+    expect(posts).toEqual([
+      expect.objectContaining({ kind: 'job', id: '4880' }),
+    ]);
+  });
+
+  it('keeps the canonical publisher when cached personal job data is merged', () => {
+    const cachedJobPost = {
+      kind: 'job' as const,
+      id: '4880',
+      job: job({ page_id: '0', page: undefined, post_id: '4880' }),
+      publisher: {
+        id: '42',
+        name: 'Nhà tuyển dụng',
+        username: '',
+      },
+      permissions: { canDelete: false, canShare: true },
+    };
+    const canonicalPost = {
+      ...cachedJobPost,
+      publisher: {
+        id: '42',
+        name: 'Nguyễn Văn A',
+        username: 'nguyenvana',
+        avatarUrl: 'https://media.vnseea.vn/avatar.jpg',
+      },
+      permissions: { canDelete: true, canShare: true },
+    };
+
+    expect(mergeProfileCommercePosts([canonicalPost], [cachedJobPost])).toEqual([
+      expect.objectContaining({
+        publisher: canonicalPost.publisher,
+        permissions: canonicalPost.permissions,
+      }),
+    ]);
   });
 
   it('does not treat is_owner alone as ownership on another profile', () => {

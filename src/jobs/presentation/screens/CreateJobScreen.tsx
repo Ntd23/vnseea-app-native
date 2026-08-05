@@ -14,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import {
-  ArrowLeft,
   ChevronDown,
   ImagePlus,
   PlusCircle,
@@ -23,7 +22,6 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getJobsCopy } from '../../application/i18n/jobsCopy';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
@@ -110,7 +108,7 @@ function CreateJobScreen() {
   const [salaryErrors, setSalaryErrors] = useState<SalaryFieldErrors>({});
   const [salaryDate, setSalaryDate] = useState('');
   const [currency, setCurrency] = useState('');
-  const [selectedPageId, setSelectedPageId] = useState(initialPageId);
+  const selectedPageId = initialPageId;
   const [thumbnail, setThumbnail] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [imageType, setImageType] = useState<'cover' | 'upload'>('cover');
   const [questions, setQuestions] = useState<JobQuestionDraft[]>([]);
@@ -142,12 +140,6 @@ function CreateJobScreen() {
     [myPages, selectedPageId],
   );
   const previewImage = thumbnail?.uri || (imageType === 'cover' ? selectedPage?.cover : '') || '';
-
-  useEffect(() => {
-    if (!selectedPageId && myPages[0]) {
-      setSelectedPageId(String(myPages[0].page_id));
-    }
-  }, [myPages, selectedPageId]);
 
   useEffect(() => {
     if (!currency && metadata.currencies[0]) {
@@ -237,11 +229,6 @@ function CreateJobScreen() {
       Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.errorSelectCategory || 'Vui lòng chọn danh mục');
       return;
     }
-    if (!selectedPageId) {
-      Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', language === 'vi' ? 'Vui lòng chọn Trang để đăng việc làm' : 'Please select a Page to post this job');
-      return;
-    }
-
     try {
       const result = await createJob({
         jobTitle: jobTitle.trim(),
@@ -251,7 +238,7 @@ function CreateJobScreen() {
             lng: jobCoordinate?.longitude.toString(),
             jobType,
         category,
-        pageId: selectedPageId,
+        pageId: selectedPageId || undefined,
         minimum: minimumValue,
         maximum: maximumValue,
         salaryDate: salaryDate || undefined,
@@ -275,6 +262,9 @@ function CreateJobScreen() {
         createdJob?.user_id ||
         sessionStorage.getSession()?.userId ||
         '';
+      const selectedCurrency = metadata.currencies.find(
+        option => option.value === currency,
+      );
       const optimisticJob: JobsItem = {
         id:
           createdJob?.id ||
@@ -296,10 +286,13 @@ function CreateJobScreen() {
         category_label:
           createdJob?.category_label || categoryLabels[category],
         currency: createdJob?.currency || currency || undefined,
-        currency_symbol: createdJob?.currency_symbol,
+        currency_code:
+          createdJob?.currency_code || selectedCurrency?.label || undefined,
+        currency_symbol:
+          createdJob?.currency_symbol || selectedCurrency?.symbol || undefined,
         image: createdJob?.image || previewImage,
         image_type: createdJob?.image_type || imageType,
-        page_id: createdJob?.page_id || selectedPageId,
+        page_id: createdJob?.page_id || selectedPageId || '0',
         user_id: createdJob?.user_id || ownerId,
         time:
           Number(createdJob?.time) > 0
@@ -344,9 +337,9 @@ function CreateJobScreen() {
     } catch (err: any) {
       Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', err?.message || (copy.saveError || 'Không thể tạo việc làm. Vui lòng thử lại.'));
     }
-      }, [jobTitle, description, location, jobCoordinate, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, currency, questions, imageType, thumbnail, createJob, navigation, copy, language, selectedPage, previewImage, jobTypeLabels, categoryLabels]);
+      }, [jobTitle, description, location, jobCoordinate, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, currency, questions, imageType, thumbnail, createJob, navigation, copy, language, selectedPage, previewImage, jobTypeLabels, categoryLabels, metadata.currencies]);
 
-  const hasFormData = jobTitle || description || location || category || selectedPageId;
+  const hasFormData = jobTitle || description || location || category;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>

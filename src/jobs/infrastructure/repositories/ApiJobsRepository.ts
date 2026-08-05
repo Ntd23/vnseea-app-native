@@ -3,12 +3,15 @@ import type { JobsRepository } from '../../domain/repositories/JobsRepository';
 import type {
   CreateJobPayload,
   CreateJobResponse,
+  JobApplicant,
+  JobApplicantsPage,
   JobsItem,
   JobsListResponse,
   JobsMetadata,
   JobsMetadataResponse,
   JobsSelectOption,
 } from '../../domain/types/jobs.types';
+import { mapJobQuestions } from '../../application/mappers/jobQuestions';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
@@ -51,6 +54,14 @@ async function loadJobsMetadata(): Promise<JobsMetadata> {
           questionTypes: normalizeOptions(response.question_types),
           imageTypes: normalizeOptions(response.image_types),
           canCreate: response.can_create === true,
+          currentUser: response.current_user
+            ? {
+                name: String(response.current_user.name ?? ''),
+                email: String(response.current_user.email ?? ''),
+                phoneNumber: String(response.current_user.phone_number ?? ''),
+                address: String(response.current_user.address ?? ''),
+              }
+            : undefined,
           ownedPages: Array.isArray(response.owned_pages) ? response.owned_pages : [],
         };
       })
@@ -168,7 +179,9 @@ export function createJobsRepository(): JobsRepository {
             location: payload.location,
             job_type: payload.jobType,
             category: payload.category,
-            page_id: String(payload.pageId),
+            ...(payload.pageId
+              ? { page_id: String(payload.pageId) }
+              : {}),
             lat: payload.lat ?? '',
             lng: payload.lng ?? '',
             minimum: payload.minimum ? String(payload.minimum) : '',
@@ -238,6 +251,63 @@ export function createJobsRepository(): JobsRepository {
       }
     },
 
+    async applyToJob(jobId, payload) {
+      const questionAnswers = Object.fromEntries(
+        Object.entries(payload.answers).map(([key, value]) => [
+          `question_${key}_answer`,
+          value ?? '',
+        ]),
+      );
+      const response = await apiBridge.post<CreateJobResponse>(
+        apiRoutes.jobs.main,
+        {
+          type: 'apply',
+          job_id: String(jobId),
+          user_name: payload.userName,
+          phone_number: payload.phoneNumber,
+          email: payload.email,
+          location: payload.location,
+          position: payload.position,
+          where_did_you_work: payload.workplace,
+          experience_description: payload.experienceDescription,
+          experience_start_date: payload.experienceStartDate,
+          experience_end_date: payload.experienceEndDate,
+          i_currently_work: payload.currentlyWork ? 'on' : '',
+          ...questionAnswers,
+        },
+      );
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        throw createJobApiError(response);
+      }
+    },
+
+    async getJobApplicants(jobId, options = {}): Promise<JobApplicantsPage> {
+      const limit = options.limit ?? 20;
+      const response = await apiBridge.post<{
+        api_status: number | string;
+        data?: Array<Record<string, unknown>>;
+        error_code?: string;
+        message?: string;
+      }>(apiRoutes.jobs.main, {
+        type: 'get_apply',
+        job_id: String(jobId),
+        limit: String(limit),
+        offset: options.cursor ?? '',
+      });
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        const error = new Error(response.message || 'Không thể tải danh sách ứng viên.') as Error & { code?: string };
+        error.code = response.error_code;
+        throw error;
+      }
+
+      const items = (response.data ?? []).map(mapJobApplicant);
+      return {
+        items,
+        nextCursor: items.length > 0 ? items[items.length - 1].id : undefined,
+        hasMore: items.length >= limit,
+      };
+    },
+
     async deleteJob(postId) {
       const response = await apiBridge.post<{
         api_status: number | string;
@@ -266,6 +336,7 @@ function mapJobItem(raw: Record<string, unknown>, metadata: JobsMetadata = EMPTY
   const categoryLabels = Object.fromEntries(metadata.categories.map(option => [option.value, option.label]));
   const salaryDateLabels = Object.fromEntries(metadata.salaryDates.map(option => [option.value, option.label]));
   const currencySymbols = Object.fromEntries(metadata.currencies.map(option => [option.value, option.symbol || option.value]));
+  const currencyCodes = Object.fromEntries(metadata.currencies.map(option => [option.value, option.label]));
   const jobType = String(raw.job_type ?? '');
   const category = String(raw.category ?? '');
   const salaryDate = String(raw.salary_date ?? '');
@@ -287,7 +358,14 @@ function mapJobItem(raw: Record<string, unknown>, metadata: JobsMetadata = EMPTY
     category,
     category_label: categoryLabels[category] || category,
     currency,
-    currency_symbol: currencySymbols[currency] || currency,
+    currency_code:
+      String(raw.currency_code ?? '').trim() ||
+      currencyCodes[currency] ||
+      (/^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : undefined),
+    currency_symbol:
+      String(raw.currency_symbol ?? '').trim() ||
+      currencySymbols[currency] ||
+      undefined,
     image: normalizeUrl(String(raw.image ?? '')),
     image_type: raw.image_type as string | undefined,
     page_id: String(raw.page_id ?? ''),
@@ -296,6 +374,7 @@ function mapJobItem(raw: Record<string, unknown>, metadata: JobsMetadata = EMPTY
     post_id: raw.post_id ? String(raw.post_id) : undefined,
     apply: readBoolean(raw.apply),
     apply_count: readNumber(raw.apply_count) ?? 0,
+    questions: mapJobQuestions(raw),
     url: normalizeUrl(String(raw.url ?? '')),
     page: page
       ? {
@@ -309,5 +388,36 @@ function mapJobItem(raw: Record<string, unknown>, metadata: JobsMetadata = EMPTY
           is_page_onwer: readBoolean(page.is_page_onwer),
         }
       : undefined,
+  };
+}
+
+function mapJobApplicant(raw: Record<string, unknown>): JobApplicant {
+  const user = raw.user_data && typeof raw.user_data === 'object'
+    ? raw.user_data as Record<string, unknown>
+    : {};
+  const answer = (key: string) => String(raw[`question_${key}_answer`] ?? '').trim();
+  return {
+    id: String(raw.id ?? ''),
+    userId: String(raw.user_id ?? user.user_id ?? ''),
+    name: String(user.name ?? raw.user_name ?? ''),
+    username: String(user.username ?? ''),
+    avatar: normalizeUrl(String(user.avatar ?? '')),
+    phoneNumber: String(raw.phone_number ?? ''),
+    email: String(raw.email ?? ''),
+    location: String(raw.location ?? ''),
+    position: String(raw.position ?? ''),
+    workplace: String(raw.where_did_you_work ?? ''),
+    experienceDescription: String(raw.experience_description ?? ''),
+    experienceStartDate: String(raw.experience_start_date ?? ''),
+    experienceEndDate: String(raw.experience_end_date ?? ''),
+    currentlyWork:
+      String(raw.experience_end_date ?? '').trim() === '' &&
+      String(raw.position ?? '').trim() !== '',
+    appliedAt: Number(raw.time) || 0,
+    answers: {
+      ...(answer('one') ? { one: answer('one') } : {}),
+      ...(answer('two') ? { two: answer('two') } : {}),
+      ...(answer('three') ? { three: answer('three') } : {}),
+    },
   };
 }

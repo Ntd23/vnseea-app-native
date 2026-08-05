@@ -58,6 +58,27 @@ function rawTextPost(id: number, authorId: string) {
   };
 }
 
+function rawPersonalJobPost(id: number, authorId: string) {
+  return {
+    ...rawTextPost(id, authorId),
+    postText: 'Thư ký',
+    postType: 'job',
+    job_id: '23',
+    job: {
+      id: '23',
+      post_id: String(id),
+      user_id: authorId,
+      page_id: '0',
+      title: 'Thư ký',
+      description: 'Mô tả công việc',
+      location: 'Hà Nội',
+      job_type: 'full_time',
+      category: '13',
+      time: 1781712000 - id,
+    },
+  };
+}
+
 describe('ApiFeedRepository user posts latency', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -102,5 +123,36 @@ describe('ApiFeedRepository user posts latency', () => {
     });
 
     await expect(request).resolves.toHaveLength(1);
+  });
+
+  it('maps a personal job post to the job card model on Profile', async () => {
+    (backendApi.post as jest.Mock).mockImplementation(
+      async (route: string, payload: Record<string, unknown>) => {
+        if (route !== apiRoutes.feed.posts) {
+          return { api_status: 200, data: [] };
+        }
+        if (payload.type === 'get_user_posts') {
+          return {
+            api_status: 200,
+            data: [rawPersonalJobPost(4880, 'author-1')],
+          };
+        }
+        return { api_status: 200, data: [] };
+      },
+    );
+
+    const posts = await createFeedRepository().getUserPosts('author-1', 20);
+
+    expect(posts).toEqual([
+      expect.objectContaining({
+        kind: 'job',
+        id: '4880',
+        job: expect.objectContaining({
+          id: '23',
+          page_id: '0',
+          title: 'Thư ký',
+        }),
+      }),
+    ]);
   });
 });

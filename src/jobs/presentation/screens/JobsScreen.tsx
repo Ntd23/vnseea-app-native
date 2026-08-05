@@ -3,7 +3,6 @@ import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appCo
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Modal,
@@ -16,21 +15,18 @@ import {
   View,
 } from 'react-native';
 import {
-  ArrowLeft,
   Banknote,
   Briefcase,
   Building2,
   CheckCircle2,
   ChevronDown,
   Circle,
-  MapPin,
   Shapes,
-  Trash2,
+  Users,
   X,
 } from 'lucide-react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useJobsViewModel } from '../../application/view-models/useJobsViewModel';
@@ -39,48 +35,14 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getJobsCopy } from '../../application/i18n/jobsCopy';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
+import { formatJobSalaryRange } from '../../application/formatters/jobSalary';
+import { isJobOwnedByUser } from '../../domain/policies/jobOwnership';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
 type JobsNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = APP_BRAND_COLOR;
-
-function formatSalary(job: JobsItem, copy: Record<string, string>): string {
-  if (!job.minimum && !job.maximum) return copy.negotiable || 'Thương lượng';
-
-  const formatNum = (n: number) => {
-    if (n >= 1000000) return `${(n / 1000000).toFixed(1)} ${copy.million || 'Triệu'}`;
-    if (n >= 1000) return `${(n / 1000).toFixed(0)} K`;
-    return String(n);
-  };
-
-  const min = job.minimum ? formatNum(job.minimum) : '';
-  const max = job.maximum ? formatNum(job.maximum) : '';
-
-  if (min && max) return `${min} - ${max}`;
-  if (min) return `${copy.from || 'Từ'} ${min}`;
-  return max;
-}
-
-function formatTimeAgo(timestamp: number, copy: Record<string, string>): string {
-  const timestampInSeconds = timestamp > 10000000000 ? Math.floor(timestamp / 1000) : timestamp;
-  const now = Math.floor(Date.now() / 1000);
-  const diff = now - timestampInSeconds;
-
-  if (diff < 0) return copy.justPosted || 'Vừa đăng';
-  if (diff < 60) return copy.justPosted || 'Vừa đăng';
-  if (diff < 3600) return `${Math.floor(diff / 60)} ${copy.minutesAgo || 'phút trước'}`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} ${copy.hoursAgo || 'giờ trước'}`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)} ${copy.daysAgo || 'ngày trước'}`;
-  if (diff < 2592000) return `${Math.floor(diff / 604800)} ${copy.weeksAgo || 'tuần trước'}`;
-  if (diff < 31536000) return `${Math.floor(diff / 2592000)} ${copy.monthsAgo || 'tháng trước'}`;
-  return `${Math.floor(diff / 31536000)} ${copy.yearsAgo || 'năm trước'}`;
-}
-
-function getCurrencySymbol(currency?: string): string {
-  if (!currency || currency === 'USD') return '$';
-  if (currency === 'VND') return '₫';
-  return currency;
-}
 
 type FilterOption = { value: string; label: string };
 
@@ -223,24 +185,23 @@ function DistanceFilterSheet({
 
 function JobCard({
   job,
-  isDeleting,
   onPress,
-  onDelete,
   copy,
+  language,
+  currentUserId,
 }: {
   job: JobsItem;
-  isDeleting: boolean;
   onPress: () => void;
-  onDelete: () => void;
   copy: Record<string, string>;
+  language: AppLanguage;
+  currentUserId?: string;
 }) {
   const jobTypeLabel = job.job_type_label || job.job_type;
 
   const image = job.image || job.page?.cover || job.page?.avatar;
   const categoryLabel = job.category_label || job.category || (copy.other || 'Khác');
-  const isManaged = Boolean(job.page?.is_page_onwer);
-  const symbol = getCurrencySymbol(job.currency);
-  const salaryText = formatSalary(job, copy);
+  const isManaged = isJobOwnedByUser(job, currentUserId);
+  const salaryText = formatJobSalaryRange(job, language);
 
   return (
     <View className="mb-4 overflow-hidden border border-slate-200 bg-white">
@@ -278,18 +239,19 @@ function JobCard({
         </View>
       </TouchableOpacity>
       <TouchableOpacity
-        className={`mx-1 mb-3 min-h-[42px] flex-row items-center justify-center rounded-md ${isManaged ? 'bg-[#ff5252]' : 'bg-[#ff9999]'}`}
-        onPress={isManaged ? onDelete : onPress}
-        disabled={isDeleting}
+        className={`mx-1 mb-3 min-h-[42px] flex-row items-center justify-center rounded-md ${
+          !isManaged && job.apply ? 'bg-slate-300' : 'bg-brand'
+        }`}
+        onPress={onPress}
       >
-        {isDeleting ? (
-          <ActivityIndicator size="small" color="#FFFFFF" />
-        ) : (
-          <>
-            {isManaged ? <Trash2 size={16} color="#FFFFFF" /> : <CheckCircle2 size={16} color="#FFFFFF" />}
-            <Text className="ml-2 text-[13px] font-bold text-white">{isManaged ? (copy.delete || 'Xóa bỏ') : (copy.applyNow || 'Ứng tuyển ngay')}</Text>
-          </>
-        )}
+        {isManaged ? <Users size={16} color="#FFFFFF" /> : <CheckCircle2 size={16} color="#FFFFFF" />}
+        <Text className="ml-2 text-[13px] font-bold text-white">
+          {isManaged
+            ? (copy.applicantsCount || '{count} ứng viên').replace('{count}', String(job.apply_count ?? 0))
+            : job.apply
+              ? (copy.alreadyApplied || 'Đã ứng tuyển')
+              : (copy.applyNow || 'Ứng tuyển ngay')}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -332,7 +294,7 @@ function JobsScreen() {
   const navigation = useNavigation<JobsNav>();
   const language = useAppLanguage();
   const copy = getJobsCopy(language);
-  const { jobs, metadata, deletingJobId, isLoading, isLoadingMore, error, hasMore, searchJobs, deleteJob, refresh, loadMore } = useJobsViewModel();
+  const { jobs, metadata, isLoading, isLoadingMore, error, hasMore, searchJobs, refresh, loadMore } = useJobsViewModel();
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedJobType, setSelectedJobType] = useState<JobType | 'all'>('all');
@@ -342,7 +304,7 @@ function JobsScreen() {
   const hasFocusedOnce = useRef(false);
   const typeOptions = useMemo(
     () => [{ value: 'all', label: copy.all || 'Tất cả' }, ...metadata.types],
-    [metadata.types],
+    [copy.all, metadata.types],
   );
   const typeLabels = useMemo(
     () => Object.fromEntries(typeOptions.map(option => [option.value, option.label])),
@@ -377,37 +339,15 @@ function JobsScreen() {
     navigation.navigate(ROUTES.JOB_DETAIL, { jobId: String(job.id), job });
   }, [navigation]);
 
-  const handleDeleteJob = useCallback((job: JobsItem) => {
-    Alert.alert(
-      copy.deleteJob || 'Xóa việc làm',
-      (copy.confirmDeleteJob || 'Bạn có chắc muốn xóa “{title}”?').replace('{title}', job.title),
-      [
-        { text: copy.cancel || 'Hủy', style: 'cancel' },
-        {
-          text: copy.delete || 'Xóa bỏ',
-          style: 'destructive',
-          onPress: () => {
-            void deleteJob(job).catch(caughtError => {
-              Alert.alert(
-                copy.cannotDelete || 'Không thể xóa',
-                caughtError instanceof Error ? caughtError.message : (copy.tryAgain || 'Vui lòng thử lại.'),
-              );
-            });
-          },
-        },
-      ],
-    );
-  }, [copy, deleteJob]);
-
   const renderJob = useCallback(({ item }: { item: JobsItem }) => (
     <JobCard
       job={item}
-      isDeleting={deletingJobId === String(item.id)}
       onPress={() => handleJobPress(item)}
-      onDelete={() => handleDeleteJob(item)}
       copy={copy}
+      language={language}
+      currentUserId={sessionStorage.getSession()?.userId}
     />
-  ), [deletingJobId, handleDeleteJob, handleJobPress]);
+  ), [copy, handleJobPress, language]);
 
   const handleEndReached = useCallback(() => {
     if (!isLoading && hasMore && !isLoadingMore) {

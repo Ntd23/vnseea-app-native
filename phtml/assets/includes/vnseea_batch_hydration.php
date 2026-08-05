@@ -1233,6 +1233,7 @@ function VNSEEA_GetFeedJobsBatch($job_ids, $post_rows = array())
         }
     }
     foreach ($rows as $job_id => $job) {
+        $job = VNSEEA_HydrateJobCurrency($job);
         foreach (array('question_one_answers', 'question_two_answers', 'question_three_answers') as $field) {
             if (!empty($job[$field])) {
                 $job[$field] = json_decode($job[$field], true);

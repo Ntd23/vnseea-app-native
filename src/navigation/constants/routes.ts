@@ -77,6 +77,8 @@ export const ROUTES = {
   CREATE_MOVIE: 'CreateMovie',
   JOBS: 'Jobs',
   JOB_DETAIL: 'JobDetail',
+  JOB_APPLY: 'JobApply',
+  JOB_APPLICANTS: 'JobApplicants',
   CREATE_JOB: 'CreateJob',
   SETTINGS: 'Settings',
   SETTINGS_PANEL: 'SettingsPanel',

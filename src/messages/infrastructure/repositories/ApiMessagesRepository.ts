@@ -20,7 +20,10 @@ import {
   createMessageReplyReference,
   parseLegacyMessageReply,
 } from '../../application/replies/messageReply';
-import { replaceGroupMentionTokens } from '../../application/mentions/groupMessageMentions';
+import {
+  replaceGroupMentionTokens,
+  serializeGroupMentionTokens,
+} from '../../application/mentions/groupMessageMentions';
 import { mapMessageReactionSummary } from '../../domain/reactions/messageReactions';
 import type {
   ChatItem,
@@ -1824,10 +1827,16 @@ export function createMessagesRepository(): MessagesRepository {
       const messageHashId = `${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
+      const requestMessage =
+        target.type === 'group'
+          ? serializeGroupMentionTokens(message, options?.mentions ?? [])
+          : message;
       const rawTextPayload =
         target.type === 'group' && attachment?.mediaType === 'audio'
-          ? [message, GROUP_VOICE_MESSAGE_MARKER].filter(Boolean).join('\n')
-          : message;
+          ? [requestMessage, GROUP_VOICE_MESSAGE_MARKER]
+              .filter(Boolean)
+              .join('\n')
+          : requestMessage;
       const textPayload = serializeMessageLineBreaks(rawTextPayload);
       const userPayload = {
         user_id: target.id,

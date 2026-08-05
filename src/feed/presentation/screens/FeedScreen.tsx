@@ -1257,6 +1257,10 @@ function interleaveSupplementalPosts(
   jobPosts: FeedJobPost[],
 ): FeedPost[] {
   const result: FeedPost[] = [];
+  const basePostIds = new Set(basePosts.map(post => String(post.id)));
+  const uniqueJobPosts = jobPosts.filter(
+    post => !basePostIds.has(String(post.id)),
+  );
   let productIndex = 0;
   let eventIndex = 0;
   let jobIndex = 0;
@@ -1275,8 +1279,8 @@ function interleaveSupplementalPosts(
       eventIndex += 1;
     }
 
-    if (slot % 13 === 0 && jobIndex < jobPosts.length) {
-      result.push(jobPosts[jobIndex]);
+    if (slot % 13 === 0 && jobIndex < uniqueJobPosts.length) {
+      result.push(uniqueJobPosts[jobIndex]);
       jobIndex += 1;
     }
   });
@@ -3598,7 +3602,7 @@ function FeedScreen() {
   // Memoize merged posts to prevent unnecessary recalculations
   const mergedPosts = useMemo<FeedPost[]>(() => {
     const posts = feedPosts.filter(
-      p => p.kind !== 'product' && p.kind !== 'event' && p.kind !== 'job',
+      p => p.kind !== 'product' && p.kind !== 'event',
     );
     return interleaveSupplementalPosts(
       posts,
