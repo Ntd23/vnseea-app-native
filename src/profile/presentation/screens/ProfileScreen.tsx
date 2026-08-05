@@ -116,6 +116,7 @@ import { postCreatedEvents } from '../../../feed/application/events/postCreatedE
 import { profilePostsChangedEvents } from '../../../feed/application/events/profilePostsChangedEvents';
 import { isPageFeedPublisher } from '../../../feed/domain/policies/feedPublisherIdentity';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
+import { reuseStableItemsById } from '../../../feed/presentation/screens/feedListItemStability';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import {
   PhotoViewerModal,
@@ -232,9 +233,9 @@ type ProfileFeedPost =
   | FeedJobPost;
 type ProfileEngagementPost = Exclude<ProfileFeedPost, FeedJobPost>;
 type ProfileListItem =
-  | { type: 'state' }
-  | { type: 'live'; item: LiveStreamItem }
-  | { type: 'post'; post: ProfileFeedPost };
+  | { type: 'state'; id: string }
+  | { type: 'live'; id: string; item: LiveStreamItem }
+  | { type: 'post'; id: string; post: ProfileFeedPost };
 type ProfileRoute = RouteProp<
   RootStackParamList,
   typeof ROUTES.PROFILE | typeof ROUTES.USER_PROFILE
@@ -254,17 +255,19 @@ const PROFILE_POST_MEDIA_HEIGHT = Math.min(
 );
 const PROFILE_POST_PAGE_SIZE = 20;
 const PROFILE_IS_ANDROID = Platform.OS === 'android';
+const PROFILE_LOAD_MORE_THROTTLE_MS = 1200;
 // Keep fast swipes native and fluid, but shorten their momentum so FlashList
 // never outruns the rich post cards and media prepared ahead of the viewport.
-const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.94 : 0.992;
+const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.88 : 0.985;
+const PROFILE_SCROLL_EVENT_THROTTLE_MS = PROFILE_IS_ANDROID ? 32 : 16;
 const PROFILE_POST_DRAW_DISTANCE = PROFILE_IS_ANDROID
-  ? Math.max(1200, Math.round(SCREEN_HEIGHT * 1.5))
+  ? Math.max(2100, Math.round(SCREEN_HEIGHT * 2.6))
   : Math.max(2800, Math.round(SCREEN_HEIGHT * 3.2));
-const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 8 : 22;
+const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 14 : 22;
 const PROFILE_POST_EARLY_LOAD_DISTANCE_MULTIPLIER = PROFILE_IS_ANDROID
-  ? 2.5
-  : 2.2;
-const PROFILE_POST_EARLY_LOAD_MIN_DISTANCE = PROFILE_IS_ANDROID ? 2200 : 1800;
+  ? 1.4
+  : 1.6;
+const PROFILE_POST_EARLY_LOAD_MIN_DISTANCE = PROFILE_IS_ANDROID ? 1200 : 1400;
 const PROFILE_POST_MAINTAIN_VISIBLE_CONTENT_POSITION = { disabled: true };
 const PROFILE_POST_MEDIA_PREFETCH_BEHIND = 2;
 const PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD = PROFILE_IS_ANDROID ? 3 : 12;
@@ -453,6 +456,20 @@ function getProfileListItemPost(
   item?: ProfileListItem,
 ): ProfileFeedPost | null {
   return item?.type === 'post' ? item.post : null;
+}
+
+function areProfileListItemsRenderEquivalent(
+  previous: ProfileListItem,
+  next: ProfileListItem,
+) {
+  if (previous.type !== next.type) return false;
+  if (previous.type === 'post' && next.type === 'post') {
+    return previous.post === next.post;
+  }
+  if (previous.type === 'live' && next.type === 'live') {
+    return previous.item === next.item;
+  }
+  return true;
 }
 
 function isRemoteProfileMediaUrl(url?: string): url is string {
@@ -1271,11 +1288,7 @@ function SkeletonBlock({
 }
 
 // Full Header Skeleton
-function FullProfileSkeleton({
-  onBack,
-}: {
-  onBack: () => void;
-}) {
+function FullProfileSkeleton({ onBack }: { onBack: () => void }) {
   const skeletonSafeTopInset =
     Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 44;
 
@@ -1447,9 +1460,7 @@ function ProfileScreen() {
     useMainTabContentInsets();
   const safeProfileBottomPadding = useSafeBottomPadding(16);
   const profilePostsBottomPadding =
-    Platform.OS === 'android'
-      ? safeProfileBottomPadding
-      : bottomContentPadding;
+    Platform.OS === 'android' ? safeProfileBottomPadding : bottomContentPadding;
   const safeTopInset =
     insets.top > 0
       ? insets.top
@@ -1533,7 +1544,8 @@ function ProfileScreen() {
     target: ImageCropTarget;
     image: CropSourceImage;
   } | null>(null);
-  const [isRelationshipSheetVisible, setRelationshipSheetVisible] = useState(false);
+  const [isRelationshipSheetVisible, setRelationshipSheetVisible] =
+    useState(false);
   const [relationshipAction, setRelationshipAction] = useState<
     'unfollow' | 'block' | null
   >(null);
@@ -1558,6 +1570,10 @@ function ProfileScreen() {
   const [hasMorePosts, setHasMorePosts] = useState(false);
   const [postsCursor, setPostsCursor] = useState<string | undefined>(undefined);
   const isLoadingMorePostsRef = React.useRef(false);
+  const pendingProfileLoadMoreRef = useRef(false);
+  const profileLoadMoreConsumedForGestureRef = useRef(false);
+  const lastProfileLoadMoreAtRef = useRef(0);
+  const lastRequestedProfileCursorRef = useRef<string | null>(null);
   const [activeProfileInlineLivePostId, setActiveProfileInlineLivePostIdState] =
     useState<number | null>(null);
   const activeProfileInlineLivePostIdRef = useRef<number | null>(null);
@@ -1589,6 +1605,7 @@ function ProfileScreen() {
   > | null>(null);
   const profileScrollYRef = useRef(0);
   const profileListRef = useRef<FlashListRef<ProfileListItem>>(null);
+  const stableProfileListItemsRef = useRef<ProfileListItem[]>([]);
   const profileHeaderSolidRef = useRef(false);
   const profileHeaderSolidProgress = useRef(new Animated.Value(0)).current;
   const isProfileScrollingRef = useRef(false);
@@ -1679,10 +1696,9 @@ function ProfileScreen() {
   const storiesRepo = useMemo(() => createStoriesRepository(), []);
   const loadProfilePostsFirstPage = useCallback(
     async (userId: string | number) => {
-      const feedPosts = (await feedRepo.getUserPosts(
-        String(userId),
-        PROFILE_POST_PAGE_SIZE,
-      ))
+      const feedPosts = (
+        await feedRepo.getUserPosts(String(userId), PROFILE_POST_PAGE_SIZE)
+      )
         .filter(isProfileFeedPost)
         .filter(post => !isPageFeedPublisher(post.publisher));
       const pendingPosts = profilePostsChangedEvents
@@ -1712,15 +1728,15 @@ function ProfileScreen() {
         employerFallback: postCardCopy.employerFallback,
         force: options.force,
       }),
-    [
-      isOwnProfile,
-      postCardCopy.employerFallback,
-      postCardCopy.sellerFallback,
-    ],
+    [isOwnProfile, postCardCopy.employerFallback, postCardCopy.sellerFallback],
   );
   const refreshProfileContent = useCallback(async () => {
     if (!targetUserId || profileRefreshInFlightRef.current) return;
 
+    pendingProfileLoadMoreRef.current = false;
+    profileLoadMoreConsumedForGestureRef.current = false;
+    lastRequestedProfileCursorRef.current = null;
+    lastProfileLoadMoreAtRef.current = 0;
     profileRefreshInFlightRef.current = true;
     setIsProfileRefreshing(true);
     setPostsError(null);
@@ -2533,10 +2549,12 @@ function ProfileScreen() {
     setPersonalDetailsExpanded(false);
     setPostsCursor(undefined);
     setHasMorePosts(false);
+    pendingProfileLoadMoreRef.current = false;
+    profileLoadMoreConsumedForGestureRef.current = false;
+    lastRequestedProfileCursorRef.current = null;
+    lastProfileLoadMoreAtRef.current = 0;
     setPostsError(null);
-    setInitialPostsSettledKey(
-      cachedPosts.length > 0 ? routeProfileKey : null,
-    );
+    setInitialPostsSettledKey(cachedPosts.length > 0 ? routeProfileKey : null);
     setUserStory(null);
     setAllStories([]);
     setIsStoryLoading(false);
@@ -2575,9 +2593,7 @@ function ProfileScreen() {
       includeFriends: false,
     })
       .then(() =>
-        targetUserId
-          ? loadConnections(String(targetUserId), 3)
-          : undefined,
+        targetUserId ? loadConnections(String(targetUserId), 3) : undefined,
       )
       .catch(() => undefined);
   }, [
@@ -2652,6 +2668,10 @@ function ProfileScreen() {
     setPostsCursor(undefined);
     setHasMorePosts(false);
     isLoadingMorePostsRef.current = false;
+    pendingProfileLoadMoreRef.current = false;
+    profileLoadMoreConsumedForGestureRef.current = false;
+    lastRequestedProfileCursorRef.current = null;
+    lastProfileLoadMoreAtRef.current = 0;
     setIsLoadingMorePosts(false);
     setPostsError(null);
     setInitialPostsSettledKey(
@@ -2982,7 +3002,9 @@ function ProfileScreen() {
             ? `${actorLabel} đang theo dõi ${formatCount(
                 profileFollowingCount,
               )} người`
-            : `${actorLabel} follows ${formatCount(profileFollowingCount)} people`,
+            : `${actorLabel} follows ${formatCount(
+                profileFollowingCount,
+              )} people`,
         subtitle:
           language === 'vi' ? 'Hoạt động kết nối' : 'Connection activity',
         color: APP_BRAND_COLOR,
@@ -3633,21 +3655,38 @@ function ProfileScreen() {
 
   const handleLoadMorePosts = useCallback(async () => {
     if (
+      isProfileScrollingRef.current ||
+      isProfileMomentumScrollingRef.current
+    ) {
+      pendingProfileLoadMoreRef.current = true;
+      return;
+    }
+
+    const cursor = postsCursor;
+    const now = Date.now();
+    if (
       !targetUserId ||
-      !postsCursor ||
+      !cursor ||
       !hasMorePosts ||
-      isLoadingMorePostsRef.current
+      isLoadingMorePostsRef.current ||
+      profileLoadMoreConsumedForGestureRef.current ||
+      lastRequestedProfileCursorRef.current === cursor ||
+      now - lastProfileLoadMoreAtRef.current < PROFILE_LOAD_MORE_THROTTLE_MS
     ) {
       return;
     }
 
+    pendingProfileLoadMoreRef.current = false;
+    profileLoadMoreConsumedForGestureRef.current = true;
+    lastRequestedProfileCursorRef.current = cursor;
+    lastProfileLoadMoreAtRef.current = now;
     isLoadingMorePostsRef.current = true;
     setIsLoadingMorePosts(true);
     try {
       const response = await feedRepo.getUserPosts(
         targetUserId,
         PROFILE_POST_PAGE_SIZE,
-        postsCursor,
+        cursor,
       );
       const nextPosts = response.filter(isProfileFeedPost);
       const nextCursor = getOldestProfilePostId(nextPosts);
@@ -3661,13 +3700,16 @@ function ProfileScreen() {
           (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
         );
       });
-      setPostsCursor(nextCursor ?? postsCursor);
+      setPostsCursor(nextCursor ?? cursor);
       setHasMorePosts(
         nextPosts.length >= PROFILE_POST_PAGE_SIZE &&
           Boolean(nextCursor) &&
-          nextCursor !== postsCursor,
+          nextCursor !== cursor,
       );
     } catch (caughtError) {
+      if (lastRequestedProfileCursorRef.current === cursor) {
+        lastRequestedProfileCursorRef.current = null;
+      }
       console.error('[ProfileScreen] Error loading more posts:', caughtError);
     } finally {
       isLoadingMorePostsRef.current = false;
@@ -3703,11 +3745,7 @@ function ProfileScreen() {
 
     if (isProfileRefreshing || profileRefreshInFlightRef.current) return;
     refreshProfileContent();
-  }, [
-    animateProfileHeaderSolid,
-    isProfileRefreshing,
-    refreshProfileContent,
-  ]);
+  }, [animateProfileHeaderSolid, isProfileRefreshing, refreshProfileContent]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios' || !isOwnProfile) return undefined;
@@ -3716,12 +3754,7 @@ function ProfileScreen() {
       if (!isProfileFocused || !isOwnProfile) return;
       handleProfileTabReselect();
     });
-  }, [
-    handleProfileTabReselect,
-    isOwnProfile,
-    isProfileFocused,
-    navigation,
-  ]);
+  }, [handleProfileTabReselect, isOwnProfile, isProfileFocused, navigation]);
 
   const handleProfileScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -3782,8 +3815,18 @@ function ProfileScreen() {
         scheduleActiveProfileInlineLivePostId(null, true);
         scheduleActiveProfileVideoId(nextVideoId, true);
       }
+      if (pendingProfileLoadMoreRef.current) {
+        pendingProfileLoadMoreRef.current = false;
+        requestAnimationFrame(() => {
+          handleLoadMorePosts().catch(() => undefined);
+        });
+      }
     },
-    [scheduleActiveProfileInlineLivePostId, scheduleActiveProfileVideoId],
+    [
+      handleLoadMorePosts,
+      scheduleActiveProfileInlineLivePostId,
+      scheduleActiveProfileVideoId,
+    ],
   );
 
   const handleProfileViewportLayout = useCallback(
@@ -3794,6 +3837,10 @@ function ProfileScreen() {
   );
 
   const handleProfileScrollBegin = useCallback(() => {
+    if (!isProfileMomentumScrollingRef.current) {
+      pendingProfileLoadMoreRef.current = false;
+      profileLoadMoreConsumedForGestureRef.current = false;
+    }
     isProfileScrollingRef.current = true;
     pendingProfileActiveVideoIdRef.current = activeProfileVideoIdRef.current;
     pendingProfileInlineLivePostIdRef.current =
@@ -3949,9 +3996,7 @@ function ProfileScreen() {
   const selectProfileImageForCrop = useCallback(
     async (target: ImageCropTarget) => {
       try {
-        const result = await launchImageLibrary(
-          PROFILE_IMAGE_PICKER_OPTIONS,
-        );
+        const result = await launchImageLibrary(PROFILE_IMAGE_PICKER_OPTIONS);
         if (result.didCancel || !result.assets || result.assets.length === 0) {
           return;
         }
@@ -3997,7 +4042,9 @@ function ProfileScreen() {
       if (!cropTarget) return;
 
       setProfileCropRequest(null);
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      await new Promise<void>(resolve =>
+        requestAnimationFrame(() => resolve()),
+      );
 
       const attemptUpload = async () => {
         const isAvatar = cropTarget === 'avatar';
@@ -4045,12 +4092,7 @@ function ProfileScreen() {
 
       await attemptUpload();
     },
-    [
-      copy.errorTitle,
-      profileCropRequest?.target,
-      updateAvatar,
-      updateCover,
-    ],
+    [copy.errorTitle, profileCropRequest?.target, updateAvatar, updateCover],
   );
 
   const handleChangeProfileMedia = useCallback(() => {
@@ -4522,6 +4564,7 @@ function ProfileScreen() {
               onOpenReactions={openReactionsSheet}
               onOpenPostMenu={handleOpenPostMenu}
               keepPreparedVideoMounted={!PROFILE_IS_ANDROID}
+              deferMediaUntilVisible
             />
           </View>
         );
@@ -4567,6 +4610,7 @@ function ProfileScreen() {
           navigateToProfile={handleNavigateToProfile}
           onOpenReactions={openReactionsSheet}
           onOpenPostMenu={handleOpenPostMenu}
+          deferMediaUntilVisible
         />
       );
     },
@@ -4595,13 +4639,7 @@ function ProfileScreen() {
   );
 
   const profileListItemKeyExtractor = useCallback((item: ProfileListItem) => {
-    if (item.type === 'post') {
-      return `${item.post.kind}-${item.post.id}`;
-    }
-    if (item.type === 'live') {
-      return `live-${item.item.postId}`;
-    }
-    return item.type;
+    return item.id;
   }, []);
 
   const profileListItemType = useCallback((item: ProfileListItem) => {
@@ -5397,18 +5435,34 @@ function ProfileScreen() {
   const profileListItems = useMemo<ProfileListItem[]>(() => {
     const items: ProfileListItem[] = [];
     if (activeProfileLive) {
-      items.push({ type: 'live', item: activeProfileLive });
+      items.push({
+        type: 'live',
+        id: `live-${activeProfileLive.postId}`,
+        item: activeProfileLive,
+      });
     }
 
     if (shouldRenderProfilePostsState) {
-      items.push({ type: 'state' });
+      items.push({ type: 'state', id: `state-${routeProfileKey}` });
     } else {
       filteredProfilePosts.forEach(post => {
-        items.push({ type: 'post', post });
+        items.push({ type: 'post', id: `${post.kind}-${post.id}`, post });
       });
     }
-    return items;
-  }, [activeProfileLive, filteredProfilePosts, shouldRenderProfilePostsState]);
+
+    const stableItems = reuseStableItemsById(
+      stableProfileListItemsRef.current,
+      items,
+      areProfileListItemsRenderEquivalent,
+    );
+    stableProfileListItemsRef.current = stableItems;
+    return stableItems;
+  }, [
+    activeProfileLive,
+    filteredProfilePosts,
+    routeProfileKey,
+    shouldRenderProfilePostsState,
+  ]);
 
   const renderProfileListItem = useCallback(
     ({ item }: FlashListRenderItemInfo<ProfileListItem>) => {
@@ -5483,9 +5537,9 @@ function ProfileScreen() {
       onMomentumScrollEnd={finishProfileScroll}
       onScrollEndDrag={handleProfileScrollEndDrag}
       decelerationRate={PROFILE_SCROLL_DECELERATION_RATE}
-      scrollEventThrottle={16}
+      scrollEventThrottle={PROFILE_SCROLL_EVENT_THROTTLE_MS}
       onEndReached={handleLoadMorePosts}
-      onEndReachedThreshold={1.2}
+      onEndReachedThreshold={0.6}
       onViewableItemsChanged={onProfilePostViewableItemsChanged}
       viewabilityConfig={profilePostsViewabilityConfigRef.current}
       drawDistance={PROFILE_POST_DRAW_DISTANCE}
@@ -5560,9 +5614,7 @@ function ProfileScreen() {
     (!expectedProfileUserId ||
       String(profile?.id) === String(expectedProfileUserId));
   const isInitialProfileContentReady =
-    hasCurrentProfile ||
-    Boolean(profileError) ||
-    profileLoadDeadlineReached;
+    hasCurrentProfile || Boolean(profileError) || profileLoadDeadlineReached;
 
   if (!isInitialProfileContentReady) {
     return <FullProfileSkeleton onBack={handleProfileBack} />;

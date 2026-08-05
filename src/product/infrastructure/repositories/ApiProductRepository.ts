@@ -43,6 +43,7 @@ function normalizeProductDistance(product: ProductsResponse['products'][number])
     distanceKm ??
     (distanceMeters === undefined ? undefined : distanceMeters / 1000);
   const rawPoints =
+    record.point ??
     record.points ??
     record.product_points ??
     record.point_price ??
@@ -123,9 +124,7 @@ function buildProductFormData(input: CreateProductInput) {
     formData.currency = input.currency;
   }
   if (input.points !== undefined) {
-    formData.points = input.points;
-    // Some deployments expose the same existing field under this alias.
-    formData.product_points = input.points;
+    formData.product_point = input.points;
   }
   if (input.lat) {
     formData.lat = input.lat;

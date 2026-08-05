@@ -20,15 +20,15 @@ describe('Feed and profile list performance contracts', () => {
   );
 
   it('keeps rich cards in a bounded render window without unsafe Android clipping', () => {
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.8');
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.8');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.2');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.2');
     expect(feedSource).toContain(
-      'const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 18 : 32',
+      'const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28',
     );
     expect(feedSource).toContain(
-      'const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 18 : 14',
+      'const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 8 : 10',
     );
-    expect(feedSource).toContain('onEndReachedThreshold={1.4}');
+    expect(feedSource).toContain('onEndReachedThreshold={0.6}');
     expect(feedSource).toContain('removeClippedSubviews={false}');
     expect(feedSource).not.toContain('FEED_SCREEN_HEIGHT * 6');
 
@@ -43,13 +43,13 @@ describe('Feed and profile list performance contracts', () => {
 
   it('shortens fling momentum and loads profile posts before the tail is visible', () => {
     expect(feedSource).toContain(
-      'const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.94 : 0.992',
+      'const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.88 : 0.985',
     );
     expect(feedSource).toContain(
       'decelerationRate={FEED_SCROLL_DECELERATION_RATE}',
     );
     expect(profileSource).toContain(
-      'const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.94 : 0.992',
+      'const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.88 : 0.985',
     );
     expect(profileSource).toContain(
       'decelerationRate={PROFILE_SCROLL_DECELERATION_RATE}',
@@ -57,11 +57,25 @@ describe('Feed and profile list performance contracts', () => {
     expect(profileSource).toContain(
       'PROFILE_POST_EARLY_LOAD_DISTANCE_MULTIPLIER',
     );
-    expect(profileSource).toContain(
-      'PROFILE_POST_EARLY_LOAD_MIN_DISTANCE',
-    );
-    expect(profileSource).toContain('onEndReachedThreshold={1.2}');
+    expect(profileSource).toContain('PROFILE_POST_EARLY_LOAD_MIN_DISTANCE');
+    expect(profileSource).toContain('onEndReachedThreshold={0.6}');
     expect(profileSource).not.toContain('onEndReachedThreshold={0.35}');
+  });
+
+  it('defers pagination work until momentum settles and limits each gesture', () => {
+    expect(feedSource).toContain('pendingLoadMoreDuringScrollRef');
+    expect(feedSource).toContain('loadMoreConsumedForGestureRef');
+    expect(feedSource).toContain('flushPendingLoadMoreRef.current()');
+    expect(feedSource).toContain('const LOAD_MORE_THROTTLE_MS = 1200');
+    expect(feedViewModelSource).toContain('if (isScrollBusyRef.current) {');
+    expect(feedViewModelSource).toContain(
+      'pendingLoadMoreDuringScrollRef.current = true;',
+    );
+    expect(profileSource).toContain('pendingProfileLoadMoreRef');
+    expect(profileSource).toContain('profileLoadMoreConsumedForGestureRef');
+    expect(profileSource).toContain(
+      'const PROFILE_LOAD_MORE_THROTTLE_MS = 1200',
+    );
   });
 
   it('settles visible post ids before rebuilding realtime scopes while scrolling', () => {
@@ -101,6 +115,8 @@ describe('Feed and profile list performance contracts', () => {
     expect(profileSource).toContain(
       'PROFILE_POST_MAINTAIN_VISIBLE_CONTENT_POSITION',
     );
+    expect(profileSource).toContain('reuseStableItemsById(');
+    expect(profileSource).toContain('deferMediaUntilVisible');
   });
 
   it('commits one ready page per fling update and keeps the tail runway stable', () => {

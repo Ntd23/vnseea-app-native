@@ -42,7 +42,7 @@ import type { ProductImage, ProductItem } from '../../domain/types/product.types
 import { findRequestedProduct } from '../../application/findRequestedProduct';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
-import { formatProductPrice } from '../components/ProductCurrency';
+import { formatProductPoints, formatProductPrice } from '../components/ProductCurrency';
 import { ProductShareBottomSheet } from '../components/ProductShareBottomSheet';
 import { getProductSharePostId } from '../../application/sharing/productPostShare';
 import { setSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
@@ -244,6 +244,7 @@ function InfoPill({
 function ProductSummaryCard({ product }: { product: ProductItem }) {
   const rating = numberValue(product.rating);
   const reviewsCount = numberValue(product.reviews_count);
+  const pointsLabel = formatProductPoints(product);
 
   return (
     <View className="mx-4 mt-4 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm" style={{ backgroundColor: '#ffffff', borderRadius: 24, borderWidth: 1, borderColor: '#f1f5f9', padding: 20 }}>
@@ -256,6 +257,11 @@ function ProductSummaryCard({ product }: { product: ProductItem }) {
       <Text className="mt-2 text-2xl font-extrabold text-brand" style={{ color: APP_BRAND_COLOR, fontSize: 20, marginTop: 8 }}>
         {formatProductPrice(product)}
       </Text>
+      {pointsLabel ? (
+        <Text className="mt-1 text-base font-extrabold text-violet-600">
+          {pointsLabel}
+        </Text>
+      ) : null}
 
       {/* Stars Rating & Reviews count */}
       <View className="mt-3 flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
@@ -397,6 +403,7 @@ function RelatedProductCard({
   className?: string;
 }) {
   const preview = productPreview(product);
+  const pointsLabel = formatProductPoints(product);
 
   return (
     <TouchableOpacity
@@ -426,6 +433,14 @@ function RelatedProductCard({
         <Text className="mt-2 text-base font-extrabold text-brand" numberOfLines={1}>
           {formatProductPrice(product)}
         </Text>
+        {pointsLabel ? (
+          <Text
+            className="mt-0.5 text-xs font-extrabold text-violet-600"
+            numberOfLines={1}
+          >
+            {pointsLabel}
+          </Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );

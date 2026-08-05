@@ -402,7 +402,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
               >
                 {formatProductPrice(product)}
               </Text>
-              {marketplaceFloatingActions && productPointsLabel ? (
+              {productPointsLabel ? (
                 <Text
                   className="mt-0.5 text-[12px] font-extrabold text-violet-600"
                   numberOfLines={1}
@@ -623,6 +623,13 @@ const ProductPostCard = React.memo(function ProductPostCard({
         >
           {formatProductPrice(product)}
         </Text>
+        {productPointsLabel ? (
+          <Text
+            className="mt-0.5 text-[14px] font-extrabold text-violet-600"
+          >
+            {productPointsLabel}
+          </Text>
+        ) : null}
 
         {/* Info button */}
         <TouchableOpacity

@@ -455,6 +455,7 @@ export function useFeedViewModel() {
   const videoCandidateQueueRef = useRef<FeedVideoPost[]>([]);
   const videoPrepareRetryCountRef = useRef<Map<string, number>>(new Map());
   const isScrollBusyRef = useRef(false);
+  const pendingLoadMoreDuringScrollRef = useRef(false);
   const pendingCommitRef = useRef<{
     videoPosts: FeedVideoPost[];
     preserveRenderedOrder?: boolean;
@@ -759,6 +760,10 @@ export function useFeedViewModel() {
       if (!busy) {
         flushPendingCommit();
         scheduleImpressionFlush(150);
+        if (pendingLoadMoreDuringScrollRef.current) {
+          pendingLoadMoreDuringScrollRef.current = false;
+          Promise.resolve(loadMorePostsRef.current()).catch(() => undefined);
+        }
         scheduleWarmVisibleFill();
         schedulePrefetchRefillRef.current();
       }
@@ -896,9 +901,7 @@ export function useFeedViewModel() {
         if (!postId) return;
         const currentOwnerKey = sessionStorage.getSession()?.userId || 'guest';
         if (event?.userId && event.userId !== currentOwnerKey) return;
-        updatePostEverywhere(post =>
-          markSharedLivePreviewEnded(post, postId),
-        );
+        updatePostEverywhere(post => markSharedLivePreviewEnded(post, postId));
         removePostEverywhere(postId);
       },
     );
@@ -1123,6 +1126,7 @@ export function useFeedViewModel() {
       prefetchRefillTimerRef.current = setTimeout(() => {
         prefetchRefillTimerRef.current = null;
         if (
+          isScrollBusyRef.current ||
           prefetchPromiseRef.current ||
           hasReachedNetworkEndRef.current ||
           prefetchBufferRef.current.length >=
@@ -1140,6 +1144,11 @@ export function useFeedViewModel() {
   schedulePrefetchRefillRef.current = schedulePrefetchRefill;
 
   const prefetchNextPage = useCallback(() => {
+    if (isScrollBusyRef.current) {
+      schedulePrefetchRefillRef.current();
+      return null;
+    }
+
     // Return the existing promise so callers can await the exact request
     // already in flight. Without this, an early viewability callback and
     // `onEndReached` can fetch the same cursor twice.
@@ -1574,6 +1583,12 @@ export function useFeedViewModel() {
   );
 
   const loadMorePosts = useCallback(async () => {
+    if (isScrollBusyRef.current) {
+      pendingLoadMoreDuringScrollRef.current = true;
+      return;
+    }
+    pendingLoadMoreDuringScrollRef.current = false;
+
     let currentLightPosts = lightPostsRef.current;
     const hasAnyFeedRows =
       currentLightPosts.length > 0 ||
@@ -2190,13 +2205,13 @@ export function useFeedViewModel() {
     setScrollBusy,
     prependPost,
     updatePublisherFollowState,
-        applyRealtimePost: (nextPost: FeedPost) => {
-          updatePostEverywhere(post =>
-            String(post.id) === String(nextPost.id)
-              ? applyLocalPostCaptionEdit(nextPost)
-              : post,
-          );
-        },
+    applyRealtimePost: (nextPost: FeedPost) => {
+      updatePostEverywhere(post =>
+        String(post.id) === String(nextPost.id)
+          ? applyLocalPostCaptionEdit(nextPost)
+          : post,
+      );
+    },
     removeRealtimePost: removePostEverywhere,
     toggleReaction,
     updateCommentCount,
