@@ -911,6 +911,15 @@ function ReelItemBase({
     videoSource,
   ]);
 
+  const stableVideoFrame = useMemo(
+    () => (
+      <Animated.View style={[styles.videoFrame, videoFrameAnimatedStyle]}>
+        {videoPlayer}
+      </Animated.View>
+    ),
+    [videoFrameAnimatedStyle, videoPlayer],
+  );
+
   // Each reel needs a unique SVG gradient ID — if two SVGs share the same
   // id the wrong gradient can bleed across items.
   const gradId = `rg-${item.id}`;
@@ -936,9 +945,7 @@ function ReelItemBase({
         ) : null}
 
         {/* ── Video — mounted only when in the ±1 preload window ─────── */}
-        <Animated.View style={[styles.videoFrame, videoFrameAnimatedStyle]}>
-          {videoPlayer}
-        </Animated.View>
+        {stableVideoFrame}
 
         {/* ── Tap surface ─────────────────────────────────────────────────
             Double-tap → heart reaction (fires on the 2nd tap, no delay)

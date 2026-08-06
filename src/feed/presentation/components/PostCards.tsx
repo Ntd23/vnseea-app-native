@@ -23,11 +23,6 @@ import {
   type ViewStyle,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
-import {
-  Gesture,
-  GestureDetector,
-  TouchableOpacity as GHTouchableOpacity,
-} from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -50,7 +45,6 @@ import {
   Users,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
@@ -59,7 +53,6 @@ import {
   setVideoPlaybackTime,
 } from '../../../reels/presentation/screens/reelsPlayback';
 import { useLiveMediaActive } from '../../../shared-kernel/application/state/liveMediaPlaybackIsolation';
-import type { RootStackParamList } from '../../../navigation/types';
 import type {
   FeedPost,
   FeedTextPost,
@@ -178,10 +171,6 @@ const VIDEO_WARM_PREVIEW_SECONDS = Platform.OS === 'android' ? 0.35 : 0.6;
 const FEED_VIDEO_BLUR_SURFACE_GRACE_MS = 240;
 const FEED_VIDEO_BACKDROP_BLUR_RADIUS = Platform.OS === 'android' ? 18 : 28;
 const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 5;
-const LOAD_MORE_THROTTLE_MS = 800;
-const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
-const IMAGE_PREFETCH_LOOKAHEAD = 5;
-const MAX_IMAGE_PREFETCH_URLS = 8;
 const DEFAULT_PHOTO_GRID_WIDTH =
   Platform.OS === 'ios'
     ? Dimensions.get('window').width
@@ -224,8 +213,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     paddingTop: 0,
     paddingBottom: 0,
-    borderRadius: 0,
+    borderRadius: 18,
     backgroundColor: '#ffffff',
+    overflow: 'hidden',
   },
   androidReactionPickerRow: {
     width: '100%',
@@ -1417,44 +1407,21 @@ const VideoPostActions = React.memo(function VideoPostActions({
   likeButtonRef,
   onLikeTap,
   onLikeLongPress,
-  onPickReaction,
   onCommentTap,
   onShare,
   post,
-  gestureX,
-  gestureY,
-  gestureActive,
-  gestureStartX,
-  gestureStartY,
-  hasDragged,
 }: {
   myReaction: ReactionType | null;
   copy: FeedCopy;
   likeButtonRef: React.RefObject<View | null>;
   onLikeTap: () => void;
   onLikeLongPress: () => void;
-  onPickReaction: (reaction: ReactionType) => void;
   onCommentTap: () => void;
   onShare?: (post: FeedPost) => void;
   post: FeedPost;
-  gestureX: any;
-  gestureY: any;
-  gestureActive: any;
-  gestureStartX: any;
-  gestureStartY: any;
-  hasDragged: any;
 }) {
   const label = myReaction ? copy.reactionLabel[myReaction] : copy.like;
   const color = myReaction ? REACTION_COLOR[myReaction] : '#64748B';
-  const activeReactionPickerPostId = useFeedReactionPickerActivePostId();
-  const showInlineReactionPicker =
-    Platform.OS === 'android' &&
-    activeReactionPickerPostId !== null &&
-    activeReactionPickerPostId === post.id;
-
-  if (showInlineReactionPicker) {
-    return <FeedInlineReactionPickerBar onPick={onPickReaction} />;
-  }
 
   // Like button: a plain TouchableOpacity with native `onPress` (fast tap
   // â†’ like) and `onLongPress` (â‰¥400ms â†’ opens the floating reaction
@@ -1560,8 +1527,6 @@ export function ReactionPickerOverlay({
   if (!anchor) return null;
 
   const isAndroidPicker = Platform.OS === 'android';
-  if (isAndroidPicker) return null;
-
   const screenWidth = Dimensions.get('window').width;
   const pickerWidth = isAndroidPicker
     ? screenWidth - ANDROID_PICKER_HORIZONTAL_MARGIN * 2
@@ -1587,9 +1552,7 @@ export function ReactionPickerOverlay({
         10,
         Math.min(anchor.x - pickerWidth / 2, screenWidth - pickerWidth - 10),
       );
-  const top = isAndroidPicker
-    ? Math.max(40, anchor.y - ANDROID_PICKER_ICON_ROW_HEIGHT)
-    : Math.max(40, anchor.y - pickerHeight - PICKER_GAP);
+  const top = Math.max(40, anchor.y - pickerHeight - PICKER_GAP);
 
   // Clamp the arrow pointer's horizontal position so it stays within the rounded rectangle boundaries
   const arrowLeft = Math.max(
@@ -1615,7 +1578,7 @@ export function ReactionPickerOverlay({
         style={{
           position: 'absolute',
           left: arrowLeft,
-          top: top + PICKER_HEIGHT - 8,
+          top: top + pickerHeight - 8,
           width: 16,
           height: 16,
           transform: [{ rotate: '45deg' }],
@@ -1635,7 +1598,7 @@ export function ReactionPickerOverlay({
             top,
             width: pickerWidth,
             height: pickerHeight,
-            elevation: isAndroidPicker ? 0 : 12,
+            elevation: 12,
             zIndex: 100,
           },
         ]}
@@ -1797,12 +1760,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onOpenReactions,
   isActive: controlledIsActive,
   isScreenFocused,
-  gestureX,
-  gestureY,
-  gestureActive,
-  gestureStartX,
-  gestureStartY,
-  hasDragged,
   navigateToProfile,
   onOpenPostMenu,
   showIdentityHeader = true,
@@ -1844,19 +1801,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const copy = providedCopy ?? FEED_COPY[language];
   const trackedMediaVisible = useFeedPostMediaVisible(post.id);
   const mediaVisible = !deferMediaUntilVisible || trackedMediaVisible;
-  const localX = useSharedValue(0);
-  const localY = useSharedValue(0);
-  const localActive = useSharedValue(false);
-  const localStartX = useSharedValue(0);
-  const localStartY = useSharedValue(0);
-  const localDragged = useSharedValue(false);
-
-  const gX = gestureX ?? localX;
-  const gY = gestureY ?? localY;
-  const gActive = gestureActive ?? localActive;
-  const gStartX = gestureStartX ?? localStartX;
-  const gStartY = gestureStartY ?? localStartY;
-  const gDragged = hasDragged ?? localDragged;
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
@@ -2284,6 +2228,193 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const showPlayOverlay = canAttemptVideo && !playing;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
+  const handleVideoProgress = useCallback(
+    (data: any) => {
+      if (mediaIdentity !== mediaIdentityRef.current) return;
+      const nextTime = data?.currentTime;
+      if (typeof nextTime !== 'number' || !Number.isFinite(nextTime)) return;
+
+      if (isActive) {
+        hasUserWatchedRef.current = true;
+        currentTimeRef.current = nextTime;
+        setVideoPlaybackTime(post.id, nextTime);
+      } else {
+        warmPreviewTimeRef.current = nextTime;
+        if (
+          keepPreparedVideoMounted &&
+          nextTime >= VIDEO_WARM_PREVIEW_SECONDS
+        ) {
+          setWarmPreviewReady(true);
+        }
+      }
+
+      if (
+        Platform.OS === 'android' &&
+        isActive &&
+        playing &&
+        !isScrollBusy &&
+        !hasRenderedFrameRef.current
+      ) {
+        const playbackWindowStart = firstFrameProgressStartRef.current;
+        if (
+          playbackWindowStart === null ||
+          nextTime < playbackWindowStart
+        ) {
+          firstFrameProgressStartRef.current = nextTime;
+        } else if (
+          shouldRecoverFeedVideoSurface({
+            isAndroid: true,
+            isActive,
+            isPlaying: playing,
+            isScrollBusy,
+            hasRenderedFrame: hasRenderedFrameRef.current,
+            recoveryInFlight: videoSurfaceRecoveryInFlightRef.current,
+            recoveryAttempt: videoSurfaceRecoveryCountRef.current,
+            playbackWindowStart,
+            currentTime: nextTime,
+          })
+        ) {
+          recoverAndroidVideoSurface(nextTime);
+        }
+      } else if (
+        Platform.OS !== 'android' &&
+        !hasRenderedFrameRef.current &&
+        nextTime > 0.05
+      ) {
+        revealVideoFrame();
+      }
+    },
+    [
+      isActive,
+      isScrollBusy,
+      keepPreparedVideoMounted,
+      mediaIdentity,
+      playing,
+      post.id,
+      recoverAndroidVideoSurface,
+      revealVideoFrame,
+    ],
+  );
+
+  const handleVideoError = useCallback(
+    (error: any) => {
+      if (mediaIdentity !== mediaIdentityRef.current) return;
+      hasRenderedFrameRef.current = false;
+      firstFrameProgressStartRef.current = null;
+      videoSurfaceRecoveryInFlightRef.current = false;
+      setHasVideoError(true);
+      setIsReady(false);
+      setHasRenderedFrame(false);
+      setWarmPreviewReady(false);
+      frameCoverOpacity.value = 1;
+      setFrameCoverVisible(true);
+      console.warn(
+        '[HomeVideoPostCard] video error',
+        post.id,
+        post.videoUrl,
+        error,
+      );
+    },
+    [frameCoverOpacity, mediaIdentity, post.id, post.videoUrl],
+  );
+
+  // Reaction counters and picker state may re-render the card chrome. Keep the
+  // native video surface stable so UI-only updates cannot detach SurfaceView.
+  const stableVideoSurface = useMemo(
+    () => {
+      if (!shouldMountVideo) {
+        if (resolvedThumbnailUrl) return null;
+        return (
+          <VideoFallbackPoster
+            label={
+              hasVideoUrl && !hasVideoError
+                ? copy.video ?? 'Video'
+                : copy.videoUnavailable
+            }
+          />
+        );
+      }
+
+      return (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <VideoPlayer
+            key={`${mediaIdentity}:${videoPlayerGeneration}`}
+            ref={videoRef}
+            source={videoSource}
+            style={[
+              StyleSheet.absoluteFill,
+              !hasRenderedFrame ? { opacity: 0 } : null,
+            ]}
+            resizeMode="contain"
+            paused={!playing}
+            controls={false}
+            muted={muted || !isActive || !hasRenderedFrame}
+            repeat
+            ignoreSilentSwitch="ignore"
+            disableAudioSessionManagement={
+              Platform.OS === 'ios' && liveMediaActive
+            }
+            playInBackground={false}
+            playWhenInactive={false}
+            useTextureView={false}
+            bufferConfig={VIDEO_BUFFER_CONFIG}
+            maxBitRate={maxVideoBitRate}
+            progressUpdateInterval={250}
+            onReadyForDisplay={revealVideoFrame}
+            onLoad={handleVideoLoad}
+            onProgress={handleVideoProgress}
+            poster={resolvedThumbnailUrl}
+            posterResizeMode="cover"
+            onError={handleVideoError}
+          />
+          {resolvedThumbnailUrl && isFrameCoverVisible ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
+            >
+              <FeedVideoBackdrop
+                uri={resolvedThumbnailUrl}
+                enabled={mediaLoadEnabled}
+                blurred
+              />
+            </Animated.View>
+          ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
+            >
+              <VideoFallbackPoster label={copy.video ?? 'Video'} />
+            </Animated.View>
+          ) : null}
+        </View>
+      );
+    },
+    [
+      copy.video,
+      copy.videoUnavailable,
+      frameCoverAnimatedStyle,
+      handleVideoError,
+      handleVideoLoad,
+      handleVideoProgress,
+      hasRenderedFrame,
+      hasVideoError,
+      hasVideoUrl,
+      isActive,
+      isFrameCoverVisible,
+      liveMediaActive,
+      maxVideoBitRate,
+      mediaIdentity,
+      mediaLoadEnabled,
+      muted,
+      playing,
+      resolvedThumbnailUrl,
+      revealVideoFrame,
+      shouldMountVideo,
+      videoPlayerGeneration,
+      videoSource,
+    ],
+  );
+
   // Need an on-screen position for the "ThĂ­ch" button so the picker
   // anchors above it (matches the Facebook web/mobile pattern).
   const likeButtonRef = useRef<View>(null);
@@ -2381,148 +2512,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   blurred={shouldMountVideo}
                 />
               ) : null}
-              {shouldMountVideo ? (
-                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                  <VideoPlayer
-                    key={`${mediaIdentity}:${videoPlayerGeneration}`}
-                    ref={videoRef}
-                    source={videoSource}
-                    style={[
-                      StyleSheet.absoluteFill,
-                      !hasRenderedFrame ? { opacity: 0 } : null,
-                    ]}
-                    resizeMode="contain"
-                    paused={!playing}
-                    controls={false}
-                    muted={muted || !isActive || !hasRenderedFrame}
-                    repeat
-                    ignoreSilentSwitch="ignore"
-                    disableAudioSessionManagement={
-                      Platform.OS === 'ios' && liveMediaActive
-                    }
-                    playInBackground={false}
-                    playWhenInactive={false}
-                    // SurfaceView is more reliable for Android codecs that can
-                    // play audio while TextureView remains stuck on its poster.
-                    // The poster/frame-cover layers still hide the first frame.
-                    useTextureView={false}
-                    bufferConfig={VIDEO_BUFFER_CONFIG}
-                    maxBitRate={maxVideoBitRate}
-                    progressUpdateInterval={250}
-                    onReadyForDisplay={revealVideoFrame}
-                    onLoad={handleVideoLoad}
-                    onProgress={data => {
-                      if (mediaIdentity !== mediaIdentityRef.current) return;
-                      const nextTime = data?.currentTime;
-                      if (
-                        typeof nextTime !== 'number' ||
-                        !Number.isFinite(nextTime)
-                      ) {
-                        return;
-                      }
-                      if (isActive) {
-                        hasUserWatchedRef.current = true;
-                        currentTimeRef.current = nextTime;
-                        setVideoPlaybackTime(post.id, nextTime);
-                      } else {
-                        warmPreviewTimeRef.current = nextTime;
-                        if (
-                          keepPreparedVideoMounted &&
-                          nextTime >= VIDEO_WARM_PREVIEW_SECONDS
-                        ) {
-                          setWarmPreviewReady(true);
-                        }
-                      }
-
-                      if (
-                        Platform.OS === 'android' &&
-                        isActive &&
-                        playing &&
-                        !isScrollBusy &&
-                        !hasRenderedFrameRef.current
-                      ) {
-                        const playbackWindowStart =
-                          firstFrameProgressStartRef.current;
-                        if (
-                          playbackWindowStart === null ||
-                          nextTime < playbackWindowStart
-                        ) {
-                          firstFrameProgressStartRef.current = nextTime;
-                        } else if (
-                          shouldRecoverFeedVideoSurface({
-                            isAndroid: true,
-                            isActive,
-                            isPlaying: playing,
-                            isScrollBusy,
-                            hasRenderedFrame: hasRenderedFrameRef.current,
-                            recoveryInFlight:
-                              videoSurfaceRecoveryInFlightRef.current,
-                            recoveryAttempt:
-                              videoSurfaceRecoveryCountRef.current,
-                            playbackWindowStart,
-                            currentTime: nextTime,
-                          })
-                        ) {
-                          recoverAndroidVideoSurface(nextTime);
-                        }
-                      } else if (
-                        Platform.OS !== 'android' &&
-                        !hasRenderedFrameRef.current &&
-                        nextTime > 0.05
-                      ) {
-                        revealVideoFrame();
-                      }
-                    }}
-                    poster={resolvedThumbnailUrl}
-                    posterResizeMode="cover"
-                    onError={error => {
-                      if (mediaIdentity !== mediaIdentityRef.current) return;
-                      hasRenderedFrameRef.current = false;
-                      firstFrameProgressStartRef.current = null;
-                      videoSurfaceRecoveryInFlightRef.current = false;
-                      setHasVideoError(true);
-                      setIsReady(false);
-                      setHasRenderedFrame(false);
-                      setWarmPreviewReady(false);
-                      frameCoverOpacity.value = 1;
-                      setFrameCoverVisible(true);
-                      console.warn(
-                        '[HomeVideoPostCard] video error',
-                        post.id,
-                        post.videoUrl,
-                        error,
-                      );
-                    }}
-                  />
-                  {resolvedThumbnailUrl && isFrameCoverVisible ? (
-                    <Animated.View
-                      pointerEvents="none"
-                      style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
-                    >
-                      <FeedVideoBackdrop
-                        uri={resolvedThumbnailUrl}
-                        enabled={mediaLoadEnabled}
-                        blurred
-                      />
-                    </Animated.View>
-                  ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
-                    <Animated.View
-                      pointerEvents="none"
-                      style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
-                    >
-                      <VideoFallbackPoster label={copy.video ?? 'Video'} />
-                    </Animated.View>
-                  ) : null}
-                </View>
-              ) : resolvedThumbnailUrl ? null : (
-                <VideoFallbackPoster
-                  label={
-                    hasVideoUrl && !hasVideoError
-                      ? copy.video ?? 'Video'
-                      : copy.videoUnavailable
-                  }
-                />
-              )}
+              {stableVideoSurface}
               {/* Big play button overlay while paused */}
               {showPlayOverlay ? (
                 <View
@@ -2615,16 +2605,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           likeButtonRef={likeButtonRef}
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
-          onPickReaction={reaction => onReact(post.id, reaction)}
           onCommentTap={handleCommentTap}
           onShare={onShare}
           post={post}
-          gestureX={gX}
-          gestureY={gY}
-          gestureActive={gActive}
-          gestureStartX={gStartX}
-          gestureStartY={gStartY}
-          hasDragged={gDragged}
         />
       </FeedCardContent>
     </FeedCardSurface>
@@ -3308,12 +3291,6 @@ export const TextPostCard = React.memo(function TextPostCard({
   onPhotoPress,
   onShare,
   onOpenReactions,
-  gestureX,
-  gestureY,
-  gestureActive,
-  gestureStartX,
-  gestureStartY,
-  hasDragged,
   navigateToProfile,
   onOpenPostMenu,
   onPostPress,
@@ -3335,10 +3312,9 @@ export const TextPostCard = React.memo(function TextPostCard({
    * `VideoReactionSummary` so the card itself stays navigation-free.
    */
   onOpenReactions?: (postId: string, post: FeedPost) => void;
-  // Reanimated shared values for the FB-style drag-to-pick reaction
-  // picker. Threaded through `VideoPostActions` so the long-press +
-  // pan gesture can update them and `ReactionIcon` can react to the
-  // movement. `any` typing matches Antigravity's existing convention.
+  // Kept in the public card props for existing screen call sites. The
+  // screen-level ReactionPickerOverlay owns these shared values so opening a
+  // picker never changes the card layout or native media subtree.
   gestureX?: any;
   gestureY?: any;
   gestureActive?: any;
@@ -3364,19 +3340,6 @@ export const TextPostCard = React.memo(function TextPostCard({
   const trackedMediaVisible = useFeedPostMediaVisible(post.id);
   const mediaEnabled = !deferMediaUntilVisible || trackedMediaVisible;
   const navigation = useNavigation<any>();
-  const localX = useSharedValue(0);
-  const localY = useSharedValue(0);
-  const localActive = useSharedValue(false);
-  const localStartX = useSharedValue(0);
-  const localStartY = useSharedValue(0);
-  const localDragged = useSharedValue(false);
-
-  const gX = gestureX ?? localX;
-  const gY = gestureY ?? localY;
-  const gActive = gestureActive ?? localActive;
-  const gStartX = gestureStartX ?? localStartX;
-  const gStartY = gestureStartY ?? localStartY;
-  const gDragged = hasDragged ?? localDragged;
   const likeButtonRef = useRef<View>(null);
 
   // Profile tap handler
@@ -3662,16 +3625,9 @@ export const TextPostCard = React.memo(function TextPostCard({
           likeButtonRef={likeButtonRef}
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
-          onPickReaction={reaction => onReact(post.id, reaction)}
           onCommentTap={handleCommentTap}
           onShare={onShare}
           post={post}
-          gestureX={gX}
-          gestureY={gY}
-          gestureActive={gActive}
-          gestureStartX={gStartX}
-          gestureStartY={gStartY}
-          hasDragged={gDragged}
         />
       </FeedCardContent>
     </FeedCardSurface>

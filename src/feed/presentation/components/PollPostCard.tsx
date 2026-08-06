@@ -7,7 +7,6 @@ import {
   FlatList,
   Image,
   Modal,
-  Platform,
   Text,
   TouchableOpacity,
   View,
@@ -47,10 +46,8 @@ import {
   FeedGlassActionButton,
 } from './FeedCardChrome';
 import {
-  FeedInlineReactionPickerBar,
   getFeedReactionPickerAnchorY,
   renderPostTextTokens,
-  useFeedReactionPickerActivePostId,
 } from './PostCards';
 import {
   FEED_REACTION_COLORS as REACTION_COLOR,
@@ -478,12 +475,6 @@ export const PollPostCard = React.memo(function PollPostCard({
     taggedUsers: post.taggedUsers,
     location: post.location,
   });
-  const activeReactionPickerPostId = useFeedReactionPickerActivePostId();
-  const showInlineReactionPicker =
-    Platform.OS === 'android' &&
-    activeReactionPickerPostId !== null &&
-    activeReactionPickerPostId === post.id;
-
   return (
     <FeedCardSurface>
       {/* Publisher Header */}
@@ -655,63 +646,55 @@ export const PollPostCard = React.memo(function PollPostCard({
         </TouchableOpacity>
       </View>
 
-      {showInlineReactionPicker ? (
-        <View className="px-3 pb-2">
-          <FeedInlineReactionPickerBar
-            onPick={reaction => onReact(post.id, reaction)}
-          />
-        </View>
-      ) : (
-        <FeedGlassActionBar className="border-t-0 px-3 py-2.5 pt-0">
-          <GestureDetector gesture={composedGesture}>
-            <Animated.View
-              ref={likeButtonRef as any}
-              className="flex-1 flex-row items-center justify-center py-1"
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+      <FeedGlassActionBar className="border-t-0 px-3 py-2.5 pt-0">
+        <GestureDetector gesture={composedGesture}>
+          <Animated.View
+            ref={likeButtonRef as any}
+            className="flex-1 flex-row items-center justify-center py-1"
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            {post.myReaction ? (
+              <Image
+                source={REACTION_IMAGES[post.myReaction]}
+                style={{ width: 20, height: 20 }}
+                resizeMode="contain"
+              />
+            ) : (
+              <ThumbsUp size={19} color={reactionColor} />
+            )}
+            <Text
+              className="ml-2 text-[14px] font-semibold"
+              style={{ color: reactionColor }}
             >
-              {post.myReaction ? (
-                <Image
-                  source={REACTION_IMAGES[post.myReaction]}
-                  style={{ width: 20, height: 20 }}
-                  resizeMode="contain"
-                />
-              ) : (
-                <ThumbsUp size={19} color={reactionColor} />
-              )}
-              <Text
-                className="ml-2 text-[14px] font-semibold"
-                style={{ color: reactionColor }}
-              >
-                {reactionLabel}
-              </Text>
-            </Animated.View>
-          </GestureDetector>
+              {reactionLabel}
+            </Text>
+          </Animated.View>
+        </GestureDetector>
 
+        <FeedGlassActionButton
+          className="flex-1 flex-row items-center justify-center py-1"
+          activeOpacity={0.75}
+          onPress={handleCommentTap}
+        >
+          <MessageCircle size={19} color="#65676B" />
+          <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
+            {copy.comment}
+          </Text>
+        </FeedGlassActionButton>
+
+        {isFeedPostShareable(post) ? (
           <FeedGlassActionButton
             className="flex-1 flex-row items-center justify-center py-1"
             activeOpacity={0.75}
-            onPress={handleCommentTap}
+            onPress={() => onShare?.(post)}
           >
-            <MessageCircle size={19} color="#65676B" />
+            <Share2 size={19} color="#65676B" />
             <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-              {copy.comment}
+              {copy.share}
             </Text>
           </FeedGlassActionButton>
-
-          {isFeedPostShareable(post) ? (
-            <FeedGlassActionButton
-              className="flex-1 flex-row items-center justify-center py-1"
-              activeOpacity={0.75}
-              onPress={() => onShare?.(post)}
-            >
-              <Share2 size={19} color="#65676B" />
-              <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-                {copy.share}
-              </Text>
-            </FeedGlassActionButton>
-          ) : null}
-        </FeedGlassActionBar>
-      )}
+        ) : null}
+      </FeedGlassActionBar>
 
       <PostTaggedUsersSheet
         visible={taggedUsersVisible}

@@ -215,7 +215,7 @@ export function useReelsViewModel(initialVideo?: {
         postId: string;
         myReaction: ReactionType | null;
         likeCount: number;
-        source?: 'reels';
+        source?: 'reels' | 'feed';
       }) => {
         if (event.source === 'reels') return;
         setItems(prev => {

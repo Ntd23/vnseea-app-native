@@ -929,7 +929,9 @@ export function useFeedViewModel() {
         myReaction: ReactionType | null;
         likeCount: number;
         topReactions: ReactionType[];
+        source?: 'feed' | 'reels';
       }) => {
+        if (event.source === 'feed') return;
         updatePostEverywhere(post => {
           if (post.id !== event.postId) return post;
           if (
@@ -2043,6 +2045,7 @@ export function useFeedViewModel() {
         myReaction: targetReaction,
         likeCount: finalLikeCount,
         topReactions: finalTopReactions,
+        source: 'feed',
       });
 
       try {
@@ -2061,6 +2064,7 @@ export function useFeedViewModel() {
             myReaction: typedOriginal.myReaction,
             likeCount: typedOriginal.likeCount,
             topReactions: typedOriginal.topReactions,
+            source: 'feed',
           });
         }
       }

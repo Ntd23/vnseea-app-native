@@ -236,7 +236,8 @@ describe('Reel video playback resilience', () => {
 
   it('does not rebuild the native player for reaction-only UI updates', () => {
     expect(reelItemSource).toContain('const videoPlayer = useMemo(() => {');
-    expect(reelItemSource).toContain('{videoPlayer}');
+    expect(reelItemSource).toContain('const stableVideoFrame = useMemo(');
+    expect(reelItemSource).toContain('{stableVideoFrame}');
 
     const playerMemoSource = reelItemSource.slice(
       reelItemSource.indexOf('const videoPlayer = useMemo(() => {'),

@@ -13,6 +13,26 @@ function readPostCards() {
   );
 }
 
+function readPollPostCard() {
+  return fs.readFileSync(
+    path.join(
+      repoRoot,
+      'src/feed/presentation/components/PollPostCard.tsx',
+    ),
+    'utf8',
+  );
+}
+
+function readFeedViewModel() {
+  return fs.readFileSync(
+    path.join(
+      repoRoot,
+      'src/feed/application/view-models/useFeedViewModel.ts',
+    ),
+    'utf8',
+  );
+}
+
 describe('Post card rendering stability', () => {
   it('calls reaction-summary hooks before its empty-row return', () => {
     const source = readPostCards();
@@ -43,5 +63,51 @@ describe('Post card rendering stability', () => {
     expect(measurementSource).toContain(
       'cacheMediaAspectRatio(videoPreviewCacheKey, width, height);',
     );
+  });
+
+  it('keeps reaction pickers out of Android card layout', () => {
+    const source = readPostCards();
+    const pollSource = readPollPostCard();
+    const actionsSource = source.slice(
+      source.indexOf('const VideoPostActions'),
+      source.indexOf('// Ă¢â€â‚¬Ă¢â€â‚¬ ReactionPickerOverlay'),
+    );
+    const pickerSource = source.slice(
+      source.indexOf('export function ReactionPickerOverlay'),
+      source.indexOf('function ReactionIcon'),
+    );
+
+    expect(actionsSource).not.toContain('useFeedReactionPickerActivePostId()');
+    expect(actionsSource).not.toContain('<FeedInlineReactionPickerBar');
+    expect(pickerSource).not.toContain('if (isAndroidPicker) return null;');
+    expect(pollSource).not.toContain('useFeedReactionPickerActivePostId');
+    expect(pollSource).not.toContain('<FeedInlineReactionPickerBar');
+  });
+
+  it('does not consume the Feed optimistic reaction event twice', () => {
+    const source = readFeedViewModel();
+
+    expect(source).toContain("source?: 'feed' | 'reels';");
+    expect(source).toContain("if (event.source === 'feed') return;");
+    expect(source).toContain("source: 'feed',");
+  });
+
+  it('keeps the native Feed video surface stable during reaction-only renders', () => {
+    const source = readPostCards();
+    const videoCardSource = source.slice(
+      source.indexOf('export const HomeVideoPostCard'),
+      source.indexOf('// Ă¢â€â‚¬Ă¢â€â‚¬ PostHeader'),
+    );
+
+    expect(videoCardSource).toContain('const stableVideoSurface = useMemo(');
+    expect(videoCardSource).toContain('{stableVideoSurface}');
+
+    const surfaceSource = videoCardSource.slice(
+      videoCardSource.indexOf('const stableVideoSurface = useMemo('),
+      videoCardSource.indexOf('// Need an on-screen position'),
+    );
+    expect(surfaceSource).not.toContain('post.myReaction');
+    expect(surfaceSource).not.toContain('post.likeCount');
+    expect(surfaceSource).not.toContain('post.topReactions');
   });
 });
