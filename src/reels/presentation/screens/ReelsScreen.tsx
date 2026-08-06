@@ -357,6 +357,17 @@ export default function ReelsScreen() {
     }
   }, [vm.isCommentsOpen]);
 
+  const requestMoreReels = useCallback(() => {
+    if (!hasMoreRef.current || isLoadingMoreRef.current) return;
+    isLoadingMoreRef.current = true;
+    loadMoreRef
+      .current()
+      .catch(() => undefined)
+      .finally(() => {
+        isLoadingMoreRef.current = false;
+      });
+  }, []);
+
   useEffect(() => {
     const activeReelId = vm.items[vm.activeIndex]?.id;
     scheduleRealtimeVisibleReelIds(activeReelId ? [activeReelId] : []);
@@ -717,8 +728,7 @@ export default function ReelsScreen() {
             isLoadingMore: isLoadingMoreRef.current,
           })
         ) {
-          isLoadingMoreRef.current = true;
-          loadMoreRef.current();
+          requestMoreReels();
         }
       }
     },
@@ -787,8 +797,7 @@ export default function ReelsScreen() {
 
     if (index >= itemsLengthRef.current - 1) {
       if (hasMoreRef.current && !isLoadingMoreRef.current) {
-        isLoadingMoreRef.current = true;
-        loadMoreRef.current();
+        requestMoreReels();
       }
       return false;
     }
@@ -812,7 +821,7 @@ export default function ReelsScreen() {
       });
     });
     return true;
-  }, []);
+  }, [requestMoreReels]);
 
   const commitActiveIndexFromOffset = useCallback(
     (offsetY: number) => {
@@ -1087,12 +1096,7 @@ export default function ReelsScreen() {
     [itemHeight],
   );
 
-  const handleEndReached = useCallback(() => {
-    if (hasMoreRef.current && !isLoadingMoreRef.current) {
-      isLoadingMoreRef.current = true;
-      loadMoreRef.current();
-    }
-  }, []);
+  const handleEndReached = requestMoreReels;
 
   const reelsRefreshControl = useMemo(
     () => (
@@ -1107,15 +1111,40 @@ export default function ReelsScreen() {
     [vm.isRefreshing, vm.refresh],
   );
 
-  const reelsFooter = useMemo(
-    () =>
-      vm.isLoadingMore ? (
+  const reelsFooter = useMemo(() => {
+    if (vm.isLoadingMore) {
+      return (
         <View style={[styles.footerLoader, { height: itemHeight }]}>
           <ActivityIndicator color="#fff" size="small" />
         </View>
-      ) : null,
-    [itemHeight, vm.isLoadingMore],
-  );
+      );
+    }
+
+    if (vm.hasLoadMoreError && vm.hasMore) {
+      return (
+        <View style={[styles.footerLoader, { height: itemHeight }]}>
+          <Text style={styles.errorMsg}>{copy.failedLoad}</Text>
+          <TouchableOpacity
+            onPress={requestMoreReels}
+            style={styles.retryButton}
+          >
+            <RotateCcw size={16} color="#fff" />
+            <Text style={styles.retryLabel}>{copy.tryAgain}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return null;
+  }, [
+    copy.failedLoad,
+    copy.tryAgain,
+    itemHeight,
+    requestMoreReels,
+    vm.hasLoadMoreError,
+    vm.hasMore,
+    vm.isLoadingMore,
+  ]);
 
   // ── Swipe-from-left to go back ───────────────────────────────────────
   // Facebook-style: drag the screen to the right and release past a
@@ -1699,6 +1728,7 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: 18,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#000',
   },
   backIndicatorContainer: {

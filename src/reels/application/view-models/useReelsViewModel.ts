@@ -42,6 +42,7 @@ import {
   mergeFeedVideoPostSnapshotIntoReel,
   mergeReelsStartupItems,
 } from '../services/reelsStartupFeed';
+import { fetchDistinctReelsBatch } from '../services/reelsPagination';
 import { postEditedEvents } from '../../../feed/application/events/postEditedEvents';
 import {
   applyLocalPostCaptionEdit,
@@ -104,6 +105,7 @@ export function useReelsViewModel(initialVideo?: {
   } | null>(initialVideo ?? null);
   const [phase, setPhase] = useState<LoadPhase>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadMoreError, setHasLoadMoreError] = useState(false);
   const [hasMore, setHasMore] = useState(startupSnapshot.hasMore);
   const [activeIndex, setActiveIndex] = useState(0);
   const activeIndexRef = useRef(activeIndex);
@@ -344,28 +346,30 @@ export function useReelsViewModel(initialVideo?: {
     inFlightRef.current = true;
     setPhase('initial');
     setError(null);
+    setHasLoadMoreError(false);
     try {
       const page = await fetchReelsStartupPage();
       let nextItems = filterUnavailable(page.items);
       let targetActiveIndex = 0;
 
       const visibleItems = filterUnavailable(itemsRef.current);
-      if (visibleItems.length > 0) {
-        nextItems = mergeReelsStartupItems(visibleItems, nextItems);
-        targetActiveIndex = Math.max(
-          0,
-          Math.min(activeIndexRef.current, nextItems.length - 1),
+      if (initialVideoInfoRef.current) {
+        const { post } = initialVideoInfoRef.current;
+        const pinnedItem = mapFeedVideoPostToReel(post);
+        nextItems = mergeReelsStartupItems(
+          visibleItems,
+          nextItems,
+          pinnedItem,
         );
         initialVideoInfoRef.current = null;
-      } else if (initialVideoInfoRef.current) {
-        const { id, post } = initialVideoInfoRef.current;
-        const mapped = mapFeedVideoPostToReel(post);
-        nextItems = [
-          mapped,
-          ...nextItems.filter(item => String(item.id) !== String(id)),
-        ];
-        targetActiveIndex = 0;
-        initialVideoInfoRef.current = null; // consumed
+      } else if (visibleItems.length > 0) {
+        const activeItemId = visibleItems[activeIndexRef.current]?.id;
+        nextItems = mergeReelsStartupItems(visibleItems, nextItems);
+        const refreshedActiveIndex = nextItems.findIndex(
+          item => item.id === activeItemId,
+        );
+        targetActiveIndex = Math.max(0, refreshedActiveIndex);
+        initialVideoInfoRef.current = null;
       }
 
       itemsRef.current = nextItems;
@@ -390,6 +394,7 @@ export function useReelsViewModel(initialVideo?: {
     inFlightRef.current = true;
     setPhase('refreshing');
     setError(null);
+    setHasLoadMoreError(false);
     try {
       const page = await fetchReelsStartupPage({ force: true });
       const nextItems = filterUnavailable(page.items);
@@ -417,30 +422,32 @@ export function useReelsViewModel(initialVideo?: {
 
     inFlightRef.current = true;
     setPhase('loading-more');
+    setHasLoadMoreError(false);
     try {
       const requestedCursor = cursorRef.current;
-      const page = await repository.fetchReels({
-        limit: PAGE_SIZE,
+      const result = await fetchDistinctReelsBatch({
         cursor: requestedCursor,
+        existingIds: itemsRef.current.map(item => item.id),
+        filterItems: filterUnavailable,
+        fetchPage: cursor =>
+          repository.fetchReels({
+            limit: PAGE_SIZE,
+            cursor,
+          }),
       });
 
       setItems(prev => {
-        // Dedup by id in case the server returns overlapping items, AND
-        // drop any ids we've already marked unavailable in this session.
-        const seen = new Set(prev.map(item => item.id));
-        const fresh = filterUnavailable(page.items).filter(
-          item => !seen.has(item.id),
-        );
-        return [...prev, ...fresh];
+        if (result.items.length === 0) return prev;
+        const nextItems = [...prev, ...result.items];
+        itemsRef.current = nextItems;
+        return nextItems;
       });
 
-      cursorRef.current = page.nextCursor;
-      setHasMore(
-        page.nextCursor !== null && page.nextCursor !== requestedCursor,
-      );
+      cursorRef.current = result.nextCursor;
+      setHasMore(result.hasMore);
+      setHasLoadMoreError(result.error !== null || result.shouldRetry);
     } catch {
-      // Soft fail — let user try again by scrolling. Don't flip the error
-      // banner here because they still have items to watch.
+      setHasLoadMoreError(true);
     } finally {
       setPhase('idle');
       inFlightRef.current = false;
@@ -1612,6 +1619,7 @@ export function useReelsViewModel(initialVideo?: {
     isInitialLoading: phase === 'initial' && items.length === 0,
     isRefreshing: phase === 'refreshing',
     isLoadingMore: phase === 'loading-more',
+    hasLoadMoreError,
     hasMore,
     error,
     activeIndex,
