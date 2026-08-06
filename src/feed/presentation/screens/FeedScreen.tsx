@@ -246,10 +246,10 @@ const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
   : Math.max(2800, Math.round(FEED_SCREEN_HEIGHT * 3.2));
 const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28;
 const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = {
-  disabled: false,
-  // Preserve the item currently under the user's finger when delayed live,
-  // page, group, or funding rows are inserted above the viewport.
-  autoscrollToTopThreshold: 96,
+  // Deep-feed row order is stabilized explicitly below. Letting FlashList
+  // also compensate the offset can move the viewport a second time after a
+  // background page, live rail, or supplemental card arrives.
+  disabled: true,
 };
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
@@ -3688,10 +3688,14 @@ function FeedScreen() {
       });
     }
 
+    const preserveDeepFeedOrder =
+      feedScrollYRef.current >
+      Math.max(feedViewportHeightRef.current, FEED_SCREEN_HEIGHT) * 0.5;
     const stableItems = reuseStableItemsById(
       stableFeedListItemsRef.current,
       items,
       areFeedListItemsRenderEquivalent,
+      { preserveExistingOrder: preserveDeepFeedOrder },
     );
     stableFeedListItemsRef.current = stableItems;
     return stableItems;

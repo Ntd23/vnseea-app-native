@@ -16,15 +16,30 @@ export function reuseStableItemsById<T extends StableListItem>(
   previousItems: T[],
   nextItems: T[],
   areEquivalent: (previous: T, next: T) => boolean,
+  options: { preserveExistingOrder?: boolean } = {},
 ): T[] {
   if (previousItems.length === 0) return nextItems;
+
+  const orderedNextItems = options.preserveExistingOrder
+    ? (() => {
+        const nextById = new Map(nextItems.map(item => [item.id, item] as const));
+        const previousIds = new Set(previousItems.map(item => item.id));
+
+        return [
+          ...previousItems
+            .map(item => nextById.get(item.id))
+            .filter((item): item is T => Boolean(item)),
+          ...nextItems.filter(item => !previousIds.has(item.id)),
+        ];
+      })()
+    : nextItems;
 
   const previousById = new Map(
     previousItems.map(item => [item.id, item] as const),
   );
-  let matchesPreviousArray = previousItems.length === nextItems.length;
+  let matchesPreviousArray = previousItems.length === orderedNextItems.length;
 
-  const stableItems = nextItems.map((nextItem, index) => {
+  const stableItems = orderedNextItems.map((nextItem, index) => {
     const previousItem = previousById.get(nextItem.id);
     const stableItem =
       previousItem && areEquivalent(previousItem, nextItem)

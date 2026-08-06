@@ -119,6 +119,15 @@ describe('Feed and profile list performance contracts', () => {
     expect(profileSource).toContain('deferMediaUntilVisible');
   });
 
+  it('does not let background tail updates move the visible Home feed row', () => {
+    expect(feedSource).toContain(
+      'const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = {',
+    );
+    expect(feedSource).toContain('disabled: true,');
+    expect(feedSource).toContain('preserveExistingOrder: preserveDeepFeedOrder');
+    expect(feedSource).toContain('const preserveDeepFeedOrder =');
+  });
+
   it('commits one ready page per fling update and keeps the tail runway stable', () => {
     expect(feedViewModelSource).not.toContain('SCROLL_REVEAL_BATCH_SIZE');
     expect(feedViewModelSource).toContain('policy.revealBatchSize,');

@@ -233,7 +233,11 @@ export default function ReelsScreen() {
   const reelsHeaderTop = reelsTopInset + REELS_HEADER_TOP_GAP;
   const newReelsButtonTop = reelsHeaderTop + REELS_NEW_BUTTON_HEADER_GAP;
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
-    return reelsStorage.getBoolean('reels.autoScroll') ?? true;
+    // Auto-advance used to default on and was persisted under the original
+    // key, so existing installs could keep moving forever after one swipe.
+    // The versioned key resets Reels to manual one-page paging while keeping
+    // the header toggle available for viewers who explicitly want autoplay.
+    return reelsStorage.getBoolean('reels.autoScroll.v2') ?? false;
   });
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
 
@@ -241,7 +245,7 @@ export default function ReelsScreen() {
     setAutoScrollEnabled(prev => {
       const next = !prev;
       autoScrollEnabledRef.current = next;
-      reelsStorage.set('reels.autoScroll', next);
+      reelsStorage.set('reels.autoScroll.v2', next);
       return next;
     });
   }, []);
