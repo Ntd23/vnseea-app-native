@@ -2148,6 +2148,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     (keepPlayerSurfaceMounted || wasPlayerSurfaceMountedRef.current);
   const shouldMountVideo =
     shouldMountFocusedVideo || (canAttemptVideo && isBlurSurfaceGraceActive);
+  const shouldBlurVideoBackdrop =
+    shouldMountVideo && Platform.OS !== 'android';
+  const shouldRenderVideoFrameCover =
+    resolvedThumbnailUrl &&
+    isFrameCoverVisible &&
+    Platform.OS !== 'android';
 
   useEffect(() => {
     if (isScreenFocused !== false) {
@@ -2394,7 +2400,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             posterResizeMode="cover"
             onError={handleVideoError}
           />
-          {resolvedThumbnailUrl && isFrameCoverVisible ? (
+          {shouldRenderVideoFrameCover ? (
             <Animated.View
               pointerEvents="none"
               style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
@@ -2436,6 +2442,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       playing,
       resolvedThumbnailUrl,
       revealVideoFrame,
+      shouldRenderVideoFrameCover,
       shouldMountVideo,
       videoPlayerGeneration,
       videoSource,
@@ -2536,7 +2543,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 <FeedVideoBackdrop
                   uri={resolvedThumbnailUrl}
                   enabled={mediaLoadEnabled}
-                  blurred={shouldMountVideo}
+                  blurred={shouldBlurVideoBackdrop}
                 />
               ) : null}
               {stableVideoSurface}

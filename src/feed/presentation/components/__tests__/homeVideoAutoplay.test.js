@@ -99,7 +99,7 @@ describe('Home feed video autoplay safety', () => {
     );
   });
 
-  it('softens the thumbnail behind contained feed videos', () => {
+  it('uses one unblurred poster layer for contained Android feed videos', () => {
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',
     );
@@ -112,7 +112,13 @@ describe('Home feed video autoplay safety', () => {
       'blurRadius={blurred ? FEED_VIDEO_BACKDROP_BLUR_RADIUS : undefined}',
     );
     expect(postCardsSource).toContain('styles.feedVideoBlurredBackdropScrim');
-    expect(postCardsSource).toContain('blurred={shouldMountVideo}');
+    expect(postCardsSource).toContain(
+      "shouldMountVideo && Platform.OS !== 'android'",
+    );
+    expect(postCardsSource).toContain('blurred={shouldBlurVideoBackdrop}');
+    expect(postCardsSource).toContain(
+      "resolvedThumbnailUrl &&\n    isFrameCoverVisible &&\n    Platform.OS !== 'android'",
+    );
     expect(postCardsSource).toContain('resizeMode="contain"');
     expect(feedMediaImageSource).toContain(
       "blurRadius?: ImageProps['blurRadius'];",
