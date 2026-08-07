@@ -106,6 +106,27 @@ describe('Feed and profile list performance contracts', () => {
     );
   });
 
+  it('lets the profile prefetch queue own the prefetched marker', () => {
+    const initialPrefetchStart = profileSource.indexOf(
+      'const urlsToPrefetch: string[] = [];',
+      profileSource.indexOf('if (filteredProfilePosts.length === 0) return;'),
+    );
+    const initialPrefetchEnd = profileSource.indexOf(
+      'queueProfileMediaPrefetch(urlsToPrefetch);',
+      initialPrefetchStart,
+    );
+    const initialPrefetchSource = profileSource.slice(
+      initialPrefetchStart,
+      initialPrefetchEnd,
+    );
+
+    expect(initialPrefetchStart).toBeGreaterThan(-1);
+    expect(initialPrefetchEnd).toBeGreaterThan(initialPrefetchStart);
+    expect(initialPrefetchSource).not.toContain(
+      'profilePrefetchedMediaUrlsRef.current.add(url);',
+    );
+  });
+
   it('keeps frequently passed list elements and configuration references stable', () => {
     expect(feedSource).toContain('const feedRefreshControl = useMemo(');
     expect(feedSource).toContain('const feedListEmptyComponent = useMemo(');

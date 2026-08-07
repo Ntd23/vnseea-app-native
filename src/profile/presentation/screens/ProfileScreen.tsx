@@ -2737,7 +2737,6 @@ function ProfileScreen() {
       )) {
         if (profilePrefetchedMediaUrlsRef.current.has(url)) continue;
 
-        profilePrefetchedMediaUrlsRef.current.add(url);
         urlsToPrefetch.push(url);
         if (urlsToPrefetch.length >= PROFILE_POST_MEDIA_PREFETCH_LIMIT) break;
       }
