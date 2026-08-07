@@ -32,10 +32,10 @@ describe('Feed and profile list performance contracts', () => {
     expect(feedSource).toContain('removeClippedSubviews={false}');
     expect(feedSource).not.toContain('FEED_SCREEN_HEIGHT * 6');
 
-    expect(profileSource).toContain('SCREEN_HEIGHT * 2.6');
+    expect(profileSource).toContain('SCREEN_HEIGHT * 1.8');
     expect(profileSource).toContain('SCREEN_HEIGHT * 3.2');
     expect(profileSource).toContain(
-      'const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 14 : 22',
+      'const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 10 : 22',
     );
     expect(profileSource).toContain('removeClippedSubviews={false}');
     expect(profileSource).not.toContain('SCREEN_HEIGHT * 5.5');
