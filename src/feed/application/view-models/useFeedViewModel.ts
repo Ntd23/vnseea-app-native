@@ -44,7 +44,9 @@ import {
   LOCAL_LIVE_ENDED_EVENT,
 } from '../../../live/infrastructure/storage/endedLivePostsStorage';
 import {
+  appendFeedContentWithVideos,
   getFeedVideoBufferTarget,
+  getUnusedFeedVideoCount,
   mergeFeedContentWithVideos,
 } from './feedVideoScheduler';
 import {
@@ -112,6 +114,8 @@ const EMPTY_PAGE_RETRY_DELAY_MS = 180;
 const CONSTRAINED_REVEAL_DELAY_MS = 60;
 const VIDEO_PAGE_SIZE = 12;
 const VIDEO_PREPARE_BATCH_SIZE = 2;
+// Bounds only the not-yet-rendered reserve. Videos already present in the
+// feed stay in memory so later source commits cannot remove visible rows.
 const VIDEO_READY_POOL_LIMIT = 8;
 const VIDEO_CANDIDATE_QUEUE_LIMIT = 48;
 const VIDEO_PREPARE_MAX_RETRIES = 1;
@@ -574,9 +578,23 @@ export function useFeedViewModel() {
       const droppedUnreadyVideos =
         dedupedVideos.length -
         dedupedVideos.filter(isFeedVideoReadyForDisplay).length;
-      const cleanVideoPosts = sortByTime(
+      const readyVideoPosts = sortByTime(
         dedupedVideos.filter(isFeedVideoReadyForDisplay),
-      ).slice(0, VIDEO_READY_POOL_LIMIT) as FeedVideoPost[];
+      ) as FeedVideoPost[];
+      const preservedVideoIds = new Set(
+        (
+          options?.preserveExistingPosts ??
+          (options?.preserveRenderedOrder ? mergedPostsRef.current : [])
+        )
+          .filter(post => post.kind === 'video')
+          .map(post => post.id),
+      );
+      const cleanVideoPosts = [
+        ...readyVideoPosts.filter(video => preservedVideoIds.has(video.id)),
+        ...readyVideoPosts
+          .filter(video => !preservedVideoIds.has(video.id))
+          .slice(0, VIDEO_READY_POOL_LIMIT),
+      ];
 
       lightPostsRef.current = cleanLightPosts;
       videoPostsRef.current = cleanVideoPosts;
@@ -683,15 +701,13 @@ export function useFeedViewModel() {
       // fling-time reveal while keeping stable item keys.
       lightPostsRef.current = [...lightPostsRef.current, ...appendablePosts];
 
-      const renderedIds = new Set(mergedPostsRef.current.map(post => post.id));
-      const appendableRenderedPosts = appendablePosts.filter(
-        post => !renderedIds.has(post.id),
+      const nextMergedPosts = appendFeedContentWithVideos(
+        lightPostsRef.current,
+        videoPostsRef.current,
+        mergedPostsRef.current,
+        { videoReadiness: isFeedVideoReadyForDisplay },
       );
-      if (appendableRenderedPosts.length > 0) {
-        const nextMergedPosts = [
-          ...mergedPostsRef.current,
-          ...appendableRenderedPosts,
-        ];
+      if (nextMergedPosts.length > mergedPostsRef.current.length) {
         mergedPostsRef.current = nextMergedPosts;
         setPosts(nextMergedPosts);
       }
@@ -969,13 +985,17 @@ export function useFeedViewModel() {
         VIDEO_READY_POOL_LIMIT,
         getFeedVideoBufferTarget(lightCount),
       );
-      if (!forceNewest && videoPostsRef.current.length >= requiredVideos) {
+      const unusedVideoCount = getUnusedFeedVideoCount(
+        videoPostsRef.current,
+        mergedPostsRef.current,
+      );
+      if (!forceNewest && unusedVideoCount >= requiredVideos) {
         return;
       }
 
       const missingVideoCount = Math.max(
         1,
-        requiredVideos - videoPostsRef.current.length,
+        requiredVideos - unusedVideoCount,
       );
       const cursor = forceNewest
         ? undefined
@@ -1942,7 +1962,7 @@ export function useFeedViewModel() {
           videoPostsRef.current = sortByTime([
             post,
             ...videoPostsRef.current,
-          ]).slice(0, VIDEO_READY_POOL_LIMIT) as FeedVideoPost[];
+          ]) as FeedVideoPost[];
         }
         insertPostAtTop();
         if (feedSourceRef.current === 'all') {

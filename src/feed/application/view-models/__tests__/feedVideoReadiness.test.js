@@ -10,17 +10,24 @@ function read(relativePath) {
 describe('feed video readiness pipeline', () => {
   const source = read('src/feed/application/view-models/useFeedViewModel.ts');
 
-  it('keeps the ready video pool small and prepares posters before display', () => {
+  it('keeps a bounded future video reserve while retaining rendered videos', () => {
     expect(source).toContain('const VIDEO_PREPARE_BATCH_SIZE = 2;');
     expect(source).toContain('const VIDEO_READY_POOL_LIMIT = 8;');
     expect(source).toContain('await Image.prefetch(posterUrl)');
-    expect(source).toContain('.slice(0, VIDEO_READY_POOL_LIMIT)');
+    expect(source).toContain('const preservedVideoIds = new Set(');
+    expect(source).toContain(
+      '.filter(video => !preservedVideoIds.has(video.id))',
+    );
+    expect(source).toContain('.slice(0, VIDEO_READY_POOL_LIMIT),');
   });
 
   it('probes the newest video page even when the prepared cache is full', () => {
     expect(source).toContain('(lightCount: number, forceNewest = false)');
     expect(source).toContain(
-      'if (!forceNewest && videoPostsRef.current.length >= requiredVideos)',
+      'const unusedVideoCount = getUnusedFeedVideoCount(',
+    );
+    expect(source).toContain(
+      'if (!forceNewest && unusedVideoCount >= requiredVideos)',
     );
     expect(source).toContain('scheduleVideoBuffer(freshPosts.length, true)');
   });
