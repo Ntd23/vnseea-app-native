@@ -65,6 +65,32 @@ describe('Post card rendering stability', () => {
     );
   });
 
+  it('keeps Android feed video rows at a stable 4:5 frame', () => {
+    const source = readPostCards();
+    const videoCardStart = source.indexOf('export const HomeVideoPostCard');
+    const videoCardEnd = source.indexOf(
+      '}, areHomeVideoPostCardPropsEqual);',
+      videoCardStart,
+    );
+    const videoCardSource = source.slice(
+      videoCardStart,
+      videoCardEnd,
+    );
+
+    expect(videoCardStart).toBeGreaterThan(-1);
+    expect(videoCardEnd).toBeGreaterThan(videoCardStart);
+    expect(source).toContain(
+      'const ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO = 4 / 5;',
+    );
+    expect(videoCardSource).toContain(
+      "Platform.OS === 'android'\n      ? ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO",
+    );
+    expect(videoCardSource).toContain(
+      "if (Platform.OS === 'android') return;",
+    );
+    expect(videoCardSource.match(/setAspectRatio\(/g)).toHaveLength(1);
+  });
+
   it('keeps reaction pickers out of Android card layout', () => {
     const source = readPostCards();
     const pollSource = readPollPostCard();

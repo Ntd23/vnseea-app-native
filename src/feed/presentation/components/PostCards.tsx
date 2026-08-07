@@ -170,6 +170,7 @@ const VIDEO_POSTER_FADE_MS = 160;
 const VIDEO_WARM_PREVIEW_SECONDS = Platform.OS === 'android' ? 0.35 : 0.6;
 const FEED_VIDEO_BLUR_SURFACE_GRACE_MS = 240;
 const FEED_VIDEO_BACKDROP_BLUR_RADIUS = Platform.OS === 'android' ? 18 : 28;
+const ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO = 4 / 5;
 const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 5;
 const DEFAULT_PHOTO_GRID_WIDTH =
   Platform.OS === 'ios'
@@ -1823,8 +1824,19 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const mediaIdentity = `${post.id}:${videoUrl}`;
   const videoPreviewCacheKey = post.thumbnailUrl || videoUrl || post.id;
   const [aspectRatio, setAspectRatio] = useState(() =>
-    getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
+    Platform.OS === 'android'
+      ? ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO
+      : getCachedMediaAspectRatio(
+          videoPreviewCacheKey,
+          0.75,
+          16 / 9,
+          16 / 9,
+        ),
   );
+  const commitVideoAspectRatio = useCallback((nextAspectRatio: number) => {
+    if (Platform.OS === 'android') return;
+    setAspectRatio(nextAspectRatio);
+  }, []);
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const mediaIdentityRef = useRef(mediaIdentity);
@@ -1904,7 +1916,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     firstFrameProgressStartRef.current = null;
     videoSurfaceRecoveryCountRef.current = 0;
     videoSurfaceRecoveryInFlightRef.current = false;
-    setAspectRatio(
+    commitVideoAspectRatio(
       getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
     );
     setSeekTime(savedTime > 0.05 ? savedTime : undefined);
@@ -1916,7 +1928,14 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     setHasVideoError(false);
     setVideoPlayerGeneration(0);
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
-  }, [clearVideoQualityRamp, frameCoverOpacity, mediaIdentity, post.id, videoPreviewCacheKey]);
+  }, [
+    clearVideoQualityRamp,
+    commitVideoAspectRatio,
+    frameCoverOpacity,
+    mediaIdentity,
+    post.id,
+    videoPreviewCacheKey,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1938,7 +1957,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
     if (cachedRatio) {
-      setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9));
+      commitVideoAspectRatio(
+        clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9),
+      );
       return undefined;
     }
 
@@ -1952,7 +1973,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
           }
           // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
-          setAspectRatio(
+          commitVideoAspectRatio(
             clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
           );
         }
@@ -1970,7 +1991,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     return () => {
       cancelled = true;
     };
-  }, [mediaLoadEnabled, resolvedThumbnailUrl, videoPreviewCacheKey]);
+  }, [
+    commitVideoAspectRatio,
+    mediaLoadEnabled,
+    resolvedThumbnailUrl,
+    videoPreviewCacheKey,
+  ]);
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback(
@@ -1989,13 +2015,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         const { width, height } = size;
         if (width > 0 && height > 0) {
           cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
-          setAspectRatio(
+          commitVideoAspectRatio(
             clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
           );
         }
       }
     },
-    [mediaIdentity, videoPreviewCacheKey],
+    [commitVideoAspectRatio, mediaIdentity, videoPreviewCacheKey],
   );
 
   const revealVideoFrame = useCallback(() => {
