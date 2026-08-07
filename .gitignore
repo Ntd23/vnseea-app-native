@@ -91,3 +91,4 @@ tmp/*
 duong/*
 !duong/google-maps-ios-setup.md
 .superpowers/*
+docs/apple*

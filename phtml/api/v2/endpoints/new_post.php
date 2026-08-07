@@ -427,6 +427,12 @@ if (isset($_FILES['postPhotos']['name']) && empty($mediaFilename) && empty($_POS
         $multi = 1;
     }
 }
+if (!empty($mediaFilename)) {
+    $created_post_media_files[] = $mediaFilename;
+}
+if (!empty($video_thumb)) {
+    $created_post_media_files[] = $video_thumb;
+}
 $privacy = VNSEEA_NormalizePostPrivacyRequest($_POST);
 $post_privacy = $privacy['postPrivacy'];
 $is_anonymous = $privacy['is_anonymous'];
@@ -552,6 +558,7 @@ if (empty($error_message)) {
     if ($wo['config']['post_approval'] == 1 && !Wo_IsAdmin()) {
         $post_active = 0;
     }
+    $mediaName = VNSEEA_NormalizePostFileName($mediaName);
     $post_data = array(
         'user_id' => $wo['user']['user_id'],
         'page_id' => Wo_Secure($page_id),
@@ -644,12 +651,19 @@ if (empty($error_message)) {
         if (is_callable('litespeed_finish_request')) {
             litespeed_finish_request();
         }
-        $id = FFMPEGUpload(array(
-            'filename' => $ffmpeg_convert_video,
-            'id' => $id,
-            'video_thumb' => $video_thumb,
-            'post_data' => $post_data
-        ));
+        try {
+            $id = FFMPEGUpload(array(
+                'filename' => $ffmpeg_convert_video,
+                'id' => $id,
+                'video_thumb' => $video_thumb,
+                'post_data' => $post_data
+            ));
+        } catch (Throwable $caught) {
+            error_log('[vnseea-new-post] ffmpeg_finalize_failed user_id=' . (int) $wo['user']['user_id'] . ' code=' . (int) $caught->getCode());
+            $id = false;
+            $error_code = 23;
+            $error_message = 'Unable to create post.';
+        }
     } else {
         $post_transaction_started = false;
         $requires_post_transaction = !empty($tagged_user_ids)
@@ -665,7 +679,14 @@ if (empty($error_message)) {
         if (!empty($error_message)) {
             $id = false;
         } else {
-            $id = Wo_RegisterPost($post_data);
+            try {
+                $id = Wo_RegisterPost($post_data);
+            } catch (Throwable $caught) {
+                error_log('[vnseea-new-post] register_failed user_id=' . (int) $wo['user']['user_id'] . ' code=' . (int) $caught->getCode());
+                $id = false;
+                $error_code = 23;
+                $error_message = 'Unable to create post.';
+            }
         }
     }
 

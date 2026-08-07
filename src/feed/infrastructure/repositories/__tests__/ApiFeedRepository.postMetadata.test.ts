@@ -139,6 +139,43 @@ describe('ApiFeedRepository post metadata', () => {
     });
   });
 
+  it('does not forward an oversized iOS asset filename to the post API', async () => {
+    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(1786091832000);
+    (backendApi.multipart as jest.Mock).mockResolvedValue({
+      api_status: 200,
+      post_data: {
+        id: '93',
+        post_id: '93',
+        user_id: '1',
+        postType: 'video',
+        postFile: 'https://demo.vnseea.vn/post.mp4',
+        postPrivacy: '0',
+        time: '1786091832',
+        postLikes: '0',
+        post_comments: '0',
+        can_delete: '1',
+        can_share: '1',
+        publisher,
+      },
+    });
+
+    await createFeedRepository().createPost({
+      text: '',
+      photos: [],
+      video: {
+        uri: 'file:///post.mp4',
+        name: `snapvideo--${'%20caption'.repeat(40)}.mp4`,
+        type: 'video/mp4',
+      },
+      privacy: 'public',
+      isAnonymous: false,
+    });
+
+    const payload = (backendApi.multipart as jest.Mock).mock.calls[0][1];
+    expect(payload.postVideo.name).toBe('video-1786091832000.mp4');
+    dateNow.mockRestore();
+  });
+
   it('keeps user-entered line breaks when creating and mapping a post', async () => {
     const multilineText = 'Dòng đầu tiên\nDòng thứ hai\n\nĐoạn tiếp theo';
     (backendApi.multipart as jest.Mock).mockResolvedValue({

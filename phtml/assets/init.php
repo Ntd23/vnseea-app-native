@@ -17,6 +17,7 @@ require_once('includes/tabels.php');
 require_once('includes/vnseea_livekit_endpoint.php');
 require_once('includes/vnseea_privacy.php');
 require_once('includes/vnseea_post_tags.php');
+require_once('includes/vnseea_post_media.php');
 require_once('includes/functions_one.php');
 require_once('includes/functions_two.php');
 require_once('includes/functions_three.php');

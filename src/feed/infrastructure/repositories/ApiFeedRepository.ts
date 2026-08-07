@@ -72,6 +72,7 @@ import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import { mapJobQuestions } from '../../../jobs/application/mappers/jobQuestions';
 import { buildSharedPostPreviewModel } from '../../application/sharing/sharedPostPreview';
 import { mapProfileMediaActivity } from '../../application/mappers/profileMediaActivity';
+import { createSafeUploadFileName } from '../../../shared-kernel/application/utils/uploadFileName';
 import {
   CONTENT_AUDIENCE_CONTRACT,
   audienceFromWire,
@@ -2965,6 +2966,7 @@ export function createFeedRepository(): FeedRepository {
       // fields are omitted entirely so the backend defaults kick in.
       const context = resolveCreatePostContext(draft);
       const payload: Record<string, unknown> = {};
+      const uploadBatchId = String(Date.now());
 
       if (context === 'personal' || context === 'page') {
         payload.postPrivacy = PRIVACY_TO_WIRE(draft.privacy);
@@ -3007,9 +3009,14 @@ export function createFeedRepository(): FeedRepository {
       // file under `postPhotos[]` so PHP receives them as
       // `$_FILES['postPhotos']['name'][i]` regardless of count.
       if (draft.photos.length > 0) {
-        payload.postPhotos = draft.photos.map(photo => ({
+        payload.postPhotos = draft.photos.map((photo, index) => ({
           uri: photo.uri,
-          name: photo.name,
+          name: createSafeUploadFileName({
+            originalName: photo.name,
+            mimeType: photo.type,
+            prefix: 'photo',
+            uniqueSuffix: `${uploadBatchId}-${index}`,
+          }),
           type: photo.type,
         }));
         // When uploading >1 photo, WoWonder requires an `album_name` so
@@ -3024,7 +3031,12 @@ export function createFeedRepository(): FeedRepository {
       if (draft.audio) {
         payload.postMusic = {
           uri: draft.audio.uri,
-          name: draft.audio.name,
+          name: createSafeUploadFileName({
+            originalName: draft.audio.name,
+            mimeType: draft.audio.type,
+            prefix: 'audio',
+            uniqueSuffix: uploadBatchId,
+          }),
           type: draft.audio.type,
         };
       }
@@ -3040,13 +3052,23 @@ export function createFeedRepository(): FeedRepository {
       if (draft.video) {
         payload.postVideo = {
           uri: draft.video.uri,
-          name: draft.video.name,
+          name: createSafeUploadFileName({
+            originalName: draft.video.name,
+            mimeType: draft.video.type,
+            prefix: 'video',
+            uniqueSuffix: uploadBatchId,
+          }),
           type: draft.video.type,
         };
         if (draft.video.thumbnailUri) {
           payload.video_thumb = {
             uri: draft.video.thumbnailUri,
-            name: draft.video.thumbnailName || `video-thumb-${Date.now()}.jpg`,
+            name: createSafeUploadFileName({
+              originalName: draft.video.thumbnailName,
+              mimeType: draft.video.thumbnailType || 'image/jpeg',
+              prefix: 'video-thumb',
+              uniqueSuffix: uploadBatchId,
+            }),
             type: draft.video.thumbnailType || 'image/jpeg',
           };
         }

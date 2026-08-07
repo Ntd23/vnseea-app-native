@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/vnseea_media_url.php';
+require_once __DIR__ . '/vnseea_post_media.php';
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -7159,9 +7160,10 @@ function Wo_CheckIfUserCanRegister($num = 10)
 
 function Wo_RegisterPost($re_data = array('recipient_id' => 0))
 {
-    error_log(print_r($re_data, true));
-
     global $wo, $sqlConnect;
+    if (array_key_exists('postFileName', $re_data)) {
+        $re_data['postFileName'] = VNSEEA_NormalizePostFileName($re_data['postFileName']);
+    }
     $privacy = VNSEEA_NormalizePostPrivacyRequest($re_data);
     $re_data['postPrivacy'] = $privacy['postPrivacy'];
     $re_data['is_anonymous'] = $privacy['is_anonymous'];
