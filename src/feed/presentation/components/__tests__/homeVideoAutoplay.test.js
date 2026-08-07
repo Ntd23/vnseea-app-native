@@ -37,6 +37,9 @@ describe('Home feed video autoplay safety', () => {
   });
 
   it('uses shared audio state with feed videos unmuted by default', () => {
+    const feedScreenSource = read(
+      'src/feed/presentation/screens/FeedScreen.tsx',
+    );
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',
     );
@@ -49,8 +52,13 @@ describe('Home feed video autoplay safety', () => {
     expect(postCardsSource).toContain(
       'const isScrollBusy = useFeedScrollBusy();',
     );
-    expect(postCardsSource).toContain(
-      'const canMountWarmVideo = !isScrollBusy || shouldKeepPreparedVideoMounted;',
+    expect(postCardsSource).toContain('const canMountWarmVideo =');
+    expect(postCardsSource).toContain('isWarm || !isScrollBusy ||');
+    expect(feedScreenSource).toContain(
+      'const FEED_VIDEO_WARM_AHEAD_ITEMS = 1;',
+    );
+    expect(feedScreenSource).toContain(
+      'const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT = 1;',
     );
     expect(postCardsSource).toContain('!isScrollBusy &&');
     expect(postCardsSource).toContain('(isActive || warmPlaying)');

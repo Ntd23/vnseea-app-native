@@ -2108,7 +2108,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // without keeping every rendered video alive.
   const shouldKeepPreparedVideoMounted =
     keepPreparedVideoMounted && isPreparedKeptAlive && hasRenderedFrame;
-  const canMountWarmVideo = !isScrollBusy || shouldKeepPreparedVideoMounted;
+  const canMountWarmVideo =
+    isWarm || !isScrollBusy || shouldKeepPreparedVideoMounted;
   const shouldMountFocusedVideo =
     isScreenFocused !== false &&
     mediaVisible &&
