@@ -41,15 +41,15 @@ describe('Feed and profile list performance contracts', () => {
     expect(profileSource).not.toContain('SCREEN_HEIGHT * 5.5');
   });
 
-  it('shortens fling momentum and loads profile posts before the tail is visible', () => {
+  it('keeps Android fling responsive and loads profile posts before the tail is visible', () => {
     expect(feedSource).toContain(
-      'const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.88 : 0.985',
+      'const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.94 : 0.985',
     );
     expect(feedSource).toContain(
       'decelerationRate={FEED_SCROLL_DECELERATION_RATE}',
     );
     expect(profileSource).toContain(
-      'const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.88 : 0.985',
+      'const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.94 : 0.985',
     );
     expect(profileSource).toContain(
       'decelerationRate={PROFILE_SCROLL_DECELERATION_RATE}',

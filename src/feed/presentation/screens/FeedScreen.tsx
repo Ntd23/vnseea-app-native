@@ -239,7 +239,7 @@ const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 // A lower numeric rate sheds fling momentum sooner than React Native's
 // default while preserving direct finger tracking and pull-to-refresh.
-const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.88 : 0.985;
+const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.94 : 0.985;
 const FEED_SCROLL_EVENT_THROTTLE_MS = FEED_IS_ANDROID ? 32 : 16;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
   ? Math.max(2000, Math.round(FEED_SCREEN_HEIGHT * 2.2))

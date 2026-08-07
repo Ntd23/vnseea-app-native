@@ -258,7 +258,7 @@ const PROFILE_IS_ANDROID = Platform.OS === 'android';
 const PROFILE_LOAD_MORE_THROTTLE_MS = 1200;
 // Keep fast swipes native and fluid, but shorten their momentum so FlashList
 // never outruns the rich post cards and media prepared ahead of the viewport.
-const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.88 : 0.985;
+const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.94 : 0.985;
 const PROFILE_SCROLL_EVENT_THROTTLE_MS = PROFILE_IS_ANDROID ? 32 : 16;
 const PROFILE_POST_DRAW_DISTANCE = PROFILE_IS_ANDROID
   ? Math.max(2100, Math.round(SCREEN_HEIGHT * 2.6))
