@@ -39,13 +39,17 @@ describe('Reels swipe-back preview', () => {
     expect(source).toContain('!isPublisherOverlayOpen');
   });
 
-  it('restores the Home status bar before dismissing Reels on Android', () => {
-    const source = read('src/reels/presentation/screens/ReelsScreen.tsx');
+  it('keeps the Android status-bar viewport stable while entering and leaving Reels', () => {
+    const navigationSource = read('src/navigation/reelsNavigation.ts');
+    const reelsSource = read('src/reels/presentation/screens/ReelsScreen.tsx');
 
-    expect(source).toContain('const prepareFeedStatusBarForReturn = useCallback');
-    expect(source).toContain("StatusBar.setBarStyle('light-content', false)");
-    expect(source).toContain('StatusBar.setBackgroundColor(APP_BRAND_COLOR, false)');
-    expect(source).toContain('StatusBar.setTranslucent(false)');
-    expect(source).toContain('prepareFeedStatusBarForReturn();');
+    expect(navigationSource).not.toContain('StatusBar.setBarStyle');
+    expect(navigationSource).not.toContain('StatusBar.setBackgroundColor');
+    expect(navigationSource).not.toContain('StatusBar.setTranslucent');
+    expect(reelsSource).not.toContain('prepareFeedStatusBarForReturn');
+    expect(reelsSource).toContain('translucent={Platform.OS !== \'android\'}');
+    expect(reelsSource).toContain(
+      "backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : 'transparent'}",
+    );
   });
 });

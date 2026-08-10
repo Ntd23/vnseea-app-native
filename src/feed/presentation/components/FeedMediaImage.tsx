@@ -17,6 +17,10 @@ import {
   markFeedMediaLoaded,
   releaseFeedMedia,
 } from '../../application/state/feedMediaLoadState';
+import {
+  getClientUiPerformanceActiveSurface,
+  recordClientMediaLoad,
+} from '../../../shared/performance/clientUiPerformanceMetrics';
 
 type FeedMediaImageProps = {
   uri: string;
@@ -54,6 +58,10 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
   const shouldMountImage = enabled || loadedUri === uri;
   const [retryAttempt, setRetryAttempt] = useState(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadMeasurementRef = useRef({
+    surface: getClientUiPerformanceActiveSurface(),
+    isInViewport: enabled,
+  });
   const source = useMemo<ImageURISource>(
     () => ({
       uri,
@@ -84,7 +92,22 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
     }, FEED_MEDIA_RETRY_DELAY_MS);
   }, [enabled, retryAttempt, uri]);
 
+  const handleLoadStart = useCallback(() => {
+    loadMeasurementRef.current = {
+      surface: getClientUiPerformanceActiveSurface(),
+      isInViewport: enabled,
+    };
+  }, [enabled]);
+
   const handleLoad = useCallback(() => {
+    const measurement = loadMeasurementRef.current;
+    if (measurement.surface) {
+      recordClientMediaLoad(
+        measurement.surface,
+        'image',
+        measurement.isInViewport,
+      );
+    }
     setLoadedUri(uri);
     markFeedMediaLoaded(uri);
   }, [uri]);
@@ -108,7 +131,7 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
       blurRadius={blurRadius}
       fadeDuration={0}
       resizeMethod="resize"
-      progressiveRenderingEnabled
+      onLoadStart={handleLoadStart}
       onLoad={handleLoad}
       onError={handleLoadError}
     />

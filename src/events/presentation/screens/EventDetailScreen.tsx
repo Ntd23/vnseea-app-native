@@ -341,13 +341,13 @@ function EventDetailScreen() {
       },
     };
     if (post.kind === 'video') {
-      return <HomeVideoPostCard key={post.id} post={post} copy={postCopy} {...sharedProps} navigateToProfile={userId => navigateToUserProfile(navigation, userId)} isScreenFocused />;
+      return <HomeVideoPostCard key={post.id} post={post} copy={postCopy} {...sharedProps} navigateToProfile={userId => navigateToUserProfile(navigation, userId)} isScreenFocused={isFocused} />;
     }
     if (post.kind === 'poll') {
       return <PollPostCard key={post.id} post={post} language={language} {...sharedProps} onProfilePress={userId => navigateToUserProfile(navigation, userId)} currentUserAvatar={profile?.avatarUrl} />;
     }
     return <TextPostCard key={post.id} post={post} copy={postCopy} {...sharedProps} onPhotoPress={item => navigation.navigate(ROUTES.POST_DETAIL, { postId: item.id })} navigateToProfile={userId => navigateToUserProfile(navigation, userId)} onPostPress={item => navigation.navigate(ROUTES.POST_DETAIL, { postId: item.id })} />;
-  }, [commentVm, handleToggleReaction, language, navigation, postCopy, profile?.avatarUrl]);
+  }, [commentVm, handleToggleReaction, isFocused, language, navigation, postCopy, profile?.avatarUrl]);
 
   const countdownItems = [
     [remaining.days, 'Days'], [remaining.hours, 'Hours'], [remaining.minutes, 'Minutes'], [remaining.seconds, 'Seconds'],

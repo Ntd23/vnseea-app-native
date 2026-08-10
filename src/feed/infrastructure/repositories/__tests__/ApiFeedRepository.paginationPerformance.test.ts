@@ -76,6 +76,15 @@ function rawAd(id: number) {
   };
 }
 
+function rawVideoPost(id: number) {
+  return {
+    ...rawTextPost(id),
+    postType: 'video',
+    postFile: `https://demo.vnseea.vn/upload/videos/${id}.mp4`,
+    postFileThumb: `https://demo.vnseea.vn/upload/photos/${id}.jpg`,
+  };
+}
+
 function rawPersonalJobPost(id: number) {
   return {
     ...rawTextPost(id),
@@ -148,6 +157,72 @@ describe('ApiFeedRepository pagination performance', () => {
         call => call[0] === apiRoutes.feed.recommended,
       ),
     ).toBe(true);
+  });
+
+  it('advances the video cursor across a text-only raw window', async () => {
+    (backendApi.post as jest.Mock)
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [rawTextPost(99), rawTextPost(98)],
+        next_cursor: '70',
+        reached_end: false,
+      })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [rawVideoPost(69)],
+        next_cursor: '60',
+        reached_end: false,
+      });
+
+    const page = await createFeedRepository().getVideoPostsPage(
+      1,
+      '100',
+      'all',
+      2,
+    );
+
+    expect(page.posts.map(post => post.id)).toEqual(['69']);
+    expect(page.nextCursor).toBe('60');
+    expect(page.reachedEnd).toBe(false);
+    expect(backendApi.post).toHaveBeenCalledTimes(2);
+    expect(backendApi.post).toHaveBeenNthCalledWith(
+      2,
+      apiRoutes.feed.recommended,
+      expect.objectContaining({ after_post_id: '70' }),
+    );
+  });
+
+  it('keeps scanning video pages when reached_end is stale but the cursor advances', async () => {
+    (backendApi.post as jest.Mock)
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [rawTextPost(99), rawTextPost(98)],
+        next_cursor: '70',
+        reached_end: true,
+      })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [rawVideoPost(69)],
+        next_cursor: '60',
+        reached_end: false,
+      });
+
+    const page = await createFeedRepository().getVideoPostsPage(
+      1,
+      '100',
+      'all',
+      2,
+    );
+
+    expect(page.posts.map(post => post.id)).toEqual(['69']);
+    expect(page.nextCursor).toBe('60');
+    expect(page.reachedEnd).toBe(false);
+    expect(backendApi.post).toHaveBeenCalledTimes(2);
+    expect(backendApi.post).toHaveBeenNthCalledWith(
+      2,
+      apiRoutes.feed.recommended,
+      expect.objectContaining({ after_post_id: '70' }),
+    );
   });
 
   it('never accepts an advertisement id as a recommended-feed cursor', async () => {

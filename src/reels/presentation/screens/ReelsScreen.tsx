@@ -88,10 +88,14 @@ import { REELS_COPY } from '../../application/i18n/reelsCopy';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import {
   isNavigationRouteSelected,
-  isReelItemActive,
+  isReelPlayerRoleActive,
+  resolveReelPlayerRole,
   resolveReelsViewportHeight,
-  shouldMountReelVideoPlayer,
+  shouldAllowNextReelPreload,
+  shouldDeferReelsPlaybackForPendingTarget,
+  shouldPlayCurrentReel,
   shouldPrefetchMoreReels,
+  shouldRetainCurrentReelPlayer,
 } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
@@ -114,15 +118,17 @@ const VIEWABILITY_CONFIG = {
   minimumViewTime: 40,
 };
 
-const PRELOAD_RADIUS = 1; // mount video for current ± this many neighbors
 const REELS_NEW_VIDEO_PROBE_INTERVAL_MS = 30000;
 const REELS_NEW_VIDEO_PROBE_LIMIT = 6;
+const REELS_PENDING_NEW_ITEMS_LIMIT = 24;
+const REELS_SHARE_CLOSE_GRACE_MS = 300;
 const REELS_HEADER_TOP_GAP = 10;
 const REELS_NEW_BUTTON_HEADER_GAP = 50;
 const REELS_HEADER_LAYER_Z = 10030;
 const REELS_COMMENTS_PREVIEW_RATIO = 0.36;
 const REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS =
-  Platform.OS === 'android' ? 80 : 60;
+  Platform.OS === 'android' ? 1200 : 60;
+const REELS_FAST_SWIPE_VELOCITY = 0.8;
 
 // Screen width — used by the swipe-back gesture to compute the dismiss
 // threshold and target translation.
@@ -215,15 +221,18 @@ export default function ReelsScreen() {
   const [isAppActive, setIsAppActive] = useState(
     () => AppState.currentState === 'active',
   );
-  const [isPlaybackMountReady, setIsPlaybackMountReady] =
-    useState(isFocusedScreen);
   const [isNeighborPreloadReady, setIsNeighborPreloadReady] = useState(false);
+  const [isNextPreloadSuppressed, setIsNextPreloadSuppressed] =
+    useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
   const isSelectedRoute = useNavigationState(state =>
     isNavigationRouteSelected(state, route.key, route.name),
   );
   const isPlaybackRouteFocused =
     isFocusedScreen && isSelectedRoute && isAppActive;
+  const [hasActivatedPlayback, setHasActivatedPlayback] = useState(
+    isPlaybackRouteFocused,
+  );
   const insets = useSafeAreaInsets();
   const reelsTopInset = Math.max(
     insets.top,
@@ -252,9 +261,39 @@ export default function ReelsScreen() {
   const [selectedPublisherId, setSelectedPublisherId] = useState<string | null>(
     null,
   );
+  const isPublisherOverlayOpen = selectedPublisherId !== null;
   const language = useAppLanguage();
   const copy = REELS_COPY[language];
   const isTabRoute = navigation.getState?.().type === 'tab';
+  const [isMainTabsRootSelected, setIsMainTabsRootSelected] = useState(() => {
+    if (!isTabRoute) return true;
+    const rootNavigation = navigation.getParent?.();
+    if (!rootNavigation) return true;
+    return isNavigationRouteSelected(
+      rootNavigation.getState?.(),
+      null,
+      ROUTES.MAIN_TABS,
+    );
+  });
+
+  useEffect(() => {
+    if (!isTabRoute) return undefined;
+    const rootNavigation = navigation.getParent?.();
+    if (!rootNavigation) return undefined;
+
+    const syncRootSelection = () => {
+      setIsMainTabsRootSelected(
+        isNavigationRouteSelected(
+          rootNavigation.getState?.(),
+          null,
+          ROUTES.MAIN_TABS,
+        ),
+      );
+    };
+
+    syncRootSelection();
+    return rootNavigation.addListener?.('state', syncRootSelection);
+  }, [isTabRoute, navigation]);
 
   const initialVideoId = route.params?.initialVideoId;
   const initialPost = route.params?.post;
@@ -296,6 +335,7 @@ export default function ReelsScreen() {
   } = useDeferredVisiblePostIds();
   const openReelComments = vm.openComments;
   const closeReelComments = vm.closeComments;
+  const peekLatestReels = vm.peekLatestReels;
   const activeIndexRef = useRef(vm.activeIndex);
   const itemsLengthRef = useRef(vm.items.length);
   const hasMoreRef = useRef(vm.hasMore);
@@ -307,12 +347,17 @@ export default function ReelsScreen() {
   const scrollReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const shareCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const nextPreloadSuppressionAnchorRef = useRef<number | null>(null);
   const navigationActionInFlightRef = useRef(false);
   const isShareSheetOpenRef = useRef(false);
   const isPublisherOverlayOpenRef = useRef(false);
   const loadMoreRef = useRef(vm.loadMore);
   const setReelsActiveIndexRef = useRef(vm.setActiveIndex);
   const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [isShareSheetClosing, setIsShareSheetClosing] = useState(false);
   const [editingReel, setEditingReel] = useState<ReelsItem | null>(null);
   const [isCommentsPreviewVisible, setIsCommentsPreviewVisible] = useState(
     vm.isCommentsOpen,
@@ -405,11 +450,16 @@ export default function ReelsScreen() {
       if (scrollReleaseTimerRef.current !== null) {
         clearTimeout(scrollReleaseTimerRef.current);
       }
+      if (shareCloseTimerRef.current !== null) {
+        clearTimeout(shareCloseTimerRef.current);
+      }
     };
   }, []);
 
   useEffect(() => {
-    isShareSheetOpenRef.current = shareModalVisible;
+    if (shareModalVisible) {
+      isShareSheetOpenRef.current = true;
+    }
   }, [shareModalVisible]);
 
   const enqueueNewReelCandidates = useCallback(
@@ -439,7 +489,12 @@ export default function ReelsScreen() {
 
       if (nextItems.length === 0) return;
 
-      pendingNewReelsRef.current.push(...nextItems);
+      pendingNewReelsRef.current = [
+        ...pendingNewReelsRef.current,
+        ...nextItems,
+      ]
+        .sort(compareReelsNewestFirst)
+        .slice(0, REELS_PENDING_NEW_ITEMS_LIMIT);
       setHasNewReels(true);
     },
     [],
@@ -505,7 +560,7 @@ export default function ReelsScreen() {
 
     isCheckingLatestReelsRef.current = true;
     try {
-      const latestItems = await vm.peekLatestReels(REELS_NEW_VIDEO_PROBE_LIMIT);
+      const latestItems = await peekLatestReels(REELS_NEW_VIDEO_PROBE_LIMIT);
       enqueueNewReelCandidates(latestItems, {
         requireNewerThanTop: true,
       });
@@ -516,7 +571,7 @@ export default function ReelsScreen() {
     } finally {
       isCheckingLatestReelsRef.current = false;
     }
-  }, [enqueueNewReelCandidates, vm]);
+  }, [enqueueNewReelCandidates, peekLatestReels]);
 
   useEffect(() => {
     if (!isFocusedScreen) return undefined;
@@ -536,8 +591,11 @@ export default function ReelsScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
-      setIsAppActive(nextState === 'active');
-      if (nextState === 'active') {
+      const nextIsAppActive = nextState === 'active';
+      setIsAppActive(nextIsAppActive);
+      if (!nextIsAppActive) {
+        setHasActivatedPlayback(false);
+      } else {
         checkForRemoteNewReels().catch(() => undefined);
       }
     });
@@ -642,19 +700,63 @@ export default function ReelsScreen() {
   const itemHeight = viewportHeight;
 
   const [isMuted, setIsMuted] = useState(false); // start unmuted by default
-  // Keep preloadRadius constant at 1 so the ±1 neighbor videos stay mounted
-  // and buffered at all times. Previously we dropped to 0 during scroll to
-  // reduce lag, but that caused a black-screen flash because the next video
-  // had to rebuffer from scratch after being unmounted.
-  const preloadRadius = PRELOAD_RADIUS;
-  const hasActivatedPlayback = isPlaybackMountReady || isPlaybackRouteFocused;
-  const shouldKeepPlayersMounted =
-    hasActivatedPlayback &&
-    isAppActive &&
-    (isTabRoute || isPlaybackRouteFocused || isDismissing);
-  const shouldPlayActiveReel =
-    isPlaybackRouteFocused && !isDismissing && editingReel === null;
-  const activePreloadRadius = isNeighborPreloadReady ? preloadRadius : 0;
+  const hasPendingInitialTarget =
+    shouldDeferReelsPlaybackForPendingTarget({
+      initialVideoId,
+      hasInitialPost: Boolean(initialPost),
+      activeReelId: vm.items[vm.activeIndex]?.id,
+      consumedInitialVideoId: consumedInitialVideoIdRef.current,
+    });
+  const isPlaybackTargetReady =
+    isPlaybackRouteFocused && !hasPendingInitialTarget;
+  const keepCurrentPlayerMounted =
+    !hasPendingInitialTarget &&
+    shouldRetainCurrentReelPlayer({
+      hasActivatedPlayback,
+      isTabRoute,
+      isMainTabsRootSelected,
+      isAppActive,
+      isDismissing,
+    });
+  const shouldPlayActiveReel = shouldPlayCurrentReel({
+    isPlaybackRouteFocused: isPlaybackTargetReady,
+    isDismissing,
+    commentsOpen: vm.isCommentsOpen,
+    shareOpen: shareModalVisible || isShareSheetClosing,
+    editOpen: editingReel !== null,
+    publisherOpen: isPublisherOverlayOpen,
+  });
+
+  useEffect(() => {
+    if (!isAppActive || (isTabRoute && !isMainTabsRootSelected)) {
+      setHasActivatedPlayback(false);
+      return;
+    }
+
+    if (isPlaybackRouteFocused) {
+      setHasActivatedPlayback(true);
+    }
+  }, [
+    isAppActive,
+    isMainTabsRootSelected,
+    isPlaybackRouteFocused,
+    isTabRoute,
+  ]);
+
+  useEffect(() => {
+    if (!isPlaybackTargetReady) {
+      setIsNeighborPreloadReady(false);
+      setIsNextPreloadSuppressed(false);
+      nextPreloadSuppressionAnchorRef.current = null;
+      return undefined;
+    }
+
+    const neighborPlayerTimer = setTimeout(() => {
+      setIsNeighborPreloadReady(true);
+    }, REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS);
+
+    return () => clearTimeout(neighborPlayerTimer);
+  }, [isPlaybackTargetReady]);
 
   // Drives the swipe-back gesture's transform. Declared up here (not down
   // by the gesture definition) so the focus effect below can reset it —
@@ -672,9 +774,6 @@ export default function ReelsScreen() {
       navigationActionInFlightRef.current = false;
       isUserDraggingRef.current = false;
       setIsDismissing(false);
-      // Mount the active player immediately. The old focus delay exposed the
-      // poster/layout for a noticeable moment every time Home opened Reels.
-      setIsPlaybackMountReady(true);
       if (scrollReleaseTimerRef.current !== null) {
         clearTimeout(scrollReleaseTimerRef.current);
         scrollReleaseTimerRef.current = null;
@@ -685,15 +784,11 @@ export default function ReelsScreen() {
       }
       dragX.value = 0;
       screenDismissX.value = 0;
-      const neighborPlayerTimer = setTimeout(() => {
-        setIsNeighborPreloadReady(true);
-      }, REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS);
       if (isTabRoute) {
         tabBarVisibility.setVisible(false);
       }
 
       return () => {
-        clearTimeout(neighborPlayerTimer);
         if (isTabRoute) {
           tabBarVisibility.setVisible(true);
         }
@@ -853,6 +948,8 @@ export default function ReelsScreen() {
 
   const handleReelMomentumScrollBegin = useCallback(() => {
     isUserDraggingRef.current = true;
+    nextPreloadSuppressionAnchorRef.current = activeIndexRef.current;
+    setIsNextPreloadSuppressed(true);
     if (scrollReleaseTimerRef.current !== null) {
       clearTimeout(scrollReleaseTimerRef.current);
       scrollReleaseTimerRef.current = null;
@@ -862,6 +959,11 @@ export default function ReelsScreen() {
   const handleReelScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = event.nativeEvent.contentOffset.y;
+      const velocityY = Math.abs(event.nativeEvent.velocity?.y ?? 0);
+      if (velocityY >= REELS_FAST_SWIPE_VELOCITY) {
+        nextPreloadSuppressionAnchorRef.current ??= activeIndexRef.current;
+        setIsNextPreloadSuppressed(true);
+      }
       if (scrollReleaseTimerRef.current !== null) {
         clearTimeout(scrollReleaseTimerRef.current);
       }
@@ -869,6 +971,8 @@ export default function ReelsScreen() {
         scrollReleaseTimerRef.current = null;
         isUserDraggingRef.current = false;
         commitActiveIndexFromOffset(offsetY);
+        setIsNextPreloadSuppressed(false);
+        nextPreloadSuppressionAnchorRef.current = null;
       }, 180);
     },
     [commitActiveIndexFromOffset],
@@ -882,6 +986,8 @@ export default function ReelsScreen() {
       }
       isUserDraggingRef.current = false;
       commitActiveIndexFromOffset(event.nativeEvent.contentOffset.y);
+      setIsNextPreloadSuppressed(false);
+      nextPreloadSuppressionAnchorRef.current = null;
     },
     [commitActiveIndexFromOffset],
   );
@@ -906,7 +1012,12 @@ export default function ReelsScreen() {
       const post = mapReelToFeedVideoPost(item);
       if (!isFeedPostShareable(post)) return;
       cancelPendingAutoAdvance();
+      if (shareCloseTimerRef.current !== null) {
+        clearTimeout(shareCloseTimerRef.current);
+        shareCloseTimerRef.current = null;
+      }
       isShareSheetOpenRef.current = true;
+      setIsShareSheetClosing(false);
       setSharingPost(post);
       setShareModalVisible(true);
     },
@@ -914,11 +1025,18 @@ export default function ReelsScreen() {
   );
 
   const handleCloseShareModal = useCallback(() => {
-    isShareSheetOpenRef.current = false;
+    if (shareCloseTimerRef.current !== null) {
+      clearTimeout(shareCloseTimerRef.current);
+    }
+    isShareSheetOpenRef.current = true;
+    setIsShareSheetClosing(true);
     setShareModalVisible(false);
-    setTimeout(() => {
+    shareCloseTimerRef.current = setTimeout(() => {
+      shareCloseTimerRef.current = null;
+      isShareSheetOpenRef.current = false;
+      setIsShareSheetClosing(false);
       setSharingPost(undefined);
-    }, 300);
+    }, REELS_SHARE_CLOSE_GRACE_MS);
   }, []);
 
   const handleOpenEditReel = useCallback(() => {
@@ -1008,7 +1126,6 @@ export default function ReelsScreen() {
     () => vm.items.find(item => item.id === vm.selectedCommentPostId) ?? null,
     [vm.items, vm.selectedCommentPostId],
   );
-  const isPublisherOverlayOpen = selectedPublisherId !== null;
   const currentReelId = vm.items[vm.activeIndex]?.id ?? null;
 
   const handleRetryComments = useCallback(() => {
@@ -1017,22 +1134,27 @@ export default function ReelsScreen() {
     }
   }, [openReelComments, vm.selectedCommentPostId]);
 
+  const allowNextPreload = shouldAllowNextReelPreload({
+    isNeighborPreloadReady,
+    isNextPreloadSuppressed,
+    activeIndex: vm.activeIndex,
+    suppressionAnchorIndex: nextPreloadSuppressionAnchorRef.current,
+  });
+
   const renderItem = useCallback(
     ({ item, index }: { item: ReelsItem; index: number }) => {
-      const shouldMount = shouldMountReelVideoPlayer({
-        isPlaybackRouteFocused:
-          shouldKeepPlayersMounted && !isPublisherOverlayOpen,
+      const playerRole = resolveReelPlayerRole({
+        isPlaybackRouteFocused: isPlaybackTargetReady,
+        keepCurrentPlayerMounted,
         index,
         activeIndex: vm.activeIndex,
-        preloadRadius: activePreloadRadius,
+        allowPreviousPreload: isNeighborPreloadReady,
+        allowNextPreload,
       });
       const isCurrent = index === vm.activeIndex;
-      // A reel only counts as "active" when this screen has focus —
-      // when the user switches tabs, every reel becomes inactive (paused).
-      const isActive = isReelItemActive({
-        isScreenFocused: shouldPlayActiveReel && !isPublisherOverlayOpen,
-        index,
-        activeIndex: vm.activeIndex,
+      const isActive = isReelPlayerRoleActive({
+        role: playerRole,
+        playbackAllowed: shouldPlayActiveReel,
       });
 
       const initialSeekTime =
@@ -1044,13 +1166,13 @@ export default function ReelsScreen() {
         <ReelItem
           item={item}
           height={itemHeight}
+          playerRole={playerRole}
           isActive={isActive}
           isCurrent={isCurrent}
           commentsPreviewVisible={isCommentsPreviewVisible && isCurrent}
           commentsPreviewHeight={Math.round(
             itemHeight * REELS_COMMENTS_PREVIEW_RATIO,
           )}
-          shouldMount={shouldMount}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
           onReaction={vm.toggleReaction}
@@ -1077,9 +1199,10 @@ export default function ReelsScreen() {
       handleOpenShareReel,
       itemHeight,
       isMuted,
-      isPublisherOverlayOpen,
-      activePreloadRadius,
-      shouldKeepPlayersMounted,
+      isNeighborPreloadReady,
+      allowNextPreload,
+      isPlaybackTargetReady,
+      keepCurrentPlayerMounted,
       shouldPlayActiveReel,
       handleToggleMute,
       handleOpenComments,
@@ -1182,24 +1305,11 @@ export default function ReelsScreen() {
     rootNavigator.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
   }, [navigation]);
 
-  const prepareFeedStatusBarForReturn = useCallback(() => {
-    if (Platform.OS !== 'android') return;
-
-    // Reels draws below a translucent status bar while Home owns an opaque
-    // brand-coloured bar. Restore Home's native chrome before popping Reels
-    // so Android never inserts its default white status-bar frame between the
-    // two screens.
-    StatusBar.setBarStyle('light-content', false);
-    StatusBar.setBackgroundColor(APP_BRAND_COLOR, false);
-    StatusBar.setTranslucent(false);
-  }, []);
-
   const goBackToFeed = useCallback(() => {
     if (navigationActionInFlightRef.current) return;
     navigationActionInFlightRef.current = true;
 
     if (isTabRoute) {
-      prepareFeedStatusBarForReturn();
       navigation.navigate(ROUTES.FEED);
       return;
     }
@@ -1207,7 +1317,6 @@ export default function ReelsScreen() {
     setIsDismissing(true);
     dismissNavigationFrameRef.current = requestAnimationFrame(() => {
       dismissNavigationFrameRef.current = null;
-      prepareFeedStatusBarForReturn();
       // Keep decoder teardown outside the visible native fade.
       if (navigation.canGoBack()) {
         navigation.goBack();
@@ -1215,7 +1324,7 @@ export default function ReelsScreen() {
         navigateToFeed();
       }
     });
-  }, [isTabRoute, navigation, navigateToFeed, prepareFeedStatusBarForReturn]);
+  }, [isTabRoute, navigation, navigateToFeed]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1244,10 +1353,11 @@ export default function ReelsScreen() {
         .activeOffsetX(BACK_GESTURE_ACTIVE_OFFSET_X)
         .failOffsetY([-BACK_GESTURE_FAIL_OFFSET_Y, BACK_GESTURE_FAIL_OFFSET_Y])
         .enabled(
-          !isTabRoute &&
-            !vm.isCommentsOpen &&
-            !shareModalVisible &&
-            editingReel === null &&
+              !isTabRoute &&
+                !vm.isCommentsOpen &&
+                !shareModalVisible &&
+                !isShareSheetClosing &&
+                editingReel === null &&
             !isPublisherOverlayOpen,
         )
         .onUpdate(event => {
@@ -1310,9 +1420,10 @@ export default function ReelsScreen() {
       beginDismissTransition,
       goBackToFeed,
       isTabRoute,
-      isPublisherOverlayOpen,
-      shareModalVisible,
-      editingReel,
+          isPublisherOverlayOpen,
+          shareModalVisible,
+          isShareSheetClosing,
+          editingReel,
       vm.isCommentsOpen,
     ],
   );
@@ -1368,8 +1479,8 @@ export default function ReelsScreen() {
       <View style={styles.fullCenter}>
         <FocusAwareStatusBar
           barStyle="light-content"
-          translucent
-          backgroundColor="transparent"
+          translucent={Platform.OS !== 'android'}
+          backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : 'transparent'}
         />
         <ActivityIndicator color="#fff" size="large" />
         <Text style={styles.helperText}>{copy.loading}</Text>
@@ -1382,8 +1493,8 @@ export default function ReelsScreen() {
       <View style={styles.fullCenter}>
         <FocusAwareStatusBar
           barStyle="light-content"
-          translucent
-          backgroundColor="transparent"
+          translucent={Platform.OS !== 'android'}
+          backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : 'transparent'}
         />
         <Text style={styles.errorTitle}>{copy.failedLoad}</Text>
         <Text style={styles.errorMsg}>{vm.error}</Text>
@@ -1400,8 +1511,8 @@ export default function ReelsScreen() {
       <View style={styles.fullCenter}>
         <FocusAwareStatusBar
           barStyle="light-content"
-          translucent
-          backgroundColor="transparent"
+          translucent={Platform.OS !== 'android'}
+          backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : 'transparent'}
         />
         <Text style={styles.emptyTitle}>{copy.noReels}</Text>
         <Text style={styles.emptyMsg}>{copy.beFirst}</Text>
@@ -1423,8 +1534,8 @@ export default function ReelsScreen() {
       >
         <FocusAwareStatusBar
           barStyle="light-content"
-          translucent
-          backgroundColor="transparent"
+          translucent={Platform.OS !== 'android'}
+          backgroundColor={Platform.OS === 'android' ? APP_BRAND_COLOR : 'transparent'}
         />
 
         <FlatList

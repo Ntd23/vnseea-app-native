@@ -20,10 +20,15 @@ describe('Feed and profile list performance contracts', () => {
   );
 
   it('keeps rich cards in a bounded render window without unsafe Android clipping', () => {
-    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 2.2');
+    expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 1.8');
+    expect(feedSource).toContain('Math.max(1500');
     expect(feedSource).toContain('FEED_SCREEN_HEIGHT * 3.2');
     expect(feedSource).toContain(
-      'const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28',
+      'const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 10 : 28',
+    );
+    expect(feedSource).toContain('drawDistance={FEED_LIST_DRAW_DISTANCE}');
+    expect(feedSource).toContain(
+      'maxItemsInRecyclePool={FEED_LIST_RECYCLE_POOL_SIZE}',
     );
     expect(feedSource).toContain(
       'const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 8 : 10',
@@ -68,7 +73,7 @@ describe('Feed and profile list performance contracts', () => {
     expect(feedSource).toContain('flushPendingLoadMoreRef.current()');
     expect(feedSource).toContain('const LOAD_MORE_THROTTLE_MS = 1200');
     expect(feedViewModelSource).toContain('if (isScrollBusyRef.current) {');
-    expect(feedViewModelSource).toContain(
+    expect(feedSource).toContain(
       'pendingLoadMoreDuringScrollRef.current = true;',
     );
     expect(profileSource).toContain('pendingProfileLoadMoreRef');
@@ -147,6 +152,15 @@ describe('Feed and profile list performance contracts', () => {
     expect(feedSource).toContain('disabled: true,');
     expect(feedSource).toContain('preserveExistingOrder: preserveDeepFeedOrder');
     expect(feedSource).toContain('const preserveDeepFeedOrder =');
+  });
+
+  it('scopes and reapplies the retained Feed offset with the persisted session identity', () => {
+    expect(feedSource).toContain(
+      'userVm.user?.userId ?? sessionStorage.getSession()?.userId',
+    );
+    expect(feedSource).toContain('retainedFeedScrollState?.scopeKey === feedScrollScopeKey');
+    expect(feedSource).toContain('pendingFeedScrollRestoreOffsetRef.current = restoredScrollY');
+    expect(feedSource).toContain('mainFeedListRef.current.scrollToOffset({');
   });
 
   it('commits one ready page per fling update and keeps the tail runway stable', () => {

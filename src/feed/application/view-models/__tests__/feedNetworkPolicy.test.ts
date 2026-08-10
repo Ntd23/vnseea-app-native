@@ -1,6 +1,27 @@
-import { createFeedNetworkPolicy } from '../feedNetworkPolicy';
+import {
+  createFeedNetworkPolicy,
+  getFeedPrefetchRetryDelay,
+} from '../feedNetworkPolicy';
 
 describe('feed network policy', () => {
+  it('backs off failed prefetches instead of retrying every 900ms forever', () => {
+    expect(
+      Array.from({ length: 8 }, (_, index) =>
+        getFeedPrefetchRetryDelay(index + 1),
+      ),
+    ).toEqual([900, 1_800, 3_600, 7_200, 14_400, 28_800, 30_000, 30_000]);
+
+    let elapsedMs = 0;
+    let attemptsWithinOneMinute = 0;
+
+    while (elapsedMs < 60_000) {
+      attemptsWithinOneMinute += 1;
+      elapsedMs += getFeedPrefetchRetryDelay(attemptsWithinOneMinute);
+    }
+
+    expect(attemptsWithinOneMinute).toBe(7);
+  });
+
   it('keeps useful reveal batches even after the network becomes slow', () => {
     const policy = createFeedNetworkPolicy();
 

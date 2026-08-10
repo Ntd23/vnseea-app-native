@@ -26,46 +26,57 @@ import type {
   ProfileMediaSnapshot,
   ProfileMediaUpdateResult,
 } from '../../domain/types/profileMedia.types';
+import {
+  getProfileClientCacheEntry,
+  loadProfileDataWithClientCache,
+  primeProfilePreviewCacheForViewer,
+  setCompleteProfileClientCacheEntry,
+  type ProfilePreviewSeed,
+  updateProfileClientCacheEntry,
+} from '../cache/profileClientCache';
+import { isClientUiOptimizationEnabled } from '../../../shared/performance/clientUiPerformanceMetrics';
 
 const repository = createProfileRepository();
 const storiesRepository = createStoriesRepository();
 const PROFILE_MEDIA_UPLOAD_TIMEOUT_MS = 60_000;
-const PROFILE_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
 
-type ProfileCacheEntry = {
-  data: ProfileData;
-  expiresAt: number;
-};
+type ProfileViewModelLoadInput = ProfileLoadInput & { force?: boolean };
 
-const profileDataCache = new Map<string, ProfileCacheEntry>();
-
-function profileCacheKey(userId: string) {
-  const viewerId = sessionStorage.getSession()?.userId ?? 'guest';
-  return `${viewerId}:${String(userId)}`;
-}
-
-function getCachedProfileData(userId?: string) {
-  if (!userId) return null;
-
-  const key = profileCacheKey(userId);
-  const entry = profileDataCache.get(key);
-  if (!entry) return null;
-
-  if (entry.expiresAt <= Date.now()) {
-    profileDataCache.delete(key);
+function getCachedProfileData(userId?: string, allowPartial = false) {
+  const viewerId = sessionStorage.getSession()?.userId;
+  const entry = getProfileClientCacheEntry(viewerId, userId);
+  if (!entry || (!allowPartial && entry.completeness !== 'complete')) {
     return null;
   }
 
   return entry.data;
 }
 
-function setCachedProfileData(userId: string | undefined, data: ProfileData) {
-  if (!userId || !data.profile) return;
+function setCachedProfileData(
+  userId: string | undefined,
+  data: ProfileData,
+  complete = false,
+  includesFriends = false,
+) {
+  const viewerId = sessionStorage.getSession()?.userId;
+  if (complete) {
+    setCompleteProfileClientCacheEntry(
+      viewerId,
+      userId,
+      data,
+      includesFriends,
+    );
+    return;
+  }
+  updateProfileClientCacheEntry(viewerId, userId, data);
+}
 
-  profileDataCache.set(profileCacheKey(userId), {
-    data,
-    expiresAt: Date.now() + PROFILE_DATA_CACHE_TTL_MS,
-  });
+export function primeProfilePreviewCache(seed: ProfilePreviewSeed) {
+  if (!isClientUiOptimizationEnabled()) return;
+  primeProfilePreviewCacheForViewer(
+    sessionStorage.getSession()?.userId,
+    seed,
+  );
 }
 
 function buildCachedSessionProfileData(userId?: string): ProfileData | null {
@@ -94,7 +105,10 @@ function getInitialProfileData(userId?: string) {
   const sessionUserId = sessionStorage.getSession()?.userId;
   const requestedUserId = userId || sessionUserId;
   return (
-    getCachedProfileData(requestedUserId) ??
+    getCachedProfileData(
+      requestedUserId,
+      isClientUiOptimizationEnabled(),
+    ) ??
     buildCachedSessionProfileData(requestedUserId)
   );
 }
@@ -239,44 +253,91 @@ export function useProfileViewModel(initialUserId?: string) {
     });
   }, [initialUserId]);
 
-  const loadProfile = useCallback(async (input?: ProfileLoadInput) => {
-    setIsLoading(true);
-    setError(null);
-
+  const loadProfile = useCallback(async (input?: ProfileViewModelLoadInput) => {
     const requestedUserId =
       input?.userId ?? sessionStorage.getSession()?.userId ?? undefined;
-    const cached = getCachedProfileData(requestedUserId);
+    const optimizationEnabled = isClientUiOptimizationEnabled();
+    const cachedEntry = getProfileClientCacheEntry(
+      sessionStorage.getSession()?.userId,
+      requestedUserId,
+    );
+    const cached =
+      cachedEntry &&
+      (optimizationEnabled || cachedEntry.completeness === 'complete')
+        ? cachedEntry.data
+        : null;
+    setError(null);
     if (cached) {
-      setProfileData(previous => previous ?? cached);
+      setProfileData(previous =>
+        !previous?.profile ||
+        String(previous.profile.id) !== String(requestedUserId)
+          ? cached
+          : previous,
+      );
     }
+    if (
+      optimizationEnabled &&
+      !input?.force &&
+      cachedEntry?.completeness === 'complete' &&
+      (input?.includeFriends === false || cachedEntry.includesFriends)
+    ) {
+      return cachedEntry.data;
+    }
+    setIsLoading(true);
 
     try {
-      const result = await repository.loadProfile(input);
-      const cachedWithConnections = getCachedProfileData(requestedUserId);
-      const nextResult = result
+      const repositoryInput: ProfileLoadInput | undefined = input
         ? {
-            ...result,
-            followers:
-              input?.includeFriends === false && result.profile
-                ? cachedWithConnections?.profile &&
-                  String(cachedWithConnections.profile.id) ===
-                    String(result.profile.id)
-                  ? cachedWithConnections.followers
-                  : result.followers
-                : result.followers,
-            following:
-              input?.includeFriends === false && result.profile
-                ? cachedWithConnections?.profile &&
-                  String(cachedWithConnections.profile.id) ===
-                    String(result.profile.id)
-                  ? cachedWithConnections.following
-                  : result.following
-                : result.following,
+            userId: input.userId,
+            includeFriends: input.includeFriends,
           }
-        : result;
+        : undefined;
+      const loadFromRepository = async () => {
+        const result = await repository.loadProfile(repositoryInput);
+        const cachedWithConnections = getCachedProfileData(
+          requestedUserId,
+          true,
+        );
+        return result
+          ? {
+              ...result,
+              followers:
+                input?.includeFriends === false && result.profile
+                  ? cachedWithConnections?.profile &&
+                    String(cachedWithConnections.profile.id) ===
+                      String(result.profile.id)
+                    ? cachedWithConnections.followers
+                    : result.followers
+                  : result.followers,
+              following:
+                input?.includeFriends === false && result.profile
+                  ? cachedWithConnections?.profile &&
+                    String(cachedWithConnections.profile.id) ===
+                      String(result.profile.id)
+                    ? cachedWithConnections.following
+                    : result.following
+                  : result.following,
+            }
+          : result;
+      };
+      const nextResult =
+        optimizationEnabled && requestedUserId
+          ? await loadProfileDataWithClientCache({
+              viewerId: sessionStorage.getSession()?.userId,
+              userId: requestedUserId,
+              includeFriends: input?.includeFriends,
+              force: input?.force,
+              load: loadFromRepository,
+            })
+          : await loadFromRepository();
       setProfileData(nextResult);
       if (nextResult) {
-        setCachedProfileData(requestedUserId, nextResult);
+        setCachedProfileData(
+          requestedUserId,
+          nextResult,
+          true,
+          input?.includeFriends !== false,
+        );
       }
 
       const currentUserId = sessionStorage.getSession()?.userId;
@@ -330,6 +391,20 @@ export function useProfileViewModel(initialUserId?: string) {
 
   const toggleFollow = useCallback(async (userId: string) => {
     const nextState = await repository.toggleFollow(userId);
+
+    const viewerId = sessionStorage.getSession()?.userId;
+    const cachedEntry = getProfileClientCacheEntry(viewerId, userId);
+    if (cachedEntry?.data.profile) {
+      updateProfileClientCacheEntry(viewerId, userId, {
+        ...cachedEntry.data,
+        profile: {
+          ...cachedEntry.data.profile,
+          followingState: nextState,
+          followedByCurrentUser: nextState === 'following',
+          canFollow: true,
+        },
+      });
+    }
 
     setProfileData(prev => {
       if (!prev?.profile || String(prev.profile.id) !== String(userId)) {

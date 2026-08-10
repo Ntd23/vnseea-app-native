@@ -54,6 +54,26 @@ describe('reels navigation target', () => {
     expect(navigation.push).not.toHaveBeenCalled();
   });
 
+  it('reuses the persistent Reels tab for a concrete video tapped on Home', () => {
+    const navigation = {
+      navigate: jest.fn(),
+      push: jest.fn(),
+    };
+    const homeVideoParams = {
+      source: 'home' as const,
+      initialVideoId: 'video-1',
+    };
+
+    expect(shouldOpenReelsInMainTab(homeVideoParams)).toBe(true);
+    navigateToReels(navigation, homeVideoParams, 'android');
+
+    expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.MAIN_TABS, {
+      screen: ROUTES.REELS,
+      params: homeVideoParams,
+    });
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
   it('switches directly when the caller already belongs to the tab navigator', () => {
     const navigation = {
       navigate: jest.fn(),

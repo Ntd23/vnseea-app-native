@@ -28,6 +28,10 @@ type RealtimeTokenResponse = {
   url?: string;
 };
 
+type ActiveTokenRequest = {
+  controller: AbortController;
+};
+
 const socketModule = require('socket.io-client-v4') as {
   io?: SocketFactory;
   default?: SocketFactory;
@@ -38,11 +42,13 @@ const repository = createFeedRepository();
 const POLL_BASE_INTERVAL_MS = 30_000;
 const POLL_MAX_INTERVAL_MS = 120_000;
 const POLL_JITTER_RATIO = 0.15;
+const IDLE_RELEASE_GRACE_MS = 250;
 
 let socket: SocketLike | null = null;
-let connecting = false;
+let activeTokenRequest: ActiveTokenRequest | null = null;
 let accessToken = '';
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let idleReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 let pollAttempt = 0;
 let appState: AppStateStatus = AppState.currentState;
 
@@ -53,9 +59,10 @@ function nuxtApiUrl(path: string) {
   )}`;
 }
 
-async function requestToken(token: string) {
+async function requestToken(token: string, signal: AbortSignal) {
   const response = await fetch(nuxtApiUrl('realtime/token'), {
     method: 'GET',
+    signal,
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${token}`,
@@ -145,6 +152,49 @@ const coordinator = createPostRealtimeCoordinator<FeedPost>({
   initiallyConnected: false,
 });
 
+function hasRealtimeDemand() {
+  return (
+    appState === 'active' && coordinator.getWatchedPostIds().length > 0
+  );
+}
+
+function cancelPendingTokenRequest() {
+  activeTokenRequest?.controller.abort();
+  activeTokenRequest = null;
+}
+
+function disconnectSocket() {
+  socket?.disconnect();
+  socket = null;
+  accessToken = '';
+  coordinator.setConnected(false);
+}
+
+function cancelScheduledIdleRelease() {
+  if (idleReleaseTimer) clearTimeout(idleReleaseTimer);
+  idleReleaseTimer = null;
+}
+
+function releaseRealtimeResourcesIfIdle() {
+  cancelScheduledIdleRelease();
+  if (hasRealtimeDemand()) return;
+  cancelPendingTokenRequest();
+  disconnectSocket();
+  stopPolling(true);
+}
+
+function scheduleRealtimeResourceReleaseIfIdle() {
+  if (hasRealtimeDemand()) {
+    cancelScheduledIdleRelease();
+    return;
+  }
+  if (idleReleaseTimer) return;
+  idleReleaseTimer = setTimeout(() => {
+    idleReleaseTimer = null;
+    releaseRealtimeResourcesIfIdle();
+  }, IDLE_RELEASE_GRACE_MS);
+}
+
 function bindSocket(nextSocket: SocketLike) {
   nextSocket.on('connect', () => {
     coordinator.setConnected(true);
@@ -170,15 +220,28 @@ function bindSocket(nextSocket: SocketLike) {
 }
 
 async function ensureConnected() {
+  if (!hasRealtimeDemand()) return;
+  cancelScheduledIdleRelease();
   const token = sessionStorage.getAccessToken();
-  if (!token || connecting) return;
+  if (!token || activeTokenRequest) return;
   if (socket && accessToken === token) {
     if (!socket.connected) socket.connect();
     return;
   }
-  connecting = true;
+
+  const request: ActiveTokenRequest = {
+    controller: new AbortController(),
+  };
+  activeTokenRequest = request;
   try {
-    const auth = await requestToken(token);
+    const auth = await requestToken(token, request.controller.signal);
+    if (
+      activeTokenRequest !== request ||
+      !hasRealtimeDemand() ||
+      sessionStorage.getAccessToken() !== token
+    ) {
+      return;
+    }
     if (!auth) {
       updatePolling();
       return;
@@ -193,15 +256,22 @@ async function ensureConnected() {
     });
     bindSocket(socket);
   } catch {
+    if (request.controller.signal.aborted) return;
     coordinator.setConnected(false);
     updatePolling();
   } finally {
-    connecting = false;
+    if (activeTokenRequest === request) {
+      activeTokenRequest = null;
+    }
   }
 }
 
 AppState.addEventListener('change', nextState => {
   appState = nextState;
+  if (nextState !== 'active') {
+    releaseRealtimeResourcesIfIdle();
+    return;
+  }
   updatePolling({ resetBackoff: true });
   if (nextState === 'active' && coordinator.getWatchedPostIds().length > 0) {
     void ensureConnected();
@@ -215,6 +285,7 @@ export const postRealtimeRuntime = {
     updatePolling({ resetBackoff: true });
     return () => {
       release();
+      scheduleRealtimeResourceReleaseIfIdle();
       updatePolling({ resetBackoff: true });
     };
   },

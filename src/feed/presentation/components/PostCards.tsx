@@ -102,11 +102,32 @@ import {
 } from './feedVideoSurfaceRecovery';
 import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
 import { FeedMediaImage } from './FeedMediaImage';
+import { feedVisibleMediaStore } from './feedVisibleMediaStore';
 import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
 import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
 import { PostTaggedUsersSheet } from './PostTaggedUsersSheet';
 import { parseSharedPageMessage } from '../../../messages/application/shared-pages/sharedPageMessage';
 import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
+import {
+  shouldMeasureFeedVideoPosterAspectRatio,
+  shouldMountWarmFeedVideo,
+  shouldPlayFeedVideo,
+} from '../screens/feedVideoAutoplay';
+import {
+  isVideoPlaybackMetricsEnabled,
+  recordVideoBufferState,
+  recordVideoError,
+  recordVideoFirstFrame,
+  recordVideoLoadStart,
+  recordVideoPlayerMounted,
+  recordVideoPlayerUnmounted,
+  updateVideoPlayerRole,
+} from '../../../shared/performance/videoPlaybackMetrics';
+import {
+  isClientUiOptimizationEnabled,
+  recordClientMediaLoad,
+  type ClientUiPerformanceSurface,
+} from '../../../shared/performance/clientUiPerformanceMetrics';
 
 export {
   FEED_CARD_CLASS,
@@ -122,12 +143,12 @@ const PICKER_WIDTH = 282;
 const PICKER_HEIGHT = 52;
 const PICKER_GAP = 8;
 const ANDROID_PICKER_HORIZONTAL_MARGIN = 10;
-const ANDROID_PICKER_HEIGHT = 92;
-const ANDROID_PICKER_ICON_ROW_HEIGHT = 54;
-const ANDROID_PICKER_HORIZONTAL_PADDING = 10;
-const ANDROID_PICKER_ICON_BOX = 34;
-const ANDROID_PICKER_ICON_SIZE = 32;
-const ANDROID_PICKER_ICON_CENTER_Y = ANDROID_PICKER_ICON_ROW_HEIGHT / 2;
+const ANDROID_PICKER_HEIGHT = 60;
+const ANDROID_PICKER_ICON_ROW_HEIGHT = ANDROID_PICKER_HEIGHT;
+const ANDROID_PICKER_HORIZONTAL_PADDING = 8;
+const ANDROID_PICKER_ICON_BOX = 48;
+const ANDROID_PICKER_ICON_SIZE = 46;
+const ANDROID_PICKER_ICON_CENTER_Y = ANDROID_PICKER_HEIGHT / 2;
 const ANDROID_PICKER_SUMMARY_ROW_ANCHOR_OFFSET = 8;
 const IOS_PICKER_ICON_SLOT = 44;
 const IOS_PICKER_ICON_BOX = 40;
@@ -171,6 +192,7 @@ const VIDEO_WARM_PREVIEW_SECONDS = Platform.OS === 'android' ? 0.35 : 0.6;
 const FEED_VIDEO_BLUR_SURFACE_GRACE_MS = 240;
 const FEED_VIDEO_BACKDROP_BLUR_RADIUS = Platform.OS === 'android' ? 18 : 28;
 const ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO = 4 / 5;
+const FEED_VIDEO_MEDIA_SURFACE_STYLE = { width: '100%' as const };
 const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 5;
 const DEFAULT_PHOTO_GRID_WIDTH =
   Platform.OS === 'ios'
@@ -194,6 +216,9 @@ export function getFeedVideoPosterCacheKeyForPost(
 }
 
 const styles = StyleSheet.create({
+  reactionSummaryRow: {
+    minHeight: 20,
+  },
   reactionPickerSurface: {},
   iosReactionPickerSurface: {
     flexDirection: 'row',
@@ -208,13 +233,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   androidReactionPickerSurface: {
-    flexDirection: 'column',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     paddingHorizontal: 0,
     paddingTop: 0,
     paddingBottom: 0,
-    borderRadius: 18,
+    borderRadius: ANDROID_PICKER_HEIGHT / 2,
     backgroundColor: '#ffffff',
     overflow: 'hidden',
   },
@@ -226,29 +251,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: ANDROID_PICKER_HORIZONTAL_PADDING,
   },
-  androidReactionPickerHintWrap: {
-    width: '100%',
-    height: ANDROID_PICKER_HEIGHT - ANDROID_PICKER_ICON_ROW_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d7dce5',
-  },
-  androidReactionPickerHint: {
-    color: '#8b95a5',
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: '600',
-    marginTop: 1,
-    textAlign: 'center',
-  },
   androidInlineReactionPickerSurface: {
     width: '100%',
     height: ANDROID_PICKER_HEIGHT,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#d7dce5',
+  },
+  androidInlineReactionButton: {
+    flex: 1,
+    height: ANDROID_PICKER_ICON_ROW_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   feedVideoBackdrop: {
     position: 'absolute',
@@ -308,7 +322,7 @@ export function FeedInlineReactionPickerBar({
   onPick: (reaction: ReactionType) => void;
 }) {
   const language = useAppLanguage();
-  const hint = language === 'en' ? 'Press to choose' : 'Nhấn để chọn';
+  const reactionLabels = FEED_COPY[language].reactionLabel;
   const handlePick = useCallback(
     (reaction: ReactionType) => {
       onPick(reaction);
@@ -330,12 +344,9 @@ export function FeedInlineReactionPickerBar({
             key={type}
             activeOpacity={0.75}
             onPress={() => handlePick(type)}
-            style={{
-              flex: 1,
-              height: ANDROID_PICKER_ICON_ROW_HEIGHT,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            accessibilityRole="button"
+            accessibilityLabel={reactionLabels[type]}
+            style={styles.androidInlineReactionButton}
           >
             <Image
               source={REACTION_IMAGES[type]}
@@ -347,11 +358,6 @@ export function FeedInlineReactionPickerBar({
             />
           </TouchableOpacity>
         ))}
-      </View>
-      <View style={styles.androidReactionPickerHintWrap}>
-        <Text allowFontScaling={false} style={styles.androidReactionPickerHint}>
-          {hint}
-        </Text>
       </View>
     </View>
   );
@@ -854,10 +860,8 @@ type FeedPreparedVideoListener = (
   preparedVideoIds: ReadonlySet<string>,
 ) => void;
 type FeedScrollBusyListener = (isBusy: boolean) => void;
-type FeedVisibleMediaPostIdsListener = (
-  visiblePostIds: ReadonlySet<string>,
-) => void;
 type FeedVideoMutedListener = (isMuted: boolean) => void;
+type FeedScreenFocusedListener = (isFocused: boolean) => void;
 
 export let feedActiveVideoIdSnapshot: string | null = null;
 const feedActiveVideoListeners = new Set<FeedActiveVideoListener>();
@@ -868,11 +872,48 @@ const feedPreparedVideoListeners = new Set<FeedPreparedVideoListener>();
 const preparedVideoLru: string[] = [];
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
-export let feedVisibleMediaPostIdsSnapshot = new Set<string>();
-const feedVisibleMediaPostIdsListeners =
-  new Set<FeedVisibleMediaPostIdsListener>();
 export let feedVideoMutedSnapshot = false;
 const feedVideoMutedListeners = new Set<FeedVideoMutedListener>();
+let feedScreenFocusedSnapshot = false;
+const feedScreenFocusedListeners = new Set<FeedScreenFocusedListener>();
+
+export function publishFeedScreenFocused(isFocused: boolean) {
+  if (feedScreenFocusedSnapshot === isFocused) return;
+  feedScreenFocusedSnapshot = isFocused;
+  feedScreenFocusedListeners.forEach(listener => listener(isFocused));
+}
+
+function useFeedScreenFocused(enabled: boolean) {
+  const [isFocused, setIsFocused] = useState(() =>
+    enabled ? feedScreenFocusedSnapshot : true,
+  );
+
+  useEffect(() => {
+    if (!enabled) {
+      setIsFocused(previous => (previous ? previous : true));
+      return undefined;
+    }
+
+    const listener: FeedScreenFocusedListener = nextIsFocused => {
+      setIsFocused(previous =>
+        previous === nextIsFocused ? previous : nextIsFocused,
+      );
+    };
+
+    feedScreenFocusedListeners.add(listener);
+    setIsFocused(previous =>
+      previous === feedScreenFocusedSnapshot
+        ? previous
+        : feedScreenFocusedSnapshot,
+    );
+
+    return () => {
+      feedScreenFocusedListeners.delete(listener);
+    };
+  }, [enabled]);
+
+  return isFocused;
+}
 
 export function publishFeedActiveVideo(videoId: string | null) {
   if (feedActiveVideoIdSnapshot === videoId) return;
@@ -998,20 +1039,7 @@ export function publishFeedScrollBusy(isBusy: boolean) {
 }
 
 export function publishFeedVisibleMediaPostIds(postIds: Iterable<string>) {
-  const nextPostIds = new Set(postIds);
-  if (
-    feedVisibleMediaPostIdsSnapshot.size === nextPostIds.size &&
-    [...nextPostIds].every(postId =>
-      feedVisibleMediaPostIdsSnapshot.has(postId),
-    )
-  ) {
-    return;
-  }
-
-  feedVisibleMediaPostIdsSnapshot = nextPostIds;
-  feedVisibleMediaPostIdsListeners.forEach(listener =>
-    listener(feedVisibleMediaPostIdsSnapshot),
-  );
+  feedVisibleMediaStore.publish(postIds);
 }
 
 export function publishFeedVideoMuted(isMuted: boolean) {
@@ -1043,26 +1071,25 @@ export function useFeedScrollBusy() {
 
 export function useFeedPostMediaVisible(postId: string) {
   const [isVisible, setIsVisible] = useState(() =>
-    feedVisibleMediaPostIdsSnapshot.has(postId),
+    feedVisibleMediaStore.isVisible(postId),
   );
 
   useEffect(() => {
-    const listener: FeedVisibleMediaPostIdsListener = nextVisiblePostIds => {
-      const nextIsVisible = nextVisiblePostIds.has(postId);
-      setIsVisible(previous =>
-        previous === nextIsVisible ? previous : nextIsVisible,
-      );
-    };
+    const unsubscribe = feedVisibleMediaStore.subscribe(
+      postId,
+      nextIsVisible => {
+        setIsVisible(previous =>
+          previous === nextIsVisible ? previous : nextIsVisible,
+        );
+      },
+    );
 
-    feedVisibleMediaPostIdsListeners.add(listener);
-    const nextIsVisible = feedVisibleMediaPostIdsSnapshot.has(postId);
+    const nextIsVisible = feedVisibleMediaStore.isVisible(postId);
     setIsVisible(previous =>
       previous === nextIsVisible ? previous : nextIsVisible,
     );
 
-    return () => {
-      feedVisibleMediaPostIdsListeners.delete(listener);
-    };
+    return unsubscribe;
   }, [postId]);
 
   return isVisible;
@@ -1333,10 +1360,11 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
     }
   }, [onOpenReactions, postId, post]);
 
-  if (likeCount <= 0 && commentCount <= 0) return null;
-
   return (
-    <View className="mb-4 flex-row items-center justify-between">
+    <View
+      className="mb-4 flex-row items-center justify-between"
+      style={styles.reactionSummaryRow}
+    >
       {/* Left: stacked reaction badges + label (Tappable to open reactions list) */}
       <TouchableOpacity
         activeOpacity={0.7}
@@ -1517,6 +1545,8 @@ export function ReactionPickerOverlay({
 }) {
   const localDragged = useSharedValue(false);
   const gDragged = hasDragged ?? localDragged;
+  const language = useAppLanguage();
+  const reactionLabels = FEED_COPY[language].reactionLabel;
 
   useEffect(() => {
     publishReactionPickerActivePostId(anchor?.postId ?? null);
@@ -1616,6 +1646,7 @@ export function ReactionPickerOverlay({
             <ReactionIcon
               key={type}
               type={type}
+              label={reactionLabels[type]}
               index={index}
               pickerLeft={left}
               pickerTop={top}
@@ -1640,6 +1671,7 @@ export function ReactionPickerOverlay({
 
 function ReactionIcon({
   type,
+  label,
   index,
   pickerLeft,
   pickerTop,
@@ -1656,6 +1688,7 @@ function ReactionIcon({
   onDismiss,
 }: {
   type: ReactionType;
+  label: string;
   index: number;
   pickerLeft: number;
   pickerTop: number;
@@ -1738,6 +1771,9 @@ function ReactionIcon({
     >
       <TouchableOpacity
         onPress={() => onPick(type)}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={label}
         hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
       >
         <Image
@@ -1768,6 +1804,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   keepPreparedVideoMounted = false,
   commentNavigationMode = 'detail',
   deferMediaUntilVisible = false,
+  mediaSurfaceRef,
+  performanceSurface,
 }: {
   post: FeedVideoPost;
   copy?: FeedCopy;
@@ -1797,41 +1835,61 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   keepPreparedVideoMounted?: boolean;
   commentNavigationMode?: 'detail' | 'callback';
   deferMediaUntilVisible?: boolean;
+  mediaSurfaceRef?: (
+    postId: string,
+    node: React.ElementRef<typeof View> | null,
+  ) => void;
+  performanceSurface?: ClientUiPerformanceSurface;
 }) {
   const language = useAppLanguage();
   const copy = providedCopy ?? FEED_COPY[language];
   const trackedMediaVisible = useFeedPostMediaVisible(post.id);
   const mediaVisible = !deferMediaUntilVisible || trackedMediaVisible;
+  const videoClientLoadMeasurementRef = useRef({
+    surface: performanceSurface,
+    isInViewport: mediaVisible,
+  });
+  const shouldRecordFeedVideoPlaybackMetrics =
+    performanceSurface === 'feed' && isVideoPlaybackMetricsEnabled();
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
   const trackedIsWarm = useFeedVideoWarm(post.id);
   const isPreparedKeptAlive = useFeedPreparedVideoKeepAlive(post.id);
+  const feedSurfaceFocused = useFeedScreenFocused(
+    performanceSurface === 'feed',
+  );
+  const isPlaybackSurfaceFocused =
+    isScreenFocused ??
+    (performanceSurface === 'feed' ? feedSurfaceFocused : true);
   const liveMediaActive = useLiveMediaActive();
   const isActive =
-    controlledIsActive !== undefined
-      ? controlledIsActive
-      : isScreenFocused !== false && trackedIsActive;
-  const isWarm = isScreenFocused !== false && trackedIsWarm;
+    isPlaybackSurfaceFocused &&
+    (controlledIsActive !== undefined ? controlledIsActive : trackedIsActive);
+  const isWarm = isPlaybackSurfaceFocused && trackedIsWarm;
   const [keepPlayerSurfaceMounted, setKeepPlayerSurfaceMounted] =
     useState(false);
   const wasPlayerSurfaceMountedRef = useRef(false);
   const [manuallyPaused, setManuallyPaused] = useState(false);
+  const [isOpeningReels, setIsOpeningReels] = useState(false);
+  const openingReelsFrameRef = useRef<number | null>(null);
+  const blurredWhileOpeningReelsRef = useRef(false);
   const muted = useFeedVideoMuted();
   const isScrollBusy = useFeedScrollBusy();
   const mediaLoadEnabled = !deferMediaUntilVisible || mediaVisible;
+  const handleMediaSurfaceRef = useCallback(
+    (node: React.ElementRef<typeof View> | null) => {
+      mediaSurfaceRef?.(post.id, node);
+    },
+    [mediaSurfaceRef, post.id],
+  );
   const videoUrl = post.videoUrl.trim();
   const mediaIdentity = `${post.id}:${videoUrl}`;
   const videoPreviewCacheKey = post.thumbnailUrl || videoUrl || post.id;
   const [aspectRatio, setAspectRatio] = useState(() =>
     Platform.OS === 'android'
       ? ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO
-      : getCachedMediaAspectRatio(
-          videoPreviewCacheKey,
-          0.75,
-          16 / 9,
-          16 / 9,
-        ),
+      : getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
   );
   const commitVideoAspectRatio = useCallback((nextAspectRatio: number) => {
     if (Platform.OS === 'android') return;
@@ -1857,6 +1915,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [isFrameCoverVisible, setFrameCoverVisible] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
   const [videoPlayerGeneration, setVideoPlayerGeneration] = useState(0);
+  const videoMetricsPlayerId = useMemo(
+    () => `feed:${post.id}:${videoPlayerGeneration}`,
+    [post.id, videoPlayerGeneration],
+  );
   const [maxVideoBitRate, setMaxVideoBitRate] = useState(
     VIDEO_STARTUP_MAX_BITRATE,
   );
@@ -1867,7 +1929,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     postId: post.id,
     serverThumbnailUrl: post.thumbnailUrl,
     enabled:
-      isScreenFocused !== false &&
+      isPlaybackSurfaceFocused &&
       mediaLoadEnabled &&
       hasVideoUrl &&
       !hasVideoError &&
@@ -1928,17 +1990,14 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     setHasVideoError(false);
     setVideoPlayerGeneration(0);
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
-  }, [
-    clearVideoQualityRamp,
-    commitVideoAspectRatio,
-    frameCoverOpacity,
-    mediaIdentity,
-    post.id,
-    videoPreviewCacheKey,
-  ]);
+  }, [clearVideoQualityRamp, commitVideoAspectRatio, frameCoverOpacity, mediaIdentity, post.id, videoPreviewCacheKey]);
 
   useEffect(() => {
     return () => {
+      if (openingReelsFrameRef.current !== null) {
+        cancelAnimationFrame(openingReelsFrameRef.current);
+        openingReelsFrameRef.current = null;
+      }
       if (frameCoverTimeoutRef.current) {
         clearTimeout(frameCoverTimeoutRef.current);
         frameCoverTimeoutRef.current = null;
@@ -1950,8 +2009,29 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     };
   }, [clearVideoQualityRamp, post.id]);
 
+  useEffect(() => {
+    if (!isOpeningReels) {
+      blurredWhileOpeningReelsRef.current = false;
+      return;
+    }
+
+    if (!isPlaybackSurfaceFocused) {
+      blurredWhileOpeningReelsRef.current = true;
+      return;
+    }
+
+    if (blurredWhileOpeningReelsRef.current) {
+      blurredWhileOpeningReelsRef.current = false;
+      setIsOpeningReels(false);
+    }
+  }, [isOpeningReels, isPlaybackSurfaceFocused]);
+
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
+    if (!shouldMeasureFeedVideoPosterAspectRatio(Platform.OS)) {
+      return undefined;
+    }
+
     const thumbnailUrl = resolvedThumbnailUrl;
     if (!thumbnailUrl || !mediaLoadEnabled) return undefined;
 
@@ -1991,17 +2071,20 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     return () => {
       cancelled = true;
     };
-  }, [
-    commitVideoAspectRatio,
-    mediaLoadEnabled,
-    resolvedThumbnailUrl,
-    videoPreviewCacheKey,
-  ]);
+  }, [commitVideoAspectRatio, mediaLoadEnabled, resolvedThumbnailUrl, videoPreviewCacheKey]);
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback(
     (data: any) => {
       if (mediaIdentity !== mediaIdentityRef.current) return;
+      const clientMeasurement = videoClientLoadMeasurementRef.current;
+      if (clientMeasurement.surface) {
+        recordClientMediaLoad(
+          clientMeasurement.surface,
+          'video',
+          clientMeasurement.isInViewport,
+        );
+      }
       if (frameCoverTimeoutRef.current) {
         clearTimeout(frameCoverTimeoutRef.current);
         frameCoverTimeoutRef.current = null;
@@ -2107,6 +2190,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigateToProfile, navigation, post.isAnonymous, post.publisher]);
 
   const handleVideoPress = useCallback(() => {
+    if (openingReelsFrameRef.current !== null) return;
+
     const resumeFallback = hasUserWatchedRef.current
       ? currentTimeRef.current
       : 0;
@@ -2116,50 +2201,86 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
     // Immediately pause the video on home feed before navigating.
     setManuallyPaused(true);
+    setIsOpeningReels(true);
 
     // `source: 'home'` preserves the selected feed video context when
     // the Reels tab opens from a post card.
     const sourcePostId = post.sharedPostId || post.id;
-    navigateToReels(navigation, {
-      initialVideoId: sourcePostId,
-      ...(post.sharedPostId ? {} : { post }),
-      source: 'home',
-      seekTime: resumeTime,
+    openingReelsFrameRef.current = requestAnimationFrame(() => {
+      openingReelsFrameRef.current = null;
+      navigateToReels(navigation, {
+        initialVideoId: sourcePostId,
+        ...(post.sharedPostId ? {} : { post }),
+        source: 'home',
+        seekTime: resumeTime,
+      });
     });
   }, [navigation, post]);
 
   // ── Mount strategy ──
-  // Mount active videos and a small warm-ahead set. Warm videos decode a
-  // tiny muted slice so the card has a real frame before the user reaches it,
-  // without keeping every rendered video alive.
+  // Mount active videos and a small warm-ahead set. Warm players stay paused;
+  // mounting them only prepares the native surface without advancing playback.
   const shouldKeepPreparedVideoMounted =
     keepPreparedVideoMounted && isPreparedKeptAlive && hasRenderedFrame;
-  const canMountWarmVideo =
-    isWarm || !isScrollBusy || shouldKeepPreparedVideoMounted;
+  const canMountWarmVideo = shouldMountWarmFeedVideo({
+    optimizationEnabled: isClientUiOptimizationEnabled(),
+    isWarm,
+    isScrollBusy,
+    shouldKeepPreparedVideoMounted,
+    wasPlayerSurfaceMounted: wasPlayerSurfaceMountedRef.current,
+  });
   const shouldMountFocusedVideo =
-    isScreenFocused !== false &&
+    !isOpeningReels &&
+    isPlaybackSurfaceFocused &&
     mediaVisible &&
     canAttemptVideo &&
     (isActive ||
       (canMountWarmVideo && isWarm) ||
       shouldKeepPreparedVideoMounted);
-  const isBlurSurfaceGraceActive =
-    isScreenFocused === false &&
-    (keepPlayerSurfaceMounted || wasPlayerSurfaceMountedRef.current);
+  const isTransitionSurfaceGraceActive =
+    !isOpeningReels &&
+    (keepPlayerSurfaceMounted ||
+      (!isPlaybackSurfaceFocused && wasPlayerSurfaceMountedRef.current));
   const shouldMountVideo =
-    shouldMountFocusedVideo || (canAttemptVideo && isBlurSurfaceGraceActive);
-  const shouldBlurVideoBackdrop =
-    shouldMountVideo && Platform.OS !== 'android';
+    shouldMountFocusedVideo ||
+    (canAttemptVideo && isTransitionSurfaceGraceActive);
+  const videoMetricsRole = isActive ? 'current' : isWarm ? 'warm' : 'prepared';
+  const videoMetricsRoleRef = useRef(videoMetricsRole);
+  videoMetricsRoleRef.current = videoMetricsRole;
+  const shouldBlurVideoBackdrop = shouldMountVideo && Platform.OS !== 'android';
   const shouldRenderVideoFrameCover =
-    resolvedThumbnailUrl &&
-    isFrameCoverVisible &&
-    Platform.OS !== 'android';
+    resolvedThumbnailUrl && isFrameCoverVisible && Platform.OS !== 'android';
 
   useEffect(() => {
-    if (isScreenFocused !== false) {
-      setKeepPlayerSurfaceMounted(false);
+    if (!shouldMountVideo || !shouldRecordFeedVideoPlaybackMetrics) {
       return undefined;
     }
+
+    recordVideoPlayerMounted({
+      playerId: videoMetricsPlayerId,
+      surface: 'feed',
+      role: videoMetricsRoleRef.current,
+    });
+
+    return () => recordVideoPlayerUnmounted(videoMetricsPlayerId);
+  }, [
+    shouldMountVideo,
+    shouldRecordFeedVideoPlaybackMetrics,
+    videoMetricsPlayerId,
+  ]);
+
+  useEffect(() => {
+    if (!shouldMountVideo || !shouldRecordFeedVideoPlaybackMetrics) return;
+    updateVideoPlayerRole(videoMetricsPlayerId, videoMetricsRole, 'feed');
+  }, [
+    shouldMountVideo,
+    shouldRecordFeedVideoPlaybackMetrics,
+    videoMetricsPlayerId,
+    videoMetricsRole,
+  ]);
+
+  useEffect(() => {
+    if (isPlaybackSurfaceFocused) return undefined;
 
     const shouldKeepSurface = wasPlayerSurfaceMountedRef.current;
     wasPlayerSurfaceMountedRef.current = false;
@@ -2172,13 +2293,34 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }, FEED_VIDEO_BLUR_SURFACE_GRACE_MS);
 
     return () => clearTimeout(timer);
-  }, [isScreenFocused]);
+  }, [isPlaybackSurfaceFocused]);
 
   useEffect(() => {
-    if (isScreenFocused !== false) {
+    if (!isPlaybackSurfaceFocused || !keepPlayerSurfaceMounted) {
+      return undefined;
+    }
+
+    if (shouldMountFocusedVideo) {
+      setKeepPlayerSurfaceMounted(false);
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      setKeepPlayerSurfaceMounted(false);
+    }, FEED_VIDEO_BLUR_SURFACE_GRACE_MS);
+
+    return () => clearTimeout(timer);
+  }, [
+    isPlaybackSurfaceFocused,
+    keepPlayerSurfaceMounted,
+    shouldMountFocusedVideo,
+  ]);
+
+  useEffect(() => {
+    if (isPlaybackSurfaceFocused) {
       wasPlayerSurfaceMountedRef.current = shouldMountVideo;
     }
-  }, [isScreenFocused, shouldMountVideo]);
+  }, [isPlaybackSurfaceFocused, shouldMountVideo]);
 
   useEffect(() => {
     if (shouldMountVideo) return;
@@ -2250,16 +2392,46 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
   }, [isActive, isReady, seekTime]);
 
-  const warmPlaying =
-    shouldMountVideo &&
-    !isScrollBusy &&
-    isWarm &&
-    !isActive &&
-    (keepPreparedVideoMounted ? !warmPreviewReady : !hasRenderedFrame);
-  const playing =
-    shouldMountVideo && !manuallyPaused && (isActive || warmPlaying);
+  const playing = shouldPlayFeedVideo({
+    shouldMountVideo,
+    isActive,
+    isWarm,
+    manuallyPaused,
+  });
   const showPlayOverlay = canAttemptVideo && !playing;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
+  const handleVideoLoadStart = useCallback(() => {
+    videoClientLoadMeasurementRef.current = {
+      surface: performanceSurface,
+      isInViewport: mediaVisible,
+    };
+    if (shouldRecordFeedVideoPlaybackMetrics) {
+      recordVideoLoadStart(videoMetricsPlayerId);
+    }
+  }, [
+    mediaVisible,
+    performanceSurface,
+    shouldRecordFeedVideoPlaybackMetrics,
+    videoMetricsPlayerId,
+  ]);
+  const handleVideoReadyForDisplay = useCallback(() => {
+    if (shouldRecordFeedVideoPlaybackMetrics) {
+      recordVideoFirstFrame(videoMetricsPlayerId);
+    }
+    revealVideoFrame();
+  }, [
+    revealVideoFrame,
+    shouldRecordFeedVideoPlaybackMetrics,
+    videoMetricsPlayerId,
+  ]);
+  const handleVideoBuffer = useCallback(
+    ({ isBuffering }: { isBuffering: boolean }) => {
+      if (shouldRecordFeedVideoPlaybackMetrics) {
+        recordVideoBufferState(videoMetricsPlayerId, isBuffering);
+      }
+    },
+    [shouldRecordFeedVideoPlaybackMetrics, videoMetricsPlayerId],
+  );
 
   const handleVideoProgress = useCallback(
     (data: any) => {
@@ -2289,10 +2461,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         !hasRenderedFrameRef.current
       ) {
         const playbackWindowStart = firstFrameProgressStartRef.current;
-        if (
-          playbackWindowStart === null ||
-          nextTime < playbackWindowStart
-        ) {
+        if (playbackWindowStart === null || nextTime < playbackWindowStart) {
           firstFrameProgressStartRef.current = nextTime;
         } else if (
           shouldRecoverFeedVideoSurface({
@@ -2332,6 +2501,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const handleVideoError = useCallback(
     (error: any) => {
       if (mediaIdentity !== mediaIdentityRef.current) return;
+      if (shouldRecordFeedVideoPlaybackMetrics) {
+        recordVideoError(videoMetricsPlayerId);
+      }
       hasRenderedFrameRef.current = false;
       firstFrameProgressStartRef.current = null;
       videoSurfaceRecoveryInFlightRef.current = false;
@@ -2348,13 +2520,19 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         error,
       );
     },
-    [frameCoverOpacity, mediaIdentity, post.id, post.videoUrl],
+    [
+      frameCoverOpacity,
+      mediaIdentity,
+      post.id,
+      post.videoUrl,
+      shouldRecordFeedVideoPlaybackMetrics,
+      videoMetricsPlayerId,
+    ],
   );
 
   // Reaction counters and picker state may re-render the card chrome. Keep the
   // native video surface stable so UI-only updates cannot detach SurfaceView.
-  const stableVideoSurface = useMemo(
-    () => {
+  const stableVideoSurface = useMemo(() => {
       if (!shouldMountVideo) {
         if (resolvedThumbnailUrl) return null;
         return (
@@ -2389,12 +2567,19 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             }
             playInBackground={false}
             playWhenInactive={false}
+            shutterColor="transparent"
             useTextureView={false}
             bufferConfig={VIDEO_BUFFER_CONFIG}
             maxBitRate={maxVideoBitRate}
             progressUpdateInterval={250}
-            onReadyForDisplay={revealVideoFrame}
+            onLoadStart={handleVideoLoadStart}
+            onReadyForDisplay={handleVideoReadyForDisplay}
             onLoad={handleVideoLoad}
+            onBuffer={
+              shouldRecordFeedVideoPlaybackMetrics
+                ? handleVideoBuffer
+                : undefined
+            }
             onProgress={handleVideoProgress}
             poster={resolvedThumbnailUrl}
             posterResizeMode="cover"
@@ -2421,14 +2606,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           ) : null}
         </View>
       );
-    },
-    [
+  }, [
       copy.video,
       copy.videoUnavailable,
       frameCoverAnimatedStyle,
       handleVideoError,
+      handleVideoBuffer,
       handleVideoLoad,
+      handleVideoLoadStart,
       handleVideoProgress,
+      handleVideoReadyForDisplay,
       hasRenderedFrame,
       hasVideoError,
       hasVideoUrl,
@@ -2441,13 +2628,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       muted,
       playing,
       resolvedThumbnailUrl,
-      revealVideoFrame,
+      shouldRecordFeedVideoPlaybackMetrics,
       shouldRenderVideoFrameCover,
       shouldMountVideo,
       videoPlayerGeneration,
       videoSource,
-    ],
-  );
+  ]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker
   // anchors above it (matches the Facebook web/mobile pattern).
@@ -2532,77 +2718,83 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       </FeedCardContent>
       {(() => {
         const videoMedia = (
-          <FeedMediaFrame style={{ aspectRatio }}>
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={handleVideoPress}
-              style={{ width: '100%', height: '100%' }}
-            >
-              {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
-              {resolvedThumbnailUrl ? (
-                <FeedVideoBackdrop
-                  uri={resolvedThumbnailUrl}
-                  enabled={mediaLoadEnabled}
-                  blurred={shouldBlurVideoBackdrop}
-                />
-              ) : null}
-              {stableVideoSurface}
-              {/* Big play button overlay while paused */}
-              {showPlayOverlay ? (
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    bottom: 0,
-                    left: 0,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
+          <View
+            ref={handleMediaSurfaceRef}
+            collapsable={false}
+            style={FEED_VIDEO_MEDIA_SURFACE_STYLE}
+          >
+            <FeedMediaFrame style={{ aspectRatio }}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={handleVideoPress}
+                style={{ width: '100%', height: '100%' }}
+              >
+                {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
+                {resolvedThumbnailUrl ? (
+                  <FeedVideoBackdrop
+                    uri={resolvedThumbnailUrl}
+                    enabled={mediaLoadEnabled}
+                    blurred={shouldBlurVideoBackdrop}
+                  />
+                ) : null}
+                {stableVideoSurface}
+                {/* Big play button overlay while paused */}
+                {showPlayOverlay ? (
                   <View
+                    pointerEvents="none"
                     style={{
-                      width: 64,
-                      height: 64,
-                      borderRadius: 32,
-                      backgroundColor: 'rgba(0,0,0,0.55)',
+                      position: 'absolute',
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      left: 0,
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
-                    <Text
-                      style={{ color: '#fff', fontSize: 26, marginLeft: 4 }}
+                    <View
+                      style={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 32,
+                        backgroundColor: 'rgba(0,0,0,0.55)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
                     >
-                      {'\u25B6'}
-                    </Text>
+                      <Text
+                        style={{ color: '#fff', fontSize: 26, marginLeft: 4 }}
+                      >
+                        {'\u25B6'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ) : null}
-              {/* Mute toggle â€” top-right when playing */}
-              {playing && hasRenderedFrame ? (
-                <TouchableOpacity
-                  onPress={() => publishFeedVideoMuted(!muted)}
-                  activeOpacity={0.85}
-                  style={{
-                    position: 'absolute',
-                    top: 10,
-                    right: 10,
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    backgroundColor: 'rgba(0,0,0,0.45)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ color: '#fff', fontSize: 16 }}>
-                    {muted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </TouchableOpacity>
-          </FeedMediaFrame>
+                ) : null}
+                {/* Mute toggle â€” top-right when playing */}
+                {playing && hasRenderedFrame ? (
+                  <TouchableOpacity
+                    onPress={() => publishFeedVideoMuted(!muted)}
+                    activeOpacity={0.85}
+                    style={{
+                      position: 'absolute',
+                      top: 10,
+                      right: 10,
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: 'rgba(0,0,0,0.45)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 16 }}>
+                      {muted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </TouchableOpacity>
+            </FeedMediaFrame>
+          </View>
         );
         return post.sharedPost ? (
           <FeedCardContent>
@@ -2760,7 +2952,8 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
                     }
 
                     const isEmphasized =
-                      segment.kind === 'feeling' || segment.kind === 'location';
+                        segment.kind === 'feeling' ||
+                        segment.kind === 'location';
                     return (
                       <Text
                         key={`${segment.kind}:${index}`}
@@ -3281,6 +3474,7 @@ function areCommonCardPropsEqual(previous: any, next: any) {
     previous.onOpenPostMenu === next.onOpenPostMenu &&
     previous.showIdentityHeader === next.showIdentityHeader &&
     previous.showGroupContext === next.showGroupContext &&
+    previous.performanceSurface === next.performanceSurface &&
     previous.commentNavigationMode === next.commentNavigationMode
   );
 }

@@ -121,14 +121,18 @@ export function createJobsRepository(): JobsRepository {
 
         if (response.api_status !== 200 && response.api_status !== '200') {
           console.warn('[ApiJobsRepository] searchJobs failed:', response);
-          return [];
+          throw new Error(
+            String(response.message ?? 'Không thể tải danh sách việc làm.'),
+          );
         }
 
         return ((response.data ?? []) as unknown as Array<Record<string, unknown>>)
           .map(raw => mapJobItem(raw, metadata));
       } catch (error) {
         console.error('[ApiJobsRepository] searchJobs error:', error);
-        return [];
+        throw error instanceof Error
+          ? error
+          : new Error('Không thể tải danh sách việc làm.');
       }
     },
 

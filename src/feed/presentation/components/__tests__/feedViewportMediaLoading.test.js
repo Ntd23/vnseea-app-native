@@ -51,6 +51,14 @@ describe('Home feed retained media loading', () => {
     expect(mediaImageSource).toContain('onError={handleLoadError}');
   });
 
+  it('avoids progressive Android bitmap uploads while fast-scrolling', () => {
+    const mediaImageSource = read(
+      'src/feed/presentation/components/FeedMediaImage.tsx',
+    );
+
+    expect(mediaImageSource).not.toContain('progressiveRenderingEnabled');
+  });
+
   it('keeps a bounded directional lookahead queue alive while scrolling', () => {
     const feedScreenSource = read(
       'src/feed/presentation/screens/FeedScreen.tsx',

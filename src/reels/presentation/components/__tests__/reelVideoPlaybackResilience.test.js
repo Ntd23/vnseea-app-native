@@ -26,13 +26,30 @@ describe('Reel video playback resilience', () => {
     );
   });
 
-  it('keeps the current Reel playing and looping behind the comments sheet', () => {
+  it('pauses the current Reel behind every modal without unmounting the role window', () => {
     expect(reelItemSource).toContain('paused={!playing}');
-    expect(reelsScreenSource).toContain('isCommentsOpenRef.current');
-    expect(reelsScreenSource).toContain('isShareSheetOpenRef.current');
-    expect(reelsScreenSource).toContain('isPublisherOverlayOpenRef.current');
-    expect(reelsScreenSource).toContain('isUserDraggingRef.current');
-    expect(reelItemSource).toContain('resetPlaybackToStart(true)');
+    expect(reelsScreenSource).toContain(
+      'const shouldPlayActiveReel = shouldPlayCurrentReel({',
+    );
+    expect(reelsScreenSource).toContain('commentsOpen: vm.isCommentsOpen');
+    expect(reelsScreenSource).toContain(
+      'shareOpen: shareModalVisible || isShareSheetClosing',
+    );
+    expect(reelsScreenSource).toContain(
+      'const REELS_SHARE_CLOSE_GRACE_MS = 300;',
+    );
+    expect(reelsScreenSource).toContain('setIsShareSheetClosing(true)');
+    expect(reelsScreenSource).toContain('editOpen: editingReel !== null');
+    expect(reelsScreenSource).toContain(
+      'publisherOpen: isPublisherOverlayOpen',
+    );
+    expect(reelsScreenSource).toContain(
+      'const playerRole = resolveReelPlayerRole({',
+    );
+    expect(reelsScreenSource).toContain('isPlaybackRouteFocused,');
+    expect(reelsScreenSource).not.toContain(
+      'shouldKeepPlayersMounted && !isPublisherOverlayOpen',
+    );
   });
 
   it('shrinks the playing Reel into a contained preview above comments', () => {
@@ -100,6 +117,14 @@ describe('Reel video playback resilience', () => {
       'onScrollBeginDrag={handleReelScrollBeginDrag}',
     );
     expect(reelsScreenSource).toContain('isUserDraggingRef.current');
+    expect(reelsScreenSource).toContain('setIsNextPreloadSuppressed(true)');
+    expect(reelsScreenSource).toContain('setIsNextPreloadSuppressed(false)');
+    expect(reelsScreenSource).toContain(
+      'const allowNextPreload = shouldAllowNextReelPreload({',
+    );
+    expect(reelsScreenSource).toContain(
+      'suppressionAnchorIndex: nextPreloadSuppressionAnchorRef.current',
+    );
     expect(reelsScreenSource).toContain('initialNumToRender={2}');
     expect(reelsScreenSource).toContain('updateCellsBatchingPeriod={32}');
     expect(reelsScreenSource).toContain('itemVisiblePercentThreshold: 70');
@@ -174,36 +199,90 @@ describe('Reel video playback resilience', () => {
       "() => AppState.currentState === 'active'",
     );
     expect(reelsScreenSource).toContain(
-      "setIsAppActive(nextState === 'active')",
+      "const nextIsAppActive = nextState === 'active'",
     );
+    expect(reelsScreenSource).toContain('setIsAppActive(nextIsAppActive)');
     expect(reelsScreenSource).toContain(
       'isFocusedScreen && isSelectedRoute && isAppActive',
     );
   });
 
-  it('mounts the active player immediately and keeps the tab player warm', () => {
+  it('keeps the periodic latest-Reel probe stable across screen renders', () => {
+    const probeSource = reelsScreenSource.slice(
+      reelsScreenSource.indexOf('const checkForRemoteNewReels'),
+      reelsScreenSource.indexOf(
+        "return postCreatedEvents.subscribe(post => {",
+      ),
+    );
+
+    expect(reelsScreenSource).toContain(
+      'const peekLatestReels = vm.peekLatestReels;',
+    );
+    expect(probeSource).toContain('await peekLatestReels(');
+    expect(probeSource).toContain(
+      '[enqueueNewReelCandidates, peekLatestReels]',
+    );
+    expect(probeSource).not.toContain('await vm.peekLatestReels(');
+    expect(probeSource).not.toContain('[enqueueNewReelCandidates, vm]');
+  });
+
+  it('bounds the pending new-Reels queue during long viewing sessions', () => {
+    expect(reelsScreenSource).toContain(
+      'const REELS_PENDING_NEW_ITEMS_LIMIT = 24;',
+    );
+    expect(reelsScreenSource).toContain(
+      '.slice(0, REELS_PENDING_NEW_ITEMS_LIMIT);',
+    );
+    expect(reelsScreenSource).not.toContain(
+      'pendingNewReelsRef.current.push(...nextItems);',
+    );
+  });
+
+  it('keeps only the current tab player warm and paused on route blur', () => {
     expect(reelsScreenSource).not.toContain(
       'REELS_ACTIVE_PLAYER_MOUNT_DELAY_MS',
     );
     expect(reelsScreenSource).toContain('REELS_NEIGHBOR_PLAYER_MOUNT_DELAY_MS');
-    expect(reelsScreenSource).toContain("Platform.OS === 'android' ? 80 : 60");
-    expect(reelsScreenSource).toContain('const shouldKeepPlayersMounted =');
+    expect(reelsScreenSource).toContain("Platform.OS === 'android' ? 1200 : 60");
+    expect(reelsScreenSource).toContain('resolveReelPlayerRole({');
+    expect(reelsScreenSource).toContain('playerRole={playerRole}');
     expect(reelsScreenSource).toContain(
-      'const activePreloadRadius = isNeighborPreloadReady ? preloadRadius : 0',
+      'const [hasActivatedPlayback, setHasActivatedPlayback] = useState(',
     );
-    expect(reelsScreenSource).toContain('setIsPlaybackMountReady(true)');
+    expect(reelsScreenSource).toContain('setHasActivatedPlayback(true)');
+    expect(reelsScreenSource).toContain(
+      'const keepCurrentPlayerMounted =',
+    );
+    expect(reelsScreenSource).toContain(
+      'const hasPendingInitialTarget =',
+    );
+    expect(reelsScreenSource).toContain(
+      'const isPlaybackTargetReady =\n    isPlaybackRouteFocused && !hasPendingInitialTarget;',
+    );
+    expect(reelsScreenSource).toContain(
+      'const keepCurrentPlayerMounted =\n    !hasPendingInitialTarget &&',
+    );
+    expect(reelsScreenSource).toContain(
+      'if (!isPlaybackTargetReady) {',
+    );
+    expect(reelsScreenSource).toContain('shouldRetainCurrentReelPlayer({');
+    expect(reelsScreenSource).toContain('isMainTabsRootSelected,');
+    expect(reelsScreenSource).toContain("addListener?.('state', syncRootSelection)");
+    expect(reelsScreenSource).toContain('setHasActivatedPlayback(false)');
+    expect(reelsScreenSource).toContain('keepCurrentPlayerMounted,');
+    expect(reelsScreenSource).toContain(
+      'allowPreviousPreload: isNeighborPreloadReady',
+    );
     expect(reelsScreenSource).toContain('setIsNeighborPreloadReady(true)');
-    expect(reelsScreenSource).toContain(
-      '(isTabRoute || isPlaybackRouteFocused || isDismissing)',
-    );
-    expect(reelsScreenSource).not.toContain('setIsPlaybackMountReady(false)');
+    expect(reelsScreenSource).toContain('setIsNeighborPreloadReady(false)');
+    expect(reelsScreenSource).not.toContain('(isTabRoute || isPlaybackRouteFocused || isDismissing)');
     expect(feedScreenSource).toContain('startReelsPreload');
     expect(feedScreenSource).not.toContain('Image.prefetch(item.thumbnailUrl)');
     expect(reelsScreenSource).not.toContain('launchCoverUri');
     expect(reelItemSource).toContain('item.thumbnailUrl ? (');
     expect(reelItemSource).toContain('styles.videoLoadingCover');
     expect(homeVideoSource).toContain('FEED_VIDEO_BLUR_SURFACE_GRACE_MS');
-    expect(homeVideoSource).toContain('isBlurSurfaceGraceActive');
+    expect(homeVideoSource).toContain('isTransitionSurfaceGraceActive');
   });
 
   it('pauses before returning Home without tearing down the player mid-transition', () => {
@@ -226,9 +305,21 @@ describe('Reel video playback resilience', () => {
   it('keeps video source identity and seek-time memo inputs stable', () => {
     expect(reelItemSource).toContain('const videoSource = useMemo(');
     expect(reelItemSource).toContain('REEL_ANDROID_BUFFER_CONFIG');
+    expect(reelItemSource).toContain(
+      'REEL_ANDROID_NEXT_PRELOAD_BUFFER_CONFIG',
+    );
     expect(reelItemSource).toContain('bufferForPlaybackMs: 400');
+    expect(reelItemSource).toContain('maxBufferMs: 3500');
+    expect(reelItemSource).toContain('bufferForPlaybackMs: 250');
     expect(reelItemSource).toContain('cacheSizeMB: 64');
     expect(reelItemSource).toContain('minLoadRetryCount: 2');
+    expect(reelItemSource).toContain(
+      'resolveReelBufferModeForMount(playerRole)',
+    );
+    expect(reelItemSource).toContain(
+      "const shouldMount = playerRole !== 'none'",
+    );
+    expect(reelItemSource).toContain('prev.playerRole === next.playerRole');
     expect(reelItemSource).toContain(
       'prev.initialSeekTime === next.initialSeekTime',
     );
@@ -249,5 +340,14 @@ describe('Reel video playback resilience', () => {
     expect(playerMemoSource).not.toContain('item.myReaction');
     expect(playerMemoSource).not.toContain('item.likeCount');
     expect(playerMemoSource).not.toContain('isPickerOpen');
+  });
+
+  it('records Reel player lifecycle, first-frame, buffering, and error metrics', () => {
+    expect(reelItemSource).toContain('recordVideoPlayerMounted({');
+    expect(reelItemSource).toContain('recordVideoPlayerUnmounted(');
+    expect(reelItemSource).toContain('recordVideoLoadStart(');
+    expect(reelItemSource).toContain('recordVideoFirstFrame(');
+    expect(reelItemSource).toContain('recordVideoBufferState(');
+    expect(reelItemSource).toContain('recordVideoError(');
   });
 });

@@ -1088,7 +1088,7 @@ function GroupDetailScreen() {
             onOpenReactions={handleOpenReactions}
             navigateToProfile={handleNavigateToProfile}
             onOpenPostMenu={handleOpenPostMenu}
-            isScreenFocused
+            isScreenFocused={isFocused}
           />
         );
       }
@@ -1138,6 +1138,7 @@ function GroupDetailScreen() {
       handlePostPress,
       handleSharePost,
       handleToggleReaction,
+      isFocused,
       language,
       postCopy,
     ],

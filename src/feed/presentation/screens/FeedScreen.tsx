@@ -119,6 +119,7 @@ import type {
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import { prefetchFeedComments } from '../../application/feedCommentsCache';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { canAdAppearInHomeFeed } from '../../../advertising/application/services/adPlacement';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
@@ -156,6 +157,7 @@ import {
   getFeedVideoPosterCacheKeyForPost,
   HomeVideoPostCard,
   publishFeedActiveVideo,
+  publishFeedScreenFocused,
   publishFeedScrollBusy,
   publishFeedVisibleMediaPostIds,
   publishFeedWarmVideoIds,
@@ -187,17 +189,32 @@ import {
 import type { FundingItem } from '../../../funding/domain/types/funding.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
+  resolveFeedVisibleMediaPostIds,
+  resolveFeedVisibleMediaRetentionDeadline,
+  getRetainedFeedVideoPosterKeys,
   getFeedVideoActiveUpdate,
-  isFeedVideoIdViewable,
-  pickFeedVideoAutoplayCandidate,
-  pickFeedViewableVideoId,
+  selectFeedVideoMeasurementIds,
+  shouldClearFeedActiveVideo,
+  shouldCommitFeedChromeVisibility,
 } from './feedVideoAutoplay';
 import { reuseStableItemsById } from './feedListItemStability';
+import { interleaveSupplementalPosts } from './feedSupplementalMixer';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import {
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
+import {
+  beginClientScrollMeasurement,
+  clearClientUiPerformanceActiveSurface,
+  endClientScrollMeasurement,
+  isClientUiOptimizationEnabled,
+  recordPostItemRender,
+  recordVisiblePostIds,
+  setClientUiPerformanceActiveSurface,
+  startProfileOpenMeasurement,
+} from '../../../shared/performance/clientUiPerformanceMetrics';
+import { primeProfilePreviewCache } from '../../../profile/application/view-models/useProfileViewModel';
 
 const FEED_IS_ANDROID = Platform.OS === 'android';
 const LOAD_MORE_THROTTLE_MS = 1200;
@@ -225,11 +242,13 @@ const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = 1;
 const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 4;
 const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 1 : 2;
 const FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 220 : 160;
+const MAX_PENDING_VIDEO_POSTER_POSTS = FEED_IS_ANDROID ? 4 : 8;
 const MAX_REMEMBERED_VIDEO_POSTER_KEYS = FEED_IS_ANDROID ? 64 : 120;
 const FEED_VIDEO_VISIBLE_PERCENT = 1;
-const FEED_VIDEO_VIEWABLE_PERCENT = 55;
+const FEED_VIDEO_VIEWABLE_PERCENT = 60;
 const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
 const FEED_INLINE_LIVE_ACTIVE_DWELL_MS = 140;
+const FEED_VISIBLE_MEDIA_RETENTION_MS = 140;
 const FEED_MEDIA_MOUNT_BEHIND_ITEMS = 1;
 // Image.prefetch already warms a larger runway. Native-mounting three photo
 // cards ahead on Android caused their decode/aspect-ratio work to arrive as a
@@ -241,16 +260,21 @@ const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 // default while preserving direct finger tracking and pull-to-refresh.
 const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.94 : 0.985;
 const FEED_SCROLL_EVENT_THROTTLE_MS = FEED_IS_ANDROID ? 32 : 16;
+const FEED_SCROLL_VIDEO_MEASUREMENT_MAX_COUNT = FEED_IS_ANDROID ? 3 : 5;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
-  ? Math.max(2000, Math.round(FEED_SCREEN_HEIGHT * 2.2))
+  ? Math.max(1500, Math.round(FEED_SCREEN_HEIGHT * 1.8))
   : Math.max(2800, Math.round(FEED_SCREEN_HEIGHT * 3.2));
-const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 14 : 28;
+const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 10 : 28;
 const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   // Deep-feed row order is stabilized explicitly below. Letting FlashList
   // also compensate the offset can move the viewport a second time after a
   // background page, live rail, or supplemental card arrives.
   disabled: true,
 };
+let retainedFeedScrollState: {
+  scopeKey: string;
+  offsetY: number;
+} | null = null;
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
 };
@@ -1250,44 +1274,6 @@ function collectFeedListItemImageUrls(item: FeedListItem): string[] {
 
 // Section wrapper â€” header + empty/loading/error states + list of cards.
 
-function interleaveSupplementalPosts(
-  basePosts: FeedPost[],
-  productPosts: FeedProductPost[],
-  eventPosts: FeedEventPost[],
-  jobPosts: FeedJobPost[],
-): FeedPost[] {
-  const result: FeedPost[] = [];
-  const basePostIds = new Set(basePosts.map(post => String(post.id)));
-  const uniqueJobPosts = jobPosts.filter(
-    post => !basePostIds.has(String(post.id)),
-  );
-  let productIndex = 0;
-  let eventIndex = 0;
-  let jobIndex = 0;
-
-  basePosts.forEach((post, index) => {
-    result.push(post);
-    const slot = index + 1;
-
-    if (slot % 7 === 0 && productIndex < productPosts.length) {
-      result.push(productPosts[productIndex]);
-      productIndex += 1;
-    }
-
-    if (slot % 11 === 0 && eventIndex < eventPosts.length) {
-      result.push(eventPosts[eventIndex]);
-      eventIndex += 1;
-    }
-
-    if (slot % 13 === 0 && jobIndex < uniqueJobPosts.length) {
-      result.push(uniqueJobPosts[jobIndex]);
-      jobIndex += 1;
-    }
-  });
-
-  return result;
-}
-
 function FeedScreen() {
   const navigation = useNavigation<FeedNav>();
   const route = useRoute<RouteProp<MainTabParamList, typeof ROUTES.FEED>>();
@@ -1307,8 +1293,13 @@ function FeedScreen() {
   // is the currently focused tab. Declared up here so the hook order
   // matches the rest of FeedScreen (no conditional hooks below).
   const isFeedTabFocused = useIsFocused();
+  const [isFeedAppActive, setIsFeedAppActive] = useState(
+    () => AppState.currentState === 'active',
+  );
   const userVm = useCurrentUserViewModel();
-  const currentUserId = userVm.user?.userId;
+  const currentUserId =
+    userVm.user?.userId ?? sessionStorage.getSession()?.userId;
+  const feedScrollScopeKey = String(currentUserId ?? 'guest');
   const feedPosts = useMemo(
     () => vm.posts.filter(canPostAppearOnHomeFeed),
     [vm.posts],
@@ -1334,6 +1325,13 @@ function FeedScreen() {
   const activeFeedSource = vm.feedSource;
   const activeFeedSourceRef = useRef<FeedSource | 'photos'>(activeFeedSource);
   const isFeedTabFocusedRef = useRef(isFeedTabFocused);
+  const isFeedAppActiveRef = useRef(isFeedAppActive);
+  const isFeedPlaybackSurfaceFocusedRef = useRef(
+    isFeedTabFocused && isFeedAppActive,
+  );
+  isFeedAppActiveRef.current = isFeedAppActive;
+  isFeedPlaybackSurfaceFocusedRef.current =
+    isFeedTabFocused && isFeedAppActive;
 
   useEffect(() => {
     if (!isFeedTabFocused || !hasFeedContent) return;
@@ -1364,9 +1362,16 @@ function FeedScreen() {
 
   useEffect(() => {
     isFeedTabFocusedRef.current = isFeedTabFocused;
+    isFeedPlaybackSurfaceFocusedRef.current =
+      isFeedTabFocused && isFeedAppActive;
     isFeedLoadingRef.current = vm.isLoading;
     hasFeedLoadedOnceRef.current = vm.hasLoadedOnce;
-  }, [isFeedTabFocused, vm.hasLoadedOnce, vm.isLoading]);
+  }, [
+    isFeedAppActive,
+    isFeedTabFocused,
+    vm.hasLoadedOnce,
+    vm.isLoading,
+  ]);
 
   const enqueueNewPostCandidates = useCallback(
     (
@@ -1538,7 +1543,12 @@ function FeedScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
-      if (nextState === 'active') {
+      const nextIsFeedAppActive = nextState === 'active';
+      isFeedAppActiveRef.current = nextIsFeedAppActive;
+      isFeedPlaybackSurfaceFocusedRef.current =
+        isFeedTabFocusedRef.current && nextIsFeedAppActive;
+      setIsFeedAppActive(nextIsFeedAppActive);
+      if (nextIsFeedAppActive) {
         void checkForRemoteNewPosts();
       }
     });
@@ -1613,7 +1623,14 @@ function FeedScreen() {
   );
   const latestVisibleFeedItemsRef = useRef<any[]>([]);
   const latestViewableFeedItemsRef = useRef<any[]>([]);
+  const visibleMediaPostIdsRef = useRef<Set<string>>(new Set());
+  const visibleMediaRetentionTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const visibleMediaRetentionDeadlineAtRef = useRef<number | null>(null);
+  const latestVisibleMediaPostIdsRef = useRef<Set<string>>(new Set());
   const feedListItemsRef = useRef<FeedListItem[]>([]);
+  const feedPostIdsRef = useRef<Set<string>>(new Set());
   const stableFeedListItemsRef = useRef<FeedListItem[]>([]);
   const feedListItemIndexByIdRef = useRef<Map<string, number>>(new Map());
   const prefetchedImageUrlsRef = useRef<Set<string>>(new Set());
@@ -1625,6 +1642,7 @@ function FeedScreen() {
   );
   const prefetchedVideoPosterKeysRef = useRef<Set<string>>(new Set());
   const queuedVideoPosterKeysRef = useRef<Set<string>>(new Set());
+  const desiredVideoPosterKeysRef = useRef<Set<string>>(new Set());
   const pendingVideoPosterPostsRef = useRef<FeedVideoPost[]>([]);
   const videoPosterPrefetchTimerRef = useRef<ReturnType<
     typeof setTimeout
@@ -1636,7 +1654,18 @@ function FeedScreen() {
     new Map<string, React.ElementRef<typeof View>>(),
   );
   const feedMeasureRequestRef = useRef(0);
-  const feedScrollYRef = useRef(0);
+  const feedMeasureInFlightRef = useRef(false);
+  const initialRetainedFeedScrollOffset =
+    retainedFeedScrollState?.scopeKey === feedScrollScopeKey
+      ? retainedFeedScrollState.offsetY
+      : 0;
+  const feedScrollYRef = useRef(initialRetainedFeedScrollOffset);
+  const pendingFeedScrollRestoreOffsetRef = useRef(
+    initialRetainedFeedScrollOffset,
+  );
+  const hasRestoredFeedScrollOffsetRef = useRef(
+    initialRetainedFeedScrollOffset <= 0,
+  );
   const feedScrollDirectionRef = useRef<FeedScrollDirection>('none');
   const feedViewportHeightRef = useRef(0);
   const isScrollingRef = useRef(false);
@@ -1664,6 +1693,22 @@ function FeedScreen() {
     createNativeTabScrollPublisherState(),
   );
   const [isFeedChromeHidden, setIsFeedChromeHidden] = useState(false);
+  const isFeedChromeHiddenRef = useRef(false);
+
+  const commitFeedChromeHidden = useCallback((nextHidden: boolean) => {
+    if (
+      !shouldCommitFeedChromeVisibility({
+        optimizationEnabled: isClientUiOptimizationEnabled(),
+        current: isFeedChromeHiddenRef.current,
+        next: nextHidden,
+      })
+    ) {
+      return;
+    }
+
+    isFeedChromeHiddenRef.current = nextHidden;
+    setIsFeedChromeHidden(nextHidden);
+  }, []);
 
   const setActiveFeedVideo = useCallback((videoId: string | null) => {
     if (videoId !== null) {
@@ -1772,11 +1817,6 @@ function FeedScreen() {
     [clearInlineLiveDwellTimer, setActiveFeedInlineLivePostId],
   );
 
-  const pickViewableFeedVideoId = useCallback(
-    () => pickFeedViewableVideoId(latestViewableFeedItemsRef.current),
-    [],
-  );
-
   const setFeedVideoRef = useCallback(
     (postId: string, node: React.ElementRef<typeof View> | null) => {
       if (node) {
@@ -1788,15 +1828,158 @@ function FeedScreen() {
     [],
   );
 
+  const commitFeedVisibleMediaPostIds = useCallback(
+    (postIds: Iterable<string>) => {
+      const visiblePostIds = new Set(postIds);
+      visibleMediaPostIdsRef.current = visiblePostIds;
+      publishFeedVisibleMediaPostIds(visiblePostIds);
+      return visiblePostIds;
+    },
+    [],
+  );
+
+  const clearFeedVisibleMediaPostIds = useCallback(() => {
+    if (visibleMediaRetentionTimerRef.current) {
+      clearTimeout(visibleMediaRetentionTimerRef.current);
+      visibleMediaRetentionTimerRef.current = null;
+    }
+    visibleMediaRetentionDeadlineAtRef.current = null;
+    latestVisibleMediaPostIdsRef.current = new Set();
+    commitFeedVisibleMediaPostIds([]);
+  }, [commitFeedVisibleMediaPostIds]);
+
+  const publishStableFeedVisibleMediaPostIds = useCallback(
+    (nextPostIds: Iterable<string>) => {
+      const nextIds = new Set(nextPostIds);
+      latestVisibleMediaPostIdsRef.current = nextIds;
+      const nowMs = Date.now();
+      const currentRetentionDeadlineAtMs =
+        visibleMediaRetentionDeadlineAtRef.current;
+      const allowTransientRetention =
+        isFeedTabFocusedRef.current &&
+        !isScrollingRef.current &&
+        (currentRetentionDeadlineAtMs === null ||
+          currentRetentionDeadlineAtMs > nowMs);
+      const stableIds = resolveFeedVisibleMediaPostIds({
+        previousVisiblePostIds: visibleMediaPostIdsRef.current,
+        nextVisiblePostIds: nextIds,
+        availablePostIds: feedPostIdsRef.current,
+        allowTransientEmptyRetention: allowTransientRetention,
+      });
+      const hasRetainedPostIds = stableIds.length > nextIds.size;
+      const retentionDeadlineAtMs =
+        resolveFeedVisibleMediaRetentionDeadline({
+          currentDeadlineAtMs: currentRetentionDeadlineAtMs,
+          nowMs,
+          retentionDurationMs: FEED_VISIBLE_MEDIA_RETENTION_MS,
+          allowTransientRetention,
+          hasRetainedPostIds,
+        });
+      visibleMediaRetentionDeadlineAtRef.current = retentionDeadlineAtMs;
+      const stableMediaPostIds = commitFeedVisibleMediaPostIds(stableIds);
+
+      if (retentionDeadlineAtMs === null) {
+        if (visibleMediaRetentionTimerRef.current) {
+          clearTimeout(visibleMediaRetentionTimerRef.current);
+          visibleMediaRetentionTimerRef.current = null;
+        }
+        return stableMediaPostIds;
+      }
+
+      // FlashList can emit an empty/partial viewability snapshot while it
+      // attaches appended rows. Give the next stable snapshot one short
+      // layout window before releasing a currently visible native surface.
+      // Repeated partial snapshots reuse this fixed deadline instead of
+      // extending stale media visibility indefinitely.
+      if (!visibleMediaRetentionTimerRef.current) {
+        visibleMediaRetentionTimerRef.current = setTimeout(() => {
+          visibleMediaRetentionTimerRef.current = null;
+          visibleMediaRetentionDeadlineAtRef.current = null;
+          const latestVisibleMediaPostIds = commitFeedVisibleMediaPostIds(
+            latestVisibleMediaPostIdsRef.current,
+          );
+          const activeVideoId = activeVideoIdRef.current;
+          if (
+            shouldClearFeedActiveVideo({
+              activeVideoId,
+              visiblePostIds: latestVisibleMediaPostIds,
+            })
+          ) {
+            if (pendingActiveVideoIdRef.current === activeVideoId) {
+              pendingActiveVideoIdRef.current = null;
+            }
+            scheduleActiveFeedVideo(null, true);
+          }
+        }, Math.max(0, retentionDeadlineAtMs - Date.now()));
+      }
+
+      return stableMediaPostIds;
+    },
+    [commitFeedVisibleMediaPostIds, scheduleActiveFeedVideo],
+  );
+
+  const getFeedVideoMeasurementPriorityIds = useCallback(() => {
+    const priorityIds: Array<string | null> = [
+      activeVideoIdRef.current,
+      pendingActiveVideoIdRef.current,
+    ];
+    let firstViewableIndex = Number.POSITIVE_INFINITY;
+    let lastViewableIndex = -1;
+
+    latestVisibleFeedItemsRef.current.forEach(visibleItem => {
+      if (!visibleItem?.isViewable) return;
+      if (typeof visibleItem.index === 'number') {
+        firstViewableIndex = Math.min(firstViewableIndex, visibleItem.index);
+        lastViewableIndex = Math.max(lastViewableIndex, visibleItem.index);
+      }
+      if (
+        visibleItem.item?.type === 'post' &&
+        visibleItem.item.post?.kind === 'video'
+      ) {
+        priorityIds.push(String(visibleItem.item.post.id));
+      }
+    });
+
+    latestViewableFeedItemsRef.current.forEach(viewableItem => {
+      if (!viewableItem?.isViewable) return;
+      if (typeof viewableItem.index === 'number') {
+        firstViewableIndex = Math.min(firstViewableIndex, viewableItem.index);
+        lastViewableIndex = Math.max(lastViewableIndex, viewableItem.index);
+      }
+      if (
+        viewableItem.item?.type === 'post' &&
+        viewableItem.item.post?.kind === 'video'
+      ) {
+        priorityIds.push(String(viewableItem.item.post.id));
+      }
+    });
+
+    if (lastViewableIndex >= 0) {
+      const feedItems = feedListItemsRef.current;
+      const startIndex = Math.max(0, firstViewableIndex - 1);
+      const endIndex = Math.min(feedItems.length, lastViewableIndex + 2);
+      for (let index = startIndex; index < endIndex; index += 1) {
+        const item = feedItems[index];
+        if (item?.type === 'post' && item.post.kind === 'video') {
+          priorityIds.push(item.post.id);
+        }
+      }
+    }
+
+    return priorityIds;
+  }, []);
+
   const measureActiveFeedVideoOnScreen = useCallback(
     (commitImmediately = false) => {
+      if (!isFeedPlaybackSurfaceFocusedRef.current) return;
+
       const viewableLivePostId = pickInlineLivePostId(
         latestViewableFeedItemsRef.current,
       );
       if (viewableLivePostId !== null) {
         pendingActiveVideoIdRef.current = null;
+        scheduleActiveFeedVideo(null, true);
         if (commitImmediately || !isScrollingRef.current) {
-          scheduleActiveFeedVideo(null, true);
           scheduleActiveFeedInlineLivePostId(
             viewableLivePostId,
             commitImmediately,
@@ -1812,11 +1995,40 @@ function FeedScreen() {
         scheduleActiveFeedInlineLivePostId(null, true);
       }
 
-      const entries = Array.from(feedVideoRefsRef.current.entries());
-      if (entries.length === 0) return;
+      const allEntries = Array.from(feedVideoRefsRef.current.entries());
+      const shouldRestrictMeasurements =
+        isClientUiOptimizationEnabled() &&
+        allEntries.length > FEED_SCROLL_VIDEO_MEASUREMENT_MAX_COUNT;
+      const entries = shouldRestrictMeasurements
+        ? selectFeedVideoMeasurementIds({
+            mountedVideoIds: allEntries.map(([videoId]) => videoId),
+            priorityVideoIds: getFeedVideoMeasurementPriorityIds(),
+            maxCount: FEED_SCROLL_VIDEO_MEASUREMENT_MAX_COUNT,
+          })
+            .map(videoId => {
+              const node = feedVideoRefsRef.current.get(videoId);
+              return node ? ([videoId, node] as const) : null;
+            })
+            .filter(
+              (
+                entry,
+              ): entry is readonly [string, React.ElementRef<typeof View>] =>
+                entry !== null,
+            )
+        : allEntries;
+      if (entries.length === 0) {
+        if (shouldRestrictMeasurements && allEntries.length > 0) return;
+        pendingActiveVideoIdRef.current = null;
+        if (activeVideoIdRef.current !== null) {
+          scheduleActiveFeedVideo(null, true);
+        }
+        return;
+      }
+      if (feedMeasureInFlightRef.current) return;
 
       const requestId = feedMeasureRequestRef.current + 1;
       feedMeasureRequestRef.current = requestId;
+      feedMeasureInFlightRef.current = true;
       const viewportHeight =
         feedViewportHeightRef.current || Dimensions.get('window').height;
       let remaining = entries.length;
@@ -1824,40 +2036,40 @@ function FeedScreen() {
 
       entries.forEach(([videoId, node]) => {
         node.measureInWindow((_x, y, _width, height) => {
-          if (feedMeasureRequestRef.current !== requestId) return;
+          if (
+            feedMeasureRequestRef.current !== requestId ||
+            !isFeedPlaybackSurfaceFocusedRef.current
+          ) {
+            return;
+          }
           candidates.push({ id: videoId, y, height });
 
           remaining -= 1;
           if (remaining === 0) {
-            const measuredVideoId = pickFeedVideoAutoplayCandidate({
+            feedMeasureInFlightRef.current = false;
+            const update = getFeedVideoActiveUpdate({
+              activeVideoId: activeVideoIdRef.current,
+              isScrolling: isScrollingRef.current && !commitImmediately,
               candidates,
               viewportHeight,
             });
-            const viewableVideoId = pickViewableFeedVideoId();
-            const activeVideoStillVisible = isFeedVideoIdViewable(
-              latestVisibleFeedItemsRef.current,
-              activeVideoIdRef.current,
-            );
-            const fallbackVideoId =
-              measuredVideoId ??
-              viewableVideoId ??
-              (activeVideoStillVisible ? activeVideoIdRef.current : null);
 
-            if (commitImmediately || !isScrollingRef.current) {
-              if (fallbackVideoId !== activeVideoIdRef.current) {
-                scheduleActiveFeedVideo(fallbackVideoId, commitImmediately);
-              }
-              pendingActiveVideoIdRef.current = null;
-              return;
+            pendingActiveVideoIdRef.current = update.pendingActiveVideoId;
+            if (
+              update.nextActiveVideoId !== undefined &&
+              update.nextActiveVideoId !== activeVideoIdRef.current
+            ) {
+              scheduleActiveFeedVideo(
+                update.nextActiveVideoId,
+                commitImmediately || update.nextActiveVideoId === null,
+              );
             }
-
-            pendingActiveVideoIdRef.current = fallbackVideoId;
           }
         });
       });
     },
     [
-      pickViewableFeedVideoId,
+      getFeedVideoMeasurementPriorityIds,
       scheduleActiveFeedInlineLivePostId,
       scheduleActiveFeedVideo,
     ],
@@ -1866,7 +2078,9 @@ function FeedScreen() {
   const handleFeedViewportLayout = useCallback(
     (event: LayoutChangeEvent) => {
       feedViewportHeightRef.current = event.nativeEvent.layout.height;
-      measureActiveFeedVideoOnScreen(!isScrollingRef.current);
+      if (!isScrollingRef.current) {
+        measureActiveFeedVideoOnScreen(true);
+      }
     },
     [measureActiveFeedVideoOnScreen],
   );
@@ -1876,14 +2090,15 @@ function FeedScreen() {
   // video that the user is currently watching.
   const beginScrollPause = useCallback(() => {
     isScrollingRef.current = true;
+    beginClientScrollMeasurement('feed');
     setFeedScrollBusy(true);
     publishFeedScrollBusy(true);
     // Keep the bounded media queue alive during a fling. Visible cards and
     // the nearest lookahead items stay prioritized, while generated video
     // posters still wait behind InteractionManager before doing CPU work.
     clearInlineLiveDwellTimer();
-    // Store the current video so onViewableItemsChanged can update
-    // pendingActiveVideoIdRef while we scroll.
+    // Preserve the current owner while the media-surface measurement decides
+    // whether it still meets the autoplay threshold.
     pendingActiveVideoIdRef.current = activeVideoIdRef.current;
     pendingActiveInlineLivePostIdRef.current =
       activeInlineLivePostIdRef.current;
@@ -1891,6 +2106,7 @@ function FeedScreen() {
 
   const endScrollPause = useCallback(() => {
     isScrollingRef.current = false;
+    endClientScrollMeasurement('feed');
     setFeedScrollBusy(false);
     publishFeedScrollBusy(false);
     const viewableLivePostId = pickInlineLivePostId(
@@ -1912,38 +2128,63 @@ function FeedScreen() {
       return;
     }
     scheduleActiveFeedInlineLivePostId(null, true);
-    // Prefer a newly eligible card. If none crossed the autoplay threshold,
-    // retain the current video while even a small part remains on-screen.
-    const viewableVideoId = pickViewableFeedVideoId();
-    const activeVideoStillVisible = isFeedVideoIdViewable(
-      latestVisibleFeedItemsRef.current,
-      activeVideoIdRef.current,
-    );
-    const pendingVideoId =
-      viewableVideoId ??
-      pendingActiveVideoIdRef.current ??
-      (activeVideoStillVisible ? activeVideoIdRef.current : null);
     pendingActiveVideoIdRef.current = null;
-    if (pendingVideoId !== activeVideoIdRef.current) {
-      scheduleActiveFeedVideo(pendingVideoId, true);
-    }
     measureActiveFeedVideoOnScreen(false);
   }, [
     measureActiveFeedVideoOnScreen,
-    pickViewableFeedVideoId,
     scheduleActiveFeedInlineLivePostId,
     scheduleActiveFeedVideo,
     setFeedScrollBusy,
   ]);
 
+  const rememberFeedScrollOffset = useCallback(
+    (offsetY: number) => {
+      const normalizedOffsetY = Math.max(0, offsetY);
+      feedScrollYRef.current = normalizedOffsetY;
+
+      const pendingRestoreOffset = pendingFeedScrollRestoreOffsetRef.current;
+      if (
+        !hasRestoredFeedScrollOffsetRef.current &&
+        pendingRestoreOffset > 0
+      ) {
+        if (Math.abs(normalizedOffsetY - pendingRestoreOffset) <= 32) {
+          hasRestoredFeedScrollOffsetRef.current = true;
+          pendingFeedScrollRestoreOffsetRef.current = 0;
+          retainedFeedScrollState = {
+            scopeKey: feedScrollScopeKey,
+            offsetY: normalizedOffsetY,
+          };
+        }
+        return;
+      }
+
+      retainedFeedScrollState = {
+        scopeKey: feedScrollScopeKey,
+        offsetY: normalizedOffsetY,
+      };
+    },
+    [feedScrollScopeKey],
+  );
+
+  const cancelPendingFeedScrollRestore = useCallback(() => {
+    if (hasRestoredFeedScrollOffsetRef.current) return;
+    hasRestoredFeedScrollOffsetRef.current = true;
+    pendingFeedScrollRestoreOffsetRef.current = 0;
+    retainedFeedScrollState = {
+      scopeKey: feedScrollScopeKey,
+      offsetY: Math.max(0, feedScrollYRef.current),
+    };
+  }, [feedScrollScopeKey]);
+
   const handleScrollBeginDrag = useCallback(() => {
+    cancelPendingFeedScrollRestore();
     feedChromeCollapseStateRef.current = resetFeedChromeScrollIntent(
       feedChromeCollapseStateRef.current,
     );
     pendingLoadMoreDuringScrollRef.current = false;
     loadMoreConsumedForGestureRef.current = false;
     beginScrollPause();
-  }, [beginScrollPause]);
+  }, [beginScrollPause, cancelPendingFeedScrollRestore]);
 
   const handleMomentumScrollBegin = useCallback(() => {
     if (scrollEndTimeoutRef.current) {
@@ -1968,7 +2209,7 @@ function FeedScreen() {
       if (Math.abs(deltaY) > FEED_SCROLL_DIRECTION_THRESHOLD) {
         feedScrollDirectionRef.current = deltaY > 0 ? 'down' : 'up';
       }
-      feedScrollYRef.current = contentOffset.y;
+      rememberFeedScrollOffset(contentOffset.y);
       feedViewportHeightRef.current = layoutMeasurement.height;
 
       if (contentOffset.y < 0) {
@@ -1976,7 +2217,7 @@ function FeedScreen() {
         nativeTabScrollPublisherStateRef.current =
           createNativeTabScrollPublisherState(0, 'none');
         publishNativeTabScrollBehavior('none');
-        setIsFeedChromeHidden(false);
+        commitFeedChromeHidden(false);
         return;
       }
 
@@ -1989,9 +2230,7 @@ function FeedScreen() {
       );
 
       feedChromeCollapseStateRef.current = nextState;
-      setIsFeedChromeHidden(current =>
-        current === nextState.hidden ? current : nextState.hidden,
-      );
+      commitFeedChromeHidden(nextState.hidden);
 
       const earlyLoadDistance = Math.max(
         layoutMeasurement.height * FEED_EARLY_LOAD_DISTANCE_MULTIPLIER,
@@ -2004,18 +2243,18 @@ function FeedScreen() {
         triggerLoadMoreRef.current();
       }
     },
-    [],
+    [
+      commitFeedChromeHidden,
+      rememberFeedScrollOffset,
+    ],
   );
 
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const velocityY = Math.abs(event.nativeEvent.velocity?.y ?? 0);
       const { contentOffset, layoutMeasurement } = event.nativeEvent;
-      feedScrollYRef.current = contentOffset.y;
+      rememberFeedScrollOffset(contentOffset.y);
       feedViewportHeightRef.current = layoutMeasurement.height;
-      if (velocityY < 0.05 && !isMomentumScrollingRef.current) {
-        measureActiveFeedVideoOnScreen(false);
-      }
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
       }
@@ -2027,15 +2266,14 @@ function FeedScreen() {
         }
       }, 80);
     },
-    [endScrollPause, measureActiveFeedVideoOnScreen],
+    [endScrollPause, rememberFeedScrollOffset],
   );
 
   const handleMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, layoutMeasurement } = event.nativeEvent;
-      feedScrollYRef.current = contentOffset.y;
+      rememberFeedScrollOffset(contentOffset.y);
       feedViewportHeightRef.current = layoutMeasurement.height;
-      measureActiveFeedVideoOnScreen(false);
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
         scrollEndTimeoutRef.current = null;
@@ -2044,7 +2282,7 @@ function FeedScreen() {
       endScrollPause();
       flushPendingLoadMoreRef.current();
     },
-    [endScrollPause, measureActiveFeedVideoOnScreen],
+    [endScrollPause, rememberFeedScrollOffset],
   );
 
   useEffect(() => {
@@ -2074,26 +2312,51 @@ function FeedScreen() {
       queuedImagePrefetchUrls.clear();
       pendingVideoPosterPostsRef.current = [];
       queuedVideoPosterKeys.clear();
+      desiredVideoPosterKeysRef.current.clear();
+      feedMeasureRequestRef.current += 1;
+      feedMeasureInFlightRef.current = false;
       activeInlineLivePostIdRef.current = null;
       pendingActiveInlineLivePostIdRef.current = null;
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
       publishFeedWarmVideoIds([]);
       publishFeedScrollBusy(false);
-      publishFeedVisibleMediaPostIds([]);
+      clearFeedVisibleMediaPostIds();
       publishNativeTabScrollBehavior('onScrollDown');
     };
-  }, [clearActiveVideoDwellTimer, clearInlineLiveDwellTimer]);
+  }, [
+    clearActiveVideoDwellTimer,
+    clearFeedVisibleMediaPostIds,
+    clearInlineLiveDwellTimer,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
       isFeedTabFocusedRef.current = true;
+      isFeedPlaybackSurfaceFocusedRef.current =
+        isFeedAppActiveRef.current;
+      setClientUiPerformanceActiveSurface('feed');
 
-      const restoredScrollY = Math.max(0, feedScrollYRef.current);
+      const restoredScrollY = Math.max(
+        0,
+        retainedFeedScrollState?.scopeKey === feedScrollScopeKey
+          ? retainedFeedScrollState.offsetY
+          : feedScrollYRef.current,
+      );
+      feedScrollYRef.current = restoredScrollY;
+      pendingFeedScrollRestoreOffsetRef.current = restoredScrollY;
+      hasRestoredFeedScrollOffsetRef.current = restoredScrollY <= 0;
       const restoredChromeState =
         createFeedChromeCollapseStateAtScrollY(restoredScrollY);
       feedChromeCollapseStateRef.current = restoredChromeState;
-      setIsFeedChromeHidden(restoredChromeState.hidden);
+      commitFeedChromeHidden(restoredChromeState.hidden);
+      const restoreTask = InteractionManager.runAfterInteractions(() => {
+        if (!isFeedTabFocusedRef.current || !mainFeedListRef.current) return;
+        mainFeedListRef.current.scrollToOffset({
+          offset: restoredScrollY,
+          animated: false,
+        });
+      });
 
       if (FEED_IS_ANDROID) {
         // Restore Home chrome immediately on focus instead of waiting for the
@@ -2104,31 +2367,61 @@ function FeedScreen() {
       }
 
       return () => {
+        restoreTask.cancel();
         isFeedTabFocusedRef.current = false;
+        isFeedPlaybackSurfaceFocusedRef.current = false;
+        clearClientUiPerformanceActiveSurface('feed');
+        endClientScrollMeasurement('feed');
         publishNativeTabScrollBehavior('onScrollDown');
       };
-    }, []),
+    }, [commitFeedChromeHidden, feedScrollScopeKey]),
   );
 
   const isFocused = useIsFocused();
+  const isPlaybackSurfaceFocused = isFocused && isFeedAppActive;
   useEffect(() => {
-    if (!isFocused) {
+    publishFeedScreenFocused(isPlaybackSurfaceFocused);
+
+    return () => {
+      if (isPlaybackSurfaceFocused) publishFeedScreenFocused(false);
+    };
+  }, [isPlaybackSurfaceFocused]);
+
+  useEffect(() => {
+    if (!isPlaybackSurfaceFocused) {
+      feedMeasureRequestRef.current += 1;
+      feedMeasureInFlightRef.current = false;
       clearActiveVideoDwellTimer();
       clearInlineLiveDwellTimer();
       scheduleActiveFeedInlineLivePostId(null, true);
       setActiveFeedVideo(null);
       publishFeedWarmVideoIds([]);
-      publishFeedVisibleMediaPostIds([]);
-    } else {
-      measureActiveFeedVideoOnScreen(true);
+      clearFeedVisibleMediaPostIds();
+      return undefined;
     }
+
+    const mediaActivationTask = InteractionManager.runAfterInteractions(() => {
+      if (!isFeedPlaybackSurfaceFocusedRef.current) return;
+      const visibleMediaPostIds = latestVisibleFeedItemsRef.current
+        .filter(
+          viewable =>
+            viewable?.isViewable && viewable.item?.type === 'post',
+        )
+        .map(viewable => String(viewable.item.post.id));
+      publishStableFeedVisibleMediaPostIds(visibleMediaPostIds);
+      measureActiveFeedVideoOnScreen(true);
+    });
+
+    return () => mediaActivationTask.cancel();
   }, [
-    isFocused,
+    isPlaybackSurfaceFocused,
     clearActiveVideoDwellTimer,
     clearInlineLiveDwellTimer,
+    clearFeedVisibleMediaPostIds,
     scheduleActiveFeedInlineLivePostId,
     setActiveFeedVideo,
     measureActiveFeedVideoOnScreen,
+    publishStableFeedVisibleMediaPostIds,
   ]);
 
   // Subscribe to posts created by the current user and show them instantly.
@@ -2181,6 +2474,19 @@ function FeedScreen() {
   // Navigate to user profile
   const navigateToProfile = useCallback(
     (userId: string) => {
+      const publisherItem = feedListItemsRef.current.find(
+        item => item.type === 'post' && item.post.publisher.id === userId,
+      );
+      if (publisherItem?.type === 'post') {
+        primeProfilePreviewCache({
+          id: publisherItem.post.publisher.id,
+          name: publisherItem.post.publisher.name,
+          username: publisherItem.post.publisher.username,
+          avatarUrl: publisherItem.post.publisher.avatarUrl,
+          isFollowing: publisherItem.post.publisher.isFollowing,
+        });
+      }
+      startProfileOpenMeasurement(userId);
       navigateToUserProfile(navigation, userId);
     },
     [navigation],
@@ -2320,9 +2626,18 @@ function FeedScreen() {
     }
 
     supplementalLoadStartedRef.current = true;
-    const runWhenScrollIdle = (task: () => void) => {
-      if (isScrollingRef.current || isMomentumScrollingRef.current) {
-        const retry = setTimeout(() => runWhenScrollIdle(task), 500);
+    const runWhenScrollIdle = (
+      task: () => void,
+      deadlineAt = Date.now() + 1200,
+    ) => {
+      if (
+        (isScrollingRef.current || isMomentumScrollingRef.current) &&
+        Date.now() < deadlineAt
+      ) {
+        const retry = setTimeout(
+          () => runWhenScrollIdle(task, deadlineAt),
+          300,
+        );
         supplementalLoadTimersRef.current.push(retry);
         return;
       }
@@ -2594,24 +2909,48 @@ function FeedScreen() {
           nextPosts.forEach(post => {
             const videoUrl = post.videoUrl?.trim();
             if (!videoUrl || post.thumbnailUrl?.trim()) return;
+            const optimizationEnabled = isClientUiOptimizationEnabled();
 
             const cacheKey = getFeedVideoPosterCacheKeyForPost(
               post.id,
               videoUrl,
             );
-            queuedVideoPosterKeysRef.current.delete(cacheKey);
+            if (
+              optimizationEnabled &&
+              !desiredVideoPosterKeysRef.current.has(cacheKey)
+            ) {
+              queuedVideoPosterKeysRef.current.delete(cacheKey);
+              prefetchedVideoPosterKeysRef.current.delete(cacheKey);
+              return;
+            }
+            if (!optimizationEnabled) {
+              queuedVideoPosterKeysRef.current.delete(cacheKey);
+            }
             const cachedPoster = getCachedVideoPosterThumbnail(
               videoUrl,
               cacheKey,
             );
             if (cachedPoster?.uri) {
+              queuedVideoPosterKeysRef.current.delete(cacheKey);
               markFeedMediaLoaded(cachedPoster.uri);
               return;
             }
 
             createCachedVideoPosterThumbnail(videoUrl, cacheKey)
-              .then(thumbnail => markFeedMediaLoaded(thumbnail?.uri))
-              .catch(() => undefined);
+              .then(thumbnail => {
+                markFeedMediaLoaded(thumbnail?.uri);
+                rememberBoundedFeedCacheKey(
+                  prefetchedVideoPosterKeysRef.current,
+                  cacheKey,
+                  MAX_REMEMBERED_VIDEO_POSTER_KEYS,
+                );
+              })
+              .catch(() => undefined)
+              .finally(() => {
+                if (optimizationEnabled) {
+                  queuedVideoPosterKeysRef.current.delete(cacheKey);
+                }
+              });
           });
 
           if (pendingVideoPosterPostsRef.current.length > 0) {
@@ -2623,6 +2962,40 @@ function FeedScreen() {
 
   const queueFeedVideoPosterPrefetch = useCallback(
     (posts: FeedVideoPost[]) => {
+      const optimizationEnabled = isClientUiOptimizationEnabled();
+      const requestedKeys = posts
+        .map(post => {
+          const videoUrl = post.videoUrl?.trim();
+          if (!videoUrl || post.thumbnailUrl?.trim()) return null;
+          return getFeedVideoPosterCacheKeyForPost(post.id, videoUrl);
+        })
+        .filter((cacheKey): cacheKey is string => cacheKey !== null);
+
+      if (optimizationEnabled) {
+        desiredVideoPosterKeysRef.current = new Set(requestedKeys);
+        const pendingPosts = pendingVideoPosterPostsRef.current;
+        const pendingKeys = pendingPosts.map(post =>
+          getFeedVideoPosterCacheKeyForPost(post.id, post.videoUrl.trim()),
+        );
+        const retainedKeys = new Set(
+          getRetainedFeedVideoPosterKeys({
+            pendingKeys,
+            requestedKeys,
+            maxCount: MAX_PENDING_VIDEO_POSTER_POSTS,
+          }),
+        );
+
+        pendingPosts.forEach((post, index) => {
+          const cacheKey = pendingKeys[index];
+          if (retainedKeys.has(cacheKey)) return;
+          queuedVideoPosterKeysRef.current.delete(cacheKey);
+          prefetchedVideoPosterKeysRef.current.delete(cacheKey);
+        });
+        pendingVideoPosterPostsRef.current = pendingPosts.filter(
+          (_post, index) => retainedKeys.has(pendingKeys[index]),
+        );
+      }
+
       if (posts.length === 0) return;
 
       let queuedAny = false;
@@ -2645,13 +3018,31 @@ function FeedScreen() {
           continue;
         }
 
-        rememberBoundedFeedCacheKey(
-          prefetchedVideoPosterKeysRef.current,
-          cacheKey,
-          MAX_REMEMBERED_VIDEO_POSTER_KEYS,
-        );
+        if (!optimizationEnabled) {
+          rememberBoundedFeedCacheKey(
+            prefetchedVideoPosterKeysRef.current,
+            cacheKey,
+            MAX_REMEMBERED_VIDEO_POSTER_KEYS,
+          );
+        }
         queuedVideoPosterKeysRef.current.add(cacheKey);
         pendingVideoPosterPostsRef.current.push(post);
+        if (
+          optimizationEnabled &&
+          pendingVideoPosterPostsRef.current.length >
+            MAX_PENDING_VIDEO_POSTER_POSTS
+        ) {
+          const stalePost = pendingVideoPosterPostsRef.current.shift();
+          const staleVideoUrl = stalePost?.videoUrl?.trim();
+          if (stalePost && staleVideoUrl) {
+            const staleCacheKey = getFeedVideoPosterCacheKeyForPost(
+              stalePost.id,
+              staleVideoUrl,
+            );
+            queuedVideoPosterKeysRef.current.delete(staleCacheKey);
+            prefetchedVideoPosterKeysRef.current.delete(staleCacheKey);
+          }
+        }
         queuedAny = true;
       }
 
@@ -3020,6 +3411,8 @@ function FeedScreen() {
 
   const onVisibleFeedItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
+      if (!isFeedPlaybackSurfaceFocusedRef.current) return;
+
       latestVisibleFeedItemsRef.current = viewableItems;
       const mediaEligiblePostIds = new Set<string>();
       let firstVisibleIndex = Number.POSITIVE_INFINITY;
@@ -3063,7 +3456,21 @@ function FeedScreen() {
         }
       }
 
-      publishFeedVisibleMediaPostIds(mediaEligiblePostIds);
+      const stableMediaPostIds = publishStableFeedVisibleMediaPostIds(
+        mediaEligiblePostIds,
+      );
+      const activeVideoId = activeVideoIdRef.current;
+      if (
+        shouldClearFeedActiveVideo({
+          activeVideoId,
+          visiblePostIds: stableMediaPostIds,
+        })
+      ) {
+        if (pendingActiveVideoIdRef.current === activeVideoId) {
+          pendingActiveVideoIdRef.current = null;
+        }
+        scheduleActiveFeedVideo(null, true);
+      }
       const activeLivePostId = activeInlineLivePostIdRef.current;
       if (
         activeLivePostId !== null &&
@@ -3074,24 +3481,27 @@ function FeedScreen() {
         }
         scheduleActiveFeedInlineLivePostId(null, true);
       }
-      const activeVideoId = activeVideoIdRef.current;
-      if (
-        activeVideoId &&
-        !isFeedVideoIdViewable(viewableItems, activeVideoId)
-      ) {
-        scheduleActiveFeedVideo(null, true);
-      }
     },
-    [scheduleActiveFeedInlineLivePostId, scheduleActiveFeedVideo],
+    [
+      publishStableFeedVisibleMediaPostIds,
+      scheduleActiveFeedInlineLivePostId,
+      scheduleActiveFeedVideo,
+    ],
   );
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
+      if (!isFeedPlaybackSurfaceFocusedRef.current) return;
+
       latestViewableFeedItemsRef.current = viewableItems;
-      const visiblePostIds = viewableItems
+      const allVisiblePostIds = viewableItems
         .filter(item => item?.isViewable && item?.item?.type === 'post')
         .map(item => String(item.item.post?.id ?? ''))
-        .filter(postId => /^[1-9][0-9]*$/.test(postId));
+        .filter(Boolean);
+      recordVisiblePostIds('feed', allVisiblePostIds);
+      const visiblePostIds = allVisiblePostIds.filter(postId =>
+        /^[1-9][0-9]*$/.test(postId),
+      );
       scheduleRealtimeVisiblePostIds(visiblePostIds);
       prefetchFeedImagesAroundVisibleItems(viewableItems);
       prefetchFeedVideoPostersAroundVisibleItems(viewableItems);
@@ -3113,31 +3523,19 @@ function FeedScreen() {
       pendingActiveInlineLivePostIdRef.current = null;
       if (!isScrollingRef.current) {
         scheduleActiveFeedInlineLivePostId(null, true);
-      }
-      const update = getFeedVideoActiveUpdate({
-        activeVideoId: activeVideoIdRef.current,
-        isScrolling: isScrollingRef.current,
-        viewableItems,
-        visibleItems: latestVisibleFeedItemsRef.current,
-      });
-
-      if (isScrollingRef.current) {
-        pendingActiveVideoIdRef.current = update.pendingActiveVideoId;
-        if (
-          update.nextActiveVideoId !== undefined &&
-          update.nextActiveVideoId !== activeVideoIdRef.current
-        ) {
-          scheduleActiveFeedVideo(update.nextActiveVideoId);
-        }
+        measureActiveFeedVideoOnScreen(false);
         return;
       }
 
-      if (
-        update.nextActiveVideoId !== undefined &&
-        update.nextActiveVideoId !== activeVideoIdRef.current
-      ) {
-        scheduleActiveFeedVideo(update.nextActiveVideoId);
-      }
+      const nextViewableVideoId = viewableItems.find(
+        viewable =>
+          viewable?.isViewable &&
+          viewable.item?.type === 'post' &&
+          viewable.item.post?.kind === 'video',
+      )?.item?.post?.id;
+      pendingActiveVideoIdRef.current = nextViewableVideoId
+        ? String(nextViewableVideoId)
+        : null;
     },
     [
       maybeLoadMoreFeedAroundVisibleItems,
@@ -3147,12 +3545,13 @@ function FeedScreen() {
       scheduleRealtimeVisiblePostIds,
       scheduleActiveFeedInlineLivePostId,
       scheduleActiveFeedVideo,
+      measureActiveFeedVideoOnScreen,
     ],
   );
 
   // â”€â”€ Post menu state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // The low threshold only answers "is the current card still on-screen?".
-  // The high threshold remains responsible for selecting a new autoplay card.
+  // FlashList thresholds drive media mounting/prefetch only. Autoplay ownership
+  // is decided from the measured video surface itself.
   const viewabilityConfigCallbackPairsRef = useRef([
     {
       viewabilityConfig: {
@@ -3298,6 +3697,12 @@ function FeedScreen() {
     isAllLoaded: isProductsAllLoaded,
     loadMoreProducts,
   } = productsVm;
+  const {
+    isLoading: isJobsLoading,
+    isLoadingMore: isJobsLoadingMore,
+    isAllLoaded: isJobsAllLoaded,
+    loadMoreJobs,
+  } = jobsVm;
 
   // Collapse all end-of-list signals from one drag/fling into a single load.
   // The request is released only after momentum settles, so appending rich
@@ -3322,8 +3727,15 @@ function FeedScreen() {
       !isProductsLoading &&
       !isProductsLoadingMore &&
       !isProductsAllLoaded;
+    const canRequestJobs =
+      !loadMoreConsumedForGestureRef.current &&
+      now - lastSupplementalLoadMoreRequestAtRef.current >
+        SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS &&
+      !isJobsLoading &&
+      !isJobsLoadingMore &&
+      !isJobsAllLoaded;
 
-    if (!canRequestFeed && !canRequestSupplemental) return;
+    if (!canRequestFeed && !canRequestSupplemental && !canRequestJobs) return;
 
     pendingLoadMoreDuringScrollRef.current = false;
     loadMoreConsumedForGestureRef.current = true;
@@ -3333,9 +3745,16 @@ function FeedScreen() {
       loadMorePosts();
     }
 
-    if (canRequestSupplemental) {
+    if (canRequestSupplemental || canRequestJobs) {
       lastSupplementalLoadMoreRequestAtRef.current = now;
+    }
+
+    if (canRequestSupplemental) {
       loadMoreProducts();
+    }
+
+    if (canRequestJobs) {
+      loadMoreJobs();
     }
   }, [
     isFeedLoading,
@@ -3346,6 +3765,10 @@ function FeedScreen() {
     isProductsLoadingMore,
     isProductsAllLoaded,
     loadMoreProducts,
+    isJobsLoading,
+    isJobsLoadingMore,
+    isJobsAllLoaded,
+    loadMoreJobs,
   ]);
 
   const flushPendingLoadMore = useCallback(() => {
@@ -3404,7 +3827,7 @@ function FeedScreen() {
       nativeTabScrollPublisherStateRef.current =
         createNativeTabScrollPublisherState(0, 'none');
       publishNativeTabScrollBehavior('none');
-      setIsFeedChromeHidden(false);
+      commitFeedChromeHidden(false);
       mainFeedListRef.current?.scrollToOffset({
         offset: 0,
         animated: true,
@@ -3415,7 +3838,7 @@ function FeedScreen() {
     if (vm.isRefreshing || feedTabRefreshInFlightRef.current) return;
     feedTabRefreshInFlightRef.current = true;
     handleRefresh();
-  }, [handleRefresh, vm.isRefreshing]);
+  }, [commitFeedChromeHidden, handleRefresh, vm.isRefreshing]);
 
   useEffect(() => {
     if (!vm.isRefreshing) {
@@ -3720,10 +4143,17 @@ function FeedScreen() {
           ] as FeedListItem[])
         : feedListItems;
 
+    const itemIndexById = new Map<string, number>();
+    const postIds = new Set<string>();
+    renderedItems.forEach((item, index) => {
+      itemIndexById.set(item.id, index);
+      if (item.type === 'post') {
+        postIds.add(item.post.id);
+      }
+    });
     feedListItemsRef.current = renderedItems;
-    feedListItemIndexByIdRef.current = new Map(
-      renderedItems.map((item, index) => [item.id, index]),
-    );
+    feedListItemIndexByIdRef.current = itemIndexById;
+    feedPostIdsRef.current = postIds;
     prefetchFeedImagesAroundVisibleItems(latestViewableFeedItemsRef.current);
     prefetchFeedVideoPostersAroundVisibleItems(
       latestViewableFeedItemsRef.current,
@@ -3741,6 +4171,38 @@ function FeedScreen() {
     prefetchFeedVideoPostersAroundVisibleItems,
     publishWarmFeedVideosAroundVisibleItems,
   ]);
+
+  useEffect(() => {
+    const scopedOffset =
+      retainedFeedScrollState?.scopeKey === feedScrollScopeKey
+        ? retainedFeedScrollState.offsetY
+        : 0;
+    feedScrollYRef.current = scopedOffset;
+    pendingFeedScrollRestoreOffsetRef.current = scopedOffset;
+    hasRestoredFeedScrollOffsetRef.current = scopedOffset <= 0;
+  }, [feedScrollScopeKey]);
+
+  useEffect(() => {
+    const targetOffset = pendingFeedScrollRestoreOffsetRef.current;
+    if (
+      hasRestoredFeedScrollOffsetRef.current ||
+      !isFeedTabFocused ||
+      feedListItems.length === 0 ||
+      targetOffset <= 0
+    ) {
+      return undefined;
+    }
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (!isFeedTabFocusedRef.current || !mainFeedListRef.current) return;
+      mainFeedListRef.current.scrollToOffset({
+        offset: targetOffset,
+        animated: false,
+      });
+    });
+
+    return () => task.cancel();
+  }, [feedListItems.length, feedScrollScopeKey, isFeedTabFocused]);
 
   useEffect(() => {
     const videoIds = new Set(
@@ -3784,7 +4246,7 @@ function FeedScreen() {
   // Separate memoized render functions for each type - prevents full re-render
   const renderVideoPost = useCallback(
     ({ item }: { item: FeedVideoPost }) => (
-      <View ref={node => setFeedVideoRef(item.id, node)}>
+      <View>
         <HomeVideoPostCard
           post={item}
           copy={copy}
@@ -3796,9 +4258,10 @@ function FeedScreen() {
           navigateToProfile={navigateToProfile}
           onOpenPostMenu={handleOpenPostMenu}
           showGroupContext
-          isScreenFocused={isFeedTabFocused}
           keepPreparedVideoMounted={!FEED_IS_ANDROID}
           deferMediaUntilVisible
+          performanceSurface="feed"
+          mediaSurfaceRef={setFeedVideoRef}
         />
       </View>
     ),
@@ -3812,7 +4275,6 @@ function FeedScreen() {
       setFeedVideoRef,
       handleToggleReactionStable,
       openReactionsSheet,
-      isFeedTabFocused,
     ],
   );
 
@@ -4048,7 +4510,16 @@ function FeedScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: FeedListItem }) => {
+    ({
+      item,
+      target,
+    }: {
+      item: FeedListItem;
+      target: 'Cell' | 'Measurement' | 'StickyHeader';
+    }) => {
+      if (target === 'Cell' && item.type === 'post') {
+        recordPostItemRender('feed', item.post.id);
+      }
       if (item.type === 'intro') {
         return renderFeedIntro();
       }
@@ -4114,7 +4585,6 @@ function FeedScreen() {
   const feedListExtraData = useMemo(
     () => ({
       activeInlineLivePostId,
-      isFeedTabFocused,
       language,
       userAvatar: userVm.user?.avatar,
       userId: userVm.user?.userId,
@@ -4122,7 +4592,6 @@ function FeedScreen() {
     }),
     [
       activeInlineLivePostId,
-      isFeedTabFocused,
       language,
       userVm.user?.avatar,
       userVm.user?.userId,

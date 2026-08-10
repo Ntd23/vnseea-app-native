@@ -164,6 +164,17 @@ export interface FeedRepository {
   ): Promise<FeedVideoPost[]>;
 
   /**
+   * Cursor-aware video lane for Home. The cursor follows the underlying raw
+   * feed window, so a text-only page can still advance toward older videos.
+   */
+  getVideoPostsPage(
+    limit?: number,
+    afterPostId?: string,
+    source?: FeedSource,
+    maxScanPages?: number,
+  ): Promise<FeedPostsPage<FeedVideoPost>>;
+
+  /**
    * Add, swap, or clear the viewer's reaction on a video post.
    *
    *   reaction = ReactionType  → add (or swap to) this reaction

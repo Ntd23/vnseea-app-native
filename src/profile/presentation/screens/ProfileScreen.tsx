@@ -102,6 +102,16 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
 import {
+  beginClientScrollMeasurement,
+  clearClientUiPerformanceActiveSurface,
+  endClientScrollMeasurement,
+  finishProfileOpenMeasurement,
+  isClientUiOptimizationEnabled,
+  recordPostItemRender,
+  recordVisiblePostIds,
+  setClientUiPerformanceActiveSurface,
+} from '../../../shared/performance/clientUiPerformanceMetrics';
+import {
   loadProfileCommercePosts,
   mergeProfileCommercePosts,
 } from '../../application/services/profileCommercePosts';
@@ -1490,6 +1500,7 @@ function ProfileScreen() {
   const routeProfileKey = route.params?.userId
     ? String(route.params.userId)
     : 'self';
+  const clientUiOptimizationEnabled = isClientUiOptimizationEnabled();
   const [isDeferredProfileContentEnabled, setDeferredProfileContentEnabled] =
     useState(false);
   const [profileLoadDeadlineReached, setProfileLoadDeadlineReached] =
@@ -1745,6 +1756,7 @@ function ProfileScreen() {
         loadProfile({
           userId: route.params?.userId,
           includeFriends: false,
+          force: true,
         }),
         loadProfilePostsFirstPage(targetUserId),
       ]);
@@ -2236,9 +2248,12 @@ function ProfileScreen() {
     }: {
       viewableItems: FlashListViewToken<ProfileListItem>[];
     }) => {
-      const visiblePostIds = viewableItems
+      const allVisiblePostIds = viewableItems
         .filter(item => item.isViewable)
         .map(item => String(getProfileListItemPost(item.item)?.id ?? ''))
+        .filter(Boolean);
+      recordVisiblePostIds('profile', allVisiblePostIds);
+      const visiblePostIds = allVisiblePostIds
         .filter(postId => /^[1-9][0-9]*$/.test(postId));
       publishFeedVisibleMediaPostIds(visiblePostIds);
       scheduleRealtimeVisiblePostIds(visiblePostIds);
@@ -2544,7 +2559,9 @@ function ProfileScreen() {
 
     // Reset user-scoped state so the previous user's posts/stories
     // don't bleed into the new user's profile view.
-    const cachedPosts = getCachedProfilePosts(targetUserId);
+    const cachedPosts = clientUiOptimizationEnabled
+      ? cachedProfilePosts
+      : getCachedProfilePosts(targetUserId);
     setPosts(cachedPosts);
     setPersonalDetailsExpanded(false);
     setPostsCursor(undefined);
@@ -2601,6 +2618,8 @@ function ProfileScreen() {
     routeProfileKey,
     clearProfileInlineLiveDwellTimer,
     clearProfileVideoDwellTimer,
+    clientUiOptimizationEnabled,
+    cachedProfilePosts,
     loadConnections,
     loadProfile,
     scheduleActiveProfileInlineLivePostId,
@@ -2610,9 +2629,12 @@ function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setClientUiPerformanceActiveSurface('profile');
       publishFeedScrollBusy(false);
 
       return () => {
+        clearClientUiPerformanceActiveSurface('profile');
+        endClientScrollMeasurement('profile');
         publishFeedScrollBusy(false);
         clearProfileVideoDwellTimer();
         clearProfileInlineLiveDwellTimer();
@@ -2663,7 +2685,9 @@ function ProfileScreen() {
 
     let cancelled = false;
     const requestProfileKey = routeProfileKey;
-    const cachedPosts = getCachedProfilePosts(targetUserId);
+    const cachedPosts = clientUiOptimizationEnabled
+      ? cachedProfilePosts
+      : getCachedProfilePosts(targetUserId);
     setPosts(cachedPosts);
     setPostsCursor(undefined);
     setHasMorePosts(false);
@@ -2715,6 +2739,8 @@ function ProfileScreen() {
   }, [
     loadProfileCommerceForUser,
     loadProfilePostsFirstPage,
+    cachedProfilePosts,
+    clientUiOptimizationEnabled,
     routeProfileKey,
     targetUserId,
   ]);
@@ -3718,13 +3744,16 @@ function ProfileScreen() {
 
   const animateProfileHeaderSolid = useCallback(
     (solid: boolean) => {
+      if (clientUiOptimizationEnabled) {
+        profileHeaderSolidProgress.stopAnimation();
+      }
       Animated.timing(profileHeaderSolidProgress, {
         toValue: solid ? 1 : 0,
         duration: solid ? 120 : 90,
         useNativeDriver: true,
       }).start();
     },
-    [profileHeaderSolidProgress],
+    [clientUiOptimizationEnabled, profileHeaderSolidProgress],
   );
 
   const handleProfileTabReselect = useCallback(() => {
@@ -3803,6 +3832,7 @@ function ProfileScreen() {
       isProfileScrollingRef.current = false;
       isProfileMomentumScrollingRef.current = false;
       publishFeedScrollBusy(false);
+      endClientScrollMeasurement('profile');
       const nextLivePostId = pendingProfileInlineLivePostIdRef.current;
       pendingProfileInlineLivePostIdRef.current = null;
       const nextVideoId = pendingProfileActiveVideoIdRef.current;
@@ -3848,6 +3878,7 @@ function ProfileScreen() {
     clearProfileInlineLiveDwellTimer();
     publishFeedWarmVideoIds([]);
     publishFeedScrollBusy(true);
+    beginClientScrollMeasurement('profile');
   }, [clearProfileInlineLiveDwellTimer, clearProfileVideoDwellTimer]);
 
   const handleProfileMomentumScrollBegin = useCallback(() => {
@@ -4564,6 +4595,7 @@ function ProfileScreen() {
               onOpenPostMenu={handleOpenPostMenu}
               keepPreparedVideoMounted={!PROFILE_IS_ANDROID}
               deferMediaUntilVisible
+              performanceSurface="profile"
             />
           </View>
         );
@@ -5464,7 +5496,7 @@ function ProfileScreen() {
   ]);
 
   const renderProfileListItem = useCallback(
-    ({ item }: FlashListRenderItemInfo<ProfileListItem>) => {
+    ({ item, target }: FlashListRenderItemInfo<ProfileListItem>) => {
       if (item.type === 'state') {
         return <>{profilePostsEmptyComponent}</>;
       }
@@ -5483,6 +5515,9 @@ function ProfileScreen() {
         );
       }
 
+      if (target === 'Cell') {
+        recordPostItemRender('profile', item.post.id);
+      }
       return renderProfilePostContent(item.post);
     },
     [
@@ -5614,6 +5649,30 @@ function ProfileScreen() {
       String(profile?.id) === String(expectedProfileUserId));
   const isInitialProfileContentReady =
     hasCurrentProfile || Boolean(profileError) || profileLoadDeadlineReached;
+
+  useEffect(() => {
+    const measuredUserId = expectedProfileUserId ?? profile?.id;
+    if (!isProfileFocused || !hasCurrentProfile || !measuredUserId) {
+      return undefined;
+    }
+
+    let secondFrame: number | null = null;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        finishProfileOpenMeasurement(measuredUserId);
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+    };
+  }, [
+    expectedProfileUserId,
+    hasCurrentProfile,
+    isProfileFocused,
+    profile?.id,
+  ]);
 
   if (!isInitialProfileContentReady) {
     return <FullProfileSkeleton onBack={handleProfileBack} />;

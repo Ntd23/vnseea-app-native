@@ -1357,8 +1357,8 @@ function PostDetailScreen() {
           onOpenReactions={handleOpenReactions}
           navigateToProfile={navigateToProfile}
           showIdentityHeader={false}
-          isScreenFocused={true}
-          isActive={true}
+          isScreenFocused={isFocused}
+          isActive={isFocused}
           gestureX={gestureX}
           gestureY={gestureY}
           gestureActive={gestureActive}

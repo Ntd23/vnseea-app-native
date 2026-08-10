@@ -18,7 +18,7 @@ describe('Profile viewport media loading', () => {
       'const PROFILE_POST_DRAW_DISTANCE = PROFILE_IS_ANDROID',
     );
     expect(source).toContain(
-      '? Math.max(2100, Math.round(SCREEN_HEIGHT * 2.6))',
+      '? Math.max(1600, Math.round(SCREEN_HEIGHT * 1.8))',
     );
     expect(source).toContain('removeClippedSubviews={false}');
     expect(source).toContain(

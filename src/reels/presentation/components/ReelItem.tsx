@@ -1,10 +1,9 @@
 // Description: Renders ONE reel in the TikTok-style vertical feed.
 //
 // Memory & performance contract (this is the heart of the feed):
-//   • The VideoPlayer is mounted only when `shouldMount` is true.
-//     The parent passes shouldMount=true for the active index AND ±1 so
-//     scrolling feels instant (the next/prev video is already buffered),
-//     yet the device never holds more than 3 decoders in RAM at once.
+//   • The VideoPlayer is mounted only for a non-`none` player role.
+//     The parent retains previous/current and lightly preloads next after
+//     settle, so the device never holds more than 3 decoders in RAM at once.
 //   • The VideoPlayer is paused (and muted) whenever `isActive` is false.
 //     This lets us keep neighbors preloaded without burning battery or
 //     emitting audio from off-screen items.
@@ -70,8 +69,20 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import {
   getVideoPlaybackTime,
+  resolveReelBufferModeForMount,
   setVideoPlaybackTime,
+  type ReelPlayerBufferMode,
+  type ReelPlayerRole,
 } from '../screens/reelsPlayback';
+import {
+  recordVideoBufferState,
+  recordVideoError,
+  recordVideoFirstFrame,
+  recordVideoLoadStart,
+  recordVideoPlayerMounted,
+  recordVideoPlayerUnmounted,
+  updateVideoPlayerRole,
+} from '../../../shared/performance/videoPlaybackMetrics';
 import { iosPagerSwipeLock } from '../../../navigation/iosPagerSwipeLock';
 import {
   getContainedReelVideoRect,
@@ -121,6 +132,14 @@ const REEL_ANDROID_BUFFER_CONFIG = {
   backBufferDurationMs: 0,
   cacheSizeMB: 64,
 };
+const REEL_ANDROID_NEXT_PRELOAD_BUFFER_CONFIG = {
+  minBufferMs: 750,
+  maxBufferMs: 3500,
+  bufferForPlaybackMs: 250,
+  bufferForPlaybackAfterRebufferMs: 600,
+  backBufferDurationMs: 0,
+  cacheSizeMB: 64,
+};
 const RAIL_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 8, right: 8 };
 const RAIL_BUTTON_PRESS_RETENTION = {
   top: 14,
@@ -133,6 +152,8 @@ interface Props {
   item: ReelsItem;
   /** Pixel height of the visible viewport — drives fullscreen layout. */
   height: number;
+  /** Native player lifecycle role assigned by the vertical pager. */
+  playerRole: ReelPlayerRole;
   /** True when this is the currently-visible reel (plays + unmutes). */
   isActive: boolean;
   /** True when this is the active selected item in the vertical feed. */
@@ -141,8 +162,6 @@ interface Props {
   commentsPreviewVisible?: boolean;
   /** Exact pixel height reserved above the comments sheet. */
   commentsPreviewHeight?: number;
-  /** True when this reel is within the preload window (current ±1). */
-  shouldMount: boolean;
   /** Global mute state shared across the feed. */
   isMuted: boolean;
   onToggleMute: () => void;
@@ -196,11 +215,11 @@ const formatTime = (seconds: number) => {
 function ReelItemBase({
   item,
   height,
+  playerRole,
   isActive,
   isCurrent,
   commentsPreviewVisible = false,
   commentsPreviewHeight,
-  shouldMount,
   isMuted,
   onReaction,
   onSave,
@@ -228,10 +247,28 @@ function ReelItemBase({
   const [isBuffering, setIsBuffering] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [playerAttempt, setPlayerAttempt] = useState(0);
+  const videoMetricsPlayerId = useMemo(
+    () => `reels:${item.id}:${playerAttempt}`,
+    [item.id, playerAttempt],
+  );
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const currentTimeRef = useRef(getVideoPlaybackTime(item.id, 0));
+  const shouldMount = playerRole !== 'none';
+  const previousPlayerRoleRef = useRef<ReelPlayerRole>('none');
+  const mountedBufferModeRef = useRef<ReelPlayerBufferMode>('standard');
+
+  // Buffer policy is chosen only when the native player enters the mount
+  // window. A preloaded next item keeps its light source identity when it
+  // becomes current, avoiding a source replacement exactly at swipe settle.
+  if (playerRole === 'none') {
+    mountedBufferModeRef.current = 'standard';
+  } else if (previousPlayerRoleRef.current === 'none') {
+    mountedBufferModeRef.current = resolveReelBufferModeForMount(playerRole);
+  }
+  previousPlayerRoleRef.current = playerRole;
+  const mountedBufferMode = mountedBufferModeRef.current;
 
   // Video progress & scrubbing states
   const [duration, setDuration] = useState(0);
@@ -321,14 +358,36 @@ function ReelItemBase({
             uri: item.videoUrl,
             ...(Platform.OS === 'android'
               ? {
-                  bufferConfig: REEL_ANDROID_BUFFER_CONFIG,
+                  bufferConfig:
+                    mountedBufferMode === 'next-preload'
+                      ? REEL_ANDROID_NEXT_PRELOAD_BUFFER_CONFIG
+                      : REEL_ANDROID_BUFFER_CONFIG,
                   minLoadRetryCount: 2,
                 }
               : {}),
           }
         : undefined,
-    [item.videoUrl],
+    [item.videoUrl, mountedBufferMode],
   );
+  const videoMetricsRoleRef = useRef(playerRole);
+  videoMetricsRoleRef.current = playerRole;
+
+  useEffect(() => {
+    if (!shouldMount) return undefined;
+
+    recordVideoPlayerMounted({
+      playerId: videoMetricsPlayerId,
+      surface: 'reels',
+      role: videoMetricsRoleRef.current,
+    });
+
+    return () => recordVideoPlayerUnmounted(videoMetricsPlayerId);
+  }, [shouldMount, videoMetricsPlayerId]);
+
+  useEffect(() => {
+    if (!shouldMount) return;
+    updateVideoPlayerRole(videoMetricsPlayerId, playerRole, 'reels');
+  }, [playerRole, shouldMount, videoMetricsPlayerId]);
 
   useEffect(() => {
     commentsPreviewProgress.value = withTiming(commentsPreviewVisible ? 1 : 0, {
@@ -374,12 +433,14 @@ function ReelItemBase({
   }, [clearVideoRetry]);
 
   const markVideoDisplayed = useCallback(() => {
+    recordVideoFirstFrame(videoMetricsPlayerId);
     videoRetryCountRef.current = 0;
     setHasRenderedFirstFrame(true);
     markVideoReady();
-  }, [markVideoReady]);
+  }, [markVideoReady, videoMetricsPlayerId]);
 
   const handleVideoError = useCallback(() => {
+    recordVideoError(videoMetricsPlayerId);
     setIsReady(false);
     setHasRenderedFirstFrame(false);
     setIsBuffering(false);
@@ -396,7 +457,7 @@ function ReelItemBase({
     }
 
     setHasError(true);
-  }, [clearVideoRetry, shouldMount]);
+  }, [clearVideoRetry, shouldMount, videoMetricsPlayerId]);
 
   const startEndSuppression = useCallback(() => {
     suppressNextEndRef.current = true;
@@ -832,6 +893,7 @@ function ReelItemBase({
         useTextureView={Platform.OS === 'android'}
         renderLoader={renderVideoLoader}
         onLoadStart={() => {
+          recordVideoLoadStart(videoMetricsPlayerId);
           setIsReady(false);
           setHasRenderedFirstFrame(false);
           setIsBuffering(true);
@@ -854,6 +916,7 @@ function ReelItemBase({
           }
         }}
         onBuffer={({ isBuffering: nextIsBuffering }) => {
+          recordVideoBufferState(videoMetricsPlayerId, nextIsBuffering);
           setIsBuffering(nextIsBuffering);
         }}
         onProgress={data => {
@@ -909,6 +972,7 @@ function ReelItemBase({
     shouldMount,
     startEndSuppression,
     videoSource,
+    videoMetricsPlayerId,
   ]);
 
   const stableVideoFrame = useMemo(
@@ -944,7 +1008,7 @@ function ReelItemBase({
           </Animated.View>
         ) : null}
 
-        {/* ── Video — mounted only when in the ±1 preload window ─────── */}
+        {/* ── Video — mounted only for previous/current/next roles ───── */}
         {stableVideoFrame}
 
         {/* ── Tap surface ─────────────────────────────────────────────────
@@ -1737,11 +1801,11 @@ const styles = StyleSheet.create({
 export const ReelItem = memo(ReelItemBase, (prev, next) => {
   return (
     prev.item === next.item &&
+    prev.playerRole === next.playerRole &&
     prev.isActive === next.isActive &&
     prev.isCurrent === next.isCurrent &&
     prev.commentsPreviewVisible === next.commentsPreviewVisible &&
     prev.commentsPreviewHeight === next.commentsPreviewHeight &&
-    prev.shouldMount === next.shouldMount &&
     prev.isMuted === next.isMuted &&
     prev.height === next.height &&
     prev.index === next.index &&

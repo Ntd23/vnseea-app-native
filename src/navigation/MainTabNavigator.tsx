@@ -267,7 +267,7 @@ function CustomMainTabNavigator() {
           key={name}
           name={name}
           component={component}
-          options={{ lazy: name !== ROUTES.REELS }}
+          options={{ lazy: true }}
         />
       ))}
     </CustomTab.Navigator>

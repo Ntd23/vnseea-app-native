@@ -49,12 +49,16 @@ import {
   getUnusedFeedVideoCount,
   mergeFeedContentWithVideos,
 } from './feedVideoScheduler';
+import { resolveFeedVideoPageCursor } from './feedVideoPagination';
 import {
   mergeFeedPrefetchQueue,
   takeFeedPrefetchBatch,
 } from './feedPaginationBuffer';
 import { canAppendFeedPageWithoutResort } from './feedPageOrdering';
-import { createFeedNetworkPolicy } from './feedNetworkPolicy';
+import {
+  createFeedNetworkPolicy,
+  getFeedPrefetchRetryDelay,
+} from './feedNetworkPolicy';
 import {
   mergePendingVideoSnapshots,
   resolveDeferredFeedCommit,
@@ -109,7 +113,6 @@ const HOME_VISIBLE_WARM_TARGET = 20;
 const PAGINATION_SCAN_PAGES = 1;
 const PREFETCH_REFILL_DELAY_MS = 120;
 const WARM_VISIBLE_FILL_DELAY_MS = 80;
-const PREFETCH_RETRY_DELAY_MS = 900;
 const EMPTY_PAGE_RETRY_DELAY_MS = 180;
 const CONSTRAINED_REVEAL_DELAY_MS = 60;
 const VIDEO_PAGE_SIZE = 12;
@@ -130,6 +133,13 @@ const MAX_CONSECUTIVE_EMPTY_PAGES = 3;
 type InteractionTask = ReturnType<
   typeof InteractionManager.runAfterInteractions
 >;
+
+type PendingVideoBufferRequest = {
+  lightCount: number;
+  forceNewest: boolean;
+  generation: number;
+  source: FeedSource;
+};
 
 let pendingLightCacheTask: InteractionTask | null = null;
 let pendingVideoCacheTask: InteractionTask | null = null;
@@ -436,6 +446,9 @@ export function useFeedViewModel() {
   const prefetchRefillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const prefetchRefillDeadlineRef = useRef(0);
+  const prefetchRetryAttemptRef = useRef(0);
+  const isDisposedRef = useRef(false);
   const warmVisibleFillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -448,17 +461,22 @@ export function useFeedViewModel() {
   const paginationNetworkPolicyRef = useRef(createFeedNetworkPolicy());
   const paginationGenerationRef = useRef(0);
   const isFetchingVideosRef = useRef(false);
+  const pendingVideoBufferRequestRef =
+    useRef<PendingVideoBufferRequest | null>(null);
+  const ensureVideoBufferRef = useRef<
+    (lightCount: number, forceNewest?: boolean) => void
+  >(() => undefined);
   const videoBufferTaskRef = useRef<InteractionTask | null>(null);
   const videoFetchCursorRef = useRef<string | undefined>(
     videoPostsRef.current[videoPostsRef.current.length - 1]?.id,
   );
+  const hasReachedVideoEndRef = useRef(false);
   const videoCandidateIdsRef = useRef<Set<string>>(
     new Set(videoPostsRef.current.map(post => post.id)),
   );
   const videoCandidateQueueRef = useRef<FeedVideoPost[]>([]);
   const videoPrepareRetryCountRef = useRef<Map<string, number>>(new Map());
   const isScrollBusyRef = useRef(false);
-  const pendingLoadMoreDuringScrollRef = useRef(false);
   const pendingCommitRef = useRef<{
     videoPosts: FeedVideoPost[];
     preserveRenderedOrder?: boolean;
@@ -692,6 +710,10 @@ export function useFeedViewModel() {
         applyFeedSources(
           [...lightPostsRef.current, ...appendablePosts],
           videoPostsRef.current,
+          {
+            preserveRenderedOrder: true,
+            preserveExistingPosts: mergedPostsRef.current,
+          },
         );
         return appendablePosts;
       }
@@ -775,10 +797,6 @@ export function useFeedViewModel() {
       if (!busy) {
         flushPendingCommit();
         scheduleImpressionFlush(150);
-        if (pendingLoadMoreDuringScrollRef.current) {
-          pendingLoadMoreDuringScrollRef.current = false;
-          Promise.resolve(loadMorePostsRef.current()).catch(() => undefined);
-        }
         scheduleWarmVisibleFill();
         schedulePrefetchRefillRef.current();
       }
@@ -980,7 +998,20 @@ export function useFeedViewModel() {
 
   const ensureVideoBuffer = useCallback(
     (lightCount: number, forceNewest = false) => {
-      if (isFetchingVideosRef.current) return;
+      const generationAtRequest = paginationGenerationRef.current;
+      const sourceAtRequest = feedSourceRef.current;
+      if (isFetchingVideosRef.current) {
+        if (forceNewest) {
+          pendingVideoBufferRequestRef.current = {
+            lightCount,
+            forceNewest,
+            generation: generationAtRequest,
+            source: sourceAtRequest,
+          };
+        }
+        return;
+      }
+      if (forceNewest) hasReachedVideoEndRef.current = false;
       const requiredVideos = Math.min(
         VIDEO_READY_POOL_LIMIT,
         getFeedVideoBufferTarget(lightCount),
@@ -1006,6 +1037,9 @@ export function useFeedViewModel() {
       const existingVideoIds = new Set(
         videoPostsRef.current.map(post => post.id),
       );
+      const isRequestCurrent = () =>
+        paginationGenerationRef.current === generationAtRequest &&
+        feedSourceRef.current === sourceAtRequest;
       const prepareVideoQueue = async () => {
         let fetchedCount = 0;
         let queuedVideos = videoCandidateQueueRef.current.filter(
@@ -1013,11 +1047,18 @@ export function useFeedViewModel() {
         );
 
         if (queuedVideos.length === 0 || forceNewest) {
-          const nextVideos = await repository.getVideoPosts(
+          if (!forceNewest && hasReachedVideoEndRef.current) return;
+          const page = await repository.getVideoPostsPage(
             VIDEO_PAGE_SIZE * 2,
             cursor,
-            feedSourceRef.current,
+            sourceAtRequest,
+            3,
           );
+          if (!isRequestCurrent()) return;
+          const nextVideos = [
+            ...page.posts,
+            ...(page.prefetchedPosts ?? []),
+          ];
           fetchedCount = nextVideos.length;
           const newCandidates = nextVideos.filter(post => {
             if (existingVideoIds.has(post.id)) return false;
@@ -1042,13 +1083,16 @@ export function useFeedViewModel() {
           });
           videoCandidateQueueRef.current = queuedVideos;
 
-          // Advance only after every fetched candidate has been retained in
-          // the local queue. Preparing two posters must not discard the rest
-          // of a 24-video network page.
-          const lastFetchedVideo = nextVideos[nextVideos.length - 1];
-          if (lastFetchedVideo?.id) {
-            videoFetchCursorRef.current = lastFetchedVideo.id;
-          }
+          // Advance with the raw feed cursor even when this scan contains no
+          // videos. Otherwise a sparse text-only window is fetched forever
+          // and the deep feed silently runs out of video candidates.
+          const cursorState = resolveFeedVideoPageCursor({
+            currentCursor: cursor,
+            nextCursor: page.nextCursor,
+            reachedEnd: page.reachedEnd,
+          });
+          videoFetchCursorRef.current = cursorState.nextCursor;
+          hasReachedVideoEndRef.current = cursorState.reachedEnd;
         } else {
           videoCandidateQueueRef.current = queuedVideos;
         }
@@ -1065,6 +1109,7 @@ export function useFeedViewModel() {
           videosToPrepare,
           prepareLimit,
         );
+        if (!isRequestCurrent()) return;
         const readyVideoIds = new Set(readyVideos.map(post => post.id));
 
         videosToPrepare.forEach(post => {
@@ -1105,15 +1150,30 @@ export function useFeedViewModel() {
 
       void prepareVideoQueue()
         .catch(err => {
+          if (!isRequestCurrent()) return;
           // Video is a secondary lane; a failure must not blank or block feed.
           console.warn('[feed] video background fetch failed:', err);
         })
         .finally(() => {
           isFetchingVideosRef.current = false;
+          const pendingRequest = pendingVideoBufferRequestRef.current;
+          pendingVideoBufferRequestRef.current = null;
+          if (
+            pendingRequest &&
+            paginationGenerationRef.current === pendingRequest.generation &&
+            feedSourceRef.current === pendingRequest.source
+          ) {
+            ensureVideoBufferRef.current(
+              pendingRequest.lightCount,
+              pendingRequest.forceNewest,
+            );
+          }
         });
     },
     [commitFeedSources],
   );
+
+  ensureVideoBufferRef.current = ensureVideoBuffer;
 
   const scheduleVideoBuffer = useCallback(
     (lightCount: number, forceNewest = false) => {
@@ -1142,10 +1202,20 @@ export function useFeedViewModel() {
    */
   const schedulePrefetchRefill = useCallback(
     (delayMs = PREFETCH_REFILL_DELAY_MS) => {
-      if (prefetchRefillTimerRef.current) return;
+      if (isDisposedRef.current) return;
+
+      const normalizedDelay = Math.max(0, delayMs);
+      const candidateDeadline = Date.now() + normalizedDelay;
+      if (prefetchRefillTimerRef.current) {
+        if (prefetchRefillDeadlineRef.current <= candidateDeadline) return;
+        clearTimeout(prefetchRefillTimerRef.current);
+      }
+      prefetchRefillDeadlineRef.current = candidateDeadline;
 
       prefetchRefillTimerRef.current = setTimeout(() => {
         prefetchRefillTimerRef.current = null;
+        prefetchRefillDeadlineRef.current = 0;
+        if (isDisposedRef.current) return;
         if (
           isScrollBusyRef.current ||
           prefetchPromiseRef.current ||
@@ -1157,7 +1227,7 @@ export function useFeedViewModel() {
         }
 
         void prefetchNextPageRef.current();
-      }, delayMs);
+      }, normalizedDelay);
     },
     [],
   );
@@ -1165,6 +1235,7 @@ export function useFeedViewModel() {
   schedulePrefetchRefillRef.current = schedulePrefetchRefill;
 
   const prefetchNextPage = useCallback(() => {
+    if (isDisposedRef.current) return null;
     if (isScrollBusyRef.current) {
       schedulePrefetchRefillRef.current();
       return null;
@@ -1229,6 +1300,7 @@ export function useFeedViewModel() {
           return;
         }
 
+        prefetchRetryAttemptRef.current = 0;
         const filtered = [
           ...page.posts,
           ...(page.prefetchedPosts ?? []),
@@ -1301,7 +1373,10 @@ export function useFeedViewModel() {
         console.warn('[feed] prefetch failed:', err);
         // Transport failures are retryable and must never be interpreted as
         // proof that the server has no more posts.
-        refillDelayAfterRequest = PREFETCH_RETRY_DELAY_MS;
+        prefetchRetryAttemptRef.current += 1;
+        refillDelayAfterRequest = getFeedPrefetchRetryDelay(
+          prefetchRetryAttemptRef.current,
+        );
       })
       .finally(() => {
         // Only clear the ref if this is still the active request. A refresh
@@ -1334,12 +1409,14 @@ export function useFeedViewModel() {
       // guard prevents stale posts from being inserted into the new feed.
       const generation = paginationGenerationRef.current + 1;
       paginationGenerationRef.current = generation;
+      prefetchRetryAttemptRef.current = 0;
       const sourceAtLoad = feedSourceRef.current;
       prefetchPromiseRef.current = null;
       prefetchCursorRef.current = undefined;
       if (prefetchRefillTimerRef.current) {
         clearTimeout(prefetchRefillTimerRef.current);
         prefetchRefillTimerRef.current = null;
+        prefetchRefillDeadlineRef.current = 0;
       }
       if (warmVisibleFillTimerRef.current) {
         clearTimeout(warmVisibleFillTimerRef.current);
@@ -1361,6 +1438,7 @@ export function useFeedViewModel() {
         emptyPageStrikeRef.current = 0;
       }
       videoFetchCursorRef.current = undefined;
+      hasReachedVideoEndRef.current = false;
       videoCandidateIdsRef.current = new Set(
         videoPostsRef.current.map(post => post.id),
       );
@@ -1526,6 +1604,7 @@ export function useFeedViewModel() {
       lightPostsRef.current = [];
       videoPostsRef.current = [];
       videoFetchCursorRef.current = undefined;
+      hasReachedVideoEndRef.current = false;
       videoCandidateIdsRef.current = new Set();
       videoCandidateQueueRef.current = [];
       videoPrepareRetryCountRef.current.clear();
@@ -1604,12 +1683,6 @@ export function useFeedViewModel() {
   );
 
   const loadMorePosts = useCallback(async () => {
-    if (isScrollBusyRef.current) {
-      pendingLoadMoreDuringScrollRef.current = true;
-      return;
-    }
-    pendingLoadMoreDuringScrollRef.current = false;
-
     let currentLightPosts = lightPostsRef.current;
     const hasAnyFeedRows =
       currentLightPosts.length > 0 ||
@@ -1735,6 +1808,7 @@ export function useFeedViewModel() {
       ) {
         return;
       }
+      prefetchRetryAttemptRef.current = 0;
       const olderPosts = [
         ...page.posts,
         ...(page.prefetchedPosts ?? []),
@@ -1870,10 +1944,13 @@ export function useFeedViewModel() {
 
   useEffect(() => {
     return () => {
+      isDisposedRef.current = true;
+      paginationGenerationRef.current += 1;
       videoBufferTaskRef.current?.cancel();
       if (prefetchRefillTimerRef.current) {
         clearTimeout(prefetchRefillTimerRef.current);
         prefetchRefillTimerRef.current = null;
+        prefetchRefillDeadlineRef.current = 0;
       }
       if (warmVisibleFillTimerRef.current) {
         clearTimeout(warmVisibleFillTimerRef.current);
