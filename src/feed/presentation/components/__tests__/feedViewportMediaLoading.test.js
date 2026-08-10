@@ -21,12 +21,14 @@ describe('Home feed retained media loading', () => {
     expect(feedScreenSource).toContain('loadMedia={mediaVisible}');
     expect(feedScreenSource).toContain('FEED_MEDIA_MOUNT_AHEAD_ITEMS');
     expect(feedScreenSource).toContain("item.post.kind === 'text'");
+    expect(feedScreenSource).toContain("item.post.kind === 'video'");
+    expect(feedScreenSource).toContain(
+      'FEED_VIDEO_MEDIA_MOUNT_AHEAD_ITEMS = 1',
+    );
     expect(postCardsSource).toContain(
       'const mediaEnabled = !deferMediaUntilVisible || trackedMediaVisible;',
     );
-    expect(feedScreenSource).toContain(
-      'decelerationRate={FEED_SCROLL_DECELERATION_RATE}',
-    );
+    expect(feedScreenSource).not.toContain('decelerationRate=');
   });
 
   it('does not let completed prefetches mount offscreen images', () => {
@@ -115,5 +117,11 @@ describe('Home feed retained media loading', () => {
     expect(singleImageSource).not.toContain(
       'InteractionManager.runAfterInteractions',
     );
+    const legacyMeasurementSource = singleImageSource.slice(
+      singleImageSource.indexOf('Image.getSize('),
+      singleImageSource.indexOf('return () =>', singleImageSource.indexOf('Image.getSize(')),
+    );
+    expect(legacyMeasurementSource).not.toContain('setAspectRatio(');
+    expect(singleImageSource).toContain('geometry?: FeedMediaGeometry;');
   });
 });

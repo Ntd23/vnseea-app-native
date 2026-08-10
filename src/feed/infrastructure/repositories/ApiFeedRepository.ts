@@ -1,6 +1,6 @@
 // Description: Implements feed repository calls against WoWonder APIs for all-post and following streams.
 //
-// Pulls video posts for the home feed via WoWonder's `/api/posts`. Key
+// Builds the canonical Home timeline from WoWonder's `/api/posts`. Key
 // gotchas this file handles:
 //
 //   • `get_news_feed` only returns posts from accounts the viewer follows.
@@ -15,9 +15,8 @@
 //     common video extensions anywhere in the URL AND any post whose
 //     `postType === 'video'` (WoWonder's own server-side flag).
 //
-//   • Default limit was 6 — too small. Bumped to 20 so the chance of all
-//     six being non-video and the user seeing an empty feed is dramatically
-//     lower.
+//   • Video rows must remain in the same cursor page and chronological order
+//     as text/photo rows. Poster availability is a rendering concern only.
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { ApiBridgeError } from '../../../shared-kernel/application/api/apiResponse';
@@ -52,6 +51,7 @@ import type {
   CreatePostResult,
   FeedGroupContext,
   FeedLiveContext,
+  FeedMediaGeometry,
   FeedPost,
   FeedPublisher,
   FeedAdPost,
@@ -829,6 +829,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     // relative media paths. normalizePlayableMediaUrl handles both.
     videoUrl,
     thumbnailUrl,
+    mediaGeometry: extractMediaGeometry(raw),
     postedAt: readNumber(raw, 'time') || undefined,
     likeCount,
     commentCount: readNumber(raw, 'post_comments', 'commentCount'),
@@ -1007,12 +1008,34 @@ function looksLikeGeneratedSmallImage(url: string): boolean {
   return GENERATED_SMALL_IMAGE_PATTERN.test(url);
 }
 
-function extractPhotoUrls(raw: Record<string, unknown>): string[] {
-  const urls: string[] = [];
+function extractMediaGeometry(
+  raw: Record<string, unknown>,
+): FeedMediaGeometry | undefined {
+  const nested =
+    raw.media_geometry &&
+    typeof raw.media_geometry === 'object' &&
+    !Array.isArray(raw.media_geometry)
+      ? (raw.media_geometry as Record<string, unknown>)
+      : raw;
+  const width = readNumber(nested, 'width', 'media_width');
+  const height = readNumber(nested, 'height', 'media_height');
+  if (width <= 0 || height <= 0) return undefined;
+
+  return { width, height, aspectRatio: width / height };
+}
+
+type ExtractedPhotoMedia = {
+  url: string;
+  geometry?: FeedMediaGeometry;
+};
+
+function extractPhotoMedia(raw: Record<string, unknown>): ExtractedPhotoMedia[] {
+  const media: ExtractedPhotoMedia[] = [];
 
   const tryPush = (
     url: string | undefined,
     allowExtensionlessHostedImage = false,
+    geometry?: FeedMediaGeometry,
   ) => {
     if (!url) return;
     const fullUrl = normalizeMediaUrl(url);
@@ -1028,12 +1051,16 @@ function extractPhotoUrls(raw: Record<string, unknown>): string[] {
     ) {
       return;
     }
-    if (urls.includes(fullUrl)) return;
-    urls.push(fullUrl);
+    const existing = media.find(item => item.url === fullUrl);
+    if (existing) {
+      if (!existing.geometry && geometry) existing.geometry = geometry;
+      return;
+    }
+    media.push({ url: fullUrl, geometry });
   };
 
   // Path 1: single-photo post
-  tryPush(readString(raw, 'postFile'));
+  tryPush(readString(raw, 'postFile'), false, extractMediaGeometry(raw));
 
   // Path 4: link-preview / imported image
   tryPush(readString(raw, 'postPhoto'), true);
@@ -1074,15 +1101,23 @@ function extractPhotoUrls(raw: Record<string, unknown>): string[] {
         // after that so installs that surface photos under another name still
         // work.
         if (preferredImage) {
-          tryPush(preferredImage, true);
+          tryPush(preferredImage, true, extractMediaGeometry(obj));
         } else {
-          tryPush(readString(obj, 'url', 'source', 'src', 'photo'), true);
+          tryPush(
+            readString(obj, 'url', 'source', 'src', 'photo'),
+            true,
+            extractMediaGeometry(obj),
+          );
         }
       }
     }
   }
 
-  return urls;
+  return media;
+}
+
+function extractPhotoUrls(raw: Record<string, unknown>): string[] {
+  return extractPhotoMedia(raw).map(item => item.url);
 }
 
 // ── Feeling extraction ───────────────────────────────────────────────────
@@ -1255,7 +1290,8 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
 
   const privacyResult = presentation.privacy;
   const privacy: PostPrivacy = privacyResult.audience;
-  const photos = extractPhotoUrls(raw);
+  const photoMedia = extractPhotoMedia(raw);
+  const photos = photoMedia.map(item => item.url);
   const caption = readPostCaption(raw) || undefined;
 
   return {
@@ -1271,6 +1307,7 @@ function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
     taggedUsers: extractTaggedUsers(raw),
     location: extractPostLocation(raw),
     photos,
+    photoGeometries: photoMedia.map(item => item.geometry ?? null),
     audioUrl: AUDIO_URL_PATTERN.test(readString(raw, 'postFile'))
       ? readString(raw, 'postFile')
       : undefined,
@@ -2635,17 +2672,17 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
     } else if (looksLikeJobPost(item)) {
       posts.push(mapJobPost(item));
       buckets.job += 1;
+    } else if (looksLikeVideo(item)) {
+      // Videos are canonical timeline rows. Their poster may load later, but
+      // that must never decide whether the post exists in the Feed.
+      posts.push(mapVideoPost(item));
+      buckets.video += 1;
     } else if (looksLikePoll(item)) {
       posts.push(mapPollPost(item));
       buckets.poll += 1;
     } else if (looksLikeTextOrPhoto(item)) {
       posts.push(mapTextPost(item));
       buckets.text += 1;
-    } else if (looksLikeVideo(item)) {
-      // Light feed ViewModel further filters videos via
-      // `isLightFeedPost`, so this branch is where they exit the
-      // light pipeline.
-      buckets.video += 1;
     } else {
       // Stub posts (system messages, fully-empty shell posts, etc.)
       // that pass no classifier — these are the silent drops we
@@ -2767,6 +2804,8 @@ export function createFeedRepository(): FeedRepository {
           posts.push(mapAdPost(item));
         } else if (looksLikeJobPost(item)) {
           posts.push(mapJobPost(item));
+        } else if (looksLikeVideo(item)) {
+          posts.push(mapVideoPost(item));
         } else if (looksLikePoll(item)) {
           posts.push(mapPollPost(item));
         } else if (looksLikeTextOrPhoto(item)) {
@@ -3009,6 +3048,11 @@ export function createFeedRepository(): FeedRepository {
       // file under `postPhotos[]` so PHP receives them as
       // `$_FILES['postPhotos']['name'][i]` regardless of count.
       if (draft.photos.length > 0) {
+        const photoMediaGeometry = draft.photos.map(photo => {
+          const width = Math.round(Number(photo.width));
+          const height = Math.round(Number(photo.height));
+          return width > 0 && height > 0 ? { width, height } : null;
+        });
         payload.postPhotos = draft.photos.map((photo, index) => ({
           uri: photo.uri,
           name: createSafeUploadFileName({
@@ -3019,6 +3063,13 @@ export function createFeedRepository(): FeedRepository {
           }),
           type: photo.type,
         }));
+        if (photoMediaGeometry.some(Boolean)) {
+          payload.photo_media_geometry = JSON.stringify(photoMediaGeometry);
+        }
+        if (draft.photos.length === 1 && photoMediaGeometry[0]) {
+          payload.media_width = photoMediaGeometry[0].width;
+          payload.media_height = photoMediaGeometry[0].height;
+        }
         // When uploading >1 photo, WoWonder requires an `album_name` so
         // it can group the files. The album_name is shown as the post
         // title on the website but our mobile UI ignores it — we pass a
@@ -3050,6 +3101,8 @@ export function createFeedRepository(): FeedRepository {
       // `postVideo[]`) since WoWonder expects a single file under
       // that key.
       if (draft.video) {
+        const mediaWidth = Math.round(Number(draft.video.width));
+        const mediaHeight = Math.round(Number(draft.video.height));
         payload.postVideo = {
           uri: draft.video.uri,
           name: createSafeUploadFileName({
@@ -3075,6 +3128,10 @@ export function createFeedRepository(): FeedRepository {
         // Mark this as a video post so the feed mapper and the
         // homepage's `looksLikeVideo` classifier both pick it up.
         payload.postType = 'video';
+        if (mediaWidth > 0 && mediaHeight > 0) {
+          payload.media_width = mediaWidth;
+          payload.media_height = mediaHeight;
+        }
       }
 
       if (draft.linkPreview) {

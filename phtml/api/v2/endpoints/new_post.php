@@ -143,6 +143,24 @@ $image_array   = array();
 $single_photo_uploaded = false;
 $should_register_album_photos = false;
 $created_post_media_files = array();
+$post_media_geometry = VNSEEA_NormalizeMediaGeometry(
+    isset($_POST['media_width']) ? $_POST['media_width'] : 0,
+    isset($_POST['media_height']) ? $_POST['media_height'] : 0
+);
+$photo_media_geometries = VNSEEA_NormalizeMediaGeometryList(
+    isset($_POST['photo_media_geometry']) ? $_POST['photo_media_geometry'] : array()
+);
+if (!empty($_FILES['postPhotos']['tmp_name']) && is_array($_FILES['postPhotos']['tmp_name'])) {
+    foreach ($_FILES['postPhotos']['tmp_name'] as $index => $tmp_name) {
+        $detected_geometry = VNSEEA_ReadImageMediaGeometry($tmp_name);
+        if ($detected_geometry) {
+            $photo_media_geometries[(int) $index] = $detected_geometry;
+        }
+    }
+    if (count($_FILES['postPhotos']['tmp_name']) === 1 && !empty($photo_media_geometries[0])) {
+        $post_media_geometry = $photo_media_geometries[0];
+    }
+}
 $cleanup_created_post_media = function () use (&$created_post_media_files) {
     foreach (array_unique(array_filter($created_post_media_files)) as $path) {
         Wo_DeleteFromToS3($path);
@@ -248,6 +266,10 @@ if (isset($_POST['recipient_id']) && !empty($_POST['recipient_id'])) {
     }
 }
 if (isset($_FILES['postFile']['name'])) {
+    $generic_image_geometry = VNSEEA_ReadImageMediaGeometry($_FILES['postFile']['tmp_name']);
+    if ($generic_image_geometry) {
+        $post_media_geometry = $generic_image_geometry;
+    }
     $fileInfo = array(
         'file' => $_FILES["postFile"]["tmp_name"],
         'name' => $_FILES['postFile']['name'],
@@ -267,6 +289,12 @@ if (isset($_FILES['postFile']['name'])) {
 $not_video = true;
 $ffmpeg_convert_video = '';
 if (isset($_FILES['postVideo']['name']) && empty($mediaFilename)) {
+    if (!$post_media_geometry) {
+        $post_media_geometry = VNSEEA_ProbeVideoMediaGeometry(
+            $_FILES['postVideo']['tmp_name'],
+            isset($wo['config']['ffmpeg_binary_file']) ? $wo['config']['ffmpeg_binary_file'] : ''
+        );
+    }
     $mimeType = mime_content_type($_FILES['postVideo']['tmp_name']);
     $fileType = explode('/', $mimeType)[0]; // video|image
     if ($fileType === 'video' && Wo_IsFfmpegFileAllowed($_FILES['postVideo']['name']) && !Wo_IsVideoNotAllowedMime($_FILES["postVideo"]["type"])) {
@@ -587,6 +615,10 @@ if (empty($error_message)) {
         'time' => time(),
         'multi_image_post' => 0,
     );
+    if ($post_media_geometry && VNSEEA_PostMediaGeometryColumnsAvailable()) {
+        $post_data['media_width'] = (int) $post_media_geometry['width'];
+        $post_data['media_height'] = (int) $post_media_geometry['height'];
+    }
     if (isset($_POST['postSticker']) && Wo_IsUrl($_POST['postSticker']) && empty($_FILES) && empty($_POST['postRecord'])) {
         $_POST['postSticker'] = preg_replace('/on[^<>=]+=[^<>]*/m', '', $_POST['postSticker']);
         $_POST['postSticker'] = preg_replace('/\((.*?)\)/m', '', $_POST['postSticker']);
@@ -715,7 +747,12 @@ if (empty($error_message)) {
                     $file     = Wo_ShareFile($fileInfo, 1);
                     if (!empty($file)) {
                         $created_post_media_files[] = $file['filename'];
-                        $media_album = Wo_RegisterAlbumMedia($id, $file['filename']);
+                        $media_album = Wo_RegisterAlbumMedia(
+                            $id,
+                            $file['filename'],
+                            0,
+                            isset($photo_media_geometries[$i]) ? $photo_media_geometries[$i] : null
+                        );
                         if (!$media_album) {
                             $post_dependencies_valid = false;
                             $post_dependency_error = 'post_media_save_failed';

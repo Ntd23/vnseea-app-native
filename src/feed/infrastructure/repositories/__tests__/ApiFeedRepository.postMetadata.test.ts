@@ -56,6 +56,7 @@ describe('ApiFeedRepository post metadata', () => {
         postType: 'video',
         postFile: 'https://demo.vnseea.vn/post.mp4',
         postFileThumb: 'https://demo.vnseea.vn/post.jpg',
+        media_geometry: { width: 1920, height: 1080 },
         postText: 'Xin chào',
         postPrivacy: '0',
         privacy_contract: 'audience_v2',
@@ -90,6 +91,8 @@ describe('ApiFeedRepository post metadata', () => {
         uri: 'file:///post.mp4',
         name: 'post.mp4',
         type: 'video/mp4',
+        width: 1920,
+        height: 1080,
       },
       privacy: 'public',
       isAnonymous: true,
@@ -118,9 +121,16 @@ describe('ApiFeedRepository post metadata', () => {
       feeling_type: 'feelings',
       feeling: 'happy',
       is_anonymous: '0',
+      media_width: 1920,
+      media_height: 1080,
     });
     expect(result.post).toMatchObject({
       kind: 'video',
+      mediaGeometry: {
+        width: 1920,
+        height: 1080,
+        aspectRatio: 16 / 9,
+      },
       feeling: { type: 'feelings', value: 'happy' },
       location: { label: 'Hà Nội' },
       taggedUsers: [
@@ -135,6 +145,67 @@ describe('ApiFeedRepository post metadata', () => {
           name: 'Trần Văn B',
           username: 'tranvanb',
         },
+      ],
+    });
+  });
+
+  it('keeps ordered photo geometry in upload payloads and mapped posts', async () => {
+    (backendApi.multipart as jest.Mock).mockResolvedValue({
+      api_status: 200,
+      post_data: {
+        id: '94',
+        post_id: '94',
+        user_id: '1',
+        postPrivacy: '0',
+        album_name: 'Post',
+        photo_album: [
+          {
+            image: 'https://demo.vnseea.vn/a.jpg',
+            media_geometry: { width: 1200, height: 800 },
+          },
+          {
+            image: 'https://demo.vnseea.vn/b.jpg',
+            media_geometry: { width: 900, height: 1200 },
+          },
+        ],
+        time: '1781712000',
+        postLikes: '0',
+        post_comments: '0',
+        publisher,
+      },
+    });
+
+    const result = await createFeedRepository().createPost({
+      text: '',
+      photos: [
+        {
+          uri: 'file:///a.jpg',
+          name: 'a.jpg',
+          type: 'image/jpeg',
+          width: 1200,
+          height: 800,
+        },
+        {
+          uri: 'file:///b.jpg',
+          name: 'b.jpg',
+          type: 'image/jpeg',
+          width: 900,
+          height: 1200,
+        },
+      ],
+      privacy: 'public',
+    });
+    const payload = (backendApi.multipart as jest.Mock).mock.calls[0][1];
+
+    expect(JSON.parse(payload.photo_media_geometry)).toEqual([
+      { width: 1200, height: 800 },
+      { width: 900, height: 1200 },
+    ]);
+    expect(result.post).toMatchObject({
+      kind: 'text',
+      photoGeometries: [
+        { width: 1200, height: 800, aspectRatio: 1.5 },
+        { width: 900, height: 1200, aspectRatio: 0.75 },
       ],
     });
   });

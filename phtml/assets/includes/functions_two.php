@@ -3973,7 +3973,7 @@ function Wo_CountGroupRequests($group_id) {
     }
     return false;
 }
-function Wo_RegisterAlbumMedia($id, $media, $parent_id = 0) {
+function Wo_RegisterAlbumMedia($id, $media, $parent_id = 0, $geometry = null) {
     global $wo, $sqlConnect;
     if (empty($id) or !is_numeric($id) or $id < 1) {
         return false;
@@ -3984,7 +3984,18 @@ function Wo_RegisterAlbumMedia($id, $media, $parent_id = 0) {
     if (!empty($parent_id) && is_numeric($parent_id) && $parent_id > 0) {
         $parent_id = Wo_Secure($parent_id);
     }
-    $query_one = mysqli_query($sqlConnect, "INSERT INTO " . T_ALBUMS_MEDIA . " (`post_id`,`image`,`parent_id`) VALUES ({$id}, '{$media}','{$parent_id}')");
+    $geometry = VNSEEA_MediaGeometryPayload(array('media_geometry' => $geometry));
+    if (!$geometry) {
+        $geometry = VNSEEA_ReadImageMediaGeometry($media);
+    }
+    $media = Wo_Secure($media, 0);
+    if ($geometry && VNSEEA_AlbumMediaGeometryColumnsAvailable()) {
+        $width = (int) $geometry['width'];
+        $height = (int) $geometry['height'];
+        $query_one = mysqli_query($sqlConnect, "INSERT INTO " . T_ALBUMS_MEDIA . " (`post_id`,`image`,`parent_id`,`media_width`,`media_height`) VALUES ({$id}, '{$media}','{$parent_id}',{$width},{$height})");
+    } else {
+        $query_one = mysqli_query($sqlConnect, "INSERT INTO " . T_ALBUMS_MEDIA . " (`post_id`,`image`,`parent_id`) VALUES ({$id}, '{$media}','{$parent_id}')");
+    }
     if ($query_one) {
         return true;
     }
@@ -3993,9 +4004,12 @@ function Wo_GetAlbumPhotos($post_id) {
     global $wo, $sqlConnect;
     $data        = array();
     $post_id     = Wo_Secure($post_id);
-    $query_one   = "SELECT `id`,`image`,`post_id`,`parent_id` FROM " . T_ALBUMS_MEDIA . " WHERE `post_id` = {$post_id} ORDER BY `id` DESC";
+    $geometry_columns = VNSEEA_AlbumMediaGeometryColumnsAvailable()
+        ? ',`media_width`,`media_height`'
+        : '';
+    $query_one   = "SELECT `id`,`image`,`post_id`,`parent_id`{$geometry_columns} FROM " . T_ALBUMS_MEDIA . " WHERE `post_id` = {$post_id} ORDER BY `id` DESC";
     $sql         = mysqli_query($sqlConnect, $query_one);
-    $query_2     = "SELECT `id`,`image`,`post_id`,`parent_id` FROM " . T_ALBUMS_MEDIA . " WHERE `parent_id` = {$post_id} ORDER BY `id` DESC";
+    $query_2     = "SELECT `id`,`image`,`post_id`,`parent_id`{$geometry_columns} FROM " . T_ALBUMS_MEDIA . " WHERE `parent_id` = {$post_id} ORDER BY `id` DESC";
     $sql2        = mysqli_query($sqlConnect, $query_2);
     $images_data = array();
     if (mysqli_num_rows($sql2)) {
@@ -4014,6 +4028,7 @@ function Wo_GetAlbumPhotos($post_id) {
             $explode3                  = @explode(".", $fetched_data["image"]);
             $fetched_data["image_org"] = $explode3[0] . "_small." . $explode2;
             $fetched_data["image"]     = Wo_GetMedia($fetched_data["image"]);
+            $fetched_data['media_geometry'] = VNSEEA_MediaGeometryPayload($fetched_data);
             $data[]                    = $fetched_data;
         }
     }

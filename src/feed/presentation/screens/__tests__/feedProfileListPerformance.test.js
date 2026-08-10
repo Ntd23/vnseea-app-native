@@ -41,19 +41,9 @@ describe('Feed and profile list performance contracts', () => {
     expect(profileSource).not.toContain('SCREEN_HEIGHT * 5.5');
   });
 
-  it('shortens fling momentum and loads profile posts before the tail is visible', () => {
-    expect(feedSource).toContain(
-      'const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.88 : 0.985',
-    );
-    expect(feedSource).toContain(
-      'decelerationRate={FEED_SCROLL_DECELERATION_RATE}',
-    );
-    expect(profileSource).toContain(
-      'const PROFILE_SCROLL_DECELERATION_RATE = PROFILE_IS_ANDROID ? 0.88 : 0.985',
-    );
-    expect(profileSource).toContain(
-      'decelerationRate={PROFILE_SCROLL_DECELERATION_RATE}',
-    );
+  it('keeps native fling momentum and loads profile posts before the tail is visible', () => {
+    expect(feedSource).not.toContain('decelerationRate=');
+    expect(profileSource).not.toContain('decelerationRate=');
     expect(profileSource).toContain(
       'PROFILE_POST_EARLY_LOAD_DISTANCE_MULTIPLIER',
     );
@@ -62,15 +52,28 @@ describe('Feed and profile list performance contracts', () => {
     expect(profileSource).not.toContain('onEndReachedThreshold={0.35}');
   });
 
-  it('defers pagination work until momentum settles and limits each gesture', () => {
-    expect(feedSource).toContain('pendingLoadMoreDuringScrollRef');
-    expect(feedSource).toContain('loadMoreConsumedForGestureRef');
+  it('keeps the feed runway active during momentum and defers supplemental rows', () => {
+    expect(feedSource).toContain('pendingSupplementalLoadMoreRef');
+    expect(feedSource).toContain(
+      'supplementalLoadMoreConsumedForGestureRef',
+    );
     expect(feedSource).toContain('flushPendingLoadMoreRef.current()');
     expect(feedSource).toContain('const LOAD_MORE_THROTTLE_MS = 1200');
-    expect(feedViewModelSource).toContain('if (isScrollBusyRef.current) {');
-    expect(feedViewModelSource).toContain(
-      'pendingLoadMoreDuringScrollRef.current = true;',
+    expect(feedSource).toContain('reconcileFeedTailRunway');
+    expect(feedSource).toContain('recomputeViewableItems()');
+    expect(feedSource).toContain(
+      'onContentSizeChange={handleFeedContentSizeChange}',
     );
+    const loadMoreStart = feedViewModelSource.indexOf(
+      'const loadMorePosts = useCallback',
+    );
+    const loadMoreEnd = feedViewModelSource.indexOf(
+      'loadMorePostsRef.current = loadMorePosts',
+      loadMoreStart,
+    );
+    expect(
+      feedViewModelSource.slice(loadMoreStart, loadMoreEnd),
+    ).not.toContain('if (isScrollBusyRef.current)');
     expect(profileSource).toContain('pendingProfileLoadMoreRef');
     expect(profileSource).toContain('profileLoadMoreConsumedForGestureRef');
     expect(profileSource).toContain(
@@ -140,5 +143,22 @@ describe('Feed and profile list performance contracts', () => {
     expect(footerSource).toContain('isFeedAllLoaded,');
     expect(footerSource).toContain('isFeedLoadingMore,');
     expect(footerSource).toContain('vm.error,');
+  });
+
+  it('keeps cold-start cache overflow in the runway instead of mounting it all', () => {
+    expect(feedViewModelSource).toContain(
+      'const initialPosts = initialCandidates.slice(',
+    );
+    expect(feedViewModelSource).toContain('HOME_VISIBLE_WARM_TARGET,');
+    expect(feedViewModelSource).toContain('const cachedOverflow =');
+    expect(feedViewModelSource).toContain(
+      'uniqueById([...cachedOverflow, ...prefetchedPosts])',
+    );
+    expect(feedSource).toContain(
+      'const FEED_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 3 : 4',
+    );
+    expect(feedSource).toContain(
+      'const MAX_PENDING_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 10 : 14',
+    );
   });
 });
