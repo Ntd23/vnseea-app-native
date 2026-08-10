@@ -136,8 +136,8 @@ export interface FeedRepository {
   getLatestPosts(limit?: number, source?: FeedSource): Promise<FeedPost[]>;
 
   /**
-   * Fetch only lightweight feed posts (text/photo/poll/ad). Home uses this
-   * first so the user sees content before heavier video/media pages finish.
+   * Compatibility name for the canonical Home timeline. The page includes
+   * video rows immediately; native media players are mounted lazily by UI.
    */
   getLightPosts(
     limit?: number,
@@ -148,7 +148,7 @@ export interface FeedRepository {
   /**
    * Cursor-aware variant used by Home. The cursor is derived from the
    * primary news-feed stream, not from the last rendered item, because
-   * Home mixes discovery/live/product/video cards into the visible list.
+   * Home mixes discovery/live/product cards into the visible list.
    */
   getLightPostsPage(
     limit?: number,

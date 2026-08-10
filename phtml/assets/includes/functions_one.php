@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/vnseea_media_url.php';
+require_once __DIR__ . '/vnseea_post_media.php';
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -7159,12 +7160,31 @@ function Wo_CheckIfUserCanRegister($num = 10)
 
 function Wo_RegisterPost($re_data = array('recipient_id' => 0))
 {
-    error_log(print_r($re_data, true));
-
     global $wo, $sqlConnect;
+    if (array_key_exists('postFileName', $re_data)) {
+        $re_data['postFileName'] = VNSEEA_NormalizePostFileName($re_data['postFileName']);
+    }
     $privacy = VNSEEA_NormalizePostPrivacyRequest($re_data);
     $re_data['postPrivacy'] = $privacy['postPrivacy'];
     $re_data['is_anonymous'] = $privacy['is_anonymous'];
+    if (
+        !empty($re_data['postFile'])
+        && VNSEEA_PostMediaGeometryColumnsAvailable()
+        && !VNSEEA_MediaGeometryPayload($re_data)
+    ) {
+        $geometry = VNSEEA_ReadImageMediaGeometry($re_data['postFile']);
+        $extension = strtolower((string) pathinfo($re_data['postFile'], PATHINFO_EXTENSION));
+        if (!$geometry && in_array($extension, array('mp4', 'm4v', 'webm', 'flv', 'mov', 'mpeg', 'mkv'), true)) {
+            $geometry = VNSEEA_ProbeVideoMediaGeometry(
+                $re_data['postFile'],
+                isset($wo['config']['ffmpeg_binary_file']) ? $wo['config']['ffmpeg_binary_file'] : ''
+            );
+        }
+        if ($geometry) {
+            $re_data['media_width'] = (int) $geometry['width'];
+            $re_data['media_height'] = (int) $geometry['height'];
+        }
+    }
     if ($wo['config']['website_mode'] == 'instagram' && empty($re_data['postFile']) && empty($re_data['multi_image']) && empty($re_data['postSticker']) && empty($re_data['product_id']) && empty($re_data['album_name'])) {
         if (!preg_match('%(?:youtube(?:-nocookie)?\.com/(?:[^/]+/.+/|(?:v|e(?:mbed)?)/|.*[?&]v=)|youtu\.be/)([^"&?/ ]{11})%i', $re_data["postText"])) {
             header("Content-type: application/json");
@@ -7689,9 +7709,12 @@ function VNSEEA_PrimePostAlbumMediaBatch($rows)
     $primary = array();
     $aliases = array();
     $ids_sql = implode(',', $parent_ids);
+    $geometry_columns = VNSEEA_AlbumMediaGeometryColumnsAvailable()
+        ? ', `media_width`, `media_height`'
+        : '';
     $query = mysqli_query(
         $sqlConnect,
-        'SELECT `id`, `image`, `post_id`, `parent_id` FROM ' . T_ALBUMS_MEDIA .
+        'SELECT `id`, `image`, `post_id`, `parent_id`' . $geometry_columns . ' FROM ' . T_ALBUMS_MEDIA .
         " WHERE `post_id` IN ({$ids_sql}) OR `parent_id` IN ({$ids_sql}) ORDER BY `id` DESC"
     );
     if (!$query) {
@@ -7724,6 +7747,7 @@ function VNSEEA_PrimePostAlbumMediaBatch($rows)
             $extension = count($parts) > 1 ? end($parts) : '';
             $media['image_org'] = $parts[0] . '_small' . ($extension !== '' ? '.' . $extension : '');
             $media['image'] = Wo_GetMedia($image);
+            $media['media_geometry'] = VNSEEA_MediaGeometryPayload($media);
             $albums[$parent_id][] = $media;
         }
     }
@@ -8505,6 +8529,7 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
         }
     }
 
+    $story['media_geometry'] = VNSEEA_MediaGeometryPayload($story);
     $story['privacy_contract'] = 'audience_v2';
     $story['is_anonymous'] = VNSEEA_IsAnonymousPost($story) ? 1 : 0;
     $story['is_owner'] = $viewer_id > 0 && !empty($story['user_id']) && (int) $story['user_id'] === $viewer_id;

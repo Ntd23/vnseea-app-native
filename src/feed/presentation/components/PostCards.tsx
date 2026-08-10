@@ -61,6 +61,7 @@ import {
 import { useLiveMediaActive } from '../../../shared-kernel/application/state/liveMediaPlaybackIsolation';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
+  FeedMediaGeometry,
   FeedPost,
   FeedTextPost,
   FeedVideoPost,
@@ -114,6 +115,7 @@ import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
 import { PostTaggedUsersSheet } from './PostTaggedUsersSheet';
 import { parseSharedPageMessage } from '../../../messages/application/shared-pages/sharedPageMessage';
 import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
+import { feedMediaGeometryStorage } from '../../infrastructure/storage/feedMediaGeometryStorage';
 
 export {
   FEED_CARD_CLASS,
@@ -191,8 +193,6 @@ const ANDROID_PHOTO_GRID_ITEM_STYLE = { padding: 2 };
 const PHOTO_GRID_TILE_STYLE: ViewStyle = { flex: 1, overflow: 'hidden' };
 const IOS_PHOTO_GRID_FRAME_STYLE: ViewStyle | undefined =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
-const MEDIA_ASPECT_RATIO_CACHE_LIMIT = 350;
-const MEDIA_ASPECT_RATIO_CACHE = new Map<string, number>();
 const POST_TOKEN_BLUE = APP_BRAND_COLOR;
 const POST_TOKEN_FALLBACK = String.raw`[@#][^\s@#.,!?;:()[\]{}"']+`;
 
@@ -266,7 +266,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     overflow: 'hidden',
-    backgroundColor: '#050505',
+    // Keep the geometry-matched skeleton visible until the poster bitmap is
+    // decoded. The loaded image or native video surface replaces it in place.
+    backgroundColor: 'transparent',
   },
   feedVideoBlurredBackdropImage: {
     opacity: 0.72,
@@ -279,6 +281,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     backgroundColor: 'rgba(0,0,0,0.36)',
+  },
+  videoPosterSkeleton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E5E7EB',
+  },
+  videoPosterSkeletonPulse: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.62)',
   },
 });
 
@@ -443,10 +456,10 @@ function getCachedMediaAspectRatio(
   minRatio: number,
   maxRatio: number,
   fallback: number,
+  canonicalRatio?: number,
 ) {
-  if (!uri) return fallback;
   return clampAspectRatio(
-    MEDIA_ASPECT_RATIO_CACHE.get(uri) ?? fallback,
+    canonicalRatio ?? feedMediaGeometryStorage.getAspectRatio(uri) ?? fallback,
     minRatio,
     maxRatio,
     fallback,
@@ -454,17 +467,7 @@ function getCachedMediaAspectRatio(
 }
 
 function cacheMediaAspectRatio(uri: string, width: number, height: number) {
-  if (width <= 0 || height <= 0) return;
-  if (
-    !MEDIA_ASPECT_RATIO_CACHE.has(uri) &&
-    MEDIA_ASPECT_RATIO_CACHE.size >= MEDIA_ASPECT_RATIO_CACHE_LIMIT
-  ) {
-    const oldestUri = MEDIA_ASPECT_RATIO_CACHE.keys().next().value;
-    if (oldestUri) {
-      MEDIA_ASPECT_RATIO_CACHE.delete(oldestUri);
-    }
-  }
-  MEDIA_ASPECT_RATIO_CACHE.set(uri, width / height);
+  feedMediaGeometryStorage.remember(uri, width, height);
 }
 
 // â”€â”€ FeedCopy type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1215,6 +1218,17 @@ const VideoFallbackPoster = React.memo(function VideoFallbackPoster({
   );
 });
 
+const VideoPosterSkeleton = React.memo(function VideoPosterSkeleton() {
+  return (
+    <View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, styles.videoPosterSkeleton]}
+    >
+      <View style={styles.videoPosterSkeletonPulse} />
+    </View>
+  );
+});
+
 function useGeneratedVideoPoster({
   videoUrl,
   postId,
@@ -1878,9 +1892,30 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const videoUrl = post.videoUrl.trim();
   const mediaIdentity = `${post.id}:${videoUrl}`;
   const videoPreviewCacheKey = post.thumbnailUrl || videoUrl || post.id;
-  const [aspectRatio, setAspectRatio] = useState(() =>
-    getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
-  );
+  const geometryIdentity = `${mediaIdentity}:${videoPreviewCacheKey}`;
+  const reservedAspectRatioRef = useRef({
+    identity: geometryIdentity,
+    value: getCachedMediaAspectRatio(
+      videoPreviewCacheKey,
+      0.75,
+      16 / 9,
+      16 / 9,
+      post.mediaGeometry?.aspectRatio,
+    ),
+  });
+  if (reservedAspectRatioRef.current.identity !== geometryIdentity) {
+    reservedAspectRatioRef.current = {
+      identity: geometryIdentity,
+      value: getCachedMediaAspectRatio(
+        videoPreviewCacheKey,
+        0.75,
+        16 / 9,
+        16 / 9,
+        post.mediaGeometry?.aspectRatio,
+      ),
+    };
+  }
+  const aspectRatio = reservedAspectRatioRef.current.value;
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const mediaIdentityRef = useRef(mediaIdentity);
@@ -1960,9 +1995,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     firstFrameProgressStartRef.current = null;
     videoSurfaceRecoveryCountRef.current = 0;
     videoSurfaceRecoveryInFlightRef.current = false;
-    setAspectRatio(
-      getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
-    );
     setSeekTime(savedTime > 0.05 ? savedTime : undefined);
     setManuallyPaused(false);
     setIsReady(false);
@@ -1972,7 +2004,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     setHasVideoError(false);
     setVideoPlayerGeneration(0);
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
-  }, [clearVideoQualityRamp, frameCoverOpacity, mediaIdentity, post.id, videoPreviewCacheKey]);
+  }, [
+    clearVideoQualityRamp,
+    frameCoverOpacity,
+    mediaIdentity,
+    post.id,
+    videoPreviewCacheKey,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1987,14 +2025,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     };
   }, [clearVideoQualityRamp, post.id]);
 
-  // Measure thumbnail size on mount to avoid layout jumps
+  // Learn geometry for legacy posts, but keep this mounted row stable. The
+  // persisted value is applied the next time the media card is mounted.
   useEffect(() => {
     const thumbnailUrl = resolvedThumbnailUrl;
     if (!thumbnailUrl || !mediaLoadEnabled) return undefined;
 
-    const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
-    if (cachedRatio) {
-      setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9));
+    if (
+      post.mediaGeometry?.aspectRatio ||
+      feedMediaGeometryStorage.getAspectRatio(thumbnailUrl)
+    ) {
       return undefined;
     }
 
@@ -2007,10 +2047,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           if (thumbnailUrl !== videoPreviewCacheKey) {
             cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
           }
-          // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
-          setAspectRatio(
-            clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
-          );
         }
       },
       err => {
@@ -2026,9 +2062,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     return () => {
       cancelled = true;
     };
-  }, [mediaLoadEnabled, resolvedThumbnailUrl, videoPreviewCacheKey]);
+  }, [
+    mediaLoadEnabled,
+    post.mediaGeometry?.aspectRatio,
+    resolvedThumbnailUrl,
+    videoPreviewCacheKey,
+  ]);
 
-  // Refine aspect ratio when actual video loads
+  // Persist the canonical video size for legacy responses without resizing
+  // the row currently under the user's finger.
   const handleVideoLoad = useCallback(
     (data: any) => {
       if (mediaIdentity !== mediaIdentityRef.current) return;
@@ -2045,13 +2087,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         const { width, height } = size;
         if (width > 0 && height > 0) {
           cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
-          setAspectRatio(
-            clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
-          );
+          if (videoUrl && videoUrl !== videoPreviewCacheKey) {
+            cacheMediaAspectRatio(videoUrl, width, height);
+          }
         }
       }
     },
-    [mediaIdentity, videoPreviewCacheKey],
+    [mediaIdentity, videoPreviewCacheKey, videoUrl],
   );
 
   const revealVideoFrame = useCallback(() => {
@@ -2373,6 +2415,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
               onPress={handleVideoPress}
               style={{ width: '100%', height: '100%' }}
             >
+              {/* The skeleton and poster share the geometry-reserved frame.
+                  Loading either layer must never resize the Feed row. */}
+              <VideoPosterSkeleton />
               {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
               {resolvedThumbnailUrl ? (
                 <FeedVideoBackdrop
@@ -2510,18 +2555,14 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                       pointerEvents="none"
                       style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
                     >
-                      <VideoFallbackPoster label={copy.video ?? 'Video'} />
+                      <VideoPosterSkeleton />
                     </Animated.View>
                   ) : null}
                 </View>
               ) : resolvedThumbnailUrl ? null : (
-                <VideoFallbackPoster
-                  label={
-                    hasVideoUrl && !hasVideoError
-                      ? copy.video ?? 'Video'
-                      : copy.videoUnavailable
-                  }
-                />
+                hasVideoUrl && !hasVideoError ? null : (
+                  <VideoFallbackPoster label={copy.videoUnavailable} />
+                )
               )}
               {/* Big play button overlay while paused */}
               {showPlayOverlay ? (
@@ -3028,28 +3069,50 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
 
 const SinglePostImage = React.memo(function SinglePostImage({
   uri,
+  geometry,
   onPress,
   enabled = true,
 }: {
   uri: string;
+  geometry?: FeedMediaGeometry;
   onPress: () => void;
   enabled?: boolean;
 }) {
-  const [aspectRatio, setAspectRatio] = useState(() =>
-    getCachedMediaAspectRatio(uri, 0.75, 1.91, 4 / 3),
-  );
+  const reservedAspectRatioRef = useRef({
+    identity: uri,
+    value: getCachedMediaAspectRatio(
+      uri,
+      0.75,
+      1.91,
+      4 / 3,
+      geometry?.aspectRatio,
+    ),
+  });
+  if (reservedAspectRatioRef.current.identity !== uri) {
+    reservedAspectRatioRef.current = {
+      identity: uri,
+      value: getCachedMediaAspectRatio(
+        uri,
+        0.75,
+        1.91,
+        4 / 3,
+        geometry?.aspectRatio,
+      ),
+    };
+  }
+  const aspectRatio = reservedAspectRatioRef.current.value;
 
   useEffect(() => {
     if (!uri || !enabled) return undefined;
-    const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(uri);
-    if (cachedRatio) {
-      setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 1.91, 4 / 3));
+    const canonicalRatio = geometry?.aspectRatio;
+    const cachedRatio = feedMediaGeometryStorage.getAspectRatio(uri);
+    if (canonicalRatio || cachedRatio) {
       return undefined;
     }
 
     let cancelled = false;
-    // Resolve geometry as soon as media loading is enabled. Deferring this
-    // until interactions finish makes the row resize after a fling settles.
+    // Legacy responses do not include dimensions. Learn them once for future
+    // mounts while this row keeps its reserved fallback geometry.
     Image.getSize(
       uri,
       (width, height) => {
@@ -3057,7 +3120,6 @@ const SinglePostImage = React.memo(function SinglePostImage({
         // Clamp aspect ratio to resemble Facebook:
         // Facebook caps portrait to 4:5 (0.8) and landscape to 1.91:1.
         cacheMediaAspectRatio(uri, width, height);
-        setAspectRatio(clampAspectRatio(width / height, 0.75, 1.91, 4 / 3));
       },
       err => {
         if (!cancelled) {
@@ -3069,7 +3131,7 @@ const SinglePostImage = React.memo(function SinglePostImage({
     return () => {
       cancelled = true;
     };
-  }, [enabled, uri]);
+  }, [enabled, geometry?.aspectRatio, uri]);
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.95} delayPressIn={0}>
@@ -3564,6 +3626,7 @@ export const TextPostCard = React.memo(function TextPostCard({
         <FeedMediaFrame className="bg-transparent">
           <SinglePostImage
             uri={post.photos[0]}
+            geometry={post.photoGeometries?.[0] ?? undefined}
             onPress={() => onPhotoPress(post, 0)}
             enabled={mediaEnabled}
           />

@@ -208,11 +208,11 @@ const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = FEED_IS_ANDROID ? 1.4 : 1.6;
 const FEED_EARLY_LOAD_MIN_DISTANCE = FEED_IS_ANDROID ? 1200 : 1400;
 const FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS = 4;
 const FEED_IMAGE_PREFETCH_BEHIND_ITEMS = 1;
-const FEED_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 3 : 8;
-const FEED_SCROLLING_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 6;
-const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 8 : 14;
-const MAX_PENDING_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 16 : 36;
-const MAX_REMEMBERED_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 128 : 220;
+const FEED_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 3 : 4;
+const FEED_SCROLLING_IMAGE_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 3;
+const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 6 : 8;
+const MAX_PENDING_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 10 : 14;
+const MAX_REMEMBERED_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 64 : 96;
 const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 1 : 3;
 const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 1 : 3;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 100 : 60;
@@ -222,24 +222,23 @@ const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 0 : 1;
 const FEED_VIDEO_WARM_MAX_COUNT = 1;
 const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT = 0;
 const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = 1;
-const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 4;
+const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 1 : 2;
 const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 1 : 2;
 const FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 220 : 160;
-const MAX_REMEMBERED_VIDEO_POSTER_KEYS = FEED_IS_ANDROID ? 64 : 120;
+const MAX_REMEMBERED_VIDEO_POSTER_KEYS = FEED_IS_ANDROID ? 32 : 64;
 const FEED_VIDEO_VISIBLE_PERCENT = 1;
 const FEED_VIDEO_VIEWABLE_PERCENT = 55;
 const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
 const FEED_INLINE_LIVE_ACTIVE_DWELL_MS = 140;
 const FEED_MEDIA_MOUNT_BEHIND_ITEMS = 1;
+const FEED_VIDEO_MEDIA_MOUNT_BEHIND_ITEMS = 1;
+const FEED_VIDEO_MEDIA_MOUNT_AHEAD_ITEMS = 1;
 // Image.prefetch already warms a larger runway. Native-mounting three photo
 // cards ahead on Android caused their decode/aspect-ratio work to arrive as a
 // visible three-card hitch, so keep only the nearest card mounted ahead.
 const FEED_MEDIA_MOUNT_AHEAD_ITEMS = FEED_IS_ANDROID ? 1 : 3;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
-// A lower numeric rate sheds fling momentum sooner than React Native's
-// default while preserving direct finger tracking and pull-to-refresh.
-const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.88 : 0.985;
 const FEED_SCROLL_EVENT_THROTTLE_MS = FEED_IS_ANDROID ? 32 : 16;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
   ? Math.max(2000, Math.round(FEED_SCREEN_HEIGHT * 2.2))
@@ -1639,11 +1638,15 @@ function FeedScreen() {
   const feedScrollYRef = useRef(0);
   const feedScrollDirectionRef = useRef<FeedScrollDirection>('none');
   const feedViewportHeightRef = useRef(0);
+  const feedContentHeightRef = useRef(0);
   const isScrollingRef = useRef(false);
   const lastLoadMoreRequestAtRef = useRef(0);
   const lastSupplementalLoadMoreRequestAtRef = useRef(0);
-  const pendingLoadMoreDuringScrollRef = useRef(false);
-  const loadMoreConsumedForGestureRef = useRef(false);
+  const pendingSupplementalLoadMoreRef = useRef(false);
+  const supplementalLoadMoreConsumedForGestureRef = useRef(false);
+  const feedTailReconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const triggerLoadMoreRef = useRef<() => void>(() => {});
   const flushPendingLoadMoreRef = useRef<() => void>(() => {});
   const supplementalLoadStartedRef = useRef(false);
@@ -1940,8 +1943,8 @@ function FeedScreen() {
     feedChromeCollapseStateRef.current = resetFeedChromeScrollIntent(
       feedChromeCollapseStateRef.current,
     );
-    pendingLoadMoreDuringScrollRef.current = false;
-    loadMoreConsumedForGestureRef.current = false;
+    pendingSupplementalLoadMoreRef.current = false;
+    supplementalLoadMoreConsumedForGestureRef.current = false;
     beginScrollPause();
   }, [beginScrollPause]);
 
@@ -1970,6 +1973,7 @@ function FeedScreen() {
       }
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
+      feedContentHeightRef.current = contentSize.height;
 
       if (contentOffset.y < 0) {
         feedChromeCollapseStateRef.current = createFeedChromeCollapseState();
@@ -2021,11 +2025,11 @@ function FeedScreen() {
       }
       scrollEndTimeoutRef.current = setTimeout(() => {
         scrollEndTimeoutRef.current = null;
-        if (velocityY < 0.05 && !isMomentumScrollingRef.current) {
+        if (!isMomentumScrollingRef.current) {
           endScrollPause();
           flushPendingLoadMoreRef.current();
         }
-      }, 80);
+      }, velocityY < 0.05 ? 80 : 220);
     },
     [endScrollPause, measureActiveFeedVideoOnScreen],
   );
@@ -2054,6 +2058,9 @@ function FeedScreen() {
     return () => {
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
+      }
+      if (feedTailReconcileTimerRef.current) {
+        clearTimeout(feedTailReconcileTimerRef.current);
       }
       clearActiveVideoDwellTimer();
       clearInlineLiveDwellTimer();
@@ -3054,10 +3061,22 @@ function FeedScreen() {
         );
         for (let index = startIndex; index < endIndex; index += 1) {
           const item = items[index];
-          // Start photo albums shortly before they enter the viewport. Videos
-          // remain strictly viewable-gated so a fling cannot warm several
-          // native players at once.
-          if (item?.type === 'post' && item.post.kind === 'text') {
+          const isNearVisibleVideo =
+            index >=
+              Math.max(
+                0,
+                firstVisibleIndex - FEED_VIDEO_MEDIA_MOUNT_BEHIND_ITEMS,
+              ) &&
+            index <=
+              furthestVisibleIndex + FEED_VIDEO_MEDIA_MOUNT_AHEAD_ITEMS;
+          // Photos use the existing look-ahead runway. Videos get only one
+          // neighboring row, which lets their poster/player prepare without
+          // mounting native players across the complete render window.
+          if (
+            item?.type === 'post' &&
+            (item.post.kind === 'text' ||
+              (item.post.kind === 'video' && isNearVisibleVideo))
+          ) {
             mediaEligiblePostIds.add(String(item.post.id));
           }
         }
@@ -3282,10 +3301,9 @@ function FeedScreen() {
     [canDeleteSelectedPost, deleteFeedPost, selectedPostForMenu?.id],
   );
 
-  // Infinite scroll pagination â€” calls loadMore directly.
-  // Previous version wrapped in InteractionManager which caused stale
-  // closure issues (the guard flags were captured at callback creation
-  // time, not when the InteractionManager callback actually ran).
+  // Infinite scroll pagination. Feed rows can be appended below the viewport
+  // while native scrolling continues; the ViewModel owns the single in-flight
+  // guard and this time gate only collapses duplicate tail signals.
   const {
     isLoading: isFeedLoading,
     isLoadingMore: isFeedLoadingMore,
@@ -3299,34 +3317,28 @@ function FeedScreen() {
     loadMoreProducts,
   } = productsVm;
 
-  // Collapse all end-of-list signals from one drag/fling into a single load.
-  // The request is released only after momentum settles, so appending rich
-  // rows cannot compete with native scrolling or walk several API pages.
   const handleLoadMore = useCallback(() => {
-    if (isScrollingRef.current || isMomentumScrollingRef.current) {
-      pendingLoadMoreDuringScrollRef.current = true;
-      return;
-    }
-
     const now = Date.now();
     const canRequestFeed =
-      !loadMoreConsumedForGestureRef.current &&
       !isFeedLoading &&
       !isFeedLoadingMore &&
       !isFeedAllLoaded &&
       now - lastLoadMoreRequestAtRef.current > LOAD_MORE_THROTTLE_MS;
+    const isNativeScrollBusy =
+      isScrollingRef.current || isMomentumScrollingRef.current;
     const canRequestSupplemental =
-      !loadMoreConsumedForGestureRef.current &&
+      !isNativeScrollBusy &&
+      !supplementalLoadMoreConsumedForGestureRef.current &&
       now - lastSupplementalLoadMoreRequestAtRef.current >
         SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS &&
       !isProductsLoading &&
       !isProductsLoadingMore &&
       !isProductsAllLoaded;
 
+    if (isNativeScrollBusy && !isProductsAllLoaded) {
+      pendingSupplementalLoadMoreRef.current = true;
+    }
     if (!canRequestFeed && !canRequestSupplemental) return;
-
-    pendingLoadMoreDuringScrollRef.current = false;
-    loadMoreConsumedForGestureRef.current = true;
 
     if (canRequestFeed) {
       lastLoadMoreRequestAtRef.current = now;
@@ -3334,6 +3346,8 @@ function FeedScreen() {
     }
 
     if (canRequestSupplemental) {
+      pendingSupplementalLoadMoreRef.current = false;
+      supplementalLoadMoreConsumedForGestureRef.current = true;
       lastSupplementalLoadMoreRequestAtRef.current = now;
       loadMoreProducts();
     }
@@ -3349,13 +3363,59 @@ function FeedScreen() {
   ]);
 
   const flushPendingLoadMore = useCallback(() => {
-    if (!pendingLoadMoreDuringScrollRef.current) return;
-    pendingLoadMoreDuringScrollRef.current = false;
+    if (!pendingSupplementalLoadMoreRef.current) return;
+    pendingSupplementalLoadMoreRef.current = false;
     requestAnimationFrame(() => triggerLoadMoreRef.current());
   }, []);
 
   flushPendingLoadMoreRef.current = flushPendingLoadMore;
   triggerLoadMoreRef.current = handleLoadMore;
+
+  const reconcileFeedTailRunway = useCallback(() => {
+    feedTailReconcileTimerRef.current = null;
+    mainFeedListRef.current?.recomputeViewableItems();
+    maybeLoadMoreFeedAroundVisibleItems(latestViewableFeedItemsRef.current);
+
+    const viewportHeight = feedViewportHeightRef.current;
+    if (viewportHeight <= 0) return;
+    const distanceFromEnd =
+      feedContentHeightRef.current -
+      (feedScrollYRef.current + viewportHeight);
+    const earlyLoadDistance = Math.max(
+      viewportHeight * FEED_EARLY_LOAD_DISTANCE_MULTIPLIER,
+      FEED_EARLY_LOAD_MIN_DISTANCE,
+    );
+    if (distanceFromEnd <= earlyLoadDistance) {
+      triggerLoadMoreRef.current();
+    }
+  }, [maybeLoadMoreFeedAroundVisibleItems]);
+
+  const scheduleFeedTailReconcile = useCallback(
+    (minimumDelayMs = 0) => {
+      if (feedTailReconcileTimerRef.current) {
+        clearTimeout(feedTailReconcileTimerRef.current);
+      }
+      const throttleRemaining = Math.max(
+        0,
+        LOAD_MORE_THROTTLE_MS -
+          (Date.now() - lastLoadMoreRequestAtRef.current) +
+          24,
+      );
+      feedTailReconcileTimerRef.current = setTimeout(
+        reconcileFeedTailRunway,
+        Math.max(minimumDelayMs, throttleRemaining),
+      );
+    },
+    [reconcileFeedTailRunway],
+  );
+
+  const handleFeedContentSizeChange = useCallback(
+    (_width: number, height: number) => {
+      feedContentHeightRef.current = height;
+      scheduleFeedTailReconcile(40);
+    },
+    [scheduleFeedTailReconcile],
+  );
 
   const handleRefresh = useCallback(() => {
     reloadFeedPosts(true);
@@ -3731,11 +3791,13 @@ function FeedScreen() {
     } else {
       publishFeedWarmVideoIds([]);
     }
+    scheduleFeedTailReconcile();
   }, [
     feedListItems,
     prefetchFeedImagesAroundVisibleItems,
     prefetchFeedVideoPostersAroundVisibleItems,
     publishWarmFeedVideosAroundVisibleItems,
+    scheduleFeedTailReconcile,
   ]);
 
   useEffect(() => {
@@ -4203,7 +4265,6 @@ function FeedScreen() {
         FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION
       }
       removeClippedSubviews={false}
-      decelerationRate={FEED_SCROLL_DECELERATION_RATE}
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled
       onLayout={handleFeedViewportLayout}
@@ -4216,6 +4277,7 @@ function FeedScreen() {
       onMomentumScrollEnd={handleMomentumScrollEnd}
       onEndReached={handleLoadMore}
       onEndReachedThreshold={0.6}
+      onContentSizeChange={handleFeedContentSizeChange}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={feedListContentStyle}
       scrollIndicatorInsets={feedScrollIndicatorInsets}

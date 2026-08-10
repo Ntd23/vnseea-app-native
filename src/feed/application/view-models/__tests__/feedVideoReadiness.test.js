@@ -7,35 +7,49 @@ function read(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
-describe('feed video readiness pipeline', () => {
-  const source = read('src/feed/application/view-models/useFeedViewModel.ts');
+describe('feed video canonical timeline', () => {
+  const viewModelSource = read(
+    'src/feed/application/view-models/useFeedViewModel.ts',
+  );
+  const repositorySource = read(
+    'src/feed/infrastructure/repositories/ApiFeedRepository.ts',
+  );
+  const postCardsSource = read(
+    'src/feed/presentation/components/PostCards.tsx',
+  );
 
-  it('keeps the ready video pool small and prepares posters before display', () => {
-    expect(source).toContain('const VIDEO_PREPARE_BATCH_SIZE = 2;');
-    expect(source).toContain('const VIDEO_READY_POOL_LIMIT = 8;');
-    expect(source).toContain('await Image.prefetch(posterUrl)');
-    expect(source).toContain('.slice(0, VIDEO_READY_POOL_LIMIT)');
+  it('maps videos into the same repository page as other post kinds', () => {
+    const mapper = repositorySource.slice(
+      repositorySource.indexOf('function mapLightRawFeedPosts'),
+      repositorySource.indexOf('export function createFeedRepository'),
+    );
+
+    expect(mapper).toContain('posts.push(mapVideoPost(item));');
+    expect(mapper.indexOf('looksLikeVideo(item)')).toBeLessThan(
+      mapper.indexOf('looksLikeTextOrPhoto(item)'),
+    );
   });
 
-  it('probes the newest video page even when the prepared cache is full', () => {
-    expect(source).toContain('(lightCount: number, forceNewest = false)');
-    expect(source).toContain(
-      'if (!forceNewest && videoPostsRef.current.length >= requiredVideos)',
+  it('does not gate or artificially mix Feed videos by poster readiness', () => {
+    expect(viewModelSource).not.toContain('isFeedVideoReadyForDisplay');
+    expect(viewModelSource).not.toContain('mergeFeedContentWithVideos');
+    expect(viewModelSource).not.toContain('scheduleVideoBuffer');
+    expect(viewModelSource).not.toContain('VIDEO_READY_POOL_LIMIT');
+    expect(viewModelSource).toContain(
+      'const timelinePosts = sortByTime(',
     );
-    expect(source).toContain('scheduleVideoBuffer(freshPosts.length, true)');
   });
 
-  it('does not prepend an unprepared new video card into the visible feed', () => {
-    const videoBranchStart = source.indexOf("if (post.kind === 'video')");
-    const videoBranchEnd = source.indexOf(
-      'if (isLightFeedPost(post))',
-      videoBranchStart,
+  it('inserts a newly-created video immediately and keeps poster loading visual-only', () => {
+    const prependSource = viewModelSource.slice(
+      viewModelSource.indexOf('const prependPost = useCallback'),
+      viewModelSource.indexOf('const toggleReaction = useCallback'),
     );
-    const videoBranch = source.slice(videoBranchStart, videoBranchEnd);
 
-    expect(videoBranch).toContain('const insertPreparedVideo = () =>');
-    expect(videoBranch).toContain('if (isFeedVideoReadyForDisplay(post))');
-    expect(videoBranch).toContain('prepareFeedVideoForDisplay(post)');
-    expect(videoBranch).not.toContain('insertPostAtTop();\n\n        if');
+    expect(prependSource).toContain('if (isTimelineFeedPost(post))');
+    expect(prependSource).toContain('insertPostAtTop();');
+    expect(prependSource).not.toContain('prepareFeedVideoForDisplay');
+    expect(postCardsSource).toContain('<VideoPosterSkeleton />');
+    expect(postCardsSource).toContain('<FeedMediaFrame style={{ aspectRatio }}>');
   });
 });

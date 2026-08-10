@@ -31,11 +31,11 @@ describe('Post card rendering stability', () => {
     expect(earlyReturnIndex).toBeGreaterThan(hookIndex);
   });
 
-  it('measures video thumbnails before scroll idle and caches their stable identity', () => {
+  it('learns legacy video geometry without resizing the mounted row', () => {
     const source = readPostCards();
     const measurementSource = source.slice(
-      source.indexOf('// Measure thumbnail size on mount'),
-      source.indexOf('// Refine aspect ratio when actual video loads'),
+      source.indexOf('// Learn geometry for legacy posts'),
+      source.indexOf('// Persist the canonical video size'),
     );
 
     expect(measurementSource).toContain('Image.getSize(');
@@ -43,5 +43,10 @@ describe('Post card rendering stability', () => {
     expect(measurementSource).toContain(
       'cacheMediaAspectRatio(videoPreviewCacheKey, width, height);',
     );
+    expect(measurementSource).not.toContain('setAspectRatio(');
+    expect(source).toContain('post.mediaGeometry?.aspectRatio');
+    expect(source).toContain('feedMediaGeometryStorage.getAspectRatio');
+    expect(source).toContain('<VideoPosterSkeleton />');
+    expect(source).toContain('<FeedMediaFrame style={{ aspectRatio }}>');
   });
 });

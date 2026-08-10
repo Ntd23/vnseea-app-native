@@ -76,6 +76,17 @@ function rawAd(id: number) {
   };
 }
 
+function rawVideoPost(id: number) {
+  return {
+    ...rawTextPost(id),
+    postType: 'video',
+    postFile: `https://demo.vnseea.vn/upload/videos/${id}.mp4`,
+    postFileThumb: `https://demo.vnseea.vn/upload/photos/${id}.jpg`,
+    media_width: '1080',
+    media_height: '1920',
+  };
+}
+
 function rawPersonalJobPost(id: number) {
   return {
     ...rawTextPost(id),
@@ -148,6 +159,31 @@ describe('ApiFeedRepository pagination performance', () => {
         call => call[0] === apiRoutes.feed.recommended,
       ),
     ).toBe(true);
+  });
+
+  it('keeps videos in their postedAt position in the canonical page', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: 200,
+      data: [rawTextPost(100), rawVideoPost(101), rawTextPost(102)],
+      next_cursor: '102',
+      reached_end: false,
+    });
+
+    const page = await createFeedRepository().getLightPostsPage(
+      3,
+      undefined,
+      'all',
+      1,
+    );
+
+    expect(page.posts.map(post => [post.id, post.kind])).toEqual([
+      ['100', 'text'],
+      ['101', 'video'],
+      ['102', 'text'],
+    ]);
+    expect(page.posts[1]).toMatchObject({
+      mediaGeometry: { width: 1080, height: 1920 },
+    });
   });
 
   it('never accepts an advertisement id as a recommended-feed cursor', async () => {
