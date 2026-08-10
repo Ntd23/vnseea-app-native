@@ -60,21 +60,21 @@ describe('Post card rendering stability', () => {
     expect(source).toContain('minHeight: 20,');
   });
 
-  it('measures video thumbnails before scroll idle and caches their stable identity', () => {
+  it('learns legacy video geometry without resizing the mounted row', () => {
     const source = readPostCards();
     const measurementSource = source.slice(
-      source.indexOf('// Measure thumbnail size on mount'),
-      source.indexOf('// Refine aspect ratio when actual video loads'),
+      source.indexOf('// Learn geometry for legacy posts'),
+      source.indexOf('// Persist the canonical video size'),
     );
 
     expect(measurementSource).toContain('Image.getSize(');
-    expect(measurementSource).not.toContain('isScrollBusy');
     expect(measurementSource).toContain(
       'cacheMediaAspectRatio(videoPreviewCacheKey, width, height);',
     );
+    expect(measurementSource).not.toContain('setAspectRatio(');
   });
 
-  it('keeps Android feed video rows at a stable 4:5 frame', () => {
+  it('reserves video geometry from metadata, cache, then fallback on every platform', () => {
     const source = readPostCards();
     const videoCardStart = source.indexOf('export const HomeVideoPostCard');
     const videoCardEnd = source.indexOf(
@@ -88,16 +88,13 @@ describe('Post card rendering stability', () => {
 
     expect(videoCardStart).toBeGreaterThan(-1);
     expect(videoCardEnd).toBeGreaterThan(videoCardStart);
-    expect(source).toContain(
+    expect(source).not.toContain(
       'const ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO = 4 / 5;',
     );
-    expect(videoCardSource).toContain(
-      "Platform.OS === 'android'\n      ? ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO",
-    );
-    expect(videoCardSource).toContain(
-      "if (Platform.OS === 'android') return;",
-    );
-    expect(videoCardSource.match(/setAspectRatio\(/g)).toHaveLength(1);
+    expect(videoCardSource).toContain('const reservedAspectRatioRef = useRef({');
+    expect(videoCardSource).toContain('post.mediaGeometry?.aspectRatio');
+    expect(videoCardSource).toContain('feedMediaGeometryStorage.getAspectRatio');
+    expect(videoCardSource).not.toContain('setAspectRatio(');
   });
 
   it('keeps reaction pickers out of Android card layout', () => {

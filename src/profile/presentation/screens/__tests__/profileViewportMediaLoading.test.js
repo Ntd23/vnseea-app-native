@@ -47,4 +47,49 @@ describe('Profile viewport media loading', () => {
       'const PROFILE_POST_MEDIA_PREFETCH_BATCH_SIZE = PROFILE_IS_ANDROID ? 1 : 3;',
     );
   });
+
+  it('uses the shared Feed video playback policy instead of Profile-specific decoder limits', () => {
+    const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
+
+    expect(source).toContain(
+      "getFeedVideoPlaybackPolicy(Platform.OS)",
+    );
+    expect(source).toContain(
+      'PROFILE_VIDEO_PLAYBACK_POLICY.warmAheadItems',
+    );
+    expect(source).toContain(
+      'PROFILE_VIDEO_PLAYBACK_POLICY.idleWarmMaxCount',
+    );
+    expect(source).not.toContain(
+      'const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = PROFILE_IS_ANDROID ? 3 : 6;',
+    );
+  });
+
+  it('gates Profile playback and viewability by route focus plus app activity', () => {
+    const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
+
+    expect(source).toContain('AppState,');
+    expect(source).toContain('const isProfilePlaybackSurfaceFocused =');
+    expect(source).toContain(
+      'isPlaybackSurfaceFocusedRef.current = isProfilePlaybackSurfaceFocused;',
+    );
+    expect(source).toContain(
+      'if (!isPlaybackSurfaceFocusedRef.current) return;',
+    );
+    expect(source).toContain(
+      'isScreenFocused={isProfilePlaybackSurfaceFocused}',
+    );
+  });
+
+  it('selects the dominant Profile video with the shared media-surface algorithm', () => {
+    const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
+
+    expect(source).toContain('const setProfileVideoRef = useCallback(');
+    expect(source).toContain(
+      'const measureActiveProfileVideoOnScreen = useCallback(',
+    );
+    expect(source).toContain('getFeedVideoActiveUpdate({');
+    expect(source).toContain('mediaSurfaceRef={setProfileVideoRef}');
+    expect(source).toContain('measureActiveProfileVideoOnScreen(true);');
+  });
 });

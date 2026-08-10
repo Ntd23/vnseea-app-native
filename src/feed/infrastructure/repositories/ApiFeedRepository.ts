@@ -52,6 +52,7 @@ import type {
   CreatePostResult,
   FeedGroupContext,
   FeedLiveContext,
+  FeedMediaGeometry,
   FeedPost,
   FeedPublisher,
   FeedAdPost,
@@ -828,6 +829,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     // relative media paths. normalizePlayableMediaUrl handles both.
     videoUrl,
     thumbnailUrl,
+    mediaGeometry: extractMediaGeometry(raw),
     postedAt: readNumber(raw, 'time') || undefined,
     likeCount,
     commentCount: readNumber(raw, 'post_comments', 'commentCount'),
@@ -1004,6 +1006,22 @@ const GENERATED_SMALL_IMAGE_PATTERN =
 
 function looksLikeGeneratedSmallImage(url: string): boolean {
   return GENERATED_SMALL_IMAGE_PATTERN.test(url);
+}
+
+function extractMediaGeometry(
+  raw: Record<string, unknown>,
+): FeedMediaGeometry | undefined {
+  const nested =
+    raw.media_geometry &&
+    typeof raw.media_geometry === 'object' &&
+    !Array.isArray(raw.media_geometry)
+      ? (raw.media_geometry as Record<string, unknown>)
+      : raw;
+  const width = readNumber(nested, 'width', 'media_width');
+  const height = readNumber(nested, 'height', 'media_height');
+  if (width <= 0 || height <= 0) return undefined;
+
+  return { width, height, aspectRatio: width / height };
 }
 
 function extractPhotoUrls(raw: Record<string, unknown>): string[] {

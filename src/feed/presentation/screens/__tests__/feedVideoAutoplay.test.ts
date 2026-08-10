@@ -1,4 +1,5 @@
 import {
+  getFeedVideoPlaybackPolicy,
   resolveFeedVisibleMediaPostIds,
   resolveFeedVisibleMediaRetentionDeadline,
   getRetainedFeedVideoPosterKeys,
@@ -11,9 +12,41 @@ import {
   shouldMeasureFeedVideoPosterAspectRatio,
   shouldMeasureFeedVideoDuringScroll,
   shouldPlayFeedVideo,
+  resolvePlaybackSurfaceFocused,
 } from '../feedVideoAutoplay';
 
 describe('feed video autoplay selection', () => {
+  it('uses one shared low-decoder policy for Home and Profile surfaces', () => {
+    expect(getFeedVideoPlaybackPolicy('android')).toEqual({
+      warmBehindItems: 0,
+      warmAheadItems: 0,
+      idleWarmMaxCount: 1,
+      scrollingWarmMaxCount: 0,
+      posterPrefetchBehindItems: 0,
+      posterPrefetchAheadItems: 1,
+    });
+    expect(getFeedVideoPlaybackPolicy('ios')).toEqual({
+      warmBehindItems: 0,
+      warmAheadItems: 1,
+      idleWarmMaxCount: 1,
+      scrollingWarmMaxCount: 0,
+      posterPrefetchBehindItems: 0,
+      posterPrefetchAheadItems: 2,
+    });
+  });
+
+  it('requires both route focus and an active app for playback ownership', () => {
+    expect(
+      resolvePlaybackSurfaceFocused({ routeFocused: true, appActive: true }),
+    ).toBe(true);
+    expect(
+      resolvePlaybackSurfaceFocused({ routeFocused: true, appActive: false }),
+    ).toBe(false);
+    expect(
+      resolvePlaybackSurfaceFocused({ routeFocused: false, appActive: true }),
+    ).toBe(false);
+  });
+
   it('only lets the active owner advance even when a warm player is mounted', () => {
     expect(
       shouldPlayFeedVideo({
@@ -157,17 +190,19 @@ describe('feed video autoplay selection', () => {
     ).toEqual(['video-c', 'video-a', 'video-b']);
   });
 
-  it('does not newly mount a warm video surface during an optimized fling', () => {
+  it('does not mount a warm Android video surface during a fling', () => {
     expect(
       shouldMountWarmFeedVideo({
+        platform: 'android',
         optimizationEnabled: false,
         isWarm: true,
         isScrollBusy: true,
         shouldKeepPreparedVideoMounted: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldMountWarmFeedVideo({
+        platform: 'android',
         optimizationEnabled: true,
         isWarm: true,
         isScrollBusy: true,
@@ -177,25 +212,27 @@ describe('feed video autoplay selection', () => {
     ).toBe(false);
     expect(
       shouldMountWarmFeedVideo({
+        platform: 'android',
         optimizationEnabled: true,
         isWarm: true,
         isScrollBusy: true,
         shouldKeepPreparedVideoMounted: true,
         wasPlayerSurfaceMounted: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('retains an already-mounted warm surface during an optimized fling', () => {
+  it('releases an already-mounted Android warm surface during an optimized fling', () => {
     expect(
       shouldMountWarmFeedVideo({
+        platform: 'android',
         optimizationEnabled: true,
         isWarm: true,
         isScrollBusy: true,
         shouldKeepPreparedVideoMounted: false,
         wasPlayerSurfaceMounted: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('retains visible media through a transient empty relayout snapshot', () => {

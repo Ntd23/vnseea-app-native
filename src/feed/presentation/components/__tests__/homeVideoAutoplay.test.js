@@ -148,6 +148,9 @@ describe('Home feed video autoplay safety', () => {
   });
 
   it('uses real route focus for reusable video cards outside Home', () => {
+    const postCardsSource = read(
+      'src/feed/presentation/components/PostCards.tsx',
+    );
     const postDetailSource = read(
       'src/feed/presentation/screens/PostDetailScreen.tsx',
     );
@@ -168,6 +171,9 @@ describe('Home feed video autoplay safety', () => {
     expect(groupDetailSource).toContain('isScreenFocused={isFocused}');
     expect(popularSource).toContain('const isFocused = useIsFocused();');
     expect(popularSource).toContain('isScreenFocused={isFocused}');
+    expect(postCardsSource).toContain(
+      "(performanceSurface === 'feed' ? feedSurfaceFocused : false);",
+    );
   });
 
   it('uses media-surface measurement with a 60 percent autoplay threshold', () => {
@@ -207,6 +213,9 @@ describe('Home feed video autoplay safety', () => {
     expect(postCardsSource).toContain('shouldMountWarmFeedVideo({');
     expect(postCardsSource).toContain(
       'optimizationEnabled: isClientUiOptimizationEnabled()',
+    );
+    expect(feedScreenSource).toContain(
+      'const FEED_VIDEO_PLAYBACK_POLICY = getFeedVideoPlaybackPolicy(',
     );
     expect(feedScreenSource).toContain(
       'FEED_VIDEO_PLAYBACK_POLICY.warmAheadItems;',
@@ -254,7 +263,7 @@ describe('Home feed video autoplay safety', () => {
     );
   });
 
-  it('uses one unblurred poster layer for contained Android feed videos', () => {
+  it('limits poster blur to the active idle surface and keeps an Android frame cover', () => {
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',
     );
@@ -267,13 +276,17 @@ describe('Home feed video autoplay safety', () => {
       'blurRadius={blurred ? FEED_VIDEO_BACKDROP_BLUR_RADIUS : undefined}',
     );
     expect(postCardsSource).toContain('styles.feedVideoBlurredBackdropScrim');
+    expect(postCardsSource).toContain('isActive &&\n    isPlaybackSurfaceFocused &&\n    !isScrollBusy');
     expect(postCardsSource).toContain(
-      "shouldMountVideo && Platform.OS !== 'android'",
+      "Platform.OS !== 'android' || performanceSurface === 'profile'",
+    );
+    expect(postCardsSource).toContain(
+      'blurred={shouldBlurVideoBackdrop && !isFrameCoverVisible}',
+    );
+    expect(postCardsSource).toContain(
+      'const shouldRenderVideoFrameCover =\n    Boolean(resolvedThumbnailUrl) && isFrameCoverVisible;',
     );
     expect(postCardsSource).toContain('blurred={shouldBlurVideoBackdrop}');
-    expect(postCardsSource).toContain(
-      "resolvedThumbnailUrl && isFrameCoverVisible && Platform.OS !== 'android'",
-    );
     expect(postCardsSource).toContain('resizeMode="contain"');
     expect(feedMediaImageSource).toContain(
       "blurRadius?: ImageProps['blurRadius'];",

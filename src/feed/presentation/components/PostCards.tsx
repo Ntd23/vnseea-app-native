@@ -103,13 +103,13 @@ import {
 import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
 import { FeedMediaImage } from './FeedMediaImage';
 import { feedVisibleMediaStore } from './feedVisibleMediaStore';
+import { feedMediaGeometryStorage } from '../../infrastructure/storage/feedMediaGeometryStorage';
 import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
 import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
 import { PostTaggedUsersSheet } from './PostTaggedUsersSheet';
 import { parseSharedPageMessage } from '../../../messages/application/shared-pages/sharedPageMessage';
 import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
 import {
-  shouldMeasureFeedVideoPosterAspectRatio,
   shouldMountWarmFeedVideo,
   shouldPlayFeedVideo,
 } from '../screens/feedVideoAutoplay';
@@ -191,7 +191,6 @@ const VIDEO_POSTER_FADE_MS = 160;
 const VIDEO_WARM_PREVIEW_SECONDS = Platform.OS === 'android' ? 0.35 : 0.6;
 const FEED_VIDEO_BLUR_SURFACE_GRACE_MS = 240;
 const FEED_VIDEO_BACKDROP_BLUR_RADIUS = Platform.OS === 'android' ? 18 : 28;
-const ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO = 4 / 5;
 const FEED_VIDEO_MEDIA_SURFACE_STYLE = { width: '100%' as const };
 const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 5;
 const DEFAULT_PHOTO_GRID_WIDTH =
@@ -440,10 +439,13 @@ function getCachedMediaAspectRatio(
   minRatio: number,
   maxRatio: number,
   fallback: number,
+  canonicalRatio?: number,
 ) {
-  if (!uri) return fallback;
   return clampAspectRatio(
-    MEDIA_ASPECT_RATIO_CACHE.get(uri) ?? fallback,
+    canonicalRatio ??
+      feedMediaGeometryStorage.getAspectRatio(uri) ??
+      (uri ? MEDIA_ASPECT_RATIO_CACHE.get(uri) : undefined) ??
+      fallback,
     minRatio,
     maxRatio,
     fallback,
@@ -452,6 +454,7 @@ function getCachedMediaAspectRatio(
 
 function cacheMediaAspectRatio(uri: string, width: number, height: number) {
   if (width <= 0 || height <= 0) return;
+  feedMediaGeometryStorage.remember(uri, width, height);
   if (
     !MEDIA_ASPECT_RATIO_CACHE.has(uri) &&
     MEDIA_ASPECT_RATIO_CACHE.size >= MEDIA_ASPECT_RATIO_CACHE_LIMIT
@@ -1849,8 +1852,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     surface: performanceSurface,
     isInViewport: mediaVisible,
   });
+  const videoMetricsSurface = performanceSurface ?? 'feed';
   const shouldRecordFeedVideoPlaybackMetrics =
-    performanceSurface === 'feed' && isVideoPlaybackMetricsEnabled();
+    performanceSurface !== undefined && isVideoPlaybackMetricsEnabled();
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
@@ -1861,7 +1865,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   );
   const isPlaybackSurfaceFocused =
     isScreenFocused ??
-    (performanceSurface === 'feed' ? feedSurfaceFocused : true);
+    (performanceSurface === 'feed' ? feedSurfaceFocused : false);
   const liveMediaActive = useLiveMediaActive();
   const isActive =
     isPlaybackSurfaceFocused &&
@@ -1886,15 +1890,30 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const videoUrl = post.videoUrl.trim();
   const mediaIdentity = `${post.id}:${videoUrl}`;
   const videoPreviewCacheKey = post.thumbnailUrl || videoUrl || post.id;
-  const [aspectRatio, setAspectRatio] = useState(() =>
-    Platform.OS === 'android'
-      ? ANDROID_FEED_VIDEO_FRAME_ASPECT_RATIO
-      : getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
-  );
-  const commitVideoAspectRatio = useCallback((nextAspectRatio: number) => {
-    if (Platform.OS === 'android') return;
-    setAspectRatio(nextAspectRatio);
-  }, []);
+  const geometryIdentity = `${mediaIdentity}:${videoPreviewCacheKey}`;
+  const reservedAspectRatioRef = useRef({
+    identity: geometryIdentity,
+    value: getCachedMediaAspectRatio(
+      videoPreviewCacheKey,
+      0.75,
+      16 / 9,
+      16 / 9,
+      post.mediaGeometry?.aspectRatio,
+    ),
+  });
+  if (reservedAspectRatioRef.current.identity !== geometryIdentity) {
+    reservedAspectRatioRef.current = {
+      identity: geometryIdentity,
+      value: getCachedMediaAspectRatio(
+        videoPreviewCacheKey,
+        0.75,
+        16 / 9,
+        16 / 9,
+        post.mediaGeometry?.aspectRatio,
+      ),
+    };
+  }
+  const aspectRatio = reservedAspectRatioRef.current.value;
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const mediaIdentityRef = useRef(mediaIdentity);
@@ -1916,8 +1935,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [hasVideoError, setHasVideoError] = useState(false);
   const [videoPlayerGeneration, setVideoPlayerGeneration] = useState(0);
   const videoMetricsPlayerId = useMemo(
-    () => `feed:${post.id}:${videoPlayerGeneration}`,
-    [post.id, videoPlayerGeneration],
+    () => `${videoMetricsSurface}:${post.id}:${videoPlayerGeneration}`,
+    [post.id, videoMetricsSurface, videoPlayerGeneration],
   );
   const [maxVideoBitRate, setMaxVideoBitRate] = useState(
     VIDEO_STARTUP_MAX_BITRATE,
@@ -1978,9 +1997,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     firstFrameProgressStartRef.current = null;
     videoSurfaceRecoveryCountRef.current = 0;
     videoSurfaceRecoveryInFlightRef.current = false;
-    commitVideoAspectRatio(
-      getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
-    );
     setSeekTime(savedTime > 0.05 ? savedTime : undefined);
     setManuallyPaused(false);
     setIsReady(false);
@@ -1990,7 +2006,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     setHasVideoError(false);
     setVideoPlayerGeneration(0);
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
-  }, [clearVideoQualityRamp, commitVideoAspectRatio, frameCoverOpacity, mediaIdentity, post.id, videoPreviewCacheKey]);
+  }, [clearVideoQualityRamp, frameCoverOpacity, mediaIdentity, post.id]);
 
   useEffect(() => {
     return () => {
@@ -2026,20 +2042,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
   }, [isOpeningReels, isPlaybackSurfaceFocused]);
 
-  // Measure thumbnail size on mount to avoid layout jumps
+  // Learn geometry for legacy posts, but keep this mounted row stable. The
+  // persisted value is applied the next time the media card is mounted.
   useEffect(() => {
-    if (!shouldMeasureFeedVideoPosterAspectRatio(Platform.OS)) {
-      return undefined;
-    }
-
     const thumbnailUrl = resolvedThumbnailUrl;
     if (!thumbnailUrl || !mediaLoadEnabled) return undefined;
 
-    const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
-    if (cachedRatio) {
-      commitVideoAspectRatio(
-        clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9),
-      );
+    if (
+      post.mediaGeometry?.aspectRatio ||
+      feedMediaGeometryStorage.getAspectRatio(thumbnailUrl)
+    ) {
       return undefined;
     }
 
@@ -2052,10 +2064,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           if (thumbnailUrl !== videoPreviewCacheKey) {
             cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
           }
-          // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
-          commitVideoAspectRatio(
-            clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
-          );
         }
       },
       err => {
@@ -2071,9 +2079,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     return () => {
       cancelled = true;
     };
-  }, [commitVideoAspectRatio, mediaLoadEnabled, resolvedThumbnailUrl, videoPreviewCacheKey]);
+  }, [
+    mediaLoadEnabled,
+    post.mediaGeometry?.aspectRatio,
+    resolvedThumbnailUrl,
+    videoPreviewCacheKey,
+  ]);
 
-  // Refine aspect ratio when actual video loads
+  // Persist the canonical video size for legacy responses without resizing
+  // the row currently under the user's finger.
   const handleVideoLoad = useCallback(
     (data: any) => {
       if (mediaIdentity !== mediaIdentityRef.current) return;
@@ -2098,13 +2112,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         const { width, height } = size;
         if (width > 0 && height > 0) {
           cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
-          commitVideoAspectRatio(
-            clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
-          );
+          if (videoUrl && videoUrl !== videoPreviewCacheKey) {
+            cacheMediaAspectRatio(videoUrl, width, height);
+          }
         }
       }
     },
-    [commitVideoAspectRatio, mediaIdentity, videoPreviewCacheKey],
+    [mediaIdentity, videoPreviewCacheKey, videoUrl],
   );
 
   const revealVideoFrame = useCallback(() => {
@@ -2223,6 +2237,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const shouldKeepPreparedVideoMounted =
     keepPreparedVideoMounted && isPreparedKeptAlive && hasRenderedFrame;
   const canMountWarmVideo = shouldMountWarmFeedVideo({
+    platform: Platform.OS,
     optimizationEnabled: isClientUiOptimizationEnabled(),
     isWarm,
     isScrollBusy,
@@ -2247,9 +2262,14 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const videoMetricsRole = isActive ? 'current' : isWarm ? 'warm' : 'prepared';
   const videoMetricsRoleRef = useRef(videoMetricsRole);
   videoMetricsRoleRef.current = videoMetricsRole;
-  const shouldBlurVideoBackdrop = shouldMountVideo && Platform.OS !== 'android';
+  const shouldBlurVideoBackdrop =
+    Boolean(resolvedThumbnailUrl) &&
+    isActive &&
+    isPlaybackSurfaceFocused &&
+    !isScrollBusy &&
+    (Platform.OS !== 'android' || performanceSurface === 'profile');
   const shouldRenderVideoFrameCover =
-    resolvedThumbnailUrl && isFrameCoverVisible && Platform.OS !== 'android';
+    Boolean(resolvedThumbnailUrl) && isFrameCoverVisible;
 
   useEffect(() => {
     if (!shouldMountVideo || !shouldRecordFeedVideoPlaybackMetrics) {
@@ -2258,7 +2278,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
     recordVideoPlayerMounted({
       playerId: videoMetricsPlayerId,
-      surface: 'feed',
+      surface: videoMetricsSurface,
       role: videoMetricsRoleRef.current,
     });
 
@@ -2267,16 +2287,22 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     shouldMountVideo,
     shouldRecordFeedVideoPlaybackMetrics,
     videoMetricsPlayerId,
+    videoMetricsSurface,
   ]);
 
   useEffect(() => {
     if (!shouldMountVideo || !shouldRecordFeedVideoPlaybackMetrics) return;
-    updateVideoPlayerRole(videoMetricsPlayerId, videoMetricsRole, 'feed');
+    updateVideoPlayerRole(
+      videoMetricsPlayerId,
+      videoMetricsRole,
+      videoMetricsSurface,
+    );
   }, [
     shouldMountVideo,
     shouldRecordFeedVideoPlaybackMetrics,
     videoMetricsPlayerId,
     videoMetricsRole,
+    videoMetricsSurface,
   ]);
 
   useEffect(() => {
@@ -2585,7 +2611,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             posterResizeMode="cover"
             onError={handleVideoError}
           />
-          {shouldRenderVideoFrameCover ? (
+          {shouldRenderVideoFrameCover && resolvedThumbnailUrl ? (
             <Animated.View
               pointerEvents="none"
               style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
@@ -2593,7 +2619,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
               <FeedVideoBackdrop
                 uri={resolvedThumbnailUrl}
                 enabled={mediaLoadEnabled}
-                blurred
+                blurred={shouldBlurVideoBackdrop}
               />
             </Animated.View>
           ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
@@ -2629,6 +2655,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       playing,
       resolvedThumbnailUrl,
       shouldRecordFeedVideoPlaybackMetrics,
+      shouldBlurVideoBackdrop,
       shouldRenderVideoFrameCover,
       shouldMountVideo,
       videoPlayerGeneration,
@@ -2734,7 +2761,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   <FeedVideoBackdrop
                     uri={resolvedThumbnailUrl}
                     enabled={mediaLoadEnabled}
-                    blurred={shouldBlurVideoBackdrop}
+                    blurred={shouldBlurVideoBackdrop && !isFrameCoverVisible}
                   />
                 ) : null}
                 {stableVideoSurface}

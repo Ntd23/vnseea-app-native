@@ -7,6 +7,29 @@ export type FeedVideoAutoplayCandidate = {
 const DEFAULT_MIN_VISIBLE_RATIO = 0.6;
 const DEFAULT_VIEWPORT_CENTER_RATIO = 0.52;
 
+export function getFeedVideoPlaybackPolicy(platform: string) {
+  const isAndroid = platform === 'android';
+
+  return {
+    warmBehindItems: 0,
+    warmAheadItems: isAndroid ? 0 : 1,
+    idleWarmMaxCount: 1,
+    scrollingWarmMaxCount: 0,
+    posterPrefetchBehindItems: 0,
+    posterPrefetchAheadItems: isAndroid ? 1 : 2,
+  } as const;
+}
+
+export function resolvePlaybackSurfaceFocused({
+  routeFocused,
+  appActive,
+}: {
+  routeFocused: boolean;
+  appActive: boolean;
+}) {
+  return routeFocused && appActive;
+}
+
 function getVisibleHeight(y: number, height: number, viewportHeight: number) {
   return Math.max(0, Math.min(y + height, viewportHeight) - Math.max(y, 0));
 }
@@ -146,12 +169,14 @@ export function selectFeedVideoMeasurementIds({
 }
 
 export function shouldMountWarmFeedVideo({
+  platform,
   optimizationEnabled,
   isWarm,
   isScrollBusy,
   shouldKeepPreparedVideoMounted,
   wasPlayerSurfaceMounted = false,
 }: {
+  platform: string;
   optimizationEnabled: boolean;
   isWarm: boolean;
   isScrollBusy: boolean;
@@ -159,6 +184,7 @@ export function shouldMountWarmFeedVideo({
   wasPlayerSurfaceMounted?: boolean;
 }) {
   if (!isWarm) return false;
+  if (platform === 'android' && isScrollBusy) return false;
   if (!optimizationEnabled) {
     return isWarm || !isScrollBusy || shouldKeepPreparedVideoMounted;
   }

@@ -193,6 +193,8 @@ import {
   resolveFeedVisibleMediaRetentionDeadline,
   getRetainedFeedVideoPosterKeys,
   getFeedVideoActiveUpdate,
+  getFeedVideoPlaybackPolicy,
+  resolvePlaybackSurfaceFocused,
   selectFeedVideoMeasurementIds,
   shouldClearFeedActiveVideo,
   shouldCommitFeedChromeVisibility,
@@ -217,6 +219,7 @@ import {
 import { primeProfilePreviewCache } from '../../../profile/application/view-models/useProfileViewModel';
 
 const FEED_IS_ANDROID = Platform.OS === 'android';
+const FEED_VIDEO_PLAYBACK_POLICY = getFeedVideoPlaybackPolicy(Platform.OS);
 const LOAD_MORE_THROTTLE_MS = 1200;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const FEED_NEW_POST_PROBE_INTERVAL_MS = 30000;
@@ -234,12 +237,18 @@ const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 1 : 3;
 const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 1 : 3;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 100 : 60;
 const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 8 : 10;
-const FEED_VIDEO_WARM_BEHIND_ITEMS = 0;
-const FEED_VIDEO_WARM_AHEAD_ITEMS = 1;
-const FEED_VIDEO_WARM_MAX_COUNT = 1;
-const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT = 1;
-const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = 1;
-const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 2 : 4;
+const FEED_VIDEO_WARM_BEHIND_ITEMS =
+  FEED_VIDEO_PLAYBACK_POLICY.warmBehindItems;
+const FEED_VIDEO_WARM_AHEAD_ITEMS =
+  FEED_VIDEO_PLAYBACK_POLICY.warmAheadItems;
+const FEED_VIDEO_WARM_MAX_COUNT =
+  FEED_VIDEO_PLAYBACK_POLICY.idleWarmMaxCount;
+const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT =
+  FEED_VIDEO_PLAYBACK_POLICY.scrollingWarmMaxCount;
+const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS =
+  FEED_VIDEO_PLAYBACK_POLICY.posterPrefetchBehindItems;
+const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS =
+  FEED_VIDEO_PLAYBACK_POLICY.posterPrefetchAheadItems;
 const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 1 : 2;
 const FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 220 : 160;
 const MAX_PENDING_VIDEO_POSTER_POSTS = FEED_IS_ANDROID ? 4 : 8;
@@ -2378,7 +2387,10 @@ function FeedScreen() {
   );
 
   const isFocused = useIsFocused();
-  const isPlaybackSurfaceFocused = isFocused && isFeedAppActive;
+  const isPlaybackSurfaceFocused = resolvePlaybackSurfaceFocused({
+    routeFocused: isFocused,
+    appActive: isFeedAppActive,
+  });
   useEffect(() => {
     publishFeedScreenFocused(isPlaybackSurfaceFocused);
 

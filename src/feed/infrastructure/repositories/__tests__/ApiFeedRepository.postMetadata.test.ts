@@ -195,6 +195,32 @@ describe('ApiFeedRepository post metadata', () => {
     });
   });
 
+  it('maps canonical video geometry supplied by the server', () => {
+    const mapped = mapFeedPost({
+      id: '93',
+      post_id: '93',
+      user_id: '1',
+      postType: 'video',
+      postFile: 'https://demo.vnseea.vn/post.mp4',
+      postFileThumb: 'https://demo.vnseea.vn/post.jpg',
+      media_geometry: { width: 1080, height: 1920 },
+      postPrivacy: '0',
+      time: '1781712000',
+      postLikes: '0',
+      post_comments: '0',
+      publisher,
+    });
+
+    expect(mapped).toMatchObject({
+      kind: 'video',
+      mediaGeometry: {
+        width: 1080,
+        height: 1920,
+        aspectRatio: 0.5625,
+      },
+    });
+  });
+
   it('searches taggable people with the current audience and context', async () => {
     (backendApi.post as jest.Mock).mockResolvedValue({
       api_status: 200,

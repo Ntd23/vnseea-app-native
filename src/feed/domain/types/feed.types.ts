@@ -215,6 +215,12 @@ export interface PostLocation {
   label: string;
 }
 
+export interface FeedMediaGeometry {
+  width: number;
+  height: number;
+  aspectRatio: number;
+}
+
 /**
  * The local "draft" the composer screen owns. View-model mutates this as
  * the user types / picks photos / changes privacy. On submit we pass it
@@ -312,6 +318,7 @@ export interface FeedVideoPost extends FeedPostPermissionCarrier {
   mentionNames?: string[];
   videoUrl: string;
   thumbnailUrl?: string;
+  mediaGeometry?: FeedMediaGeometry;
   postedAt?: number;
   likeCount: number;
   commentCount: number;
