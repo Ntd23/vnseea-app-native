@@ -43,6 +43,7 @@ local.properties
 node_modules/
 npm-debug.log
 yarn-error.log
+/package-lock.json
 
 # fastlane
 #
@@ -86,8 +87,33 @@ yarn-error.log
 .env.*
 !.env.example
 
+# Local editor, AI tooling, package-manager cache, and temporary build output
+.vscode/
+.codex-*
+.tmp-build/
+.pnpm-store/
+Microsoft/
 
-tmp/*
+# Generated application packages and Android bundles
+*.apk
+*.aab
+*.idsig
+/android/app/src/main/assets/index.android.bundle
+
+# Logs, crash dumps, and local type-check output
+*.log
+hs_err_pid*
+replay_pid*
+/tsc_*.txt
+
+# Local scratch files
+/1.md
+/log.md
+/run.md
+/todos.md
+/tmp_prev.tsx
+/tmp/
+/tasks/
 duong/*
 !duong/google-maps-ios-setup.md
 .superpowers/*
