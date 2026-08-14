@@ -51,17 +51,18 @@ export function normalizeLocationAccessError(error: unknown) {
     nativeCode === 'permission_denied'
       ? 'permission_denied'
       : nativeCode === 'provider_unavailable'
-        ? 'services_disabled'
-        : nativeCode === 'timeout'
-          ? 'timeout'
-          : nativeCode === 'unavailable'
-            ? 'unavailable'
-            : 'failed';
+      ? 'services_disabled'
+      : nativeCode === 'timeout'
+      ? 'timeout'
+      : nativeCode === 'unavailable'
+      ? 'unavailable'
+      : 'failed';
   return new LocationAccessError(code, readErrorMessage(error));
 }
 
 type CurrentLocationNativeModule = {
   getCurrentLocation(timeoutMs: number): Promise<CurrentDeviceLocation>;
+  requestLocationServices?(): Promise<boolean>;
 };
 
 type GeolocationLike = {
@@ -107,7 +108,9 @@ function getNativeCurrentLocationModule() {
     | undefined;
 }
 
-export async function requestAndroidLocationPermission() {
+export async function checkAndroidLocationPermission() {
+  if (Platform.OS !== 'android') return true;
+
   const finePermission = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
   const coarsePermission =
     PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;
@@ -115,7 +118,15 @@ export async function requestAndroidLocationPermission() {
     PermissionsAndroid.check(finePermission),
     PermissionsAndroid.check(coarsePermission),
   ]);
-  if (hasFine || hasCoarse) return true;
+  return hasFine || hasCoarse;
+}
+
+export async function requestAndroidLocationPermission() {
+  if (await checkAndroidLocationPermission()) return true;
+
+  const finePermission = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
+  const coarsePermission =
+    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;
 
   const result = await PermissionsAndroid.requestMultiple([
     finePermission,
@@ -126,6 +137,24 @@ export async function requestAndroidLocationPermission() {
     result[finePermission] === PermissionsAndroid.RESULTS.GRANTED ||
     result[coarsePermission] === PermissionsAndroid.RESULTS.GRANTED
   );
+}
+
+export async function requestAndroidLocationServices() {
+  if (Platform.OS !== 'android') return true;
+
+  const nativeModule = getNativeCurrentLocationModule();
+  if (!nativeModule?.requestLocationServices) {
+    throw new LocationAccessError(
+      'unavailable',
+      'Thiết bị chưa hỗ trợ hộp thoại bật vị trí trong ứng dụng.',
+    );
+  }
+
+  try {
+    return await nativeModule.requestLocationServices();
+  } catch (error) {
+    throw normalizeLocationAccessError(error);
+  }
 }
 
 function normalizeLocation(value: CurrentDeviceLocation) {
@@ -223,7 +252,9 @@ async function requestCurrentDeviceLocation(timeoutMs: number) {
 
     const nativeModule = getNativeCurrentLocationModule();
     if (nativeModule) {
-      return normalizeLocation(await nativeModule.getCurrentLocation(timeoutMs));
+      return normalizeLocation(
+        await nativeModule.getCurrentLocation(timeoutMs),
+      );
     }
 
     return await getIosCurrentLocation(timeoutMs);

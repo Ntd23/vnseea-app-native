@@ -70,6 +70,7 @@ export const GroupPostIdentityHeader = React.memo(
                 source={{ uri: group.avatarUrl }}
                 className="h-11 w-11 rounded-[13px] bg-slate-100"
                 resizeMode="cover"
+                resizeMethod="resize"
               />
             ) : (
               <View className="h-11 w-11 items-center justify-center rounded-[13px] bg-red-50">
@@ -83,6 +84,7 @@ export const GroupPostIdentityHeader = React.memo(
                   source={{ uri: publisher.avatarUrl }}
                   className="h-5 w-5 rounded-full"
                   resizeMode="cover"
+                  resizeMethod="resize"
                 />
               </View>
             ) : null}

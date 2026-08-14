@@ -282,6 +282,7 @@ function PollVoterRow({
           source={{ uri: voter.avatarUrl }}
           className="h-11 w-11 rounded-full"
           resizeMode="cover"
+          resizeMethod="resize"
         />
       ) : (
         <View className="h-11 w-11 items-center justify-center rounded-full bg-[#D2E4FF]">
@@ -507,6 +508,7 @@ export const PollPostCard = React.memo(function PollPostCard({
                 source={{ uri: post.publisher.avatarUrl }}
                 className="h-10 w-10 rounded-full"
                 resizeMode="cover"
+                resizeMethod="resize"
               />
             ) : (
               <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">

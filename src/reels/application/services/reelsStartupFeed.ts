@@ -117,8 +117,12 @@ export function mergeFeedVideoPostSnapshotIntoReel(
     ...current,
     ...snapshot,
     ...sharePermission,
-    videoUrl: snapshot.videoUrl || current.videoUrl,
-    thumbnailUrl: snapshot.thumbnailUrl ?? current.thumbnailUrl,
+    // Realtime comes from a different endpoint than the Reels lane and may
+    // describe the same file with another CDN/normalized URL. Keep the media
+    // identity already owned by the mounted reel so an engagement-only update
+    // cannot rebuild the Android native player and flash the video surface.
+    videoUrl: current.videoUrl || snapshot.videoUrl,
+    thumbnailUrl: current.thumbnailUrl ?? snapshot.thumbnailUrl,
     viewCount: post.viewCount ?? current.viewCount,
     isSaved: post.isSaved ?? current.isSaved,
     isReposted: snapshot.isReposted || current.isReposted,

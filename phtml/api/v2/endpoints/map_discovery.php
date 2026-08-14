@@ -464,18 +464,27 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
     }
     $keyword = mysqli_real_escape_string($sqlConnect, $query);
     $like_keyword = Wo_ApiMapDiscoveryEscapeLike($query);
+    $query_length = function_exists('mb_strlen') ? mb_strlen($query, 'UTF-8') : strlen($query);
+    $single_character_search = $query_length === 1;
     $limit = !empty($_POST['limit']) && is_numeric($_POST['limit']) ? (int) $_POST['limit'] : 20;
     $limit = max(1, min($limit, 80));
     $origin_lat = Wo_ApiMapDiscoveryNumber('origin_lat');
     $origin_lng = Wo_ApiMapDiscoveryNumber('origin_lng');
     $global_search = !empty($_POST['global_search']) && (string) $_POST['global_search'] !== '0';
-    $has_origin = ($origin_lat !== null && $origin_lng !== null && !($origin_lat == 0 && $origin_lng == 0));
+    $allow_unmapped_matches = $global_search && $keyword !== '';
+    $has_origin = $origin_lat !== null && $origin_lng !== null && !($origin_lat == 0 && $origin_lng == 0);
     $candidate_limit = $fast
         ? min(max($limit * 2, $limit), 60)
         : min(max($limit * 6, $limit), 160);
     $normalized_query = Wo_ApiMapDiscoveryNormalizeSearchInput($query);
+    $query_tokens = array_slice(array_values(array_filter(
+        explode(' ', $normalized_query),
+        function ($token) {
+            return $token !== '';
+        }
+    )), 0, 8);
     $max_distance_meters = 0;
-    if ($has_origin) {
+    if ($has_origin && !$global_search) {
         $distance_km = !empty($_POST['distance']) && is_numeric($_POST['distance'])
             ? (float) $_POST['distance']
             : 3;
@@ -493,7 +502,10 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
         }
     }
 
-    $base_where = " WHERE `active` = '1' AND `address` <> '' AND `lat` <> '' AND `lng` <> '' AND `lat` <> '0' AND `lng` <> '0'";
+    $base_where = " WHERE `active` = '1'";
+    if (!$allow_unmapped_matches) {
+        $base_where .= " AND `address` <> '' AND `lat` <> '' AND `lng` <> '' AND `lat` <> '0' AND `lng` <> '0'";
+    }
     if ($max_distance_meters > 0) {
         $lat_delta = $max_distance_meters / 111320;
         $lng_delta = $max_distance_meters / max(111320 * cos(deg2rad($origin_lat)), 1);
@@ -504,25 +516,68 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
         $base_where .= " AND CAST(`lat` AS DECIMAL(10,7)) BETWEEN {$lat_min} AND {$lat_max} AND CAST(`lng` AS DECIMAL(10,7)) BETWEEN {$lng_min} AND {$lng_max}";
     }
 
-    $distance_order = $has_origin
-        ? "(POW((`lat` - " . number_format($origin_lat, 7, '.', '') . "), 2) + POW((`lng` - " . number_format($origin_lng, 7, '.', '') . "), 2)) ASC,"
-        : '';
-    $order = $keyword !== ''
-        ? "(`page_title` = '{$keyword}') DESC, (`page_name` = '{$keyword}') DESC, (`page_title` LIKE '{$like_keyword}%' ESCAPE '=') DESC, (`page_name` LIKE '{$like_keyword}%' ESCAPE '=') DESC, (`address` LIKE '{$like_keyword}%' ESCAPE '=') DESC,{$distance_order}"
-        : $distance_order;
     $select_fields = $fast
         ? '`page_id`, `page_name`, `page_title`, `page_description`, `address`, `avatar`, `cover`, `place_id`, `lat`, `lng`'
         : '`page_id`';
-    $legacy_search_where = $keyword !== ''
-        ? " AND (`page_name` LIKE '%{$like_keyword}%' ESCAPE '=' OR `page_title` LIKE '%{$like_keyword}%' ESCAPE '=' OR `address` LIKE '%{$like_keyword}%' ESCAPE '=')"
+    $legacy_search_pattern = ($single_character_search && !$global_search)
+        ? $like_keyword . '%'
+        : '%' . $like_keyword . '%';
+    $escaped_query_tokens = array();
+    $all_name_token_clauses = array();
+    $combined_name_expression = "CONCAT_WS(' ', COALESCE(`page_title`, ''), COALESCE(`page_name`, ''))";
+    if (!$single_character_search && count($query_tokens) > 1) {
+        foreach ($query_tokens as $query_token) {
+            $escaped_token = Wo_ApiMapDiscoveryEscapeLike($query_token);
+            $escaped_query_tokens[] = $escaped_token;
+            // Match complete name tokens so a short query token such as "x"
+            // does not rank "Extra" ahead of a Page that actually contains X.
+            $token_boundary_pattern = '(^|[^[:alnum:]])' . $escaped_token . '([^[:alnum:]]|$)';
+            $all_name_token_clauses[] = "{$combined_name_expression} REGEXP '{$token_boundary_pattern}'";
+        }
+    }
+    $ordered_token_pattern = count($escaped_query_tokens) > 1
+        ? '%' . implode('%', $escaped_query_tokens) . '%'
         : '';
+    $ordered_token_match = $ordered_token_pattern !== ''
+        ? "(`page_name` LIKE '{$ordered_token_pattern}' ESCAPE '=' OR `page_title` LIKE '{$ordered_token_pattern}' ESCAPE '=')"
+        : '';
+    $all_name_tokens_sql = count($all_name_token_clauses) > 1
+        ? '(' . implode(' AND ', $all_name_token_clauses) . ')'
+        : '';
+    $name_contains_match = "(`page_name` LIKE '{$legacy_search_pattern}' ESCAPE '=' OR `page_title` LIKE '{$legacy_search_pattern}' ESCAPE '=')";
+    $global_name_search_where = $keyword !== ''
+        ? ' AND (' . $name_contains_match . ($ordered_token_match !== '' ? ' OR ' . $ordered_token_match : '') . ($all_name_tokens_sql !== '' ? ' OR ' . $all_name_tokens_sql : '') . ')'
+        : '';
+    $global_fulltext_name_search_where = $keyword !== ''
+        ? ' AND (' . $name_contains_match . ($all_name_tokens_sql !== '' ? ' OR ' . $all_name_tokens_sql : '') . ')'
+        : '';
+    $legacy_search_where = $keyword !== ''
+        ? ($global_search
+            ? $global_name_search_where
+            : ' AND (' . $name_contains_match . " OR `address` LIKE '{$legacy_search_pattern}' ESCAPE '='" . ($ordered_token_match !== '' ? ' OR ' . $ordered_token_match : '') . ($all_name_tokens_sql !== '' ? ' OR ' . $all_name_tokens_sql : '') . ')')
+        : '';
+    $distance_order = ($has_origin && !$global_search)
+        ? "(POW((`lat` - " . number_format($origin_lat, 7, '.', '') . "), 2) + POW((`lng` - " . number_format($origin_lng, 7, '.', '') . "), 2)) ASC,"
+        : '';
+    $name_contains_order = "(`page_title` LIKE '%{$like_keyword}%' ESCAPE '=') DESC, (`page_name` LIKE '%{$like_keyword}%' ESCAPE '=') DESC,";
+    $ordered_token_order = $ordered_token_match !== '' ? "{$ordered_token_match} DESC," : '';
+    $all_name_tokens_order = $all_name_tokens_sql !== '' ? "{$all_name_tokens_sql} DESC," : '';
+    $name_order = "(`page_title` = '{$keyword}') DESC, (`page_name` = '{$keyword}') DESC, (`page_title` LIKE '{$like_keyword}%' ESCAPE '=') DESC, (`page_name` LIKE '{$like_keyword}%' ESCAPE '=') DESC," . $name_contains_order . $ordered_token_order;
+    $address_order = $global_search ? '' : "(`address` LIKE '{$like_keyword}%' ESCAPE '=') DESC,";
+    $legacy_order = $keyword !== ''
+        ? $name_order . $all_name_tokens_order . $address_order . $distance_order
+        : $distance_order;
+    $fulltext_order = $keyword !== ''
+        ? $name_order . $all_name_tokens_order . $address_order . $distance_order
+        : $distance_order;
     $fulltext_query = $keyword !== '' ? Wo_ApiMapDiscoveryPageFulltextQuery($query) : '';
     $query_result = false;
 
     if ($fulltext_query !== '' && Wo_ApiMapDiscoveryPageFulltextAvailable()) {
         $fulltext_keyword = mysqli_real_escape_string($sqlConnect, $fulltext_query);
         $fulltext_match = "MATCH(`page_name`, `page_title`, `address`) AGAINST ('{$fulltext_keyword}' IN BOOLEAN MODE)";
-        $fulltext_sql = "SELECT {$select_fields} FROM " . T_PAGES . $base_where . " AND {$fulltext_match} ORDER BY {$order} {$fulltext_match} DESC, `page_id` DESC LIMIT {$candidate_limit}";
+        $fulltext_scope_where = $global_search ? $global_fulltext_name_search_where : '';
+        $fulltext_sql = "SELECT {$select_fields} FROM " . T_PAGES . $base_where . " AND {$fulltext_match}" . $fulltext_scope_where . " ORDER BY {$fulltext_order} {$fulltext_match} DESC, `page_id` DESC LIMIT {$candidate_limit}";
         $query_result = mysqli_query($sqlConnect, $fulltext_sql);
 
         // FULLTEXT token-size and stop-word settings differ between hosts.
@@ -535,7 +590,7 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
     }
 
     if (!$query_result) {
-        $legacy_sql = "SELECT {$select_fields} FROM " . T_PAGES . $base_where . $legacy_search_where . " ORDER BY {$order} `page_id` DESC LIMIT {$candidate_limit}";
+        $legacy_sql = "SELECT {$select_fields} FROM " . T_PAGES . $base_where . $legacy_search_where . " ORDER BY {$legacy_order} `page_id` DESC LIMIT {$candidate_limit}";
         $query_result = mysqli_query($sqlConnect, $legacy_sql);
     }
     $items = array();
@@ -560,18 +615,35 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
             else {
                 $page = Wo_PageData($row['page_id']);
             }
-            if (empty($page) || empty($page['lat']) || empty($page['lng'])) {
+            if (empty($page)) {
                 continue;
             }
 
-            $distance_meters = $has_origin ? Wo_ApiMapDiscoveryDistanceMeters($origin_lat, $origin_lng, $page['lat'], $page['lng']) : null;
+            $page_lat = isset($page['lat']) && is_numeric($page['lat']) ? (float) $page['lat'] : null;
+            $page_lng = isset($page['lng']) && is_numeric($page['lng']) ? (float) $page['lng'] : null;
+            $has_page_coordinate = $page_lat !== null && $page_lng !== null && $page_lat >= -90 && $page_lat <= 90 && $page_lng >= -180 && $page_lng <= 180 && !($page_lat == 0 && $page_lng == 0);
+            if (!$allow_unmapped_matches && !$has_page_coordinate) {
+                continue;
+            }
+
+            $distance_meters = ($has_origin && $has_page_coordinate) ? Wo_ApiMapDiscoveryDistanceMeters($origin_lat, $origin_lng, $page_lat, $page_lng) : null;
             if ($max_distance_meters > 0 && ($distance_meters === null || $distance_meters > $max_distance_meters)) {
                 continue;
             }
             $normalized_title = Wo_ApiMapDiscoveryNormalizeSearchInput(!empty($page['page_title']) ? $page['page_title'] : (!empty($page['name']) ? $page['name'] : ''));
             $normalized_name = Wo_ApiMapDiscoveryNormalizeSearchInput(!empty($page['page_name']) ? $page['page_name'] : '');
             $normalized_address = Wo_ApiMapDiscoveryNormalizeSearchInput(!empty($page['address']) ? $page['address'] : '');
-            $match_priority = 4;
+            $name_tokens = array_fill_keys(array_filter(explode(' ', trim($normalized_title . ' ' . $normalized_name))), true);
+            $all_name_tokens_match = count($query_tokens) > 1;
+            if ($all_name_tokens_match) {
+                foreach ($query_tokens as $query_token) {
+                    if (!isset($name_tokens[$query_token])) {
+                        $all_name_tokens_match = false;
+                        break;
+                    }
+                }
+            }
+            $match_priority = 5;
             if ($normalized_query !== '') {
                 if ($normalized_title === $normalized_query || $normalized_name === $normalized_query) {
                     $match_priority = 0;
@@ -582,8 +654,11 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
                 else if (strpos($normalized_title, $normalized_query) !== false || strpos($normalized_name, $normalized_query) !== false) {
                     $match_priority = 2;
                 }
-                else if (strpos($normalized_address, $normalized_query) !== false) {
+                else if ($all_name_tokens_match) {
                     $match_priority = 3;
+                }
+                else if (strpos($normalized_address, $normalized_query) !== false) {
+                    $match_priority = 4;
                 }
             }
             $items[] = array(
@@ -600,8 +675,8 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
                 'cover' => Wo_ApiMapDiscoveryNormalizeUrl(!empty($page['cover']) ? $page['cover'] : ''),
                 'url' => !empty($page['url']) ? $page['url'] : '',
                 'place_id' => !empty($page['place_id']) ? $page['place_id'] : '',
-                'lat' => (float) $page['lat'],
-                'lng' => (float) $page['lng'],
+                'lat' => $has_page_coordinate ? $page_lat : null,
+                'lng' => $has_page_coordinate ? $page_lng : null,
                 'distance_meters' => $distance_meters,
                 'within_1km' => ($distance_meters !== null && $distance_meters <= 1000) ? 1 : 0,
                 'match_priority' => $match_priority
@@ -610,8 +685,8 @@ function Wo_ApiMapDiscoveryPageSuggestions() {
     }
 
     usort($items, function($a, $b) {
-        $a_match_priority = isset($a['match_priority']) ? (int) $a['match_priority'] : 4;
-        $b_match_priority = isset($b['match_priority']) ? (int) $b['match_priority'] : 4;
+        $a_match_priority = isset($a['match_priority']) ? (int) $a['match_priority'] : 5;
+        $b_match_priority = isset($b['match_priority']) ? (int) $b['match_priority'] : 5;
         if ($a_match_priority !== $b_match_priority) {
             return $a_match_priority - $b_match_priority;
         }
@@ -1036,12 +1111,14 @@ function Wo_ApiMapDiscoveryAutocomplete() {
                 $places_results,
                 !empty($text_search['results']) ? $text_search['results'] : array()
             );
-            $places_results = Wo_ApiMapDiscoveryFilterGooglePlaceResultsByRadius(
-                $places_results,
-                $origin_lat,
-                $origin_lng,
-                $radius
-            );
+            if (!$global_search) {
+                $places_results = Wo_ApiMapDiscoveryFilterGooglePlaceResultsByRadius(
+                    $places_results,
+                    $origin_lat,
+                    $origin_lng,
+                    $radius
+                );
+            }
         }
     }
 
@@ -1049,6 +1126,7 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     // places and a map origin is available.
     if (
         !$prefer_address &&
+        !$global_search &&
         count($places_results) === 0 &&
         $origin_lat !== null &&
         $origin_lng !== null
@@ -1150,16 +1228,14 @@ function Wo_ApiMapDiscoveryAutocomplete() {
             }
         }
 
-        if (!$global_search) {
-            usort($predictions, function($left, $right) {
-                $left_distance = isset($left['distance_meters']) && is_numeric($left['distance_meters']) ? (float) $left['distance_meters'] : PHP_FLOAT_MAX;
-                $right_distance = isset($right['distance_meters']) && is_numeric($right['distance_meters']) ? (float) $right['distance_meters'] : PHP_FLOAT_MAX;
-                if ($left_distance == $right_distance) {
-                    return strnatcasecmp((string) ($left['main_text'] ?? ''), (string) ($right['main_text'] ?? ''));
-                }
-                return ($left_distance < $right_distance) ? -1 : 1;
-            });
-        }
+        usort($predictions, function($left, $right) {
+            $left_distance = isset($left['distance_meters']) && is_numeric($left['distance_meters']) ? (float) $left['distance_meters'] : PHP_FLOAT_MAX;
+            $right_distance = isset($right['distance_meters']) && is_numeric($right['distance_meters']) ? (float) $right['distance_meters'] : PHP_FLOAT_MAX;
+            if ($left_distance == $right_distance) {
+                return strnatcasecmp((string) ($left['main_text'] ?? ''), (string) ($right['main_text'] ?? ''));
+            }
+            return ($left_distance < $right_distance) ? -1 : 1;
+        });
     }
     $result_limit = ($fast && !$global_search) ? 12 : 20;
 

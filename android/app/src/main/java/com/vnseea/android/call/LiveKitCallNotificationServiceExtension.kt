@@ -31,6 +31,11 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
       Log.i("LiveKitCallPush", "ignored: no livekit data")
       return
     }
+    if (MessagePushNotification.isDuplicateCallActivityPush(data, notification.body)) {
+      event.preventDefault()
+      Log.i("LiveKitCallPush", "suppressed duplicate call activity message")
+      return
+    }
     if (MessagePushNotification.isMessagePush(data)) {
       event.preventDefault()
       val context: Context = event.context ?: return

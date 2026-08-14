@@ -22,9 +22,8 @@ export function buildMapBusinessSearchRequest(
     category: input.category,
     origin_lat: input.lat,
     origin_lng: input.lng,
-    radius: input.radius,
+    radius: input.globalSearch ? undefined : input.radius,
     fast: input.fast ? 1 : undefined,
     global_search: input.globalSearch ? 1 : undefined,
   };
 }
-

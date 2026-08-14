@@ -93,6 +93,9 @@ import {
   hiddenPostsStorage,
   LOCAL_POST_HIDDEN_EVENT,
 } from '../../infrastructure/storage/hiddenPostsStorage';
+import {
+  feedMediaGeometryStorage,
+} from '../../infrastructure/storage/feedMediaGeometryStorage';
 import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
 import { useDeferredVisiblePostIds } from '../../application/realtime/useDeferredVisiblePostIds';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
@@ -152,6 +155,7 @@ import {
 } from '../components/feedChromeCollapse';
 import {
   feedActiveVideoIdSnapshot,
+  feedActiveVideoSurfaceSnapshot,
   FEED_COPY,
   type FeedCopy,
   getFeedVideoPosterCacheKeyForPost,
@@ -200,7 +204,12 @@ import {
   shouldCommitFeedChromeVisibility,
 } from './feedVideoAutoplay';
 import { reuseStableItemsById } from './feedListItemStability';
+import {
+  createFeedLoadMoreDemandController,
+  type FeedLoadMoreDemandController,
+} from './feedLoadMoreDemandController';
 import { interleaveSupplementalPosts } from './feedSupplementalMixer';
+import { shouldRunFeedStartupBackgroundWork } from './feedStartupBackgroundWork';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import {
   createCachedVideoPosterThumbnail,
@@ -221,6 +230,9 @@ import { primeProfilePreviewCache } from '../../../profile/application/view-mode
 const FEED_IS_ANDROID = Platform.OS === 'android';
 const FEED_VIDEO_PLAYBACK_POLICY = getFeedVideoPlaybackPolicy(Platform.OS);
 const LOAD_MORE_THROTTLE_MS = 1200;
+const FEED_LOAD_MORE_RETRY_DELAY_MS = 240;
+const FEED_LOAD_MORE_MAX_RETRY_DELAY_MS = 1920;
+const FEED_FOCUS_LOAD_MORE_RETRY_DELAY_MS = 32;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const FEED_NEW_POST_PROBE_INTERVAL_MS = 30000;
 const FEED_NEW_POST_PROBE_LIMIT = 8;
@@ -237,12 +249,9 @@ const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 1 : 3;
 const IMAGE_PREFETCH_MAX_CONCURRENCY = FEED_IS_ANDROID ? 1 : 3;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 100 : 60;
 const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 8 : 10;
-const FEED_VIDEO_WARM_BEHIND_ITEMS =
-  FEED_VIDEO_PLAYBACK_POLICY.warmBehindItems;
-const FEED_VIDEO_WARM_AHEAD_ITEMS =
-  FEED_VIDEO_PLAYBACK_POLICY.warmAheadItems;
-const FEED_VIDEO_WARM_MAX_COUNT =
-  FEED_VIDEO_PLAYBACK_POLICY.idleWarmMaxCount;
+const FEED_VIDEO_WARM_BEHIND_ITEMS = FEED_VIDEO_PLAYBACK_POLICY.warmBehindItems;
+const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_VIDEO_PLAYBACK_POLICY.warmAheadItems;
+const FEED_VIDEO_WARM_MAX_COUNT = FEED_VIDEO_PLAYBACK_POLICY.idleWarmMaxCount;
 const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT =
   FEED_VIDEO_PLAYBACK_POLICY.scrollingWarmMaxCount;
 const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS =
@@ -259,9 +268,9 @@ const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
 const FEED_INLINE_LIVE_ACTIVE_DWELL_MS = 140;
 const FEED_VISIBLE_MEDIA_RETENTION_MS = 140;
 const FEED_MEDIA_MOUNT_BEHIND_ITEMS = 1;
-// Image.prefetch already warms a larger runway. Native-mounting three photo
-// cards ahead on Android caused their decode/aspect-ratio work to arrive as a
-// visible three-card hitch, so keep only the nearest card mounted ahead.
+// Keep the nearest Android row's poster/image attached before it crosses the
+// viewport boundary. Video players remain active/warm-gated separately, so
+// this only moves image decode/upload work off the visible swipe frame.
 const FEED_MEDIA_MOUNT_AHEAD_ITEMS = FEED_IS_ANDROID ? 1 : 3;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -269,10 +278,21 @@ const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 // default while preserving direct finger tracking and pull-to-refresh.
 const FEED_SCROLL_DECELERATION_RATE = FEED_IS_ANDROID ? 0.94 : 0.985;
 const FEED_SCROLL_EVENT_THROTTLE_MS = FEED_IS_ANDROID ? 32 : 16;
+const FEED_SCROLL_SETTLE_DELAY_MS = FEED_IS_ANDROID ? 180 : 80;
+const FEED_REELS_PRELOAD_DELAY_MS = 8000;
+const FEED_REELS_PRELOAD_RETRY_MS = 500;
+const FEED_PRODUCTS_LOAD_DELAY_MS = 6000;
+const FEED_GROUPS_LOAD_DELAY_MS = 7000;
+const FEED_PAGES_LOAD_DELAY_MS = 8000;
+const FEED_EVENTS_LOAD_DELAY_MS = 9000;
+const FEED_JOBS_LOAD_DELAY_MS = 10000;
+const FEED_FUNDING_LOAD_DELAY_MS = 11000;
 const FEED_SCROLL_VIDEO_MEASUREMENT_MAX_COUNT = FEED_IS_ANDROID ? 3 : 5;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
-  ? Math.max(1500, Math.round(FEED_SCREEN_HEIGHT * 1.8))
+  ? Math.max(900, Math.round(FEED_SCREEN_HEIGHT * 1.0))
   : Math.max(2800, Math.round(FEED_SCREEN_HEIGHT * 3.2));
+// Keep enough heterogeneous holders alive for one-off rails (funding, pages,
+// groups) to survive a short reverse scroll instead of cold-mounting again.
 const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 10 : 28;
 const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   // Deep-feed row order is stabilized explicitly below. Letting FlashList
@@ -420,16 +440,14 @@ const Avatar = React.memo(function Avatar({
   uri: string;
   size?: number;
 }) {
-  const source = useMemo(() => ({ uri }), [uri]);
   const style = useMemo(() => ({ height: size, width: size }), [size]);
 
   return (
-    <Image
-      source={source}
+    <FeedMediaImage
+      uri={uri}
       style={style}
       className="rounded-full"
       resizeMode="cover"
-      fadeDuration={0}
     />
   );
 });
@@ -824,11 +842,10 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
                   resizeMode="cover"
                 />
                 <View className="absolute bottom-[-22px] left-3 h-14 w-14 rounded-full border-4 border-white bg-white">
-                  <Image
-                    source={{ uri: avatar }}
+                  <FeedMediaImage
+                    uri={avatar}
                     className="h-full w-full rounded-full"
                     resizeMode="cover"
-                    fadeDuration={0}
                   />
                 </View>
               </View>
@@ -965,11 +982,10 @@ const SuggestedPagesCarousel = React.memo(
                     resizeMode="cover"
                   />
                   <View className="absolute bottom-[-22px] left-3 h-14 w-14 rounded-full border-4 border-white bg-white">
-                    <Image
-                      source={{ uri: avatar }}
+                    <FeedMediaImage
+                      uri={avatar}
                       className="h-full w-full rounded-full"
                       resizeMode="cover"
-                      fadeDuration={0}
                     />
                   </View>
                 </View>
@@ -1323,7 +1339,25 @@ function FeedScreen() {
   const editFeedPost = vm.editPost;
   const hideFeedPost = vm.hidePost;
   const shareFeedPost = vm.sharePost;
-  const reloadFeedPosts = vm.reloadPosts;
+  const feedLoadMoreDemandRef = useRef<FeedLoadMoreDemandController | null>(
+    null,
+  );
+  if (feedLoadMoreDemandRef.current === null) {
+    feedLoadMoreDemandRef.current = createFeedLoadMoreDemandController();
+  }
+  const lastLoadMoreRequestAtRef = useRef(0);
+  const resetFeedLoadMoreDemandForGeneration = useCallback(() => {
+    feedLoadMoreDemandRef.current?.resetGeneration();
+    lastLoadMoreRequestAtRef.current = 0;
+  }, []);
+  const reloadFeedPostsRequest = vm.reloadPosts;
+  const reloadFeedPosts = useCallback(
+    (isPullToRefresh = false) => {
+      resetFeedLoadMoreDemandForGeneration();
+      return reloadFeedPostsRequest(isPullToRefresh);
+    },
+    [reloadFeedPostsRequest, resetFeedLoadMoreDemandForGeneration],
+  );
   const peekLatestFeedPosts = vm.peekLatestPosts;
   const updateFeedPublisherFollowState = vm.updatePublisherFollowState;
   const mainFeedListRef = useRef<FlashListRef<FeedListItem>>(null);
@@ -1338,15 +1372,19 @@ function FeedScreen() {
   const isFeedPlaybackSurfaceFocusedRef = useRef(
     isFeedTabFocused && isFeedAppActive,
   );
+  const lastFeedScrollActivityAtRef = useRef(0);
   isFeedAppActiveRef.current = isFeedAppActive;
-  isFeedPlaybackSurfaceFocusedRef.current =
-    isFeedTabFocused && isFeedAppActive;
+  isFeedPlaybackSurfaceFocusedRef.current = isFeedTabFocused && isFeedAppActive;
 
   useEffect(() => {
     if (!isFeedTabFocused || !hasFeedContent) return;
 
     let cancelled = false;
     let started = false;
+    let preloadTask: ReturnType<
+      typeof InteractionManager.runAfterInteractions
+    > | null = null;
+    let preloadTimer: ReturnType<typeof setTimeout> | null = null;
     const startReelsPreload = () => {
       if (cancelled || started) return;
       started = true;
@@ -1355,14 +1393,45 @@ function FeedScreen() {
       // the player without a one-second thumbnail cover.
       preloadReelsStartupPage().catch(() => undefined);
     };
-    const preloadTask =
-      InteractionManager.runAfterInteractions(startReelsPreload);
-    const preloadFallbackTimer = setTimeout(startReelsPreload, 800);
+    const scheduleReelsPreload = (delayMs: number) => {
+      if (cancelled || started) return;
+      preloadTimer = setTimeout(() => {
+        preloadTimer = null;
+        if (cancelled || started) return;
+        if (
+          !shouldRunFeedStartupBackgroundWork({
+            isScrolling: isScrollingRef.current,
+            isMomentumScrolling: isMomentumScrollingRef.current,
+            lastScrollActivityAtMs: lastFeedScrollActivityAtRef.current,
+          })
+        ) {
+          scheduleReelsPreload(FEED_REELS_PRELOAD_RETRY_MS);
+          return;
+        }
+
+        preloadTask = InteractionManager.runAfterInteractions(() => {
+          preloadTask = null;
+          if (cancelled || started) return;
+          if (
+            !shouldRunFeedStartupBackgroundWork({
+              isScrolling: isScrollingRef.current,
+              isMomentumScrolling: isMomentumScrollingRef.current,
+              lastScrollActivityAtMs: lastFeedScrollActivityAtRef.current,
+            })
+          ) {
+            scheduleReelsPreload(FEED_REELS_PRELOAD_RETRY_MS);
+            return;
+          }
+          startReelsPreload();
+        });
+      }, delayMs);
+    };
+    scheduleReelsPreload(FEED_REELS_PRELOAD_DELAY_MS);
 
     return () => {
       cancelled = true;
-      clearTimeout(preloadFallbackTimer);
-      preloadTask.cancel();
+      if (preloadTimer) clearTimeout(preloadTimer);
+      preloadTask?.cancel();
     };
   }, [hasFeedContent, isFeedTabFocused]);
   const isFeedLoadingRef = useRef(vm.isLoading);
@@ -1375,12 +1444,7 @@ function FeedScreen() {
       isFeedTabFocused && isFeedAppActive;
     isFeedLoadingRef.current = vm.isLoading;
     hasFeedLoadedOnceRef.current = vm.hasLoadedOnce;
-  }, [
-    isFeedAppActive,
-    isFeedTabFocused,
-    vm.hasLoadedOnce,
-    vm.isLoading,
-  ]);
+  }, [isFeedAppActive, isFeedTabFocused, vm.hasLoadedOnce, vm.isLoading]);
 
   const enqueueNewPostCandidates = useCallback(
     (
@@ -1499,7 +1563,24 @@ function FeedScreen() {
     });
   }, [isFeedTabFocused, reloadFeedPosts]);
   const setFeedScrollBusy = vm.setScrollBusy;
-  const setActiveFeedSource = vm.setFeedSource;
+  const resetFeedScrollBusy = vm.resetScrollBusy;
+  const markFeedScrolledSinceLoad = vm.markFeedScrolledSinceLoad;
+  const setFeedSourceRequest = vm.setFeedSource;
+  const setActiveFeedSource = useCallback(
+    (nextSource: FeedSource | 'photos') => {
+      const currentApiSource =
+        activeFeedSourceRef.current === 'photos'
+          ? 'all'
+          : activeFeedSourceRef.current;
+      const nextApiSource = nextSource === 'photos' ? 'all' : nextSource;
+      if (currentApiSource !== nextApiSource) {
+        resetFeedLoadMoreDemandForGeneration();
+      }
+      activeFeedSourceRef.current = nextSource;
+      setFeedSourceRequest(nextSource);
+    },
+    [resetFeedLoadMoreDemandForGeneration, setFeedSourceRequest],
+  );
   useEffect(() => {
     if (route.params?.filter !== 'photos') return;
     setActiveFeedSource('photos');
@@ -1624,7 +1705,11 @@ function FeedScreen() {
   const inlineLiveDwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const activeVideoIdRef = useRef<string | null>(feedActiveVideoIdSnapshot);
+  const activeVideoIdRef = useRef<string | null>(
+    feedActiveVideoSurfaceSnapshot === 'feed'
+      ? feedActiveVideoIdSnapshot
+      : null,
+  );
   const pendingActiveVideoIdRef = useRef<string | null>(null);
   const pendingDwellVideoIdRef = useRef<string | null>(null);
   const activeVideoDwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -1678,10 +1763,10 @@ function FeedScreen() {
   const feedScrollDirectionRef = useRef<FeedScrollDirection>('none');
   const feedViewportHeightRef = useRef(0);
   const isScrollingRef = useRef(false);
-  const lastLoadMoreRequestAtRef = useRef(0);
   const lastSupplementalLoadMoreRequestAtRef = useRef(0);
-  const pendingLoadMoreDuringScrollRef = useRef(false);
   const loadMoreConsumedForGestureRef = useRef(false);
+  const feedSurfaceSuspendedRef = useRef(false);
+  const feedViewportNearTailRef = useRef(true);
   const triggerLoadMoreRef = useRef<() => void>(() => {});
   const flushPendingLoadMoreRef = useRef<() => void>(() => {});
   const supplementalLoadStartedRef = useRef(false);
@@ -1720,6 +1805,7 @@ function FeedScreen() {
   }, []);
 
   const setActiveFeedVideo = useCallback((videoId: string | null) => {
+    if (videoId !== null && !isFeedPlaybackSurfaceFocusedRef.current) return;
     if (videoId !== null) {
       if (inlineLiveDwellTimerRef.current) {
         clearTimeout(inlineLiveDwellTimerRef.current);
@@ -1733,7 +1819,7 @@ function FeedScreen() {
       }
     }
     activeVideoIdRef.current = videoId;
-    publishFeedActiveVideo(videoId);
+    publishFeedActiveVideo(videoId, 'feed');
   }, []);
 
   const clearActiveVideoDwellTimer = useCallback(() => {
@@ -1784,6 +1870,7 @@ function FeedScreen() {
 
   const setActiveFeedInlineLivePostId = useCallback(
     (postId: number | null) => {
+      if (postId !== null && !isFeedPlaybackSurfaceFocusedRef.current) return;
       if (postId !== null) {
         setActiveFeedVideo(null);
       }
@@ -1876,14 +1963,13 @@ function FeedScreen() {
         allowTransientEmptyRetention: allowTransientRetention,
       });
       const hasRetainedPostIds = stableIds.length > nextIds.size;
-      const retentionDeadlineAtMs =
-        resolveFeedVisibleMediaRetentionDeadline({
-          currentDeadlineAtMs: currentRetentionDeadlineAtMs,
-          nowMs,
-          retentionDurationMs: FEED_VISIBLE_MEDIA_RETENTION_MS,
-          allowTransientRetention,
-          hasRetainedPostIds,
-        });
+      const retentionDeadlineAtMs = resolveFeedVisibleMediaRetentionDeadline({
+        currentDeadlineAtMs: currentRetentionDeadlineAtMs,
+        nowMs,
+        retentionDurationMs: FEED_VISIBLE_MEDIA_RETENTION_MS,
+        allowTransientRetention,
+        hasRetainedPostIds,
+      });
       visibleMediaRetentionDeadlineAtRef.current = retentionDeadlineAtMs;
       const stableMediaPostIds = commitFeedVisibleMediaPostIds(stableIds);
 
@@ -2098,10 +2184,17 @@ function FeedScreen() {
   // warm decoders and expensive feed commits, but it no longer pauses the
   // video that the user is currently watching.
   const beginScrollPause = useCallback(() => {
+    if (!isFeedPlaybackSurfaceFocusedRef.current) return;
+    lastFeedScrollActivityAtRef.current = Date.now();
+    if (visibleMediaRetentionTimerRef.current) {
+      clearTimeout(visibleMediaRetentionTimerRef.current);
+      visibleMediaRetentionTimerRef.current = null;
+    }
+    visibleMediaRetentionDeadlineAtRef.current = null;
     isScrollingRef.current = true;
     beginClientScrollMeasurement('feed');
     setFeedScrollBusy(true);
-    publishFeedScrollBusy(true);
+    publishFeedScrollBusy(true, 'feed');
     // Keep the bounded media queue alive during a fling. Visible cards and
     // the nearest lookahead items stay prioritized, while generated video
     // posters still wait behind InteractionManager before doing CPU work.
@@ -2114,10 +2207,24 @@ function FeedScreen() {
   }, [clearInlineLiveDwellTimer, setFeedScrollBusy]);
 
   const endScrollPause = useCallback(() => {
+    lastFeedScrollActivityAtRef.current = Date.now();
+    if (!isFeedPlaybackSurfaceFocusedRef.current) {
+      isScrollingRef.current = false;
+      isMomentumScrollingRef.current = false;
+      resetFeedScrollBusy();
+      publishFeedScrollBusy(false, 'feed');
+      endClientScrollMeasurement('feed');
+      pendingActiveVideoIdRef.current = null;
+      pendingActiveInlineLivePostIdRef.current = null;
+      return;
+    }
     isScrollingRef.current = false;
     endClientScrollMeasurement('feed');
     setFeedScrollBusy(false);
-    publishFeedScrollBusy(false);
+    publishFeedScrollBusy(false, 'feed');
+    publishStableFeedVisibleMediaPostIds(
+      latestVisibleMediaPostIdsRef.current,
+    );
     const viewableLivePostId = pickInlineLivePostId(
       latestViewableFeedItemsRef.current,
     );
@@ -2141,8 +2248,10 @@ function FeedScreen() {
     measureActiveFeedVideoOnScreen(false);
   }, [
     measureActiveFeedVideoOnScreen,
+    publishStableFeedVisibleMediaPostIds,
     scheduleActiveFeedInlineLivePostId,
     scheduleActiveFeedVideo,
+    resetFeedScrollBusy,
     setFeedScrollBusy,
   ]);
 
@@ -2152,10 +2261,7 @@ function FeedScreen() {
       feedScrollYRef.current = normalizedOffsetY;
 
       const pendingRestoreOffset = pendingFeedScrollRestoreOffsetRef.current;
-      if (
-        !hasRestoredFeedScrollOffsetRef.current &&
-        pendingRestoreOffset > 0
-      ) {
+      if (!hasRestoredFeedScrollOffsetRef.current && pendingRestoreOffset > 0) {
         if (Math.abs(normalizedOffsetY - pendingRestoreOffset) <= 32) {
           hasRestoredFeedScrollOffsetRef.current = true;
           pendingFeedScrollRestoreOffsetRef.current = 0;
@@ -2185,12 +2291,27 @@ function FeedScreen() {
     };
   }, [feedScrollScopeKey]);
 
+  const schedulePendingFeedLoadMoreRetry = useCallback((delayMs: number) => {
+    feedLoadMoreDemandRef.current?.scheduleRetry(delayMs, () => {
+      if (!isFeedTabFocusedRef.current || !isFeedAppActiveRef.current) return;
+      if (!feedViewportNearTailRef.current) {
+        feedLoadMoreDemandRef.current?.leaveTail();
+        return;
+      }
+      triggerLoadMoreRef.current();
+    });
+  }, []);
+
   const handleScrollBeginDrag = useCallback(() => {
+    if (scrollEndTimeoutRef.current) {
+      clearTimeout(scrollEndTimeoutRef.current);
+      scrollEndTimeoutRef.current = null;
+    }
     cancelPendingFeedScrollRestore();
     feedChromeCollapseStateRef.current = resetFeedChromeScrollIntent(
       feedChromeCollapseStateRef.current,
     );
-    pendingLoadMoreDuringScrollRef.current = false;
+    feedLoadMoreDemandRef.current?.resetGesture();
     loadMoreConsumedForGestureRef.current = false;
     beginScrollPause();
   }, [beginScrollPause, cancelPendingFeedScrollRestore]);
@@ -2221,6 +2342,18 @@ function FeedScreen() {
       rememberFeedScrollOffset(contentOffset.y);
       feedViewportHeightRef.current = layoutMeasurement.height;
 
+      const earlyLoadDistance = Math.max(
+        layoutMeasurement.height * FEED_EARLY_LOAD_DISTANCE_MULTIPLIER,
+        FEED_EARLY_LOAD_MIN_DISTANCE,
+      );
+      const distanceFromEnd =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      const isViewportNearTail = distanceFromEnd <= earlyLoadDistance;
+      feedViewportNearTailRef.current = isViewportNearTail;
+      if (!isViewportNearTail) {
+        feedLoadMoreDemandRef.current?.leaveTail();
+      }
+
       if (contentOffset.y < 0) {
         feedChromeCollapseStateRef.current = createFeedChromeCollapseState();
         nativeTabScrollPublisherStateRef.current =
@@ -2241,26 +2374,15 @@ function FeedScreen() {
       feedChromeCollapseStateRef.current = nextState;
       commitFeedChromeHidden(nextState.hidden);
 
-      const earlyLoadDistance = Math.max(
-        layoutMeasurement.height * FEED_EARLY_LOAD_DISTANCE_MULTIPLIER,
-        FEED_EARLY_LOAD_MIN_DISTANCE,
-      );
-      const distanceFromEnd =
-        contentSize.height - (contentOffset.y + layoutMeasurement.height);
-
-      if (distanceFromEnd <= earlyLoadDistance) {
+      if (isViewportNearTail) {
         triggerLoadMoreRef.current();
       }
     },
-    [
-      commitFeedChromeHidden,
-      rememberFeedScrollOffset,
-    ],
+    [commitFeedChromeHidden, rememberFeedScrollOffset],
   );
 
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const velocityY = Math.abs(event.nativeEvent.velocity?.y ?? 0);
       const { contentOffset, layoutMeasurement } = event.nativeEvent;
       rememberFeedScrollOffset(contentOffset.y);
       feedViewportHeightRef.current = layoutMeasurement.height;
@@ -2269,11 +2391,10 @@ function FeedScreen() {
       }
       scrollEndTimeoutRef.current = setTimeout(() => {
         scrollEndTimeoutRef.current = null;
-        if (velocityY < 0.05 && !isMomentumScrollingRef.current) {
-          endScrollPause();
-          flushPendingLoadMoreRef.current();
-        }
-      }, 80);
+        if (isMomentumScrollingRef.current) return;
+        endScrollPause();
+        flushPendingLoadMoreRef.current();
+      }, FEED_SCROLL_SETTLE_DELAY_MS);
     },
     [endScrollPause, rememberFeedScrollOffset],
   );
@@ -2285,11 +2406,14 @@ function FeedScreen() {
       feedViewportHeightRef.current = layoutMeasurement.height;
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
-        scrollEndTimeoutRef.current = null;
       }
       isMomentumScrollingRef.current = false;
-      endScrollPause();
-      flushPendingLoadMoreRef.current();
+      scrollEndTimeoutRef.current = setTimeout(() => {
+        scrollEndTimeoutRef.current = null;
+        if (isMomentumScrollingRef.current) return;
+        endScrollPause();
+        flushPendingLoadMoreRef.current();
+      }, FEED_SCROLL_SETTLE_DELAY_MS);
     },
     [endScrollPause, rememberFeedScrollOffset],
   );
@@ -2302,6 +2426,7 @@ function FeedScreen() {
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
       }
+      feedLoadMoreDemandRef.current?.dispose();
       clearActiveVideoDwellTimer();
       clearInlineLiveDwellTimer();
       supplementalInteractionRef.current?.cancel();
@@ -2327,9 +2452,9 @@ function FeedScreen() {
       activeInlineLivePostIdRef.current = null;
       pendingActiveInlineLivePostIdRef.current = null;
       activeVideoIdRef.current = null;
-      publishFeedActiveVideo(null);
-      publishFeedWarmVideoIds([]);
-      publishFeedScrollBusy(false);
+      publishFeedActiveVideo(null, 'feed');
+      publishFeedWarmVideoIds([], 'feed');
+      publishFeedScrollBusy(false, 'feed');
       clearFeedVisibleMediaPostIds();
       publishNativeTabScrollBehavior('onScrollDown');
     };
@@ -2342,8 +2467,8 @@ function FeedScreen() {
   useFocusEffect(
     useCallback(() => {
       isFeedTabFocusedRef.current = true;
-      isFeedPlaybackSurfaceFocusedRef.current =
-        isFeedAppActiveRef.current;
+      isFeedPlaybackSurfaceFocusedRef.current = isFeedAppActiveRef.current;
+      publishFeedScreenFocused(isFeedAppActiveRef.current);
       setClientUiPerformanceActiveSurface('feed');
 
       const restoredScrollY = Math.max(
@@ -2353,6 +2478,9 @@ function FeedScreen() {
           : feedScrollYRef.current,
       );
       feedScrollYRef.current = restoredScrollY;
+      if (restoredScrollY > 0) {
+        markFeedScrolledSinceLoad();
+      }
       pendingFeedScrollRestoreOffsetRef.current = restoredScrollY;
       hasRestoredFeedScrollOffsetRef.current = restoredScrollY <= 0;
       const restoredChromeState =
@@ -2379,12 +2507,73 @@ function FeedScreen() {
         restoreTask.cancel();
         isFeedTabFocusedRef.current = false;
         isFeedPlaybackSurfaceFocusedRef.current = false;
+        if (scrollEndTimeoutRef.current) {
+          clearTimeout(scrollEndTimeoutRef.current);
+          scrollEndTimeoutRef.current = null;
+        }
+        feedLoadMoreDemandRef.current?.suspend();
+        isScrollingRef.current = false;
+        isMomentumScrollingRef.current = false;
+        loadMoreConsumedForGestureRef.current = false;
+        feedSurfaceSuspendedRef.current = true;
+        resetFeedScrollBusy();
+        publishFeedScreenFocused(false);
+        clearActiveVideoDwellTimer();
+        clearInlineLiveDwellTimer();
+        scheduleActiveFeedInlineLivePostId(null, true);
+        setActiveFeedVideo(null);
+        publishFeedWarmVideoIds([], 'feed');
+        publishFeedScrollBusy(false, 'feed');
         clearClientUiPerformanceActiveSurface('feed');
         endClientScrollMeasurement('feed');
         publishNativeTabScrollBehavior('onScrollDown');
       };
-    }, [commitFeedChromeHidden, feedScrollScopeKey]),
+    }, [
+      clearActiveVideoDwellTimer,
+      clearInlineLiveDwellTimer,
+      commitFeedChromeHidden,
+      feedScrollScopeKey,
+      markFeedScrolledSinceLoad,
+      resetFeedScrollBusy,
+      scheduleActiveFeedInlineLivePostId,
+      setActiveFeedVideo,
+    ]),
   );
+
+  useEffect(() => {
+    if (!isFeedTabFocused || !isFeedAppActive) {
+      if (scrollEndTimeoutRef.current) {
+        clearTimeout(scrollEndTimeoutRef.current);
+        scrollEndTimeoutRef.current = null;
+      }
+      feedLoadMoreDemandRef.current?.suspend();
+      isScrollingRef.current = false;
+      isMomentumScrollingRef.current = false;
+      loadMoreConsumedForGestureRef.current = false;
+      feedSurfaceSuspendedRef.current = true;
+      resetFeedScrollBusy();
+      publishFeedScrollBusy(false, 'feed');
+      endClientScrollMeasurement('feed');
+      return;
+    }
+
+    if (!feedSurfaceSuspendedRef.current) return;
+    feedSurfaceSuspendedRef.current = false;
+    setFeedScrollBusy(false);
+    if (feedLoadMoreDemandRef.current?.isPending()) {
+      if (feedViewportNearTailRef.current) {
+        schedulePendingFeedLoadMoreRetry(FEED_FOCUS_LOAD_MORE_RETRY_DELAY_MS);
+      } else {
+        feedLoadMoreDemandRef.current.leaveTail();
+      }
+    }
+  }, [
+    isFeedAppActive,
+    isFeedTabFocused,
+    resetFeedScrollBusy,
+    schedulePendingFeedLoadMoreRetry,
+    setFeedScrollBusy,
+  ]);
 
   const isFocused = useIsFocused();
   const isPlaybackSurfaceFocused = resolvePlaybackSurfaceFocused({
@@ -2407,7 +2596,7 @@ function FeedScreen() {
       clearInlineLiveDwellTimer();
       scheduleActiveFeedInlineLivePostId(null, true);
       setActiveFeedVideo(null);
-      publishFeedWarmVideoIds([]);
+      publishFeedWarmVideoIds([], 'feed');
       clearFeedVisibleMediaPostIds();
       return undefined;
     }
@@ -2416,8 +2605,7 @@ function FeedScreen() {
       if (!isFeedPlaybackSurfaceFocusedRef.current) return;
       const visibleMediaPostIds = latestVisibleFeedItemsRef.current
         .filter(
-          viewable =>
-            viewable?.isViewable && viewable.item?.type === 'post',
+          viewable => viewable?.isViewable && viewable.item?.type === 'post',
         )
         .map(viewable => String(viewable.item.post.id));
       publishStableFeedVisibleMediaPostIds(visibleMediaPostIds);
@@ -2638,16 +2826,16 @@ function FeedScreen() {
     }
 
     supplementalLoadStartedRef.current = true;
-    const runWhenScrollIdle = (
-      task: () => void,
-      deadlineAt = Date.now() + 1200,
-    ) => {
+    const runWhenScrollIdle = (task: () => void) => {
       if (
-        (isScrollingRef.current || isMomentumScrollingRef.current) &&
-        Date.now() < deadlineAt
+        !shouldRunFeedStartupBackgroundWork({
+          isScrolling: isScrollingRef.current,
+          isMomentumScrolling: isMomentumScrollingRef.current,
+          lastScrollActivityAtMs: lastFeedScrollActivityAtRef.current,
+        })
       ) {
         const retry = setTimeout(
-          () => runWhenScrollIdle(task, deadlineAt),
+          () => runWhenScrollIdle(task),
           300,
         );
         supplementalLoadTimersRef.current.push(retry);
@@ -2659,22 +2847,22 @@ function FeedScreen() {
     // Delay supplemental loading to avoid blocking the main feed render
     const productsTimer = setTimeout(() => {
       runWhenScrollIdle(reloadProducts);
-    }, 1200);
+    }, FEED_PRODUCTS_LOAD_DELAY_MS);
     const groupsTimer = setTimeout(() => {
       runWhenScrollIdle(reloadGroups);
-    }, 2200);
+    }, FEED_GROUPS_LOAD_DELAY_MS);
     const pagesTimer = setTimeout(() => {
       runWhenScrollIdle(reloadPages);
-    }, 2600);
+    }, FEED_PAGES_LOAD_DELAY_MS);
     const eventsTimer = setTimeout(() => {
       runWhenScrollIdle(reloadEvents);
-    }, 3000);
+    }, FEED_EVENTS_LOAD_DELAY_MS);
     const jobsTimer = setTimeout(() => {
       runWhenScrollIdle(reloadJobs);
-    }, 3400);
+    }, FEED_JOBS_LOAD_DELAY_MS);
     const fundingTimer = setTimeout(() => {
       runWhenScrollIdle(reloadFunding);
-    }, 3800);
+    }, FEED_FUNDING_LOAD_DELAY_MS);
     supplementalLoadTimersRef.current.push(
       productsTimer,
       groupsTimer,
@@ -3118,6 +3306,22 @@ function FeedScreen() {
             // cards and would mount an offscreen native Image mid-fling.
             if (!prefetched) {
               prefetchedImageUrlsRef.current.delete(url);
+              return;
+            }
+
+            if (
+              !FEED_IS_ANDROID &&
+              !feedMediaGeometryStorage.getAspectRatio(url)
+            ) {
+              Image.getSize(
+                url,
+                (width, height) => {
+                  if (width > 0 && height > 0) {
+                    feedMediaGeometryStorage.remember(url, width, height);
+                  }
+                },
+                () => undefined,
+              );
             }
           })
           .catch(() => {
@@ -3315,9 +3519,11 @@ function FeedScreen() {
 
   const publishWarmFeedVideosAroundVisibleItems = useCallback(
     (viewableItems: any[]) => {
+      if (!isFeedPlaybackSurfaceFocusedRef.current) return;
+
       const items = feedListItemsRef.current;
       if (items.length === 0) {
-        publishFeedWarmVideoIds([]);
+        publishFeedWarmVideoIds([], 'feed');
         return;
       }
 
@@ -3340,7 +3546,7 @@ function FeedScreen() {
       });
 
       if (furthestVisibleIndex < 0) {
-        publishFeedWarmVideoIds([]);
+        publishFeedWarmVideoIds([], 'feed');
         return;
       }
 
@@ -3403,7 +3609,7 @@ function FeedScreen() {
         ? FEED_SCROLLING_VIDEO_WARM_MAX_COUNT
         : FEED_VIDEO_WARM_MAX_COUNT;
       if (warmVideoLimit <= 0) {
-        publishFeedWarmVideoIds([]);
+        publishFeedWarmVideoIds([], 'feed');
         return;
       }
 
@@ -3416,7 +3622,7 @@ function FeedScreen() {
         if (warmVideoIds.length >= warmVideoLimit) break;
       }
 
-      publishFeedWarmVideoIds(warmVideoIds);
+      publishFeedWarmVideoIds(warmVideoIds, 'feed');
     },
     [],
   );
@@ -3459,18 +3665,32 @@ function FeedScreen() {
         );
         for (let index = startIndex; index < endIndex; index += 1) {
           const item = items[index];
-          // Start photo albums shortly before they enter the viewport. Videos
-          // remain strictly viewable-gated so a fling cannot warm several
-          // native players at once.
-          if (item?.type === 'post' && item.post.kind === 'text') {
+          // Attach the nearest image/poster before it enters the viewport.
+          // Video player ownership is gated separately, so this does not warm
+          // native decoders during a fling.
+          if (
+            item?.type === 'post' &&
+            (item.post.kind === 'text' ||
+              item.post.kind === 'video' ||
+              item.post.kind === 'ad')
+          ) {
             mediaEligiblePostIds.add(String(item.post.id));
           }
         }
       }
 
-      const stableMediaPostIds = publishStableFeedVisibleMediaPostIds(
-        mediaEligiblePostIds,
-      );
+      // Publish viewport changes during the fling so newly exposed rows can
+      // attach their Images immediately. The per-post media store only wakes
+      // rows whose visibility changed, while the bounded directional prefetch
+      // queue keeps the next images warm without rerendering the whole feed.
+      const stableMediaPostIds =
+        publishStableFeedVisibleMediaPostIds(mediaEligiblePostIds);
+
+      // Image visibility must track the moving viewport, but active video/live
+      // ownership can wait for the existing settle path to avoid extra media
+      // measurement and player churn during a fling.
+      if (isScrollingRef.current) return;
+
       const activeVideoId = activeVideoIdRef.current;
       if (
         shouldClearFeedActiveVideo({
@@ -3702,6 +3922,7 @@ function FeedScreen() {
     isLoadingMore: isFeedLoadingMore,
     isAllLoaded: isFeedAllLoaded,
     loadMorePosts,
+    requestLoadMorePosts,
   } = vm;
   const {
     isLoading: isProductsLoading,
@@ -3716,22 +3937,34 @@ function FeedScreen() {
     loadMoreJobs,
   } = jobsVm;
 
-  // Collapse all end-of-list signals from one drag/fling into a single load.
-  // The request is released only after momentum settles, so appending rich
-  // rows cannot compete with native scrolling or walk several API pages.
+  // Keep Home tail demand latched until a request appends rows or confirms
+  // the terminal page. Sparse, duplicate, and failed pages re-arm one retry.
+  // Supplemental rails retain their own one-request-per-gesture guard so they
+  // cannot consume or discard the main feed's pagination signal.
   const handleLoadMore = useCallback(() => {
+    if (!isFeedTabFocusedRef.current || !isFeedAppActiveRef.current) return;
+
+    const feedLoadMoreDemand = feedLoadMoreDemandRef.current;
+    if (!feedLoadMoreDemand) return;
+    feedLoadMoreDemand.latch(isFeedAllLoaded);
+
     if (isScrollingRef.current || isMomentumScrollingRef.current) {
-      pendingLoadMoreDuringScrollRef.current = true;
       return;
     }
 
     const now = Date.now();
+    const feedThrottleRemainingMs = Math.max(
+      0,
+      LOAD_MORE_THROTTLE_MS - (now - lastLoadMoreRequestAtRef.current),
+    );
     const canRequestFeed =
-      !loadMoreConsumedForGestureRef.current &&
+      feedLoadMoreDemand.isPending() &&
+      !feedLoadMoreDemand.isConsumed() &&
+      !feedLoadMoreDemand.isRequestInFlight() &&
       !isFeedLoading &&
       !isFeedLoadingMore &&
       !isFeedAllLoaded &&
-      now - lastLoadMoreRequestAtRef.current > LOAD_MORE_THROTTLE_MS;
+      feedThrottleRemainingMs === 0;
     const canRequestSupplemental =
       !loadMoreConsumedForGestureRef.current &&
       now - lastSupplementalLoadMoreRequestAtRef.current >
@@ -3747,17 +3980,76 @@ function FeedScreen() {
       !isJobsLoadingMore &&
       !isJobsAllLoaded;
 
+    if (!canRequestFeed && feedLoadMoreDemand.isPending()) {
+      if (!feedLoadMoreDemand.clearIfTerminal(isFeedAllLoaded)) {
+        schedulePendingFeedLoadMoreRetry(
+          isFeedLoading || isFeedLoadingMore
+            ? FEED_LOAD_MORE_RETRY_DELAY_MS
+            : feedThrottleRemainingMs + 16,
+        );
+      }
+    }
+
     if (!canRequestFeed && !canRequestSupplemental && !canRequestJobs) return;
 
-    pendingLoadMoreDuringScrollRef.current = false;
-    loadMoreConsumedForGestureRef.current = true;
-
     if (canRequestFeed) {
-      lastLoadMoreRequestAtRef.current = now;
-      loadMorePosts();
+      const feedRequestToken = feedLoadMoreDemand.beginRequest();
+      if (feedRequestToken !== null) {
+        const feedRequestAccepted = requestLoadMorePosts(
+          feedLoadMoreOutcome => {
+            const latestDemand = feedLoadMoreDemandRef.current;
+            if (!latestDemand) return;
+
+            if (
+              feedLoadMoreOutcome === 'appended' ||
+              feedLoadMoreOutcome === 'terminal'
+            ) {
+              latestDemand.completeRequest(feedRequestToken);
+              return;
+            }
+
+            if (feedLoadMoreOutcome === 'stale') {
+              latestDemand.discardRequest(feedRequestToken);
+              return;
+            }
+
+            if (!feedViewportNearTailRef.current) {
+              latestDemand.discardRequest(feedRequestToken);
+              return;
+            }
+
+            if (!latestDemand.retryRequest(feedRequestToken)) return;
+            if (
+              !isFeedTabFocusedRef.current ||
+              !isFeedAppActiveRef.current
+            ) {
+              return;
+            }
+            schedulePendingFeedLoadMoreRetry(
+              latestDemand.getRetryDelay(
+                FEED_LOAD_MORE_RETRY_DELAY_MS,
+                FEED_LOAD_MORE_MAX_RETRY_DELAY_MS,
+              ),
+            );
+          },
+        );
+        if (feedRequestAccepted) {
+          lastLoadMoreRequestAtRef.current = now;
+        } else if (!feedViewportNearTailRef.current) {
+          feedLoadMoreDemand.discardRequest(feedRequestToken);
+        } else if (feedLoadMoreDemand.retryRequest(feedRequestToken, false)) {
+          schedulePendingFeedLoadMoreRetry(
+            feedLoadMoreDemand.getRetryDelay(
+              FEED_LOAD_MORE_RETRY_DELAY_MS,
+              FEED_LOAD_MORE_MAX_RETRY_DELAY_MS,
+            ),
+          );
+        }
+      }
     }
 
     if (canRequestSupplemental || canRequestJobs) {
+      loadMoreConsumedForGestureRef.current = true;
       lastSupplementalLoadMoreRequestAtRef.current = now;
     }
 
@@ -3772,7 +4064,7 @@ function FeedScreen() {
     isFeedLoading,
     isFeedLoadingMore,
     isFeedAllLoaded,
-    loadMorePosts,
+    requestLoadMorePosts,
     isProductsLoading,
     isProductsLoadingMore,
     isProductsAllLoaded,
@@ -3781,13 +4073,23 @@ function FeedScreen() {
     isJobsLoadingMore,
     isJobsAllLoaded,
     loadMoreJobs,
+    schedulePendingFeedLoadMoreRetry,
   ]);
 
   const flushPendingLoadMore = useCallback(() => {
-    if (!pendingLoadMoreDuringScrollRef.current) return;
-    pendingLoadMoreDuringScrollRef.current = false;
+    if (!isFeedTabFocusedRef.current || !isFeedAppActiveRef.current) return;
+    if (!feedLoadMoreDemandRef.current?.isPending()) return;
+    if (!feedViewportNearTailRef.current) {
+      feedLoadMoreDemandRef.current.leaveTail();
+      return;
+    }
     requestAnimationFrame(() => triggerLoadMoreRef.current());
   }, []);
+
+  const handleFeedEndReached = useCallback(() => {
+    feedViewportNearTailRef.current = true;
+    handleLoadMore();
+  }, [handleLoadMore]);
 
   flushPendingLoadMoreRef.current = flushPendingLoadMore;
   triggerLoadMoreRef.current = handleLoadMore;
@@ -4175,7 +4477,7 @@ function FeedScreen() {
         latestViewableFeedItemsRef.current,
       );
     } else {
-      publishFeedWarmVideoIds([]);
+      publishFeedWarmVideoIds([], 'feed');
     }
   }, [
     feedListItems,
@@ -4185,14 +4487,22 @@ function FeedScreen() {
   ]);
 
   useEffect(() => {
+    resetFeedLoadMoreDemandForGeneration();
     const scopedOffset =
       retainedFeedScrollState?.scopeKey === feedScrollScopeKey
         ? retainedFeedScrollState.offsetY
         : 0;
     feedScrollYRef.current = scopedOffset;
+    if (scopedOffset > 0) {
+      markFeedScrolledSinceLoad();
+    }
     pendingFeedScrollRestoreOffsetRef.current = scopedOffset;
     hasRestoredFeedScrollOffsetRef.current = scopedOffset <= 0;
-  }, [feedScrollScopeKey]);
+  }, [
+    feedScrollScopeKey,
+    markFeedScrolledSinceLoad,
+    resetFeedLoadMoreDemandForGeneration,
+  ]);
 
   useEffect(() => {
     const targetOffset = pendingFeedScrollRestoreOffsetRef.current;
@@ -4699,7 +5009,7 @@ function FeedScreen() {
       onScrollEndDrag={handleScrollEndDrag}
       onMomentumScrollBegin={handleMomentumScrollBegin}
       onMomentumScrollEnd={handleMomentumScrollEnd}
-      onEndReached={handleLoadMore}
+      onEndReached={handleFeedEndReached}
       onEndReachedThreshold={0.6}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={feedListContentStyle}

@@ -1,0 +1,63 @@
+Applications Graphics Acceleration Info:
+Uptime: 246019079 Realtime: 409028690
+
+** Graphics info for pid 7070 [com.vnseea.android] **
+
+Stats since: 246006705960632ns
+Total frames rendered: 539
+Janky frames: 40 (7.42%)
+Janky frames (legacy): 125 (23.19%)
+50th percentile: 13ms
+90th percentile: 27ms
+95th percentile: 61ms
+99th percentile: 150ms
+Number Missed Vsync: 9
+Number High input latency: 854
+Number Slow UI thread: 40
+Number Slow bitmap uploads: 3
+Number Slow issue draw commands: 1
+Number Frame deadline missed: 40
+Number Frame deadline missed (legacy): 36
+HISTOGRAM: 5ms=0 6ms=0 7ms=2 8ms=10 9ms=46 10ms=52 11ms=80 12ms=65 13ms=54 14ms=37 15ms=27 16ms=30 17ms=18 18ms=19 19ms=9 20ms=8 21ms=5 22ms=6 23ms=4 24ms=6 25ms=3 26ms=3 27ms=2 28ms=0 29ms=0 30ms=2 31ms=6 32ms=3 34ms=5 36ms=0 38ms=6 40ms=0 42ms=0 44ms=1 46ms=0 48ms=0 53ms=0 57ms=3 61ms=2 65ms=1 69ms=2 73ms=1 77ms=4 81ms=1 85ms=0 89ms=2 93ms=1 97ms=1 101ms=1 105ms=1 109ms=1 113ms=1 117ms=1 121ms=0 125ms=1 129ms=0 133ms=0 150ms=5 200ms=0 250ms=0 300ms=0 350ms=1 400ms=0 450ms=0 500ms=0 550ms=0 600ms=0 650ms=0 700ms=0 750ms=0 800ms=0 850ms=0 900ms=0 950ms=0 1000ms=0 1050ms=0 1100ms=0 1150ms=0 1200ms=0 1250ms=0 1300ms=0 1350ms=0 1400ms=0 1450ms=0 1500ms=0 1550ms=0 1600ms=0 1650ms=0 1700ms=0 1750ms=0 1800ms=0 1850ms=0 1900ms=0 1950ms=0 2000ms=0 2050ms=0 2100ms=0 2150ms=0 2200ms=0 2250ms=0 2300ms=0 2350ms=0 2400ms=0 2450ms=0 2500ms=0 2550ms=0 2600ms=0 2650ms=0 2700ms=0 2750ms=0 2800ms=0 2850ms=0 2900ms=0 2950ms=0 3000ms=0 3050ms=0 3100ms=0 3150ms=0 3200ms=0 3250ms=0 3300ms=0 3350ms=0 3400ms=0 3450ms=0 3500ms=0 3550ms=0 3600ms=0 3650ms=0 3700ms=0 3750ms=0 3800ms=0 3850ms=0 3900ms=0 3950ms=0 4000ms=0 4050ms=0 4100ms=0 4150ms=0 4200ms=0 4250ms=0 4300ms=0 4350ms=0 4400ms=0 4450ms=0 4500ms=0 4550ms=0 4600ms=0 4650ms=0 4700ms=0 4750ms=0 4800ms=0 4850ms=0 4900ms=0 4950ms=0
+50th gpu percentile: 2ms
+90th gpu percentile: 3ms
+95th gpu percentile: 3ms
+99th gpu percentile: 4ms
+GPU HISTOGRAM: 1ms=0 2ms=449 3ms=82 4ms=3 5ms=0 6ms=2 7ms=1 8ms=2 9ms=0 10ms=0 11ms=0 12ms=0 13ms=0 14ms=0 15ms=0 16ms=0 17ms=0 18ms=0 19ms=0 20ms=0 21ms=0 22ms=0 23ms=0 24ms=0 25ms=0 4950ms=0
+
+Pipeline=Skia (OpenGL)
+Memory policy:
+  Max surface area: 2592000
+  Max resource usage: 124.42MB (x48)
+  Background retention: 50% (altUiHidden = true)
+  GPU Context timeout: 10
+Contexts: 1 (stopped = 0)
+CPU Caches:
+  Glyph Cache: 306.51 KB (1 entry)
+  Glyph Count: 53 
+Total CPU memory usage:
+  313863 bytes, 306.51 KB (0.00 bytes is purgeable)
+GPU Caches:
+  Other:
+    Other: 40.78 KB (1 entry)
+  Image:
+    Texture: 62.66 MB (83 entries)
+  Scratch:
+    Texture: 18.27 MB (14 entries)
+    Buffer Object: 78.00 KB (2 entries)
+Total GPU memory usage:
+  84983264 bytes, 81.05 MB (44.63 MB is purgeable)
+
+Profile data in ms:
+
+	com.vnseea.android/com.vnseea.android.MainActivity/android.view.ViewRootImpl@92aa2bc (visibility=0)
+View hierarchy:
+
+  com.vnseea.android/com.vnseea.android.MainActivity/android.view.ViewRootImpl@92aa2bc
+  494 views, 1065,52 kB of render nodes
+
+
+Total ViewRootImpl   : 1
+Total attached Views : 494
+Total RenderNode     : 1065,52 kB (used) / 3251,79 kB (capacity)
+

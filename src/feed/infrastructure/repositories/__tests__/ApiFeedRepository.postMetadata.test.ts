@@ -14,21 +14,27 @@ jest.mock('../../../../shared-kernel/infrastructure/config/env', () => ({
   },
 }));
 
-jest.mock('../../../../shared-kernel/infrastructure/storage/sessionStorage', () => ({
-  sessionStorage: {
-    getSession: jest.fn(() => ({
-      accessToken: 'test-token',
-      userId: '1',
-    })),
-    getAccessToken: jest.fn(() => 'test-token'),
-  },
-}));
+jest.mock(
+  '../../../../shared-kernel/infrastructure/storage/sessionStorage',
+  () => ({
+    sessionStorage: {
+      getSession: jest.fn(() => ({
+        accessToken: 'test-token',
+        userId: '1',
+      })),
+      getAccessToken: jest.fn(() => 'test-token'),
+    },
+  }),
+);
 
-jest.mock('../../../../reels/infrastructure/storage/reelsReactionsStorage', () => ({
-  reelsReactionsStorage: {
-    get: jest.fn(() => null),
-  },
-}));
+jest.mock(
+  '../../../../reels/infrastructure/storage/reelsReactionsStorage',
+  () => ({
+    reelsReactionsStorage: {
+      get: jest.fn(() => null),
+    },
+  }),
+);
 
 import { backendApi } from '../../../../shared-kernel/infrastructure/api/backendApi';
 import type { CreatePostDraft } from '../../../domain/types/feed.types';
@@ -56,6 +62,7 @@ describe('ApiFeedRepository post metadata', () => {
         postType: 'video',
         postFile: 'https://demo.vnseea.vn/post.mp4',
         postFileThumb: 'https://demo.vnseea.vn/post.jpg',
+        media_geometry: { width: 1920, height: 1080 },
         postText: 'Xin chào',
         postPrivacy: '0',
         privacy_contract: 'audience_v2',
@@ -90,6 +97,8 @@ describe('ApiFeedRepository post metadata', () => {
         uri: 'file:///post.mp4',
         name: 'post.mp4',
         type: 'video/mp4',
+        width: 1920,
+        height: 1080,
       },
       privacy: 'public',
       isAnonymous: true,
@@ -118,9 +127,16 @@ describe('ApiFeedRepository post metadata', () => {
       feeling_type: 'feelings',
       feeling: 'happy',
       is_anonymous: '0',
+      media_width: 1920,
+      media_height: 1080,
     });
     expect(result.post).toMatchObject({
       kind: 'video',
+      mediaGeometry: {
+        width: 1920,
+        height: 1080,
+        aspectRatio: 16 / 9,
+      },
       feeling: { type: 'feelings', value: 'happy' },
       location: { label: 'Hà Nội' },
       taggedUsers: [
@@ -180,8 +196,7 @@ describe('ApiFeedRepository post metadata', () => {
       id: '92',
       post_id: '92',
       user_id: '1',
-      postText_API:
-        'Dòng đầu tiên<br>Dòng thứ hai<br><br>Đoạn tiếp theo',
+      postText_API: 'Dòng đầu tiên<br>Dòng thứ hai<br><br>Đoạn tiếp theo',
       postPrivacy: '0',
       time: '1781712000',
       postLikes: '0',

@@ -13,6 +13,7 @@
 // functions_tww.php
 require_once "app_start.php";
 require_once __DIR__ . "/vnseea_group_call_policy.php";
+require_once __DIR__ . "/vnseea_call_notification_policy.php";
 use Twilio\Rest\Client;
 if (!empty($wo["config"]["adult_images_file"])) {
     putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $wo["config"]["adult_images_file"]);
@@ -7556,6 +7557,11 @@ function Wo_UpdateCallLog($call_id = 0, $call_type = 'audio', $status = 'ended',
             'duration' => 0
         );
     }
+    $current_status = !empty($payload['status']) ? strtolower(trim((string)$payload['status'])) : '';
+    if (!VNSEEA_ShouldApplyCallLogStatusTransition($current_status, $status)) {
+        return true;
+    }
+    $is_missed_status = in_array($status, array('missed', 'no_answer'), true);
     $payload['status'] = $status;
     if (isset($options['status_by'])) {
         $payload['status_by'] = intval($options['status_by']);
@@ -7574,9 +7580,28 @@ function Wo_UpdateCallLog($call_id = 0, $call_type = 'audio', $status = 'ended',
     }
     $text  = Wo_Secure(json_encode($payload, JSON_UNESCAPED_UNICODE), 1);
     $time  = !empty($options['time']) ? intval($options['time']) : time();
-    $query = mysqli_query($sqlConnect, "UPDATE " . T_MESSAGES . " SET `text` = '{$text}', `time` = '{$time}', `notification_id` = '" . Wo_Secure($notification_id) . "' WHERE `id` = '" . intval($message['id']) . "'");
+    $update_where = "`id` = '" . intval($message['id']) . "'";
+    if ($is_missed_status) {
+        $expected_text = mysqli_real_escape_string($sqlConnect, (string)$message['text']);
+        $update_where .= " AND `text` = '{$expected_text}'";
+    }
+    $query = mysqli_query($sqlConnect, "UPDATE " . T_MESSAGES . " SET `text` = '{$text}', `time` = '{$time}', `notification_id` = '" . Wo_Secure($notification_id) . "' WHERE {$update_where}");
+    $updated_rows = $query ? mysqli_affected_rows($sqlConnect) : 0;
     if ($query && !empty($message['from_id']) && !empty($message['to_id'])) {
         Wo_CreateUserChat(intval($message['to_id']), intval($message['from_id']));
+    }
+    $missed_status_persisted = $is_missed_status && $updated_rows > 0;
+    if ($query && $is_missed_status && !$missed_status_persisted) {
+        $latest_query = mysqli_query($sqlConnect, "SELECT `text` FROM " . T_MESSAGES . " WHERE `id` = '" . intval($message['id']) . "' LIMIT 1");
+        $latest_message = $latest_query ? mysqli_fetch_assoc($latest_query) : null;
+        $missed_status_persisted = !empty($latest_message) && in_array(
+            VNSEEA_MessageCallStatus($latest_message),
+            array('missed', 'no_answer'),
+            true
+        );
+    }
+    if ($query && $missed_status_persisted && function_exists('VNSEEA_EnqueueMessagePush')) {
+        VNSEEA_EnqueueMessagePush(intval($message['id']));
     }
     return $query;
 }

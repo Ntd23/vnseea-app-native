@@ -37,7 +37,7 @@ export function useProductsOnFeedViewModel(
 ) {
   const { autoLoad = true } = options;
   const [products, setProducts] = useState<ProductItem[]>(() =>
-    feedCacheStorage.getCachedProducts(),
+    autoLoad ? feedCacheStorage.getCachedProducts() : [],
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);

@@ -43,4 +43,31 @@ describe('incoming call push delivery safeguards', () => {
     expect(extension).toContain('.setSilent(true)');
     expect(extension).not.toContain('ignored: silent group call');
   });
+
+  it('drops chat-style call activity before Android builds a quick-reply notification', () => {
+    const extension = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotificationServiceExtension.kt',
+    );
+    const messageNotification = read(
+      'android/app/src/main/java/com/vnseea/android/messages/MessagePushNotification.kt',
+    );
+
+    const duplicateGuard = extension.indexOf(
+      'MessagePushNotification.isDuplicateCallActivityPush(',
+    );
+    const genericMessageBranch = extension.indexOf(
+      'MessagePushNotification.isMessagePush(data)',
+    );
+
+    expect(duplicateGuard).toBeGreaterThan(-1);
+    expect(duplicateGuard).toBeLessThan(genericMessageBranch);
+    expect(messageNotification).toContain(
+      'fun isDuplicateCallActivityPush(',
+    );
+    expect(messageNotification).toContain('if (!isMessagePush(data)) return false');
+    expect(messageNotification).toContain('messageType != "call_event"');
+    expect(messageNotification).toContain('conversationType != "user"');
+    expect(messageNotification).toContain('status == "missed"');
+    expect(messageNotification).toContain('status == "no_answer"');
+  });
 });

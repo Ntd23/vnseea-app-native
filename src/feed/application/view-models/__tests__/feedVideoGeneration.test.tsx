@@ -127,6 +127,108 @@ describe('feed video request generation', () => {
     jest.restoreAllMocks();
   });
 
+  it('places a prepared startup video in the first ten rows before the user scrolls', async () => {
+    mockGetLightPostsPage.mockResolvedValue({
+      posts: Array.from({ length: 10 }, (_, index) =>
+        lightPost(`light-${index + 1}`, 100 - index),
+      ),
+      prefetchedPosts: [],
+      nextCursor: undefined,
+      reachedEnd: true,
+    });
+    mockGetVideoPostsPage.mockResolvedValue({
+      posts: [readyVideoPost('video-1', 95)],
+      prefetchedPosts: [],
+      nextCursor: undefined,
+      reachedEnd: true,
+    });
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    let latest!: ReturnType<typeof useFeedViewModel>;
+    function Probe() {
+      latest = useFeedViewModel();
+      return null;
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<Probe />);
+      await flushAsyncWork();
+    });
+    await act(async () => {
+      await latest.reloadPosts();
+      await flushScheduledWork();
+    });
+
+    expect(latest.posts.findIndex(post => post.kind === 'video')).toBe(4);
+
+    await act(async () => renderer.unmount());
+  });
+
+  it('keeps the first ten rendered rows stable when the video finishes after scrolling starts', async () => {
+    const videoPage = deferred<{
+      posts: FeedVideoPost[];
+      prefetchedPosts: FeedVideoPost[];
+      nextCursor?: string;
+      reachedEnd: boolean;
+    }>();
+    const lightPosts = Array.from({ length: 10 }, (_, index) =>
+      lightPost(`light-${index + 1}`, 100 - index),
+    );
+    mockGetLightPostsPage.mockResolvedValue({
+      posts: lightPosts,
+      prefetchedPosts: [],
+      nextCursor: undefined,
+      reachedEnd: true,
+    });
+    mockGetVideoPostsPage.mockImplementation(() => videoPage.promise);
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    let latest!: ReturnType<typeof useFeedViewModel>;
+    function Probe() {
+      latest = useFeedViewModel();
+      return null;
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<Probe />);
+      await flushAsyncWork();
+    });
+    await act(async () => {
+      await latest.reloadPosts();
+      await flushScheduledWork();
+    });
+    await act(async () => {
+      latest.setScrollBusy(true);
+      videoPage.resolve({
+        posts: [readyVideoPost('video-1', 95)],
+        prefetchedPosts: [],
+        nextCursor: undefined,
+        reachedEnd: true,
+      });
+      await flushScheduledWork();
+    });
+
+    expect(latest.posts.map(post => post.id)).toEqual(
+      lightPosts.map(post => post.id),
+    );
+
+    await act(async () => {
+      latest.setScrollBusy(false);
+      await flushScheduledWork();
+    });
+
+    expect(latest.posts.slice(0, 10).map(post => post.id)).toEqual(
+      lightPosts.map(post => post.id),
+    );
+    expect(latest.posts[10]?.id).toBe('video-1');
+
+    await act(async () => renderer.unmount());
+  });
+
   it('rejects a stale video page and replays the newest request for the active source', async () => {
     const staleVideoPage = deferred<{
       posts: FeedVideoPost[];

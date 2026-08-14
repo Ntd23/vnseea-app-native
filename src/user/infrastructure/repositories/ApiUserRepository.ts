@@ -38,14 +38,18 @@ import {
   mapNearbyPlace,
 } from '../../application/mappers/nearbyPlaceMapper';
 import {
-  toNearbyPagesQuery,
   toNearbyPlacesPayload,
   toNearbyUsersPayload,
   toUpdateCurrentUserPayload,
   toUserProfileFetchValue,
   toUserSuggestionsPayload,
 } from '../../application/mappers/userPayloadMapper';
+import {
+  getDirectGooglePlacePredictions,
+  mergeMapPlacePredictions,
+} from './directGooglePlaceAutocomplete';
 import { buildMapBusinessSearchRequest } from './mapBusinessSearchRequest';
+import { buildMapPageSearchRequest } from './mapPageSearchRequest';
 
 type CurrentUserResponse = ApiEnvelope & {
   user_data?: RawApiRecord;
@@ -261,14 +265,14 @@ function nearbyPlacesCacheKey(input?: NearbyPlacesInput) {
 }
 
 function nearbyPagesCacheKey(input?: NearbyPagesInput) {
-  const payload = toNearbyPagesQuery(input);
+  const payload = buildMapPageSearchRequest(input);
   return [
     currentSessionCacheKey(),
     normalizeCacheText(payload.query),
-    input?.distance ?? '',
-    input?.limit ?? '',
-    coordinateCachePart(input?.lat),
-    coordinateCachePart(input?.lng),
+    payload.distance ?? '',
+    payload.limit ?? '',
+    coordinateCachePart(payload.origin_lat),
+    coordinateCachePart(payload.origin_lng),
     input?.fast ? 'fast' : 'full',
     input?.globalSearch ? 'global' : 'nearby',
   ].join('|');
@@ -280,7 +284,7 @@ function placePredictionCacheKey(input: MapPlacePredictionsInput) {
     normalizeCacheText(input.category),
     coordinateCachePart(input.lat),
     coordinateCachePart(input.lng),
-    input.radius ?? '',
+    input.globalSearch ? '' : input.radius ?? '',
     input.fast ? 'fast' : 'full',
     input.globalSearch ? 'global' : 'nearby',
   ].join('|');
@@ -396,19 +400,10 @@ async function warmNearbyPageMapPinStatuses(pages: NearbyPlace[]) {
 }
 
 async function requestNearbyPages(input?: NearbyPagesInput) {
-  const payload = toNearbyPagesQuery(input);
+  const payload = buildMapPageSearchRequest(input);
   const response = await apiBridge.post<NearbyPagesResponse>(
     apiRoutes.user.mapDiscovery,
-    {
-      type: 'page_suggestions',
-      query: payload.query,
-      distance: input?.distance,
-      limit: input?.limit,
-      origin_lat: input?.lat,
-      origin_lng: input?.lng,
-      fast: input?.fast ? 1 : undefined,
-      global_search: input?.globalSearch ? 1 : undefined,
-    },
+    payload,
     input?.keyword || input?.signal
       ? {
           timeout: input?.keyword ? MAP_SEARCH_RESPONSE_BUDGET_MS : undefined,
@@ -1016,42 +1011,97 @@ export function createUserRepository(): UserRepository {
 
     async getPlacePredictions(input) {
       const trimmedQuery = input.query.trim();
-      if (trimmedQuery.length < 2) return [];
-      const cacheKey = placePredictionCacheKey({
+      if (trimmedQuery.length < 1) return [];
+      const normalizedInput = {
         ...input,
         query: trimmedQuery,
-      });
+      };
+      const cacheKey = placePredictionCacheKey(normalizedInput);
       const cachedPredictions = placePredictionsCache.get(cacheKey);
       if (cachedPredictions !== undefined) {
+        try {
+          input.onPartialPredictions?.(cachedPredictions);
+        } catch {
+          // A consumer callback must not turn a cache hit into a failed search.
+        }
         return cachedPredictions;
       }
 
-      const loadPredictions = async () => {
-        const response = await apiBridge.post<PlaceAutocompleteResponse>(
-          apiRoutes.user.mapDiscovery,
-          buildMapBusinessSearchRequest({
-            ...input,
-            query: trimmedQuery,
-          }),
-          {
-            timeout: MAP_SEARCH_RESPONSE_BUDGET_MS,
-            signal: input.signal,
-          },
-        );
-        return (response.predictions ?? [])
-          .map(mapPlacePrediction)
-          .filter(Boolean) as MapPlacePrediction[];
+      let directPredictions: MapPlacePrediction[] = [];
+      let backendPredictions: MapPlacePrediction[] = [];
+      const publishPredictions = () => {
+        if (input.signal?.aborted || !input.onPartialPredictions) return;
+        try {
+          input.onPartialPredictions(
+            mergeMapPlacePredictions(directPredictions, backendPredictions),
+          );
+        } catch {
+          // Rendering a partial result must not fail either search source.
+        }
       };
 
-      if (input.signal) {
-        const predictions = await loadPredictions();
-        if (!input.signal.aborted) {
-          placePredictionsCache.set(cacheKey, predictions);
-        }
+      const directPromise = getDirectGooglePlacePredictions(
+        normalizedInput,
+        apiConfig.googleMapsApiKey,
+        { headers: googleRequestHeaders() },
+      ).then(predictions => {
+        directPredictions = predictions;
+        publishPredictions();
         return predictions;
+      });
+
+      const backendPromise =
+        trimmedQuery.length < 2
+          ? Promise.resolve([] as MapPlacePrediction[])
+          : apiBridge
+              .post<PlaceAutocompleteResponse>(
+                apiRoutes.user.mapDiscovery,
+                buildMapBusinessSearchRequest(normalizedInput),
+                {
+                  timeout: MAP_SEARCH_RESPONSE_BUDGET_MS,
+                  signal: input.signal,
+                },
+              )
+              .then(
+                response =>
+                  (response.predictions ?? [])
+                    .map(mapPlacePrediction)
+                    .filter(Boolean) as MapPlacePrediction[],
+              )
+              .then(predictions => {
+                backendPredictions = predictions;
+                publishPredictions();
+                return predictions;
+              });
+
+      const [directResult, backendResult] = await Promise.allSettled([
+        directPromise,
+        backendPromise,
+      ]);
+      if (directResult.status === 'fulfilled') {
+        directPredictions = directResult.value;
+      }
+      if (backendResult.status === 'fulfilled') {
+        backendPredictions = backendResult.value;
       }
 
-      return placePredictionsCache.getOrLoad(cacheKey, loadPredictions);
+      const predictions = mergeMapPlacePredictions(
+        directPredictions,
+        backendPredictions,
+      );
+      if (
+        backendResult.status === 'rejected' &&
+        directPredictions.length === 0 &&
+        !input.signal?.aborted
+      ) {
+        throw backendResult.reason;
+      }
+
+      if (!input.signal?.aborted) {
+        placePredictionsCache.set(cacheKey, predictions);
+        publishPredictions();
+      }
+      return predictions;
     },
 
     async getPlaceDetails(placeId: string) {

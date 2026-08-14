@@ -1,0 +1,47 @@
+08-12 10:50:20.736 W/WindowManager( 1946): 	at android.view.Choreographer$CallbackRecord.run(Choreographer.java:1592)
+08-12 10:50:20.736 W/WindowManager( 1946): 	at android.view.Choreographer$CallbackRecord.run(Choreographer.java:1603)
+08-12 10:50:20.736 W/WindowManager( 1946): 	at android.view.Choreographer.doCallbacks(Choreographer.java:1125)
+08-12 10:50:20.736 W/WindowManager( 1946): 	at android.view.Choreographer.doFrame(Choreographer.java:1026)
+08-12 10:50:20.736 W/WindowManager( 1946): 	at android.view.Choreographer$FrameDisplayEventReceiver.run(Choreographer.java:1567)
+08-12 10:50:20.740 E/OpenGLRenderer(32314): Unable to match the desired swap behavior.
+08-12 10:50:20.881 E/OpenGLRenderer( 4338): Unable to match the desired swap behavior.
+08-12 10:50:20.882 D/VRI[android]( 4338): vri.reportNextDraw android.view.ViewRootImpl.performTraversals:4360 android.view.ViewRootImpl.doTraversal:2989 android.view.ViewRootImpl$TraversalRunnable.run:10304 android.view.Choreographer$CallbackRecord.run:1594 android.view.Choreographer$CallbackRecord.run:1603 
+08-12 10:50:20.883 D/OpenGLRenderer( 4338): makeCurrent grContext:0xb40000794c8c2e80 reset mTextureAvailable
+08-12 10:50:21.098 D/OpenGLRenderer(32295): JNI_OnLoad success
+08-12 10:50:22.913 I/Choreographer(32295): Skipped 215 frames!  The application may be doing too much work on its main thread.
+08-12 10:50:22.984 D/VRI[MainActivity](32295): vri.reportNextDraw android.view.ViewRootImpl.performTraversals:4360 android.view.ViewRootImpl.doTraversal:2989 android.view.ViewRootImpl$TraversalRunnable.run:10304 android.view.Choreographer$CallbackRecord.run:1594 android.view.Choreographer$CallbackRecord.run:1603 
+08-12 10:50:23.011 E/OpenGLRenderer(32295): Unable to match the desired swap behavior.
+08-12 10:50:23.025 D/OpenGLRenderer(32295): makeCurrent grContext:0xb4000079ff7134c0 reset mTextureAvailable
+08-12 10:50:23.044 I/OpenGLRenderer(32295): Davey! duration=1912ms; Flags=1, FrameTimelineVsyncId=265523100, IntendedVsync=244237336135604, Vsync=244239122092229, InputEventId=0, HandleInputStart=244239126033494, AnimationStart=244239126045005, PerformTraversalsStart=244239126291515, DrawStart=244239223995473, FrameDeadline=244237347802271, FrameInterval=244239125066411, FrameStartTime=8306775, SyncQueued=244239236510265, SyncStart=244239236822817, IssueDrawCommandsStart=244239239435630, SwapBuffers=244239242214640, FrameCompleted=244239249373911, DequeueBufferDuration=30937, QueueBufferDuration=475417, GpuCompleted=244239249373911, SwapBuffersCompleted=244239246147505, DisplayPresentTime=0, CommandSubmissionCompleted=244239242214640, 
+08-12 10:50:24.699 I/ReactNativeJS(32295): '[VNSEEA_CALL_DEBUG]', '{"event":"ios_audio_management_skipped","at":"2026-08-12T03:50:24.699Z","platform":"android"}'
+08-12 10:50:24.700 I/ReactNativeJS(32295): Running "VNSEEA"
+08-12 10:50:24.723 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_initialize_start","at":"2026-08-12T03:50:24.723Z","platform":"android","appId":{"present":true,"length":36,"suffix":"4e2145e8"}}'
+08-12 10:50:24.728 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_user_login","at":"2026-08-12T03:50:24.727Z","platform":"android","userId":"2154","source":"initialize"}'
+08-12 10:50:24.729 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_permission_request_skipped","at":"2026-08-12T03:50:24.729Z","platform":"android","reason":"first_launch_prompt_already_requested"}'
+08-12 10:50:25.135 W/ReactNativeJS(32295): InteractionManager has been deprecated and will be removed in a future release. Please refactor long tasks into smaller ones, and  use 'requestIdleCallback' instead.
+08-12 10:50:25.768 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_opt_in_complete","at":"2026-08-12T03:50:25.767Z","platform":"android","source":"initialize"}'
+08-12 10:50:25.872 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_subscription_state","at":"2026-08-12T03:50:25.872Z","platform":"android","stage":"sync_current","userIdPresent":true,"userId":"2154","pushId":{"present":true,"length":36,"suffix":"eec30796"},"pushToken":{"present":true,"length":142,"suffix":"HNHQRz9c"},"optedIn":true,"permissionGranted":true}'
+08-12 10:50:25.873 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_sync_request","at":"2026-08-12T03:50:25.873Z","platform":"android","userId":"2154","pushId":{"present":true,"length":36,"suffix":"eec30796"},"forceRegistration":true,"targetFields":["android_n_device_id","android_m_device_id"]}'
+08-12 10:50:26.795 W/Looper  (32295): PerfMonitor longMsg : seq=310 plan=10:50:25.396 late=61ms wall=1334ms h=android.view.Choreographer$FrameHandler c=android.view.Choreographer$FrameDisplayEventReceiver procState=-1
+08-12 10:50:26.825 I/OpenGLRenderer(32295): Davey! duration=1420ms; Flags=0, FrameTimelineVsyncId=265530767, IntendedVsync=244241607161284, Vsync=244241665335806, InputEventId=0, HandleInputStart=244241669183962, AnimationStart=244241669189222, PerformTraversalsStart=244242652113805, DrawStart=244242655563128, FrameDeadline=244241618827951, FrameInterval=244241668772035, FrameStartTime=8310646, SyncQueued=244242994431982, SyncStart=244242994538961, IssueDrawCommandsStart=244243001707607, SwapBuffers=244243022292191, FrameCompleted=244243027514430, DequeueBufferDuration=28021, QueueBufferDuration=464375, GpuCompleted=244243027514430, SwapBuffersCompleted=244243024396514, DisplayPresentTime=0, CommandSubmissionCompleted=244243022292191, 
+08-12 10:50:26.829 I/Choreographer(32295): Skipped 109 frames!  The application may be doing too much work on its main thread.
+08-12 10:50:26.829 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_subscription_changed","at":"2026-08-12T03:50:26.828Z","platform":"android","previousId":{"present":true,"length":36,"suffix":"eec30796"},"currentId":{"present":true,"length":36,"suffix":"eec30796"},"previousToken":{"present":true,"length":142,"suffix":"HNHQRz9c"},"currentToken":{"present":true,"length":142,"suffix":"HNHQRz9c"},"previousOptedIn":true,"currentOptedIn":true}'
+08-12 10:50:26.829 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_sync_wait_existing","at":"2026-08-12T03:50:26.829Z","platform":"android","userId":"2154","pushId":{"present":true,"length":36,"suffix":"eec30796"}}'
+08-12 10:50:27.039 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_sync_success","at":"2026-08-12T03:50:27.039Z","platform":"android","userId":"2154","pushId":{"present":true,"length":36,"suffix":"eec30796"}}'
+08-12 10:50:27.040 I/ReactNativeJS(32295): '[VNSEEA_PUSH_DEBUG]', '{"event":"push_sync_skipped","at":"2026-08-12T03:50:27.040Z","platform":"android","reason":"synced_by_existing_request","userId":"2154","pushId":{"present":true,"length":36,"suffix":"eec30796"}}'
+08-12 10:50:27.904 W/Looper  (32295): PerfMonitor longMsg : seq=356 plan=10:50:25.919 late=910ms wall=1072ms h=android.view.Choreographer$FrameHandler c=android.view.Choreographer$FrameDisplayEventReceiver procState=-1
+08-12 10:50:27.905 W/Looper  (32295): PerfMonitor doFrame : time=1072ms vsyncFrame=20961745 latency=910ms procState=-1 historyMsgCount=46 (msgIndex=1 wall=1334ms seq=310 late=61ms h=android.view.Choreographer$FrameHandler c=android.view.Choreographer$FrameDisplayEventReceiver)
+08-12 10:50:27.914 I/OpenGLRenderer(32295): Davey! duration=1988ms; Flags=0, FrameTimelineVsyncId=265531222, IntendedVsync=244242130731982, Vsync=244243036592396, InputEventId=0, HandleInputStart=244243041544222, AnimationStart=244243041551618, PerformTraversalsStart=244243834384638, DrawStart=244243852427919, FrameDeadline=244243039948417, FrameInterval=244243040421982, FrameStartTime=8310646, SyncQueued=244244108779482, SyncStart=244244108909326, IssueDrawCommandsStart=244244112576878, SwapBuffers=244244114733232, FrameCompleted=244244119440524, DequeueBufferDuration=26145, QueueBufferDuration=339948, GpuCompleted=244244119440524, SwapBuffersCompleted=244244115315211, DisplayPresentTime=0, CommandSubmissionCompleted=244244114733232, 
+08-12 10:50:27.960 I/Choreographer(32295): Skipped 40 frames!  The application may be doing too much work on its main thread.
+08-12 10:50:28.001 I/VNSEEA_BENCH(18347): READY attached=414
+08-12 10:50:28.029 W/Looper  (32295): PerfMonitor doFrame : time=68ms vsyncFrame=20961951 latency=334ms procState=-1 historyMsgCount=138 (msgIndex=1 wall=1072ms seq=356 late=910ms h=android.view.Choreographer$FrameHandler c=android.view.Choreographer$FrameDisplayEventReceiver)
+08-12 10:50:28.049 I/VNSEEA_BENCH(18348): SWIPE1_START
+08-12 10:50:28.450 I/VNSEEA_BENCH(18372): SWIPE1_END
+08-12 10:50:28.771 I/VNSEEA_BENCH(18381): SWIPE2_START
+08-12 10:50:29.208 I/VNSEEA_BENCH(18392): SWIPE2_END
+08-12 10:50:29.537 I/VNSEEA_BENCH(18394): SWIPE3_START
+08-12 10:50:29.960 I/VNSEEA_BENCH(18405): SWIPE3_END
+08-12 10:50:30.287 I/VNSEEA_BENCH(18408): SWIPE4_START
+08-12 10:50:30.696 I/VNSEEA_BENCH(18419): SWIPE4_END
+08-12 10:50:31.010 I/VNSEEA_BENCH(18565): SWIPE5_START
+08-12 10:50:31.422 I/VNSEEA_BENCH(18640): SWIPE5_END

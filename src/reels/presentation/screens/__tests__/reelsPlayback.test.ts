@@ -32,24 +32,39 @@ describe('reels playback state', () => {
     ).toBe(true);
   });
 
-  it.each([
-    ['comments', { commentsOpen: true }],
-    ['share', { shareOpen: true }],
-    ['edit', { editOpen: true }],
-    ['publisher', { publisherOpen: true }],
-  ])('pauses the current reel while the %s modal is open', (_name, overlay) => {
+  it('keeps the current reel playing while comments are open', () => {
     expect(
       shouldPlayCurrentReel({
         isPlaybackRouteFocused: true,
         isDismissing: false,
-        commentsOpen: false,
+        commentsOpen: true,
         shareOpen: false,
         editOpen: false,
         publisherOpen: false,
-        ...overlay,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
+
+  it.each([
+    ['share', { shareOpen: true }],
+    ['edit', { editOpen: true }],
+    ['publisher', { publisherOpen: true }],
+  ])(
+    'pauses the current reel while the %s overlay is open',
+    (_name, overlay) => {
+      expect(
+        shouldPlayCurrentReel({
+          isPlaybackRouteFocused: true,
+          isDismissing: false,
+          commentsOpen: false,
+          shareOpen: false,
+          editOpen: false,
+          publisherOpen: false,
+          ...overlay,
+        }),
+      ).toBe(false);
+    },
+  );
 
   it('plays only the current role when playback is allowed', () => {
     expect(

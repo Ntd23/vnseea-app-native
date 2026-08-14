@@ -92,6 +92,7 @@ import {
   FEED_REACTION_IMAGES,
   FEED_REACTION_TYPES,
 } from '../../../feed/presentation/components/FeedReactionAssets';
+import { ReelCaption } from './ReelCaption';
 
 const REEL_ITEM_COPY = {
   vi: {
@@ -100,6 +101,8 @@ const REEL_ITEM_COPY = {
     anonymous: 'Ẩn danh',
     originalSound: 'Âm thanh gốc',
     reposted: 'Đã đăng lại',
+    captionShowMore: 'Xem thêm',
+    captionShowLess: 'Ẩn bớt',
   },
   en: {
     save: 'Save',
@@ -107,6 +110,8 @@ const REEL_ITEM_COPY = {
     anonymous: 'Anonymous',
     originalSound: 'Original sound',
     reposted: 'Reposted',
+    captionShowMore: 'See more',
+    captionShowLess: 'Show less',
   },
 };
 
@@ -1283,9 +1288,12 @@ function ReelItemBase({
           </TouchableOpacity>
 
           {item.caption ? (
-            <Text style={styles.caption} numberOfLines={3}>
-              {item.caption}
-            </Text>
+            <ReelCaption
+              reelId={item.id}
+              text={item.caption}
+              showMoreLabel={copy.captionShowMore}
+              showLessLabel={copy.captionShowLess}
+            />
           ) : null}
         </View>
 
@@ -1746,14 +1754,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.65)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
-  },
-  caption: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 15,
-    lineHeight: 21,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   musicDisc: {
     width: 48,

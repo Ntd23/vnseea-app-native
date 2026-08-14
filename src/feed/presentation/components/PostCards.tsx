@@ -102,7 +102,12 @@ import {
 } from './feedVideoSurfaceRecovery';
 import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
 import { FeedMediaImage } from './FeedMediaImage';
+import { StaggeredFeedMediaImage } from './StaggeredFeedMediaImage';
 import { feedVisibleMediaStore } from './feedVisibleMediaStore';
+import {
+  canApplyFeedPlaybackMutation,
+  type FeedPlaybackSurface,
+} from './feedVideoPlaybackOwnership';
 import { feedMediaGeometryStorage } from '../../infrastructure/storage/feedMediaGeometryStorage';
 import { navigateToFeedPublisherPage } from '../navigation/feedPublisherNavigation';
 import { GroupPostIdentityHeader } from './GroupPostIdentityHeader';
@@ -111,6 +116,7 @@ import { parseSharedPageMessage } from '../../../messages/application/shared-pag
 import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
 import {
   shouldMountWarmFeedVideo,
+  shouldMeasureFeedVideoPosterAspectRatio,
   shouldPlayFeedVideo,
 } from '../screens/feedVideoAutoplay';
 import {
@@ -189,10 +195,10 @@ const VIDEO_QUALITY_RAMP_DELAY_MS = 1200;
 const VIDEO_POSTER_REVEAL_HOLD_MS = 90;
 const VIDEO_POSTER_FADE_MS = 160;
 const VIDEO_WARM_PREVIEW_SECONDS = Platform.OS === 'android' ? 0.35 : 0.6;
-const FEED_VIDEO_BLUR_SURFACE_GRACE_MS = 240;
 const FEED_VIDEO_BACKDROP_BLUR_RADIUS = Platform.OS === 'android' ? 18 : 28;
 const FEED_VIDEO_MEDIA_SURFACE_STYLE = { width: '100%' as const };
-const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 5;
+const FEED_VIDEO_MIN_ASPECT_RATIO = 9 / 16;
+const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 1;
 const DEFAULT_PHOTO_GRID_WIDTH =
   Platform.OS === 'ios'
     ? Dimensions.get('window').width
@@ -857,23 +863,35 @@ export function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
   );
 }
 
-type FeedActiveVideoListener = (activeVideoId: string | null) => void;
-type FeedWarmVideoListener = (warmVideoIds: ReadonlySet<string>) => void;
+type FeedActiveVideoListener = (
+  activeVideoId: string | null,
+  surface: FeedPlaybackSurface | null,
+) => void;
+type FeedWarmVideoListener = (
+  warmVideoIds: ReadonlySet<string>,
+  surface: FeedPlaybackSurface | null,
+) => void;
 type FeedPreparedVideoListener = (
   preparedVideoIds: ReadonlySet<string>,
 ) => void;
-type FeedScrollBusyListener = (isBusy: boolean) => void;
+type FeedScrollBusyListener = (
+  isBusy: boolean,
+  surface: FeedPlaybackSurface | null,
+) => void;
 type FeedVideoMutedListener = (isMuted: boolean) => void;
 type FeedScreenFocusedListener = (isFocused: boolean) => void;
 
 export let feedActiveVideoIdSnapshot: string | null = null;
+export let feedActiveVideoSurfaceSnapshot: FeedPlaybackSurface | null = null;
 const feedActiveVideoListeners = new Set<FeedActiveVideoListener>();
 export let feedWarmVideoIdsSnapshot = new Set<string>();
+let feedWarmVideoSurfaceSnapshot: FeedPlaybackSurface | null = null;
 const feedWarmVideoListeners = new Set<FeedWarmVideoListener>();
 export let feedPreparedVideoIdsSnapshot = new Set<string>();
 const feedPreparedVideoListeners = new Set<FeedPreparedVideoListener>();
 const preparedVideoLru: string[] = [];
 let feedScrollBusySnapshot = false;
+let feedScrollBusySurfaceSnapshot: FeedPlaybackSurface | null = null;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
 export let feedVideoMutedSnapshot = false;
 const feedVideoMutedListeners = new Set<FeedVideoMutedListener>();
@@ -918,36 +936,64 @@ function useFeedScreenFocused(enabled: boolean) {
   return isFocused;
 }
 
-export function publishFeedActiveVideo(videoId: string | null) {
-  if (feedActiveVideoIdSnapshot === videoId) return;
+export function publishFeedActiveVideo(
+  videoId: string | null,
+  surface: FeedPlaybackSurface = 'feed',
+) {
+  const isClearing = videoId === null;
+  if (
+    !canApplyFeedPlaybackMutation({
+      currentOwner: feedActiveVideoSurfaceSnapshot,
+      requestOwner: surface,
+      isClearing,
+    })
+  ) {
+    return;
+  }
+  const nextSurface = isClearing ? null : surface;
+  if (
+    feedActiveVideoIdSnapshot === videoId &&
+    feedActiveVideoSurfaceSnapshot === nextSurface
+  ) {
+    return;
+  }
   feedActiveVideoIdSnapshot = videoId;
-  feedActiveVideoListeners.forEach(listener => listener(videoId));
+  feedActiveVideoSurfaceSnapshot = nextSurface;
+  feedActiveVideoListeners.forEach(listener => listener(videoId, nextSurface));
 }
 
-function useFeedVideoActivity(videoId: string) {
+function useFeedVideoActivity(videoId: string, surface: FeedPlaybackSurface) {
   const [isActive, setIsActive] = useState(
-    () => feedActiveVideoIdSnapshot === videoId,
+    () =>
+      feedActiveVideoSurfaceSnapshot === surface &&
+      feedActiveVideoIdSnapshot === videoId,
   );
 
   useEffect(() => {
-    const listener: FeedActiveVideoListener = nextVideoId => {
-      const nextIsActive = nextVideoId === videoId;
+    const listener: FeedActiveVideoListener = (nextVideoId, nextSurface) => {
+      const nextIsActive = nextSurface === surface && nextVideoId === videoId;
       setIsActive(prev => (prev === nextIsActive ? prev : nextIsActive));
     };
 
     feedActiveVideoListeners.add(listener);
-    const nextIsActive = feedActiveVideoIdSnapshot === videoId;
+    const nextIsActive =
+      feedActiveVideoSurfaceSnapshot === surface &&
+      feedActiveVideoIdSnapshot === videoId;
     setIsActive(prev => (prev === nextIsActive ? prev : nextIsActive));
 
     return () => {
       feedActiveVideoListeners.delete(listener);
     };
-  }, [videoId]);
+  }, [surface, videoId]);
 
   return isActive;
 }
 
-function areWarmVideoIdsEqual(nextIds: Set<string>) {
+function areWarmVideoIdsEqual(
+  nextIds: Set<string>,
+  surface: FeedPlaybackSurface | null,
+) {
+  if (feedWarmVideoSurfaceSnapshot !== surface) return false;
   if (feedWarmVideoIdsSnapshot.size !== nextIds.size) return false;
 
   for (const videoId of nextIds) {
@@ -957,13 +1003,28 @@ function areWarmVideoIdsEqual(nextIds: Set<string>) {
   return true;
 }
 
-export function publishFeedWarmVideoIds(videoIds: Iterable<string>) {
+export function publishFeedWarmVideoIds(
+  videoIds: Iterable<string>,
+  surface: FeedPlaybackSurface = 'feed',
+) {
   const nextIds = new Set(videoIds);
-  if (areWarmVideoIdsEqual(nextIds)) return;
+  const isClearing = nextIds.size === 0;
+  if (
+    !canApplyFeedPlaybackMutation({
+      currentOwner: feedWarmVideoSurfaceSnapshot,
+      requestOwner: surface,
+      isClearing,
+    })
+  ) {
+    return;
+  }
+  const nextSurface = isClearing ? null : surface;
+  if (areWarmVideoIdsEqual(nextIds, nextSurface)) return;
 
   feedWarmVideoIdsSnapshot = nextIds;
+  feedWarmVideoSurfaceSnapshot = nextSurface;
   feedWarmVideoListeners.forEach(listener =>
-    listener(feedWarmVideoIdsSnapshot),
+    listener(feedWarmVideoIdsSnapshot, nextSurface),
   );
 }
 
@@ -989,25 +1050,30 @@ function markFeedPreparedVideo(videoId: string) {
   publishPreparedVideoIds();
 }
 
-function useFeedVideoWarm(videoId: string) {
-  const [isWarm, setIsWarm] = useState(() =>
-    feedWarmVideoIdsSnapshot.has(videoId),
+function useFeedVideoWarm(videoId: string, surface: FeedPlaybackSurface) {
+  const [isWarm, setIsWarm] = useState(
+    () =>
+      feedWarmVideoSurfaceSnapshot === surface &&
+      feedWarmVideoIdsSnapshot.has(videoId),
   );
 
   useEffect(() => {
-    const listener: FeedWarmVideoListener = nextWarmVideoIds => {
-      const nextIsWarm = nextWarmVideoIds.has(videoId);
+    const listener: FeedWarmVideoListener = (nextWarmVideoIds, nextSurface) => {
+      const nextIsWarm =
+        nextSurface === surface && nextWarmVideoIds.has(videoId);
       setIsWarm(prev => (prev === nextIsWarm ? prev : nextIsWarm));
     };
 
     feedWarmVideoListeners.add(listener);
-    const nextIsWarm = feedWarmVideoIdsSnapshot.has(videoId);
+    const nextIsWarm =
+      feedWarmVideoSurfaceSnapshot === surface &&
+      feedWarmVideoIdsSnapshot.has(videoId);
     setIsWarm(prev => (prev === nextIsWarm ? prev : nextIsWarm));
 
     return () => {
       feedWarmVideoListeners.delete(listener);
     };
-  }, [videoId]);
+  }, [surface, videoId]);
 
   return isWarm;
 }
@@ -1035,10 +1101,29 @@ function useFeedPreparedVideoKeepAlive(videoId: string) {
   return isPrepared;
 }
 
-export function publishFeedScrollBusy(isBusy: boolean) {
-  if (feedScrollBusySnapshot === isBusy) return;
+export function publishFeedScrollBusy(
+  isBusy: boolean,
+  surface: FeedPlaybackSurface = 'feed',
+) {
+  if (
+    !canApplyFeedPlaybackMutation({
+      currentOwner: feedScrollBusySurfaceSnapshot,
+      requestOwner: surface,
+      isClearing: !isBusy,
+    })
+  ) {
+    return;
+  }
+  const nextSurface = isBusy ? surface : null;
+  if (
+    feedScrollBusySnapshot === isBusy &&
+    feedScrollBusySurfaceSnapshot === nextSurface
+  ) {
+    return;
+  }
   feedScrollBusySnapshot = isBusy;
-  feedScrollBusyListeners.forEach(listener => listener(isBusy));
+  feedScrollBusySurfaceSnapshot = nextSurface;
+  feedScrollBusyListeners.forEach(listener => listener(isBusy, nextSurface));
 }
 
 export function publishFeedVisibleMediaPostIds(postIds: Iterable<string>) {
@@ -1051,23 +1136,28 @@ export function publishFeedVideoMuted(isMuted: boolean) {
   feedVideoMutedListeners.forEach(listener => listener(isMuted));
 }
 
-export function useFeedScrollBusy() {
-  const [isBusy, setIsBusy] = useState(feedScrollBusySnapshot);
+export function useFeedScrollBusy(surface: FeedPlaybackSurface = 'feed') {
+  const [isBusy, setIsBusy] = useState(
+    () => feedScrollBusySurfaceSnapshot === surface && feedScrollBusySnapshot,
+  );
 
   useEffect(() => {
-    const listener: FeedScrollBusyListener = nextIsBusy => {
-      setIsBusy(prev => (prev === nextIsBusy ? prev : nextIsBusy));
+    const listener: FeedScrollBusyListener = (nextIsBusy, nextSurface) => {
+      const nextSurfaceIsBusy = nextSurface === surface && nextIsBusy;
+      setIsBusy(prev =>
+        prev === nextSurfaceIsBusy ? prev : nextSurfaceIsBusy,
+      );
     };
 
     feedScrollBusyListeners.add(listener);
-    setIsBusy(prev =>
-      prev === feedScrollBusySnapshot ? prev : feedScrollBusySnapshot,
-    );
+    const nextIsBusy =
+      feedScrollBusySurfaceSnapshot === surface && feedScrollBusySnapshot;
+    setIsBusy(prev => (prev === nextIsBusy ? prev : nextIsBusy));
 
     return () => {
       feedScrollBusyListeners.delete(listener);
     };
-  }, []);
+  }, [surface]);
 
   return isBusy;
 }
@@ -1130,16 +1220,14 @@ const Avatar = React.memo(function Avatar({
   uri: string;
   size?: number;
 }) {
-  const source = useMemo(() => ({ uri }), [uri]);
   const style = useMemo(() => ({ height: size, width: size }), [size]);
 
   return (
-    <Image
-      source={source}
+    <FeedMediaImage
+      uri={uri}
       style={style}
       className="rounded-full"
       resizeMode="cover"
-      fadeDuration={0}
     />
   );
 });
@@ -1857,8 +1945,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     performanceSurface !== undefined && isVideoPlaybackMetricsEnabled();
 
   const navigation = useNavigation<any>();
-  const trackedIsActive = useFeedVideoActivity(post.id);
-  const trackedIsWarm = useFeedVideoWarm(post.id);
+  const trackedIsActive = useFeedVideoActivity(post.id, videoMetricsSurface);
+  const trackedIsWarm = useFeedVideoWarm(post.id, videoMetricsSurface);
   const isPreparedKeptAlive = useFeedPreparedVideoKeepAlive(post.id);
   const feedSurfaceFocused = useFeedScreenFocused(
     performanceSurface === 'feed',
@@ -1871,15 +1959,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     isPlaybackSurfaceFocused &&
     (controlledIsActive !== undefined ? controlledIsActive : trackedIsActive);
   const isWarm = isPlaybackSurfaceFocused && trackedIsWarm;
-  const [keepPlayerSurfaceMounted, setKeepPlayerSurfaceMounted] =
-    useState(false);
-  const wasPlayerSurfaceMountedRef = useRef(false);
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [isOpeningReels, setIsOpeningReels] = useState(false);
   const openingReelsFrameRef = useRef<number | null>(null);
   const blurredWhileOpeningReelsRef = useRef(false);
   const muted = useFeedVideoMuted();
-  const isScrollBusy = useFeedScrollBusy();
+  const isScrollBusy = useFeedScrollBusy(videoMetricsSurface);
   const mediaLoadEnabled = !deferMediaUntilVisible || mediaVisible;
   const handleMediaSurfaceRef = useCallback(
     (node: React.ElementRef<typeof View> | null) => {
@@ -1895,7 +1980,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     identity: geometryIdentity,
     value: getCachedMediaAspectRatio(
       videoPreviewCacheKey,
-      0.75,
+      FEED_VIDEO_MIN_ASPECT_RATIO,
       16 / 9,
       16 / 9,
       post.mediaGeometry?.aspectRatio,
@@ -1906,7 +1991,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       identity: geometryIdentity,
       value: getCachedMediaAspectRatio(
         videoPreviewCacheKey,
-        0.75,
+        FEED_VIDEO_MIN_ASPECT_RATIO,
         16 / 9,
         16 / 9,
         post.mediaGeometry?.aspectRatio,
@@ -1917,6 +2002,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const mediaIdentityRef = useRef(mediaIdentity);
+  mediaIdentityRef.current = mediaIdentity;
   const hasRenderedFrameRef = useRef(false);
   const firstFrameProgressStartRef = useRef<number | null>(null);
   const videoSurfaceRecoveryCountRef = useRef(0);
@@ -1934,6 +2020,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [isFrameCoverVisible, setFrameCoverVisible] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
   const [videoPlayerGeneration, setVideoPlayerGeneration] = useState(0);
+  const videoPlayerGenerationRef = useRef(videoPlayerGeneration);
+  videoPlayerGenerationRef.current = videoPlayerGeneration;
   const videoMetricsPlayerId = useMemo(
     () => `${videoMetricsSurface}:${post.id}:${videoPlayerGeneration}`,
     [post.id, videoMetricsSurface, videoPlayerGeneration],
@@ -2047,6 +2135,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   useEffect(() => {
     const thumbnailUrl = resolvedThumbnailUrl;
     if (!thumbnailUrl || !mediaLoadEnabled) return undefined;
+    if (!shouldMeasureFeedVideoPosterAspectRatio(Platform.OS)) {
+      return undefined;
+    }
 
     if (
       post.mediaGeometry?.aspectRatio ||
@@ -2079,17 +2170,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     return () => {
       cancelled = true;
     };
-  }, [
-    mediaLoadEnabled,
-    post.mediaGeometry?.aspectRatio,
-    resolvedThumbnailUrl,
-    videoPreviewCacheKey,
-  ]);
+  }, [mediaLoadEnabled, post.mediaGeometry?.aspectRatio, resolvedThumbnailUrl, videoPreviewCacheKey]);
 
   // Persist the canonical video size for legacy responses without resizing
   // the row currently under the user's finger.
   const handleVideoLoad = useCallback(
-    (data: any) => {
+    (callbackGeneration: number, data: any) => {
+      if (callbackGeneration !== videoPlayerGenerationRef.current) return;
       if (mediaIdentity !== mediaIdentityRef.current) return;
       const clientMeasurement = videoClientLoadMeasurementRef.current;
       if (clientMeasurement.surface) {
@@ -2121,49 +2208,54 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     [mediaIdentity, videoPreviewCacheKey, videoUrl],
   );
 
-  const revealVideoFrame = useCallback(() => {
-    if (mediaIdentity !== mediaIdentityRef.current) return;
-    hasRenderedFrameRef.current = true;
-    firstFrameProgressStartRef.current = null;
-    videoSurfaceRecoveryInFlightRef.current = false;
-    setIsReady(true);
-    setHasRenderedFrame(true);
-    if (keepPreparedVideoMounted) {
-      markFeedPreparedVideo(post.id);
-    }
-    if (isActive) {
-      scheduleVideoQualityRamp();
-    }
+  const revealVideoFrame = useCallback(
+    (callbackGeneration: number) => {
+      if (callbackGeneration !== videoPlayerGenerationRef.current) return;
+      if (mediaIdentity !== mediaIdentityRef.current) return;
+      hasRenderedFrameRef.current = true;
+      firstFrameProgressStartRef.current = null;
+      videoSurfaceRecoveryInFlightRef.current = false;
+      setIsReady(true);
+      setHasRenderedFrame(true);
+      if (keepPreparedVideoMounted) {
+        markFeedPreparedVideo(post.id);
+      }
+      if (isActive) {
+        scheduleVideoQualityRamp();
+      }
 
-    if (frameCoverTimeoutRef.current) {
-      clearTimeout(frameCoverTimeoutRef.current);
-    }
-    frameCoverTimeoutRef.current = setTimeout(
-      () => {
-        frameCoverTimeoutRef.current = null;
-        if (mediaIdentity !== mediaIdentityRef.current) return;
-        frameCoverOpacity.value = withTiming(
-          0,
-          { duration: VIDEO_POSTER_FADE_MS },
-          finished => {
-            if (finished) {
-              runOnJS(hideFrameCoverForMedia)(mediaIdentity);
-            }
-          },
-        );
-      },
-      resolvedThumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0,
-    );
-  }, [
-    frameCoverOpacity,
-    hideFrameCoverForMedia,
-    isActive,
-    keepPreparedVideoMounted,
-    mediaIdentity,
-    post.id,
-    resolvedThumbnailUrl,
-    scheduleVideoQualityRamp,
-  ]);
+      if (frameCoverTimeoutRef.current) {
+        clearTimeout(frameCoverTimeoutRef.current);
+      }
+      frameCoverTimeoutRef.current = setTimeout(
+        () => {
+          frameCoverTimeoutRef.current = null;
+          if (callbackGeneration !== videoPlayerGenerationRef.current) return;
+          if (mediaIdentity !== mediaIdentityRef.current) return;
+          frameCoverOpacity.value = withTiming(
+            0,
+            { duration: VIDEO_POSTER_FADE_MS },
+            finished => {
+              if (finished) {
+                runOnJS(hideFrameCoverForMedia)(mediaIdentity);
+              }
+            },
+          );
+        },
+        resolvedThumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0,
+      );
+    },
+    [
+      frameCoverOpacity,
+      hideFrameCoverForMedia,
+      isActive,
+      keepPreparedVideoMounted,
+      mediaIdentity,
+      post.id,
+      resolvedThumbnailUrl,
+      scheduleVideoQualityRamp,
+    ],
+  );
 
   const recoverAndroidVideoSurface = useCallback(
     (resumeTime: number) => {
@@ -2242,7 +2334,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     isWarm,
     isScrollBusy,
     shouldKeepPreparedVideoMounted,
-    wasPlayerSurfaceMounted: wasPlayerSurfaceMountedRef.current,
+    wasPlayerSurfaceMounted: false,
   });
   const shouldMountFocusedVideo =
     !isOpeningReels &&
@@ -2252,13 +2344,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     (isActive ||
       (canMountWarmVideo && isWarm) ||
       shouldKeepPreparedVideoMounted);
-  const isTransitionSurfaceGraceActive =
-    !isOpeningReels &&
-    (keepPlayerSurfaceMounted ||
-      (!isPlaybackSurfaceFocused && wasPlayerSurfaceMountedRef.current));
-  const shouldMountVideo =
-    shouldMountFocusedVideo ||
-    (canAttemptVideo && isTransitionSurfaceGraceActive);
+  const shouldMountVideo = shouldMountFocusedVideo;
   const videoMetricsRole = isActive ? 'current' : isWarm ? 'warm' : 'prepared';
   const videoMetricsRoleRef = useRef(videoMetricsRole);
   videoMetricsRoleRef.current = videoMetricsRole;
@@ -2283,12 +2369,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     });
 
     return () => recordVideoPlayerUnmounted(videoMetricsPlayerId);
-  }, [
-    shouldMountVideo,
-    shouldRecordFeedVideoPlaybackMetrics,
-    videoMetricsPlayerId,
-    videoMetricsSurface,
-  ]);
+  }, [shouldMountVideo, shouldRecordFeedVideoPlaybackMetrics, videoMetricsPlayerId, videoMetricsSurface]);
 
   useEffect(() => {
     if (!shouldMountVideo || !shouldRecordFeedVideoPlaybackMetrics) return;
@@ -2297,56 +2378,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       videoMetricsRole,
       videoMetricsSurface,
     );
-  }, [
-    shouldMountVideo,
-    shouldRecordFeedVideoPlaybackMetrics,
-    videoMetricsPlayerId,
-    videoMetricsRole,
-    videoMetricsSurface,
-  ]);
-
-  useEffect(() => {
-    if (isPlaybackSurfaceFocused) return undefined;
-
-    const shouldKeepSurface = wasPlayerSurfaceMountedRef.current;
-    wasPlayerSurfaceMountedRef.current = false;
-    if (!shouldKeepSurface) return undefined;
-
-    setKeepPlayerSurfaceMounted(true);
-
-    const timer = setTimeout(() => {
-      setKeepPlayerSurfaceMounted(false);
-    }, FEED_VIDEO_BLUR_SURFACE_GRACE_MS);
-
-    return () => clearTimeout(timer);
-  }, [isPlaybackSurfaceFocused]);
-
-  useEffect(() => {
-    if (!isPlaybackSurfaceFocused || !keepPlayerSurfaceMounted) {
-      return undefined;
-    }
-
-    if (shouldMountFocusedVideo) {
-      setKeepPlayerSurfaceMounted(false);
-      return undefined;
-    }
-
-    const timer = setTimeout(() => {
-      setKeepPlayerSurfaceMounted(false);
-    }, FEED_VIDEO_BLUR_SURFACE_GRACE_MS);
-
-    return () => clearTimeout(timer);
-  }, [
-    isPlaybackSurfaceFocused,
-    keepPlayerSurfaceMounted,
-    shouldMountFocusedVideo,
-  ]);
-
-  useEffect(() => {
-    if (isPlaybackSurfaceFocused) {
-      wasPlayerSurfaceMountedRef.current = shouldMountVideo;
-    }
-  }, [isPlaybackSurfaceFocused, shouldMountVideo]);
+  }, [shouldMountVideo, shouldRecordFeedVideoPlaybackMetrics, videoMetricsPlayerId, videoMetricsRole, videoMetricsSurface]);
 
   useEffect(() => {
     if (shouldMountVideo) return;
@@ -2426,32 +2458,41 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   });
   const showPlayOverlay = canAttemptVideo && !playing;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
-  const handleVideoLoadStart = useCallback(() => {
-    videoClientLoadMeasurementRef.current = {
-      surface: performanceSurface,
-      isInViewport: mediaVisible,
-    };
-    if (shouldRecordFeedVideoPlaybackMetrics) {
-      recordVideoLoadStart(videoMetricsPlayerId);
-    }
-  }, [
-    mediaVisible,
-    performanceSurface,
-    shouldRecordFeedVideoPlaybackMetrics,
-    videoMetricsPlayerId,
-  ]);
-  const handleVideoReadyForDisplay = useCallback(() => {
-    if (shouldRecordFeedVideoPlaybackMetrics) {
-      recordVideoFirstFrame(videoMetricsPlayerId);
-    }
-    revealVideoFrame();
-  }, [
-    revealVideoFrame,
-    shouldRecordFeedVideoPlaybackMetrics,
-    videoMetricsPlayerId,
-  ]);
+  const handleVideoLoadStart = useCallback(
+    (callbackGeneration: number) => {
+      if (callbackGeneration !== videoPlayerGenerationRef.current) return;
+      videoClientLoadMeasurementRef.current = {
+        surface: performanceSurface,
+        isInViewport: mediaVisible,
+      };
+      if (shouldRecordFeedVideoPlaybackMetrics) {
+        recordVideoLoadStart(videoMetricsPlayerId);
+      }
+    },
+    [
+      mediaVisible,
+      performanceSurface,
+      shouldRecordFeedVideoPlaybackMetrics,
+      videoMetricsPlayerId,
+    ],
+  );
+  const handleVideoReadyForDisplay = useCallback(
+    (callbackGeneration: number) => {
+      if (callbackGeneration !== videoPlayerGenerationRef.current) return;
+      if (shouldRecordFeedVideoPlaybackMetrics) {
+        recordVideoFirstFrame(videoMetricsPlayerId);
+      }
+      revealVideoFrame(callbackGeneration);
+    },
+    [
+      revealVideoFrame,
+      shouldRecordFeedVideoPlaybackMetrics,
+      videoMetricsPlayerId,
+    ],
+  );
   const handleVideoBuffer = useCallback(
-    ({ isBuffering }: { isBuffering: boolean }) => {
+    (callbackGeneration: number, { isBuffering }: { isBuffering: boolean }) => {
+      if (callbackGeneration !== videoPlayerGenerationRef.current) return;
       if (shouldRecordFeedVideoPlaybackMetrics) {
         recordVideoBufferState(videoMetricsPlayerId, isBuffering);
       }
@@ -2460,7 +2501,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   );
 
   const handleVideoProgress = useCallback(
-    (data: any) => {
+    (callbackGeneration: number, data: any) => {
+      if (callbackGeneration !== videoPlayerGenerationRef.current) return;
       if (mediaIdentity !== mediaIdentityRef.current) return;
       const nextTime = data?.currentTime;
       if (typeof nextTime !== 'number' || !Number.isFinite(nextTime)) return;
@@ -2509,7 +2551,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         !hasRenderedFrameRef.current &&
         nextTime > 0.05
       ) {
-        revealVideoFrame();
+        revealVideoFrame(callbackGeneration);
       }
     },
     [
@@ -2525,7 +2567,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   );
 
   const handleVideoError = useCallback(
-    (error: any) => {
+    (callbackGeneration: number, error: any) => {
+      if (callbackGeneration !== videoPlayerGenerationRef.current) return;
       if (mediaIdentity !== mediaIdentityRef.current) return;
       if (shouldRecordFeedVideoPlaybackMetrics) {
         recordVideoError(videoMetricsPlayerId);
@@ -2559,107 +2602,107 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // Reaction counters and picker state may re-render the card chrome. Keep the
   // native video surface stable so UI-only updates cannot detach SurfaceView.
   const stableVideoSurface = useMemo(() => {
-      if (!shouldMountVideo) {
-        if (resolvedThumbnailUrl) return null;
-        return (
-          <VideoFallbackPoster
-            label={
-              hasVideoUrl && !hasVideoError
-                ? copy.video ?? 'Video'
-                : copy.videoUnavailable
-            }
-          />
-        );
-      }
-
+    if (!shouldMountVideo) {
+      if (resolvedThumbnailUrl) return null;
       return (
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <VideoPlayer
-            key={`${mediaIdentity}:${videoPlayerGeneration}`}
-            ref={videoRef}
-            source={videoSource}
-            style={[
-              StyleSheet.absoluteFill,
-              !hasRenderedFrame ? { opacity: 0 } : null,
-            ]}
-            resizeMode="contain"
-            paused={!playing}
-            controls={false}
-            muted={muted || !isActive || !hasRenderedFrame}
-            repeat
-            ignoreSilentSwitch="ignore"
-            disableAudioSessionManagement={
-              Platform.OS === 'ios' && liveMediaActive
-            }
-            playInBackground={false}
-            playWhenInactive={false}
-            shutterColor="transparent"
-            useTextureView={false}
-            bufferConfig={VIDEO_BUFFER_CONFIG}
-            maxBitRate={maxVideoBitRate}
-            progressUpdateInterval={250}
-            onLoadStart={handleVideoLoadStart}
-            onReadyForDisplay={handleVideoReadyForDisplay}
-            onLoad={handleVideoLoad}
-            onBuffer={
-              shouldRecordFeedVideoPlaybackMetrics
-                ? handleVideoBuffer
-                : undefined
-            }
-            onProgress={handleVideoProgress}
-            poster={resolvedThumbnailUrl}
-            posterResizeMode="cover"
-            onError={handleVideoError}
-          />
-          {shouldRenderVideoFrameCover && resolvedThumbnailUrl ? (
-            <Animated.View
-              pointerEvents="none"
-              style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
-            >
-              <FeedVideoBackdrop
-                uri={resolvedThumbnailUrl}
-                enabled={mediaLoadEnabled}
-                blurred={shouldBlurVideoBackdrop}
-              />
-            </Animated.View>
-          ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
-            <Animated.View
-              pointerEvents="none"
-              style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
-            >
-              <VideoFallbackPoster label={copy.video ?? 'Video'} />
-            </Animated.View>
-          ) : null}
-        </View>
+        <VideoFallbackPoster
+          label={
+            hasVideoUrl && !hasVideoError
+              ? copy.video ?? 'Video'
+              : copy.videoUnavailable
+          }
+        />
       );
+    }
+
+    return (
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <VideoPlayer
+          key={`${mediaIdentity}:${videoPlayerGeneration}`}
+          ref={videoRef}
+          source={videoSource}
+          style={[
+            StyleSheet.absoluteFill,
+            !hasRenderedFrame ? { opacity: 0 } : null,
+          ]}
+          resizeMode="contain"
+          paused={!playing}
+          controls={false}
+          muted={muted || !isActive || !hasRenderedFrame}
+          repeat
+          ignoreSilentSwitch="ignore"
+          disableAudioSessionManagement={
+            Platform.OS === 'ios' && liveMediaActive
+          }
+          playInBackground={false}
+          playWhenInactive={false}
+          shutterColor="transparent"
+          useTextureView={false}
+          bufferConfig={VIDEO_BUFFER_CONFIG}
+          maxBitRate={maxVideoBitRate}
+          progressUpdateInterval={250}
+          onLoadStart={() => handleVideoLoadStart(videoPlayerGeneration)}
+          onReadyForDisplay={() =>
+            handleVideoReadyForDisplay(videoPlayerGeneration)
+          }
+          onLoad={data => handleVideoLoad(videoPlayerGeneration, data)}
+          onBuffer={
+            shouldRecordFeedVideoPlaybackMetrics
+              ? data => handleVideoBuffer(videoPlayerGeneration, data)
+              : undefined
+          }
+          onProgress={data => handleVideoProgress(videoPlayerGeneration, data)}
+          onError={error => handleVideoError(videoPlayerGeneration, error)}
+        />
+        {shouldRenderVideoFrameCover && resolvedThumbnailUrl ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
+          >
+            <FeedVideoBackdrop
+              uri={resolvedThumbnailUrl}
+              enabled={mediaLoadEnabled}
+              blurred={shouldBlurVideoBackdrop}
+            />
+          </Animated.View>
+        ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
+          >
+            <VideoFallbackPoster label={copy.video ?? 'Video'} />
+          </Animated.View>
+        ) : null}
+      </View>
+    );
   }, [
-      copy.video,
-      copy.videoUnavailable,
-      frameCoverAnimatedStyle,
-      handleVideoError,
-      handleVideoBuffer,
-      handleVideoLoad,
-      handleVideoLoadStart,
-      handleVideoProgress,
-      handleVideoReadyForDisplay,
-      hasRenderedFrame,
-      hasVideoError,
-      hasVideoUrl,
-      isActive,
-      isFrameCoverVisible,
-      liveMediaActive,
-      maxVideoBitRate,
-      mediaIdentity,
-      mediaLoadEnabled,
-      muted,
-      playing,
-      resolvedThumbnailUrl,
-      shouldRecordFeedVideoPlaybackMetrics,
-      shouldBlurVideoBackdrop,
-      shouldRenderVideoFrameCover,
-      shouldMountVideo,
-      videoPlayerGeneration,
-      videoSource,
+    copy.video,
+    copy.videoUnavailable,
+    frameCoverAnimatedStyle,
+    handleVideoError,
+    handleVideoBuffer,
+    handleVideoLoad,
+    handleVideoLoadStart,
+    handleVideoProgress,
+    handleVideoReadyForDisplay,
+    hasRenderedFrame,
+    hasVideoError,
+    hasVideoUrl,
+    isActive,
+    isFrameCoverVisible,
+    liveMediaActive,
+    maxVideoBitRate,
+    mediaIdentity,
+    mediaLoadEnabled,
+    muted,
+    playing,
+    resolvedThumbnailUrl,
+    shouldRecordFeedVideoPlaybackMetrics,
+    shouldBlurVideoBackdrop,
+    shouldRenderVideoFrameCover,
+    shouldMountVideo,
+    videoPlayerGeneration,
+    videoSource,
   ]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker
@@ -2940,100 +2983,100 @@ export const PostIdentityHeader = React.memo(function PostIdentityHeader({
   return (
     <>
       <View className={containerClassName}>
-      <TouchableOpacity
-        className="min-w-0 flex-1 flex-row items-center"
-        activeOpacity={0.8}
-        onPress={onPress}
-        disabled={!onPress}
-      >
-        {avatar ? (
-          <Avatar uri={avatar} />
-        ) : (
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
-            <ShoppingBag size={20} color="#FFFFFF" />
-          </View>
-        )}
-        <View className="ml-3 min-w-0 flex-1">
-          <View className="flex-row items-start">
-            <Text
-              className="min-w-0 flex-shrink text-title-primary"
-              numberOfLines={hasActivity ? 2 : 1}
-            >
-              <Text className="font-bold">{name}</Text>
-              {activityLabel ? (
-                <Text className="font-normal"> {activityLabel}</Text>
-              ) : postActivity.fullText ? (
-                <>
-                  {' '}
-                  {postActivity.segments.map((segment, index) => {
-                    if (segment.kind === 'tagged_users') {
+        <TouchableOpacity
+          className="min-w-0 flex-1 flex-row items-center"
+          activeOpacity={0.8}
+          onPress={onPress}
+          disabled={!onPress}
+        >
+          {avatar ? (
+            <Avatar uri={avatar} />
+          ) : (
+            <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
+              <ShoppingBag size={20} color="#FFFFFF" />
+            </View>
+          )}
+          <View className="ml-3 min-w-0 flex-1">
+            <View className="flex-row items-start">
+              <Text
+                className="min-w-0 flex-shrink text-title-primary"
+                numberOfLines={hasActivity ? 2 : 1}
+              >
+                <Text className="font-bold">{name}</Text>
+                {activityLabel ? (
+                  <Text className="font-normal"> {activityLabel}</Text>
+                ) : postActivity.fullText ? (
+                  <>
+                    {' '}
+                    {postActivity.segments.map((segment, index) => {
+                      if (segment.kind === 'tagged_users') {
+                        return (
+                          <Text
+                            key={`${segment.kind}:${index}`}
+                            className="font-semibold text-brand"
+                            onPress={showTaggedUsers}
+                          >
+                            {segment.text}
+                          </Text>
+                        );
+                      }
+
+                      const isEmphasized =
+                        segment.kind === 'feeling' ||
+                        segment.kind === 'location';
                       return (
                         <Text
                           key={`${segment.kind}:${index}`}
-                          className="font-semibold text-brand"
-                          onPress={showTaggedUsers}
+                          className={
+                            isEmphasized
+                              ? 'font-semibold text-slate-900'
+                              : 'font-normal text-slate-500'
+                          }
                         >
                           {segment.text}
                         </Text>
                       );
-                    }
-
-                    const isEmphasized =
-                        segment.kind === 'feeling' ||
-                        segment.kind === 'location';
-                    return (
-                      <Text
-                        key={`${segment.kind}:${index}`}
-                        className={
-                          isEmphasized
-                            ? 'font-semibold text-slate-900'
-                            : 'font-normal text-slate-500'
-                        }
-                      >
-                        {segment.text}
-                      </Text>
-                    );
-                  })}
-                </>
-              ) : null}
-            </Text>
-            {badge ? (
-              <Text className="surface-muted ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand">
-                {badge}
+                    })}
+                  </>
+                ) : null}
               </Text>
+              {badge ? (
+                <Text className="surface-muted ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand">
+                  {badge}
+                </Text>
+              ) : null}
+            </View>
+            <View className="mt-0.5 flex-row items-center">
+              <Text className="text-caption-secondary">
+                {time} {'\u2022'}{' '}
+              </Text>
+              <PrivacyIcon size={11} color="#94A3B8" />
+              <Text className="ml-1 text-caption-secondary">
+                {privacyMeta.label}
+              </Text>
+            </View>
+            {onDetailPress && post ? (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleDetailPress}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                className="mt-1 self-start"
+              >
+                <Text className="text-caption-primary text-brand">
+                  {copy.viewDetails ?? 'Xem chi tiết'}
+                </Text>
+              </TouchableOpacity>
             ) : null}
           </View>
-          <View className="mt-0.5 flex-row items-center">
-            <Text className="text-caption-secondary">
-              {time} {'\u2022'}{' '}
-            </Text>
-            <PrivacyIcon size={11} color="#94A3B8" />
-            <Text className="ml-1 text-caption-secondary">
-              {privacyMeta.label}
-            </Text>
-          </View>
-          {onDetailPress && post ? (
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleDetailPress}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              className="mt-1 self-start"
-            >
-              <Text className="text-caption-primary text-brand">
-                {copy.viewDetails ?? 'Xem chi tiết'}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </TouchableOpacity>
-      {onMorePress && post && (
-        <TouchableOpacity
-          onPress={handleMorePress}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <MoreHorizontal size={22} color="#94A3B8" />
         </TouchableOpacity>
-      )}
+        {onMorePress && post && (
+          <TouchableOpacity
+            onPress={handleMorePress}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <MoreHorizontal size={22} color="#94A3B8" />
+          </TouchableOpacity>
+        )}
       </View>
       <PostTaggedUsersSheet
         visible={taggedUsersVisible}
@@ -3272,15 +3315,25 @@ const SinglePostImage = React.memo(function SinglePostImage({
   onPress: () => void;
   enabled?: boolean;
 }) {
-  const [aspectRatio, setAspectRatio] = useState(() =>
-    getCachedMediaAspectRatio(uri, 0.75, 1.91, 4 / 3),
-  );
+  const reservedAspectRatioRef = useRef({
+    identity: uri,
+    value: getCachedMediaAspectRatio(uri, 0.75, 1.91, 4 / 3),
+  });
+  if (reservedAspectRatioRef.current.identity !== uri) {
+    reservedAspectRatioRef.current = {
+      identity: uri,
+      value: getCachedMediaAspectRatio(uri, 0.75, 1.91, 4 / 3),
+    };
+  }
+  const aspectRatio = reservedAspectRatioRef.current.value;
 
   useEffect(() => {
     if (!uri || !enabled) return undefined;
-    const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(uri);
-    if (cachedRatio) {
-      setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 1.91, 4 / 3));
+    if (Platform.OS === 'android') return undefined;
+    if (
+      feedMediaGeometryStorage.getAspectRatio(uri) ||
+      MEDIA_ASPECT_RATIO_CACHE.has(uri)
+    ) {
       return undefined;
     }
 
@@ -3291,10 +3344,9 @@ const SinglePostImage = React.memo(function SinglePostImage({
       uri,
       (width, height) => {
         if (cancelled || width <= 0 || height <= 0) return;
-        // Clamp aspect ratio to resemble Facebook:
-        // Facebook caps portrait to 4:5 (0.8) and landscape to 1.91:1.
+        // Learn geometry for the next mount without resizing the row that is
+        // already participating in FlashList layout.
         cacheMediaAspectRatio(uri, width, height);
-        setAspectRatio(clampAspectRatio(width / height, 0.75, 1.91, 4 / 3));
       },
       err => {
         if (!cancelled) {
@@ -3818,7 +3870,7 @@ export const TextPostCard = React.memo(function TextPostCard({
                 style={[photoLayout, photoGutterStyle]}
               >
                 <View style={PHOTO_GRID_TILE_STYLE}>
-                  <FeedMediaImage
+                  <StaggeredFeedMediaImage
                     uri={url}
                     style={{
                       width: '100%',
@@ -3827,6 +3879,10 @@ export const TextPostCard = React.memo(function TextPostCard({
                     }}
                     resizeMode="cover"
                     enabled={mediaEnabled}
+                    mountOrder={index}
+                    staggerEnabled={
+                      deferMediaUntilVisible && Platform.OS === 'android'
+                    }
                   />
                   {/* "+N" overlay on 4th photo when there are more photos */}
                   {isFourthPhotoWithMore && (

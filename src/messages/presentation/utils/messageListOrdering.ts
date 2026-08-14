@@ -1,4 +1,5 @@
 import type { ChatItem } from '../../domain/types/messages.types';
+import { getChatActivityTime } from '../../domain/utils/messageChatActivity';
 
 function hasConversationActivity(chat: ChatItem) {
   if (chat.chatType !== 'user') return true;
@@ -35,16 +36,25 @@ function compareNames(left: ChatItem, right: ChatItem) {
 
 export function sortMessageUserChats(chats: ChatItem[]) {
   return [...chats].sort((left, right) => {
+    const bothDirectUsers =
+      left.chatType === 'user' && right.chatType === 'user';
+    if (bothDirectUsers) {
+      const timeDiff = getChatActivityTime(right) - getChatActivityTime(left);
+      if (timeDiff !== 0) return timeDiff;
+    }
+
+    const unreadDiff = right.unreadCount - left.unreadCount;
+    if (unreadDiff !== 0) return unreadDiff;
+
     const leftBucket = getUserChatSortBucket(left);
     const rightBucket = getUserChatSortBucket(right);
 
     if (leftBucket !== rightBucket) return leftBucket - rightBucket;
 
-    const timeDiff = right.lastMessageTime - left.lastMessageTime;
-    if (timeDiff !== 0) return timeDiff;
-
-    const unreadDiff = right.unreadCount - left.unreadCount;
-    if (unreadDiff !== 0) return unreadDiff;
+    if (!bothDirectUsers) {
+      const timeDiff = right.lastMessageTime - left.lastMessageTime;
+      if (timeDiff !== 0) return timeDiff;
+    }
 
     if (leftBucket >= 2) {
       const relationshipDiff =

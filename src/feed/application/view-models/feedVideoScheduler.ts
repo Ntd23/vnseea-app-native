@@ -42,6 +42,23 @@ export const DEFAULT_FEED_VIDEO_MIX_CONFIG: FeedVideoMixConfig = {
 };
 
 const MAX_VIDEO_ONLY_FEED_ITEMS = 2;
+const INITIAL_FEED_VIDEO_WINDOW_ITEMS = 10;
+
+export function shouldPreserveRenderedFeedForVideoCommit({
+  renderedPosts,
+  forceNewest,
+  hasFeedScrolledSinceLoad,
+}: {
+  renderedPosts: readonly FeedPost[];
+  forceNewest: boolean;
+  hasFeedScrolledSinceLoad: boolean;
+}) {
+  if (!forceNewest || hasFeedScrolledSinceLoad) return true;
+
+  return renderedPosts
+    .slice(0, INITIAL_FEED_VIDEO_WINDOW_ITEMS)
+    .some(post => post.kind === 'video');
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);

@@ -49,7 +49,7 @@ export function setVideoPlaybackTime(
 export function shouldPlayCurrentReel({
   isPlaybackRouteFocused,
   isDismissing,
-  commentsOpen,
+  commentsOpen: _commentsOpen,
   shareOpen,
   editOpen,
   publisherOpen,
@@ -64,7 +64,8 @@ export function shouldPlayCurrentReel({
   return (
     isPlaybackRouteFocused &&
     !isDismissing &&
-    !commentsOpen &&
+    // Comments use a contained video preview, so the current Reel keeps
+    // playing while paging and auto-advance remain locked by ReelsScreen.
     !shareOpen &&
     !editOpen &&
     !publisherOpen

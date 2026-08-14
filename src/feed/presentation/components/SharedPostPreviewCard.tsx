@@ -83,6 +83,7 @@ function RetainedSharedPreviewImage({
     <Image
       source={{ uri }}
       resizeMode={resizeMode}
+      resizeMethod="resize"
       style={style}
       onLoad={() => {
         markFeedMediaLoaded(uri);
@@ -214,6 +215,7 @@ export function SharedPostPreviewCard({
               <Image
                 source={{ uri: groupContext.avatarUrl }}
                 style={styles.groupAvatar}
+                resizeMethod="resize"
                 onLoad={() => {
                   markFeedMediaLoaded(groupContext.avatarUrl);
                   onAssetSettled?.(groupContext.avatarUrl!);
@@ -230,6 +232,7 @@ export function SharedPostPreviewCard({
               <Image
                 source={{ uri: model.publisher.avatarUrl }}
                 style={styles.publisherAvatarOverlay}
+                resizeMethod="resize"
                 onLoad={() => {
                   markFeedMediaLoaded(model.publisher.avatarUrl);
                   onAssetSettled?.(model.publisher.avatarUrl!);
@@ -242,6 +245,7 @@ export function SharedPostPreviewCard({
           <Image
             source={{ uri: model.publisher.avatarUrl }}
             style={styles.avatar}
+            resizeMethod="resize"
             onLoad={() => {
               markFeedMediaLoaded(model.publisher.avatarUrl);
               onAssetSettled?.(model.publisher.avatarUrl!);

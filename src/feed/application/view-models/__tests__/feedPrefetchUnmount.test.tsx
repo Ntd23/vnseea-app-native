@@ -151,4 +151,80 @@ describe('feed prefetch unmount lifecycle', () => {
       expect.anything(),
     );
   });
+
+  it('pauses failed prefetch refills while hidden and resumes them on focus', async () => {
+    const pendingPrefetch = deferred<never>();
+    mockGetLightPostsPage
+      .mockResolvedValueOnce({
+        posts: [
+          {
+            id: 'initial-1',
+            kind: 'text',
+            postedAt: 20,
+            caption: 'initial-1',
+            photos: [],
+            likeCount: 0,
+            commentCount: 0,
+            isLiked: false,
+            myReaction: null,
+            topReactions: [],
+            privacy: 'public',
+            publisher: {
+              id: 'publisher-1',
+              name: 'Publisher',
+              username: 'publisher',
+            },
+          },
+        ],
+        prefetchedPosts: [],
+        nextCursor: '10',
+        reachedEnd: false,
+      })
+      .mockImplementationOnce(() => pendingPrefetch.promise)
+      .mockResolvedValueOnce({
+        posts: [],
+        prefetchedPosts: [],
+        nextCursor: undefined,
+        reachedEnd: true,
+      });
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    let latest!: ReturnType<typeof useFeedViewModel>;
+    function Probe() {
+      latest = useFeedViewModel();
+      return null;
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<Probe />);
+      await flushAsyncWork();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+      await flushAsyncWork();
+    });
+    expect(mockGetLightPostsPage).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      latest.resetScrollBusy();
+    });
+    await act(async () => {
+      pendingPrefetch.reject(new Error('offline'));
+      await flushAsyncWork();
+      jest.advanceTimersByTime(120_000);
+      await flushAsyncWork();
+    });
+    expect(mockGetLightPostsPage).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      latest.setScrollBusy(false);
+      jest.advanceTimersByTime(120_000);
+      await flushAsyncWork();
+    });
+    expect(mockGetLightPostsPage).toHaveBeenCalledTimes(3);
+
+    await act(async () => renderer.unmount());
+  });
 });

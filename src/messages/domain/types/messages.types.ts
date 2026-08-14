@@ -20,6 +20,9 @@ export interface ChatItem {
   lastMessageIsMine?: boolean;
   lastMessageIsReply?: boolean;
   lastMessageTime: number;
+  relationshipActivityTime?: number;
+  relationshipStateRevision?: number;
+  relationshipEventOccurredAt?: number;
   paginationCursorTime?: number;
   unreadCount: number;
   isOnline: boolean;

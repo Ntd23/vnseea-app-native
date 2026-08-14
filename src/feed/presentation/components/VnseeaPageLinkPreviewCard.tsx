@@ -152,6 +152,7 @@ export function VnseeaPageLinkPreviewCard({
             source={imageSource}
             className="h-full w-full"
             resizeMode="cover"
+            resizeMethod="resize"
             onLoad={() => markFeedMediaLoaded(preview.image)}
           />
         ) : fallbackAvatar && shouldShowMedia ? (
@@ -159,6 +160,7 @@ export function VnseeaPageLinkPreviewCard({
             source={{ uri: fallbackAvatar }}
             className="h-24 w-24 rounded-full border-4 border-white bg-white"
             resizeMode="cover"
+            resizeMethod="resize"
             onLoad={() => markFeedMediaLoaded(fallbackAvatar)}
           />
         ) : (

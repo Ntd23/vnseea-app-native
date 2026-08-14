@@ -2,6 +2,7 @@ import {
   filterDistanceScopedResults,
   MAP_COMMITTED_SEARCH_RADIUS_METERS,
   MAP_TYPEAHEAD_SEARCH_RADIUS_METERS,
+  resolveMapSearchScopeRadius,
 } from '../mapSearchRadius';
 
 describe('map search radius', () => {
@@ -31,5 +32,16 @@ describe('map search radius', () => {
     expect(
       filterDistanceScopedResults(items, undefined, item => item.distanceMeters),
     ).toEqual(items);
+  });
+
+  it('does not apply a nearby-only radius to a nationwide search', () => {
+    expect(
+      resolveMapSearchScopeRadius({
+        globalSearch: true,
+        lat: 10.7769,
+        lng: 106.7009,
+        radius: MAP_COMMITTED_SEARCH_RADIUS_METERS,
+      }),
+    ).toBeUndefined();
   });
 });

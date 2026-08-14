@@ -155,8 +155,11 @@ describe('reels startup feed', () => {
     };
     const snapshot: FeedVideoPost = {
       ...createFeedVideo('10'),
-      videoUrl: '',
-      thumbnailUrl: undefined,
+      // The post-detail/realtime endpoint can return a different, but still
+      // non-empty, alias for the same media. Swapping to that alias would make
+      // Android rebuild the active native player during a reaction update.
+      videoUrl: 'https://detail.example.com/post-10-video.mp4',
+      thumbnailUrl: 'https://detail.example.com/post-10-thumb.jpg',
       likeCount: 9,
       commentCount: 4,
       isLiked: true,

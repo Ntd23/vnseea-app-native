@@ -17,7 +17,10 @@ describe('message list and broadcast layout', () => {
     const block = source.slice(start, end);
     const jsxStart = block.indexOf('return (');
     const previewIndex = block.indexOf('{messagePreviewText}', jsxStart);
-    const timeIndex = block.indexOf('{formatTime(chat.lastMessageTime, copy)}', jsxStart);
+    const timeIndex = block.indexOf(
+      '{formatTime(getChatPreviewTime(chat), copy)}',
+      jsxStart,
+    );
 
     expect(previewIndex).toBeGreaterThan(-1);
     expect(timeIndex).toBeGreaterThan(previewIndex);
@@ -37,6 +40,14 @@ describe('message list and broadcast layout', () => {
     expect(occurrences(source, 'handleSendBroadcast().catch(() => undefined)')).toBe(1);
     expect(source).toContain('disabled={!canSendBroadcast}');
     expect(source).toContain('{copy.sendMessageButton}');
+  });
+
+  it('bounds relationship refresh retries with backoff', () => {
+    expect(source).toContain(
+      'const MESSAGE_RELATIONSHIP_REFRESH_RETRY_DELAYS_MS = [',
+    );
+    expect(source).toContain('relationshipRefreshRetryCount += 1;');
+    expect(source).not.toContain('scheduleRelationshipRefresh(250)');
   });
 
   it('renders selected recipients as a bounded vertical list beside the compact composer', () => {

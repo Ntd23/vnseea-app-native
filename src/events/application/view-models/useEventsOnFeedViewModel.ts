@@ -8,7 +8,9 @@ import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/
 
 const repository = createEventsRepository();
 
-type InteractionTask = ReturnType<typeof InteractionManager.runAfterInteractions>;
+type InteractionTask = ReturnType<
+  typeof InteractionManager.runAfterInteractions
+>;
 
 let pendingEventsCacheTask: InteractionTask | null = null;
 
@@ -30,7 +32,7 @@ export function useEventsOnFeedViewModel(
 ) {
   const { autoLoad = true } = options;
   const [events, setEvents] = useState<EventsItem[]>(() => {
-    return feedCacheStorage.getCachedEvents();
+    return autoLoad ? feedCacheStorage.getCachedEvents() : [];
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -73,7 +75,9 @@ export function useEventsOnFeedViewModel(
       setEvents(mergedList);
       cacheEventsAfterInteractions(mergedList);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không tải được danh sách sự kiện');
+      setError(
+        err instanceof Error ? err.message : 'Không tải được danh sách sự kiện',
+      );
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -93,7 +97,7 @@ export function useEventsOnFeedViewModel(
           };
         }
         return event;
-      })
+      }),
     );
   }, []);
 
@@ -110,7 +114,7 @@ export function useEventsOnFeedViewModel(
           };
         }
         return event;
-      })
+      }),
     );
   }, []);
 

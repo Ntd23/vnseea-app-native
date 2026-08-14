@@ -23,6 +23,7 @@ describe('message realtime runtime', () => {
     expect(source).toContain("require('socket.io-client-v4')");
     expect(source).toContain("nuxtApiUrl('realtime/token')");
     expect(source).toContain("nextSocket.on('messages:count'");
+    expect(source).toContain("'relationship:changed'");
     expect(source).toContain("nextSocket.on('message:typing'");
     expect(source).toContain("nextSocket.on('message:typing-stop'");
     expect(callSource).toContain('connectMessageRealtime');
@@ -33,6 +34,24 @@ describe('message realtime runtime', () => {
     expect(packageJson.dependencies['socket.io-client-v4']).toBe(
       'npm:socket.io-client@4.8.3',
     );
+  });
+
+  it('refreshes follow discovery when a realtime relationship notification arrives', () => {
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const messageScreenSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../presentation/screens/MessageScreen.tsx',
+      ),
+      'utf8',
+    );
+
+    expect(source).toContain("| 'relationship:changed'");
+    expect(messageScreenSource).toContain('subscribeToMessageRealtimeEvent');
+    expect(messageScreenSource).toContain("'relationship:changed'");
+    expect(messageScreenSource).toContain('applyRelationshipChange');
+    expect(messageScreenSource).toContain('includeDiscovery: true');
+    expect(messageScreenSource).toContain('forceRefresh: true');
   });
 
   it('debounces invalidations and exposes connection state for fallback polling', () => {

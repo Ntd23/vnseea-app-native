@@ -396,6 +396,7 @@ describe('ApiMessagesRepository conversation details', () => {
             user_id: '12',
             username: 'partner',
             name: 'Partner',
+            relationship_activity_at: 200,
           },
         ],
         followers: [],
@@ -410,6 +411,128 @@ describe('ApiMessagesRepository conversation details', () => {
     expect(chat.participantId).toBe('12');
     expect(chat.chatId).toBeUndefined();
     expect(chat.hasConversationRecord).toBe(false);
+    expect(chat.lastMessageTime).toBe(0);
+    expect(chat.relationshipActivityTime).toBe(200);
+  });
+
+  it('maps relationship activity without changing the last message time', async () => {
+    post.mockResolvedValueOnce({
+      data: [
+        {
+          chat_type: 'user',
+          chat_id: '77',
+          relationship_activity_at: 200,
+          user_data: {
+            user_id: '12',
+            username: 'partner',
+            name: 'Partner',
+          },
+          last_message: rawMessage('9', { time: 100 }),
+        },
+      ],
+    });
+
+    const [chat] = await createMessagesRepository().getChats({
+      includeDiscovery: false,
+      latestOnly: true,
+    });
+
+    expect(chat.lastMessageTime).toBe(100);
+    expect(chat.relationshipActivityTime).toBe(200);
+  });
+
+  it('merges newer follow activity into an existing conversation', async () => {
+    post.mockResolvedValueOnce({
+      data: [
+        {
+          chat_type: 'user',
+          chat_id: '77',
+          user_data: {
+            user_id: '12',
+            username: 'partner',
+            name: 'Partner',
+          },
+          last_message: rawMessage('9', { time: 100 }),
+        },
+      ],
+    }).mockResolvedValueOnce({
+      data: {
+        following: [
+          {
+            user_id: '12',
+            username: 'partner',
+            name: 'Partner',
+            relationship_activity_at: 200,
+          },
+        ],
+        followers: [],
+      },
+    });
+
+    const [chat] = await createMessagesRepository().getChats({
+      latestOnly: true,
+      forceRefresh: true,
+    });
+
+    expect(chat.chatId).toBe('77');
+    expect(chat.lastMessageTime).toBe(100);
+    expect(chat.relationshipActivityTime).toBe(200);
+    expect(chat.isFollowing).toBe(true);
+  });
+
+  it('rejects a forced relationship refresh when discovery is unavailable', async () => {
+    post
+      .mockResolvedValueOnce({ data: [] })
+      .mockRejectedValueOnce(new Error('offline'));
+
+    await expect(
+      createMessagesRepository().getChats({
+        latestOnly: true,
+        forceRefresh: true,
+      }),
+    ).rejects.toThrow('offline');
+  });
+
+  it('prefers an explicit conversation relationship state over stale discovery', async () => {
+    post.mockResolvedValueOnce({
+      data: [
+        {
+          chat_type: 'user',
+          chat_id: '77',
+          is_following: 0,
+          is_following_me: 0,
+          relationship_activity_at: 0,
+          user_data: {
+            user_id: '12',
+            username: 'partner',
+            name: 'Partner',
+          },
+          last_message: rawMessage('9', { time: 100 }),
+        },
+      ],
+    }).mockResolvedValueOnce({
+      data: {
+        following: [
+          {
+            user_id: '12',
+            username: 'partner',
+            name: 'Partner',
+            relationship_activity_at: 200,
+          },
+        ],
+        followers: [],
+      },
+    });
+
+    const [chat] = await createMessagesRepository().getChats({
+      latestOnly: true,
+      forceRefresh: true,
+    });
+
+    expect(chat.hasConversationRecord).toBe(true);
+    expect(chat.isFollowing).toBe(false);
+    expect(chat.isFollower).toBe(false);
+    expect(chat.relationshipActivityTime).toBeUndefined();
   });
 
   it('resolves the real conversation record for a participant', async () => {

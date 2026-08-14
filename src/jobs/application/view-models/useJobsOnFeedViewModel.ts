@@ -20,7 +20,7 @@ export function useJobsOnFeedViewModel(
 ) {
   const { autoLoad = true } = options;
   const [jobs, setJobs] = useState<JobsItem[]>(() =>
-    feedCacheStorage.getCachedJobs(),
+    autoLoad ? feedCacheStorage.getCachedJobs() : [],
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);

@@ -5,6 +5,7 @@ import {
   getUnusedFeedVideoCount,
   getFeedVideoBufferTarget,
   mergeFeedContentWithVideos,
+  shouldPreserveRenderedFeedForVideoCommit,
 } from '../feedVideoScheduler';
 
 function lightPost(id: string): FeedPost {
@@ -206,6 +207,56 @@ describe('feed video scheduler', () => {
       'post-14',
       'video-1',
     ]);
+  });
+
+  it('backfills the initial video lane before the first feed scroll', () => {
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
+      lightPost(`post-${index + 1}`),
+    );
+
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: firstPage,
+        forceNewest: true,
+        hasFeedScrolledSinceLoad: false,
+      }),
+    ).toBe(false);
+
+    const remixed = mergeFeedContentWithVideos(firstPage, [
+      videoPost('video-1'),
+    ]);
+    expect(remixed.findIndex(post => post.kind === 'video')).toBe(4);
+  });
+
+  it('does not move the rendered feed after the first scroll or when a head video already exists', () => {
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
+      lightPost(`post-${index + 1}`),
+    );
+    const withHeadVideo = mergeFeedContentWithVideos(firstPage, [
+      videoPost('video-1'),
+    ]);
+
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: firstPage,
+        forceNewest: true,
+        hasFeedScrolledSinceLoad: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: withHeadVideo,
+        forceNewest: true,
+        hasFeedScrolledSinceLoad: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: firstPage,
+        forceNewest: false,
+        hasFeedScrolledSinceLoad: false,
+      }),
+    ).toBe(true);
   });
 
   it('requests enough secondary video buffer for the dynamic mix', () => {

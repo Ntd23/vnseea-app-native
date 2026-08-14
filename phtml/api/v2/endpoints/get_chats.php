@@ -142,6 +142,7 @@ if (!empty($messages)) {
                 f.`follower_id`,
                 f.`following_id`,
                 GREATEST(
+                    COALESCE(MAX(f.`time`), 0),
                     COALESCE(MAX(a.`time`), 0),
                     COALESCE(MAX(n.`time`), 0)
                 ) AS `relationship_activity_at`

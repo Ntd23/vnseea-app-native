@@ -60,6 +60,7 @@ const FeedCommerceAvatar = React.memo(function FeedCommerceAvatar({
       source={source}
       className="h-[42px] w-[42px] rounded-full bg-slate-200"
       resizeMode="cover"
+      resizeMethod="resize"
       fadeDuration={0}
     />
   );

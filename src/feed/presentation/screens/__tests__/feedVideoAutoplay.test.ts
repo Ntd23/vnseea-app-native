@@ -13,6 +13,7 @@ import {
   shouldMeasureFeedVideoDuringScroll,
   shouldPlayFeedVideo,
   resolvePlaybackSurfaceFocused,
+  resolvePlaybackSurfaceVisibleMediaPostIds,
 } from '../feedVideoAutoplay';
 
 describe('feed video autoplay selection', () => {
@@ -20,7 +21,7 @@ describe('feed video autoplay selection', () => {
     expect(getFeedVideoPlaybackPolicy('android')).toEqual({
       warmBehindItems: 0,
       warmAheadItems: 0,
-      idleWarmMaxCount: 1,
+      idleWarmMaxCount: 0,
       scrollingWarmMaxCount: 0,
       posterPrefetchBehindItems: 0,
       posterPrefetchAheadItems: 1,
@@ -45,6 +46,23 @@ describe('feed video autoplay selection', () => {
     expect(
       resolvePlaybackSurfaceFocused({ routeFocused: false, appActive: true }),
     ).toBe(false);
+  });
+
+  it('clears media while inactive and restores the cached viewport when active', () => {
+    const latestVisiblePostIds = ['audio-post', 'video-post'];
+
+    expect(
+      resolvePlaybackSurfaceVisibleMediaPostIds({
+        surfaceFocused: false,
+        latestVisiblePostIds,
+      }),
+    ).toEqual([]);
+    expect(
+      resolvePlaybackSurfaceVisibleMediaPostIds({
+        surfaceFocused: true,
+        latestVisiblePostIds,
+      }),
+    ).toEqual(latestVisiblePostIds);
   });
 
   it('only lets the active owner advance even when a warm player is mounted', () => {
@@ -272,7 +290,9 @@ describe('feed video autoplay selection', () => {
         return postId === 'video-tail';
       },
       [Symbol.iterator]() {
-        throw new Error('available feed IDs must not be scanned in viewability');
+        throw new Error(
+          'available feed IDs must not be scanned in viewability',
+        );
       },
     } as unknown as ReadonlySet<string>;
 

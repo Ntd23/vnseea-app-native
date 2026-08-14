@@ -13,7 +13,7 @@ export function getFeedVideoPlaybackPolicy(platform: string) {
   return {
     warmBehindItems: 0,
     warmAheadItems: isAndroid ? 0 : 1,
-    idleWarmMaxCount: 1,
+    idleWarmMaxCount: isAndroid ? 0 : 1,
     scrollingWarmMaxCount: 0,
     posterPrefetchBehindItems: 0,
     posterPrefetchAheadItems: isAndroid ? 1 : 2,
@@ -28,6 +28,16 @@ export function resolvePlaybackSurfaceFocused({
   appActive: boolean;
 }) {
   return routeFocused && appActive;
+}
+
+export function resolvePlaybackSurfaceVisibleMediaPostIds({
+  surfaceFocused,
+  latestVisiblePostIds,
+}: {
+  surfaceFocused: boolean;
+  latestVisiblePostIds: readonly string[];
+}) {
+  return surfaceFocused ? latestVisiblePostIds : [];
 }
 
 function getVisibleHeight(y: number, height: number, viewportHeight: number) {
@@ -190,9 +200,7 @@ export function shouldMountWarmFeedVideo({
   }
 
   return (
-    !isScrollBusy ||
-    shouldKeepPreparedVideoMounted ||
-    wasPlayerSurfaceMounted
+    !isScrollBusy || shouldKeepPreparedVideoMounted || wasPlayerSurfaceMounted
   );
 }
 

@@ -8,6 +8,19 @@ function read(relativePath) {
 }
 
 describe('registration identity contract', () => {
+  it('labels the registration identity input as phone number or Gmail', () => {
+    const copy = read('src/auth/application/i18n/authCopy.ts');
+    const screen = read('src/auth/presentation/screens/RegisterScreen.tsx');
+
+    expect(copy).toContain("registerEmail: 'Số điện thoại / hoặc Gmail'");
+    expect(copy).toContain(
+      "registerIdentityPlaceholder: 'Số điện thoại / hoặc Gmail'",
+    );
+    expect(screen).toContain(
+      'placeholder={copy.registerIdentityPlaceholder}',
+    );
+  });
+
   it('keeps the username selected by the user and validates it before submit', () => {
     const screen = read('src/auth/presentation/screens/RegisterScreen.tsx');
     const repository = read(

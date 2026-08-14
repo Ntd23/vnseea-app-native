@@ -12,6 +12,9 @@ describe('Reel video playback resilience', () => {
   const reelsScreenSource = read(
     'src/reels/presentation/screens/ReelsScreen.tsx',
   );
+  const reelsPlaybackSource = read(
+    'src/reels/presentation/screens/reelsPlayback.ts',
+  );
   const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
   const homeVideoSource = read(
     'src/feed/presentation/components/PostCards.tsx',
@@ -26,12 +29,14 @@ describe('Reel video playback resilience', () => {
     );
   });
 
-  it('pauses the current Reel behind every modal without unmounting the role window', () => {
+  it('keeps comments playback live but pauses behind blocking overlays', () => {
     expect(reelItemSource).toContain('paused={!playing}');
     expect(reelsScreenSource).toContain(
       'const shouldPlayActiveReel = shouldPlayCurrentReel({',
     );
     expect(reelsScreenSource).toContain('commentsOpen: vm.isCommentsOpen');
+    expect(reelsPlaybackSource).toContain('commentsOpen: _commentsOpen');
+    expect(reelsPlaybackSource).not.toContain('!commentsOpen &&');
     expect(reelsScreenSource).toContain(
       'shareOpen: shareModalVisible || isShareSheetClosing',
     );

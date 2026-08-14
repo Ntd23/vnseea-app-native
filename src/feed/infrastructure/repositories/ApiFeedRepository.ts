@@ -539,8 +539,7 @@ const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeMediaUrl(url: string | undefined): string | undefined {
   return (
-    normalizeHostedMediaUrl(url, _siteRoot, apiConfig.mediaBaseUrl) ||
-    undefined
+    normalizeHostedMediaUrl(url, _siteRoot, apiConfig.mediaBaseUrl) || undefined
   );
 }
 
@@ -2742,8 +2741,7 @@ async function fetchVideoFeedPostsPage(
   const prefetchedPosts = mappedPosts.slice(limit);
   return {
     posts,
-    prefetchedPosts:
-      prefetchedPosts.length > 0 ? prefetchedPosts : undefined,
+    prefetchedPosts: prefetchedPosts.length > 0 ? prefetchedPosts : undefined,
     nextCursor: reachedEnd ? undefined : nextCursor,
     reachedEnd,
   };
@@ -2976,11 +2974,7 @@ export function createFeedRepository(): FeedRepository {
       afterPostId?: string,
       source: FeedSource = 'all',
     ) {
-      const page = await fetchVideoFeedPostsPage(
-        limit,
-        afterPostId,
-        source,
-      );
+      const page = await fetchVideoFeedPostsPage(limit, afterPostId, source);
       return page.posts;
     },
 
@@ -2990,12 +2984,7 @@ export function createFeedRepository(): FeedRepository {
       source: FeedSource = 'all',
       maxScanPages = 3,
     ) {
-      return fetchVideoFeedPostsPage(
-        limit,
-        afterPostId,
-        source,
-        maxScanPages,
-      );
+      return fetchVideoFeedPostsPage(limit, afterPostId, source, maxScanPages);
     },
 
     async getTextPosts(
@@ -3138,6 +3127,8 @@ export function createFeedRepository(): FeedRepository {
       // `postVideo[]`) since WoWonder expects a single file under
       // that key.
       if (draft.video) {
+        const mediaWidth = Math.round(Number(draft.video.width));
+        const mediaHeight = Math.round(Number(draft.video.height));
         payload.postVideo = {
           uri: draft.video.uri,
           name: draft.video.name,
@@ -3153,6 +3144,10 @@ export function createFeedRepository(): FeedRepository {
         // Mark this as a video post so the feed mapper and the
         // homepage's `looksLikeVideo` classifier both pick it up.
         payload.postType = 'video';
+        if (mediaWidth > 0 && mediaHeight > 0) {
+          payload.media_width = mediaWidth;
+          payload.media_height = mediaHeight;
+        }
       }
 
       if (draft.linkPreview) {

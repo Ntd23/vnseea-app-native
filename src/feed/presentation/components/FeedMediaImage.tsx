@@ -35,10 +35,10 @@ const FEED_MEDIA_PLACEHOLDER_STYLE = { backgroundColor: '#E5E7EB' };
 const FEED_MEDIA_RETRY_DELAY_MS = 220;
 
 /**
- * A viewport-gated image. In-flight requests may be cancelled when the row
- * leaves the viewport; the shared media state still remembers completed
- * requests for cache/retry coordination without keeping an offscreen native
- * Image mounted.
+ * A viewport-gated image. New requests only start for eligible rows, while an
+ * image that already finished loading stays mounted until its recycled holder
+ * receives a different URI. That avoids placeholder flashes and repeat bitmap
+ * uploads during short back-scrolls.
  */
 export const FeedMediaImage = React.memo(function FeedMediaImage({
   uri,
@@ -48,12 +48,9 @@ export const FeedMediaImage = React.memo(function FeedMediaImage({
   blurRadius,
   enabled = true,
 }: FeedMediaImageProps) {
-  // A completed prefetch is only a cache hint. It must not force a native
-  // Image to mount while this row is outside the viewport: on Android that
-  // turns a harmless prefetch into a bitmap decode/upload burst during a
-  // fling. Once this exact row/URI has genuinely loaded, though, keep its
-  // native image alive for as long as the recycled holder still owns it so a
-  // short back-scroll does not flash the placeholder and decode it again.
+  // A completed prefetch is only a cache hint and cannot mount an offscreen
+  // image. Once this exact holder has genuinely loaded its URI, keep the native
+  // image alive so brief viewport churn does not decode/upload it again.
   const [loadedUri, setLoadedUri] = useState<string | null>(null);
   const shouldMountImage = enabled || loadedUri === uri;
   const [retryAttempt, setRetryAttempt] = useState(0);

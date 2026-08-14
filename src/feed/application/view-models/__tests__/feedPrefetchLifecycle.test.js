@@ -13,7 +13,7 @@ describe('feed prefetch lifecycle', () => {
       /return \(\) => \{[\s\S]*isDisposedRef\.current = true;[\s\S]*paginationGenerationRef\.current \+= 1;/,
     );
     expect(source).toMatch(
-      /const schedulePrefetchRefill = useCallback\([\s\S]*if \(isDisposedRef\.current\) return;/,
+      /const schedulePrefetchRefill = useCallback\([\s\S]*if \(isDisposedRef\.current \|\| !isFeedSurfaceActiveRef\.current\) return;/,
     );
   });
 

@@ -46,23 +46,17 @@ describe('Home feed video autoplay safety', () => {
     );
   });
 
-  it('keeps the current Feed surface through a quick tab return', () => {
+  it('releases the native player immediately when its playback surface loses focus', () => {
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',
     );
 
     expect(postCardsSource).toContain(
-      'const isTransitionSurfaceGraceActive =',
+      'const shouldMountVideo = shouldMountFocusedVideo;',
     );
-    expect(postCardsSource).toContain(
-      '!isOpeningReels &&\n    (keepPlayerSurfaceMounted ||\n      (!isPlaybackSurfaceFocused && wasPlayerSurfaceMountedRef.current))',
-    );
-    expect(postCardsSource).toContain(
-      'if (!isPlaybackSurfaceFocused || !keepPlayerSurfaceMounted)',
-    );
-    expect(postCardsSource).toContain(
-      'if (shouldMountFocusedVideo) {\n      setKeepPlayerSurfaceMounted(false);',
-    );
+    expect(postCardsSource).not.toContain('FEED_VIDEO_BLUR_SURFACE_GRACE_MS');
+    expect(postCardsSource).not.toContain('keepPlayerSurfaceMounted');
+    expect(postCardsSource).not.toContain('isTransitionSurfaceGraceActive');
   });
 
   it('releases a tapped Feed video before opening the persistent Reels tab', () => {
@@ -77,10 +71,53 @@ describe('Home feed video autoplay safety', () => {
       'const shouldMountFocusedVideo =\n    !isOpeningReels &&',
     );
     expect(postCardsSource).toContain(
-      'const isTransitionSurfaceGraceActive =\n    !isOpeningReels &&',
+      'const shouldMountVideo = shouldMountFocusedVideo;',
     );
     expect(postCardsSource).toContain(
       'openingReelsFrameRef.current = requestAnimationFrame(() => {',
+    );
+  });
+
+  it('scopes active, warm and scroll-busy state to the focused surface owner', () => {
+    const postCardsSource = read(
+      'src/feed/presentation/components/PostCards.tsx',
+    );
+    const feedScreenSource = read(
+      'src/feed/presentation/screens/FeedScreen.tsx',
+    );
+    const profileSource = read(
+      'src/profile/presentation/screens/ProfileScreen.tsx',
+    );
+
+    expect(postCardsSource).toContain('feedActiveVideoSurfaceSnapshot');
+    expect(postCardsSource).toContain(
+      'useFeedVideoActivity(post.id, videoMetricsSurface)',
+    );
+    expect(postCardsSource).toContain(
+      'useFeedVideoWarm(post.id, videoMetricsSurface)',
+    );
+    expect(postCardsSource).toContain('useFeedScrollBusy(videoMetricsSurface)');
+    expect(feedScreenSource).toContain(
+      "publishFeedActiveVideo(videoId, 'feed');",
+    );
+    expect(profileSource).toContain(
+      "publishFeedActiveVideo(nextVideoId, 'profile');",
+    );
+  });
+
+  it('does not let a hidden Feed reclaim warm video ownership', () => {
+    const feedScreenSource = read(
+      'src/feed/presentation/screens/FeedScreen.tsx',
+    );
+    const warmPublisherSource = feedScreenSource.slice(
+      feedScreenSource.indexOf(
+        'const publishWarmFeedVideosAroundVisibleItems = useCallback(',
+      ),
+      feedScreenSource.indexOf('const onVisibleFeedItemsChanged = useCallback('),
+    );
+
+    expect(warmPublisherSource).toContain(
+      'if (!isFeedPlaybackSurfaceFocusedRef.current) return;',
     );
   });
 
@@ -119,9 +156,7 @@ describe('Home feed video autoplay safety', () => {
       feedScreenSource.indexOf(
         'const measureActiveFeedVideoOnScreen = useCallback',
       ),
-      feedScreenSource.indexOf(
-        'const handleFeedViewportLayout = useCallback',
-      ),
+      feedScreenSource.indexOf('const handleFeedViewportLayout = useCallback'),
     );
     const focusLifecycleSource = feedScreenSource.slice(
       feedScreenSource.indexOf('const isFocused = useIsFocused();'),
@@ -185,9 +220,7 @@ describe('Home feed video autoplay safety', () => {
       'const FEED_VIDEO_VIEWABLE_PERCENT = 60;',
     );
     expect(feedScreenSource).toContain('viewabilityConfigCallbackPairs={');
-    expect(feedScreenSource).toContain(
-      'mediaSurfaceRef={setFeedVideoRef}',
-    );
+    expect(feedScreenSource).toContain('mediaSurfaceRef={setFeedVideoRef}');
     expect(feedScreenSource).toContain(
       'allEntries.length > FEED_SCROLL_VIDEO_MEASUREMENT_MAX_COUNT',
     );
@@ -207,9 +240,12 @@ describe('Home feed video autoplay safety', () => {
     expect(postCardsSource).toContain('function useFeedVideoMuted()');
     expect(postCardsSource).toContain('publishFeedVideoMuted(!muted)');
     expect(postCardsSource).toContain(
-      'const isScrollBusy = useFeedScrollBusy();',
+      'const isScrollBusy = useFeedScrollBusy(videoMetricsSurface);',
     );
     expect(postCardsSource).toContain('const canMountWarmVideo =');
+    expect(postCardsSource).toContain(
+      "const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = Platform.OS === 'android' ? 0 : 1;",
+    );
     expect(postCardsSource).toContain('shouldMountWarmFeedVideo({');
     expect(postCardsSource).toContain(
       'optimizationEnabled: isClientUiOptimizationEnabled()',
@@ -249,7 +285,7 @@ describe('Home feed video autoplay safety', () => {
       'if (mediaIdentity !== mediaIdentityRef.current) return;',
     );
     expect(postCardsSource).toContain(
-      'onReadyForDisplay={handleVideoReadyForDisplay}',
+      'handleVideoReadyForDisplay(videoPlayerGeneration)',
     );
     expect(postCardsSource).toContain(
       '!hasRenderedFrame ? { opacity: 0 } : null',
@@ -261,6 +297,14 @@ describe('Home feed video autoplay safety', () => {
     expect(postCardsSource).toContain(
       'style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}',
     );
+    const stableVideoSurfaceSource = postCardsSource.slice(
+      postCardsSource.indexOf('const stableVideoSurface = useMemo'),
+      postCardsSource.indexOf('// Need an on-screen position', postCardsSource.indexOf('const stableVideoSurface = useMemo')),
+    );
+    expect(stableVideoSurfaceSource).not.toContain(
+      'poster={resolvedThumbnailUrl}',
+    );
+    expect(stableVideoSurfaceSource).not.toContain('posterResizeMode=');
   });
 
   it('limits poster blur to the active idle surface and keeps an Android frame cover', () => {
@@ -276,7 +320,9 @@ describe('Home feed video autoplay safety', () => {
       'blurRadius={blurred ? FEED_VIDEO_BACKDROP_BLUR_RADIUS : undefined}',
     );
     expect(postCardsSource).toContain('styles.feedVideoBlurredBackdropScrim');
-    expect(postCardsSource).toContain('isActive &&\n    isPlaybackSurfaceFocused &&\n    !isScrollBusy');
+    expect(postCardsSource).toContain(
+      'isActive &&\n    isPlaybackSurfaceFocused &&\n    !isScrollBusy',
+    );
     expect(postCardsSource).toContain(
       "Platform.OS !== 'android' || performanceSurface === 'profile'",
     );

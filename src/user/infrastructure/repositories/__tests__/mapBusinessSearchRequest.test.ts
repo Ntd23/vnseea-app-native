@@ -1,34 +1,31 @@
 import { buildMapBusinessSearchRequest } from '../mapBusinessSearchRequest';
 
 describe('map business search request', () => {
-  it.each([
-    'tóc',
-    'quán ăn',
-    'bánh sinh nhật',
-    'sửa xe',
-    'cây xăng',
-  ])('keeps the exact business query for %s', query => {
-    const payload = buildMapBusinessSearchRequest({
-      query: `  ${query}  `,
-      lat: 21.0285,
-      lng: 105.8542,
-      radius: 5000,
-      fast: true,
-    });
+  it.each(['tóc', 'quán ăn', 'bánh sinh nhật', 'sửa xe', 'cây xăng'])(
+    'keeps the exact business query for %s',
+    query => {
+      const payload = buildMapBusinessSearchRequest({
+        query: `  ${query}  `,
+        lat: 21.0285,
+        lng: 105.8542,
+        radius: 5000,
+        fast: true,
+      });
 
-    expect(payload).toEqual({
-      type: 'place_autocomplete',
-      search_mode: 'business',
-      query,
-      category: undefined,
-      origin_lat: 21.0285,
-      origin_lng: 105.8542,
-      radius: 5000,
-      fast: 1,
-      global_search: undefined,
-    });
-    expect(payload).not.toHaveProperty('prefer_address');
-  });
+      expect(payload).toEqual({
+        type: 'place_autocomplete',
+        search_mode: 'business',
+        query,
+        category: undefined,
+        origin_lat: 21.0285,
+        origin_lng: 105.8542,
+        radius: 5000,
+        fast: 1,
+        global_search: undefined,
+      });
+      expect(payload).not.toHaveProperty('prefer_address');
+    },
+  );
 
   it('preserves a recognized category as an optional hint', () => {
     expect(
@@ -49,5 +46,27 @@ describe('map business search request', () => {
       global_search: 1,
     });
   });
-});
 
+  it('keeps user-origin bias without applying a nationwide radius limit', () => {
+    expect(
+      buildMapBusinessSearchRequest({
+        query: 'Hải Phòng',
+        lat: 10.7769,
+        lng: 106.7009,
+        radius: 20000,
+        fast: true,
+        globalSearch: true,
+      }),
+    ).toEqual({
+      type: 'place_autocomplete',
+      search_mode: 'business',
+      query: 'Hải Phòng',
+      category: undefined,
+      origin_lat: 10.7769,
+      origin_lng: 106.7009,
+      radius: undefined,
+      fast: 1,
+      global_search: 1,
+    });
+  });
+});

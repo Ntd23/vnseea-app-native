@@ -137,6 +137,7 @@ const EventPostCard = React.memo(function EventPostCard({
                 source={{ uri: event.user_data.avatar }}
                 className="h-10 w-10 rounded-full"
                 resizeMode="cover"
+                resizeMethod="resize"
               />
             ) : (
               <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
@@ -200,6 +201,7 @@ const EventPostCard = React.memo(function EventPostCard({
               className="w-full"
               style={{ aspectRatio: 1.6 }}
               resizeMode="cover"
+              resizeMethod="resize"
               fadeDuration={0}
               onLoad={() => markFeedMediaLoaded(coverUrl)}
             />

@@ -54,6 +54,7 @@ export const LiveStreamPostCard = React.memo(
               source={avatarSource}
               className="h-[42px] w-[42px] rounded-full"
               resizeMode="cover"
+              resizeMethod="resize"
               fadeDuration={0}
             />
             <View className="ml-3 flex-1">

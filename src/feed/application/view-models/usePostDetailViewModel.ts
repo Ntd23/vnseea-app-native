@@ -1,6 +1,7 @@
 // Description: ViewModel for the PostDetail screen — keeps the post state and
 // mutations separate from the comment VM so the screen can paint immediately.
 import { useCallback, useEffect, useState } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
 import type { FeedPost, PostPrivacy } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
@@ -17,6 +18,79 @@ import { editPostWithLocalFallback } from '../editing/editPostWithLocalFallback'
 import { postEditedEvents } from '../events/postEditedEvents';
 
 const feedRepository = createFeedRepository();
+
+type ReactionCapablePost = FeedPost & {
+  isLiked: boolean;
+  likeCount: number;
+  myReaction: ReactionType | null;
+  reactionBreakdown?: Partial<Record<ReactionType, number>>;
+  topReactions: ReactionType[];
+};
+
+function isReactionCapablePost(post: FeedPost): post is ReactionCapablePost {
+  return (
+    'isLiked' in post &&
+    'likeCount' in post &&
+    'myReaction' in post &&
+    'topReactions' in post
+  );
+}
+
+function applyDetailReaction(
+  post: ReactionCapablePost,
+  requestedReaction: ReactionType | null,
+): ReactionCapablePost {
+  const previousReaction = post.myReaction;
+  const targetReaction =
+    requestedReaction !== null && previousReaction === requestedReaction
+      ? null
+      : requestedReaction;
+  const wasReacted = previousReaction !== null;
+  const willBeReacted = targetReaction !== null;
+  const likeCount = Math.max(
+    0,
+    post.likeCount + Number(willBeReacted) - Number(wasReacted),
+  );
+  const reactionBreakdown = { ...(post.reactionBreakdown ?? {}) };
+
+  if (previousReaction) {
+    reactionBreakdown[previousReaction] = Math.max(
+      0,
+      (reactionBreakdown[previousReaction] ?? 0) - 1,
+    );
+  }
+  if (targetReaction) {
+    reactionBreakdown[targetReaction] =
+      (reactionBreakdown[targetReaction] ?? 0) + 1;
+  }
+
+  let topReactions = [...post.topReactions];
+  if (previousReaction && previousReaction !== targetReaction) {
+    topReactions = topReactions.filter(type => type !== previousReaction);
+  }
+  if (targetReaction && !topReactions.includes(targetReaction)) {
+    topReactions = [targetReaction, ...topReactions].slice(0, 3);
+  }
+  if (likeCount === 0) topReactions = [];
+
+  return {
+    ...post,
+    myReaction: targetReaction,
+    isLiked: willBeReacted,
+    likeCount,
+    reactionBreakdown,
+    topReactions,
+  };
+}
+
+function publishPostReaction(postId: string, post: ReactionCapablePost): void {
+  DeviceEventEmitter.emit('postReactionChanged', {
+    postId,
+    myReaction: post.myReaction,
+    likeCount: post.likeCount,
+    topReactions: post.topReactions,
+  });
+}
 
 export interface UsePostDetailViewModelOptions {
   /**
@@ -85,64 +159,21 @@ export function usePostDetailViewModel({
   );
 
   const toggleReaction = useCallback(
-    async (reaction: ReactionType | null) => {
-      if (!post) return;
+    async (requestedReaction: ReactionType | null) => {
+      if (!post || !isReactionCapablePost(post)) return;
 
-      const oldReaction = (post as any).myReaction ?? null;
+      const originalPost = post;
+      const nextPost = applyDetailReaction(post, requestedReaction);
 
-      // 1. Optimistically update local post state
-      setPost(prev => {
-        if (!prev) return prev;
-        const prevAny = prev as any;
-
-        let nextReactionBreakdown = { ...(prevAny.reactionBreakdown ?? {}) };
-
-        // Decrement old reaction if there was one
-        if (oldReaction && nextReactionBreakdown[oldReaction] !== undefined) {
-          nextReactionBreakdown[oldReaction] = Math.max(
-            0,
-            (nextReactionBreakdown[oldReaction] as number) - 1,
-          );
-        }
-
-        // Increment new reaction
-        if (reaction) {
-          nextReactionBreakdown[reaction] =
-            ((nextReactionBreakdown[reaction] as number) ?? 0) + 1;
-        }
-
-        // Update isLiked / likeCount for fallback fields
-        const wasLiked = prevAny.isLiked;
-        const nextIsLiked = reaction !== null;
-        let nextLikeCount = prevAny.likeCount ?? 0;
-        if (wasLiked && !nextIsLiked) {
-          nextLikeCount = Math.max(0, nextLikeCount - 1);
-        } else if (!wasLiked && nextIsLiked) {
-          nextLikeCount += 1;
-        }
-
-        return {
-          ...prev,
-          myReaction: reaction,
-          isLiked: nextIsLiked,
-          likeCount: nextLikeCount,
-          reactionBreakdown: nextReactionBreakdown,
-        } as any;
-      });
+      setPost(nextPost);
+      publishPostReaction(postId, nextPost);
 
       try {
-        await feedRepository.setReaction(postId, reaction);
+        await feedRepository.setReaction(postId, nextPost.myReaction);
       } catch (err) {
         console.warn('[usePostDetailViewModel] Failed to toggle reaction', err);
-        // Rollback state on error
-        setPost(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            myReaction: oldReaction,
-            isLiked: oldReaction !== null,
-          } as any;
-        });
+        setPost(originalPost);
+        publishPostReaction(postId, originalPost);
       }
     },
     [post, postId],

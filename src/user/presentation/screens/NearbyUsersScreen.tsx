@@ -49,7 +49,11 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import {
@@ -119,10 +123,12 @@ import MapPlaceDetailSheet, {
   type MapPlaceDetailSheetSnap,
 } from '../components/MapPlaceDetailSheet';
 import {
+  checkAndroidLocationPermission,
   getCurrentDeviceLocation,
   LocationAccessError,
   type LocationAccessError as LocationAccessErrorType,
   requestAndroidLocationPermission,
+  requestAndroidLocationServices,
 } from '../../../shared-kernel/application/utils/currentLocation';
 import {
   getLocationAccessRecovery,
@@ -151,16 +157,23 @@ import {
   type SharedMapLocation,
 } from '../../application/utils/mapShare';
 import { getGoogleCategorySearchQuery } from '../../application/utils/mapSearchCategory';
-import { compareMapSearchRankCandidates } from '../../application/utils/mapSearchRanking';
+import {
+  compareMapSearchRankCandidates,
+  doesMapSearchCandidateMatchQuery,
+} from '../../application/utils/mapSearchRanking';
 import {
   MAP_COMMITTED_SEARCH_RADIUS_METERS,
   MAP_TYPEAHEAD_SEARCH_RADIUS_METERS,
 } from '../../application/utils/mapSearchRadius';
 import {
   DISCOVERY_RELOAD_DISTANCE_METERS,
+  DISCOVERY_VIEWPORT_MAX_RADIUS_KM,
+  DISCOVERY_VIEWPORT_MIN_RADIUS_KM,
   isPersistedDiscoveryLocationFresh,
   mapDiscoveryDistanceMeters,
+  mapDiscoveryRadiusKmForRegion,
   shouldReloadNearbyPages,
+  shouldReloadViewportPages,
   type MapDiscoveryLocationSource,
 } from '../../application/utils/mapDiscoveryLocation';
 
@@ -191,11 +204,13 @@ const SEARCH_MAP_FIT_CLUSTER_METERS = 50000;
 const NEARBY_RESULT_DISTANCE_METERS = 3000;
 const LOCAL_RESULT_DISTANCE_METERS = 20000;
 const LOCAL_SEARCH_MIN_LENGTH = 1;
-const REMOTE_SEARCH_MIN_LENGTH = 2;
+const REMOTE_SEARCH_MIN_LENGTH = 1;
 const CATEGORY_SEARCH_DEBOUNCE_MS = 80;
 const TEXT_SEARCH_DEBOUNCE_MS = 120;
 // Committed search returns at most 20 VNSEEA Pages and 20 Google places.
 const MAX_COMMITTED_SEARCH_RESULTS = 40;
+const MAP_DISCOVERY_PAGE_LIMIT = 40;
+const MAP_DISCOVERY_VIEWPORT_DEBOUNCE_MS = 350;
 const MAX_VISIBLE_PAGE_MARKERS = 40;
 const MAX_VISIBLE_SEARCH_MARKERS = 24;
 const IDLE_LOCATION_STATE_MIN_METERS = 8;
@@ -316,6 +331,14 @@ type RouteOption = MapRoute & {
 };
 
 type LocationSource = 'gps' | 'profile' | null;
+type PageDiscoveryLoadOptions = {
+  source?: MapDiscoveryLocationSource;
+  accuracy?: number;
+  force?: boolean;
+  distanceKm?: number;
+  limit?: number;
+  fast?: boolean;
+};
 type RouteLoadSource = 'user' | 'auto';
 type TransportMode = 'walking' | 'motorcycle' | 'driving';
 type TransportRouteMode = Extract<
@@ -1715,6 +1738,7 @@ function normalizeSearchText(value: string | undefined | null) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
     .toLocaleLowerCase('vi-VN')
     .trim();
 }
@@ -2284,7 +2308,7 @@ export default function NearbyUsersScreen() {
     [persistedCoordinate],
   );
   const {
-    clearPlacePredictions,
+    clearMapSearchResults,
     currentUser,
     getRoutes,
     isMapSearchLoading,
@@ -2315,8 +2339,18 @@ export default function NearbyUsersScreen() {
   const nearbyPagesPendingSourceRef = useRef<MapDiscoveryLocationSource | null>(
     null,
   );
+  const nearbyPagesRadiusKmRef = useRef<number | null>(null);
+  const nearbyPagesPendingRadiusKmRef = useRef<number | null>(null);
   const nearbyPagesLoadedAtRef = useRef(0);
   const nearbyPagesRequestIdRef = useRef(0);
+  const isViewportDiscoveryRef = useRef(false);
+  const viewportPageLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const loadPagesAroundLocationRef = useRef<
+    | ((location: LatLng, options?: PageDiscoveryLoadOptions) => Promise<void>)
+    | null
+  >(null);
   const nearbyPagesCandidateRef = useRef<{
     coordinate: LatLng;
     observedAt: number;
@@ -2366,6 +2400,8 @@ export default function NearbyUsersScreen() {
   const committedSearchQueryRef = useRef('');
   const wasSearchQueryActiveRef = useRef(false);
   const initialLocationRequestStartedRef = useRef(false);
+  const deviceLocationRef = useRef<LatLng | null>(null);
+  const locationConsentAlertVisibleRef = useRef(false);
   const prefetchedMarkerImagesRef = useRef(new Set<string>());
   const searchModeAnim = useRef(new Animated.Value(0)).current;
   const searchLayoutAnim = useRef(new Animated.Value(0)).current;
@@ -2381,6 +2417,7 @@ export default function NearbyUsersScreen() {
   const [locationAllowed, setLocationAllowed] = useState(Platform.OS === 'ios');
   const [locationAccessError, setLocationAccessError] =
     useState<LocationAccessErrorType | null>(null);
+  const [locationRequestVersion, setLocationRequestVersion] = useState(0);
   const [currentLocation, setCurrentLocation] = useState<LatLng | null>(
     persistedCoordinate,
   );
@@ -2437,6 +2474,117 @@ export default function NearbyUsersScreen() {
     isAutoCenteringRef.current = enabled;
     setIsAutoCentering(enabled);
   }, []);
+  const requestMapLocationAccess = useCallback(() => {
+    if (Platform.OS !== 'android' || locationConsentAlertVisibleRef.current) {
+      return;
+    }
+
+    locationConsentAlertVisibleRef.current = true;
+    const markAlertClosed = () => {
+      locationConsentAlertVisibleRef.current = false;
+    };
+
+    Alert.alert(
+      'Bật vị trí để dùng bản đồ',
+      'Bạn cần cấp quyền vị trí để sử dụng bản đồ chính xác. Nếu không, một số chức năng có thể hoạt động không như ý muốn.',
+      [
+        {
+          text: 'Hủy',
+          style: 'cancel',
+          onPress: markAlertClosed,
+        },
+        {
+          text: 'Đồng ý',
+          onPress: () => {
+            markAlertClosed();
+            void (async () => {
+              try {
+                const granted = await requestAndroidLocationPermission();
+                setLocationAllowed(granted);
+                if (!granted) {
+                  setLocationAccessError(
+                    new LocationAccessError(
+                      'permission_denied',
+                      'Bạn chưa cấp quyền vị trí cho bản đồ.',
+                    ),
+                  );
+                  return;
+                }
+
+                const servicesEnabled = await requestAndroidLocationServices();
+                if (!servicesEnabled) {
+                  setLocationAccessError(
+                    new LocationAccessError(
+                      'services_disabled',
+                      'Bạn chưa bật dịch vụ vị trí trên thiết bị.',
+                    ),
+                  );
+                  return;
+                }
+
+                setLocationAccessError(null);
+                initialLocationRequestStartedRef.current = false;
+                setLocationRequestVersion(version => version + 1);
+              } catch (error) {
+                const normalized =
+                  error instanceof LocationAccessError
+                    ? error
+                    : new LocationAccessError('failed', String(error));
+                if (normalized.code === 'permission_denied') {
+                  setLocationAllowed(false);
+                }
+                setLocationAccessError(normalized);
+              }
+            })();
+          },
+        },
+      ],
+      {
+        cancelable: true,
+        onDismiss: markAlertClosed,
+      },
+    );
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') return undefined;
+
+      let active = true;
+      checkAndroidLocationPermission()
+        .then(granted => {
+          if (!active) return;
+          setLocationAllowed(granted);
+          if (!granted) {
+            setLocationAccessError(
+              new LocationAccessError(
+                'permission_denied',
+                'Bạn chưa cấp quyền vị trí cho bản đồ.',
+              ),
+            );
+            requestMapLocationAccess();
+            return;
+          }
+
+          setLocationAccessError(null);
+          initialLocationRequestStartedRef.current = false;
+          setLocationRequestVersion(version => version + 1);
+        })
+        .catch(error => {
+          if (!active) return;
+          setLocationAllowed(false);
+          setLocationAccessError(
+            error instanceof LocationAccessError
+              ? error
+              : new LocationAccessError('failed', String(error)),
+          );
+        });
+
+      return () => {
+        active = false;
+      };
+    }, [requestMapLocationAccess]),
+  );
   const googleMapId = apiConfig.googleMapsMapId.trim();
   const hasGoogleMapId = googleMapId.length > 0;
 
@@ -2718,6 +2866,7 @@ export default function NearbyUsersScreen() {
     [transportMode],
   );
   const selectedTransportRouteMode = selectedTransportOption.routeMode;
+  const searchRankingOrigin = locationSource === 'gps' ? currentLocation : null;
 
   const suggestions = useMemo<SuggestionItem[]>(() => {
     const normalizedQuery = normalizeSearchText(query);
@@ -2725,27 +2874,59 @@ export default function NearbyUsersScreen() {
 
     // Filter local Pages matching search keyword
     const pageSuggestions = nearbyPlaces
-      .filter(page => {
-        const haystack = normalizeSearchText(
-          [page.name, page.username, page.location].filter(Boolean).join(' '),
-        );
-        return haystack.includes(normalizedQuery);
-      })
-      .map(page => ({
-        id: page.id,
-        kind: 'page' as const,
-        page,
-      }));
+      .filter(page =>
+        doesMapSearchCandidateMatchQuery(query, {
+          source: 'page',
+          title: page.name,
+          aliases: page.username ? [page.username] : undefined,
+        }),
+      )
+      .map(page => {
+        const distance =
+          searchRankingOrigin && page.coordinate
+            ? distanceMeters(searchRankingOrigin, page.coordinate)
+            : undefined;
+
+        return {
+          id: page.id,
+          kind: 'page' as const,
+          page: {
+            ...page,
+            distanceMeters:
+              typeof distance === 'number' && Number.isFinite(distance)
+                ? distance
+                : undefined,
+          },
+        };
+      });
 
     // Map Google map autocomplete predictions
     const googleSuggestions: SuggestionItem[] =
       normalizedQuery.length >= REMOTE_SEARCH_MIN_LENGTH &&
       normalizeSearchText(placePredictionsQuery) === normalizedQuery
-        ? placePredictions.map(pred => ({
-            id: pred.placeId,
-            kind: 'google' as const,
-            prediction: pred,
-          }))
+        ? placePredictions.map(pred => {
+            const distance =
+              searchRankingOrigin &&
+              typeof pred.lat === 'number' &&
+              typeof pred.lng === 'number'
+                ? distanceMeters(searchRankingOrigin, {
+                    latitude: pred.lat,
+                    longitude: pred.lng,
+                  })
+                : undefined;
+
+            return {
+              id: pred.placeId,
+              kind: 'google' as const,
+              prediction: {
+                ...pred,
+                distanceMeters:
+                  typeof distance === 'number' && Number.isFinite(distance)
+                    ? distance
+                    : undefined,
+              },
+            };
+          })
         : [];
 
     return takeMixedSearchResults(
@@ -2754,20 +2935,43 @@ export default function NearbyUsersScreen() {
       ),
       15,
     );
-  }, [nearbyPlaces, placePredictions, placePredictionsQuery, query]);
+  }, [
+    nearbyPlaces,
+    placePredictions,
+    placePredictionsQuery,
+    query,
+    searchRankingOrigin,
+  ]);
 
   const nearbyTypeaheadResults = useMemo<SuggestionItem[]>(
     () =>
       nearbyPlaces
         .filter(page => page.source !== 'google')
-        .map(page => ({ id: page.id, kind: 'page' as const, page }))
+        .map(page => {
+          const distance =
+            searchRankingOrigin && page.coordinate
+              ? distanceMeters(searchRankingOrigin, page.coordinate)
+              : undefined;
+
+          return {
+            id: page.id,
+            kind: 'page' as const,
+            page: {
+              ...page,
+              distanceMeters:
+                typeof distance === 'number' && Number.isFinite(distance)
+                  ? distance
+                  : undefined,
+            },
+          };
+        })
         .sort(
           (left, right) =>
             getSuggestionDistanceMeters(left) -
             getSuggestionDistanceMeters(right),
         )
         .slice(0, 15),
-    [nearbyPlaces],
+    [nearbyPlaces, searchRankingOrigin],
   );
 
   const displayedSearchResults = useMemo(() => {
@@ -2862,11 +3066,10 @@ export default function NearbyUsersScreen() {
     const category = getGoogleCategorySearchQuery(query);
     const compatiblePreviousResults = searchResults.filter(item => {
       if (item.kind === 'page') {
-        return normalizeSearchText(
-          [item.page.name, item.page.username, item.page.location]
-            .filter(Boolean)
-            .join(' '),
-        ).includes(normalizedQuery);
+        return doesMapSearchCandidateMatchQuery(
+          query,
+          toSearchRankCandidate(item),
+        );
       }
 
       const textMatches = normalizeSearchText(
@@ -3027,13 +3230,16 @@ export default function NearbyUsersScreen() {
       pageMarkers
         .map(({ place, coordinate }) => {
           const distance =
-            currentLocation !== null
-              ? distanceMeters(currentLocation, coordinate)
-              : Number(place.distanceMeters);
+            searchRankingOrigin !== null
+              ? distanceMeters(searchRankingOrigin, coordinate)
+              : undefined;
           return {
             place,
             coordinate,
-            distanceMeters: Number.isFinite(distance) ? distance : undefined,
+            distanceMeters:
+              typeof distance === 'number' && Number.isFinite(distance)
+                ? distance
+                : undefined,
           };
         })
         .filter(item => item.distanceMeters !== undefined)
@@ -3043,7 +3249,7 @@ export default function NearbyUsersScreen() {
             (right.distanceMeters ?? Infinity),
         )
         .slice(0, 8),
-    [currentLocation, pageMarkers],
+    [pageMarkers, searchRankingOrigin],
   );
   const visibleNearbyQuickPlaces = SHOW_APP_DISCOVERY_PLACES_ON_MAP
     ? nearbyQuickPlaces
@@ -3062,12 +3268,9 @@ export default function NearbyUsersScreen() {
   }, [visiblePageMarkers]);
 
   const selectedDistance = useMemo(() => {
-    if (!selectedPoint) return undefined;
-    if (currentLocation) {
-      return distanceMeters(currentLocation, selectedPoint.coordinate);
-    }
-    return selectedPoint.distanceMeters;
-  }, [currentLocation, selectedPoint]);
+    if (!selectedPoint || !searchRankingOrigin) return undefined;
+    return distanceMeters(searchRankingOrigin, selectedPoint.coordinate);
+  }, [searchRankingOrigin, selectedPoint]);
   const selectedMapShareLocation = useMemo<SharedMapLocation | null>(() => {
     if (!selectedPoint) return null;
 
@@ -3564,13 +3767,56 @@ export default function NearbyUsersScreen() {
     [],
   );
 
+  const queueViewportPageLoad = useCallback((region: Region) => {
+    isViewportDiscoveryRef.current = true;
+    if (viewportPageLoadTimerRef.current) {
+      clearTimeout(viewportPageLoadTimerRef.current);
+    }
+
+    const viewportCenter = {
+      latitude: region.latitude,
+      longitude: region.longitude,
+    };
+    const distanceKm = mapDiscoveryRadiusKmForRegion(region);
+    viewportPageLoadTimerRef.current = setTimeout(() => {
+      viewportPageLoadTimerRef.current = null;
+      loadPagesAroundLocationRef
+        .current?.(viewportCenter, {
+          source: 'viewport',
+          distanceKm,
+          limit: MAP_DISCOVERY_PAGE_LIMIT,
+          fast: true,
+        })
+        .catch(() => undefined);
+    }, MAP_DISCOVERY_VIEWPORT_DEBOUNCE_MS);
+  }, []);
+
   const centerOnUser = useCallback(() => {
     const location = currentLocationRef.current;
     if (!location) {
-      if (locationAccessError) {
+      if (Platform.OS === 'android') {
+        requestMapLocationAccess();
+      } else if (locationAccessError) {
         presentLocationAccessRecovery(locationAccessError);
       }
       return;
+    }
+
+    isViewportDiscoveryRef.current = false;
+    if (viewportPageLoadTimerRef.current) {
+      clearTimeout(viewportPageLoadTimerRef.current);
+      viewportPageLoadTimerRef.current = null;
+    }
+    if (!isNavigating) {
+      loadPagesAroundLocationRef
+        .current?.(location, {
+          source: 'gps',
+          distanceKm: DISCOVERY_RADIUS_METERS / 1000,
+          limit: MAP_DISCOVERY_PAGE_LIMIT,
+          fast: true,
+          force: true,
+        })
+        .catch(() => undefined);
     }
 
     if (isNavigating) {
@@ -3624,6 +3870,7 @@ export default function NearbyUsersScreen() {
     deviceHeading,
     isNavigating,
     routeHeading,
+    requestMapLocationAccess,
     setNavigationAutoCentering,
     shouldShowRoute,
     locationAccessError,
@@ -3651,36 +3898,35 @@ export default function NearbyUsersScreen() {
       setMapRegion(region);
       if (details?.isGesture) {
         disableNavigationAutoCentering();
+        queueViewportPageLoad(region);
       }
     },
-    [disableNavigationAutoCentering],
+    [disableNavigationAutoCentering, queueViewportPageLoad],
   );
 
   const handleZoomIn = useCallback(() => {
     disableNavigationAutoCentering();
     const current = currentRegionRef.current;
-    mapRef.current?.animateToRegion(
-      {
-        ...current,
-        latitudeDelta: current.latitudeDelta / 2,
-        longitudeDelta: current.longitudeDelta / 2,
-      },
-      260,
-    );
-  }, [disableNavigationAutoCentering]);
+    const nextRegion = {
+      ...current,
+      latitudeDelta: current.latitudeDelta / 2,
+      longitudeDelta: current.longitudeDelta / 2,
+    };
+    queueViewportPageLoad(nextRegion);
+    mapRef.current?.animateToRegion(nextRegion, 260);
+  }, [disableNavigationAutoCentering, queueViewportPageLoad]);
 
   const handleZoomOut = useCallback(() => {
     disableNavigationAutoCentering();
     const current = currentRegionRef.current;
-    mapRef.current?.animateToRegion(
-      {
-        ...current,
-        latitudeDelta: current.latitudeDelta * 2,
-        longitudeDelta: current.longitudeDelta * 2,
-      },
-      260,
-    );
-  }, [disableNavigationAutoCentering]);
+    const nextRegion = {
+      ...current,
+      latitudeDelta: current.latitudeDelta * 2,
+      longitudeDelta: current.longitudeDelta * 2,
+    };
+    queueViewportPageLoad(nextRegion);
+    mapRef.current?.animateToRegion(nextRegion, 260);
+  }, [disableNavigationAutoCentering, queueViewportPageLoad]);
 
   const resetMapHeading = useCallback(() => {
     const location = currentLocationRef.current;
@@ -3724,31 +3970,47 @@ export default function NearbyUsersScreen() {
   ]);
 
   const loadPagesAroundUser = useCallback(
-    async (
-      location: LatLng,
-      options?: {
-        source?: MapDiscoveryLocationSource;
-        accuracy?: number;
-        force?: boolean;
-      },
-    ) => {
+    async (location: LatLng, options?: PageDiscoveryLoadOptions) => {
+      if (wasSearchQueryActiveRef.current) return;
+
       const source = options?.source ?? 'gps';
       const now = Date.now();
+      const distanceKm = Math.max(
+        DISCOVERY_VIEWPORT_MIN_RADIUS_KM,
+        Math.min(
+          DISCOVERY_VIEWPORT_MAX_RADIUS_KM,
+          options?.distanceKm ?? DISCOVERY_RADIUS_METERS / 1000,
+        ),
+      );
       const currentOrigin =
         nearbyPagesPendingOriginRef.current ?? nearbyPagesOriginRef.current;
       const currentSource =
         nearbyPagesPendingSourceRef.current ??
         nearbyPagesOriginSourceRef.current;
-      const shouldReload = shouldReloadNearbyPages({
-        currentOrigin,
-        currentSource,
-        nextOrigin: location,
-        nextSource: source,
-        nextAccuracy: options?.accuracy,
-        lastLoadedAt: nearbyPagesLoadedAtRef.current,
-        now,
-        force: options?.force,
-      });
+      const currentRadiusKm =
+        nearbyPagesPendingRadiusKmRef.current ?? nearbyPagesRadiusKmRef.current;
+      const shouldReload =
+        source === 'viewport'
+          ? Boolean(options?.force) ||
+            shouldReloadViewportPages({
+              currentViewport:
+                currentOrigin && currentRadiusKm
+                  ? { ...currentOrigin, radiusKm: currentRadiusKm }
+                  : null,
+              nextViewport: { ...location, radiusKm: distanceKm },
+              lastLoadedAt: nearbyPagesLoadedAtRef.current,
+              now,
+            })
+          : shouldReloadNearbyPages({
+              currentOrigin,
+              currentSource,
+              nextOrigin: location,
+              nextSource: source,
+              nextAccuracy: options?.accuracy,
+              lastLoadedAt: nearbyPagesLoadedAtRef.current,
+              now,
+              force: options?.force,
+            });
       if (!shouldReload) return;
 
       const isGpsRelocation =
@@ -3781,24 +4043,30 @@ export default function NearbyUsersScreen() {
       const requestId = ++nearbyPagesRequestIdRef.current;
       nearbyPagesPendingOriginRef.current = location;
       nearbyPagesPendingSourceRef.current = source;
+      nearbyPagesPendingRadiusKmRef.current = distanceKm;
       hasLoadedNearbyPagesRef.current = true;
 
       try {
         await loadNearbyPages({
           lat: location.latitude,
           lng: location.longitude,
-          limit: 10,
+          distance: distanceKm,
+          limit: options?.limit ?? MAP_DISCOVERY_PAGE_LIMIT,
+          fast: options?.fast ?? true,
         });
         if (requestId !== nearbyPagesRequestIdRef.current) return;
         nearbyPagesPendingOriginRef.current = null;
         nearbyPagesPendingSourceRef.current = null;
+        nearbyPagesPendingRadiusKmRef.current = null;
         nearbyPagesOriginRef.current = location;
         nearbyPagesOriginSourceRef.current = source;
+        nearbyPagesRadiusKmRef.current = distanceKm;
         nearbyPagesLoadedAtRef.current = Date.now();
       } catch (caughtError) {
         if (requestId === nearbyPagesRequestIdRef.current) {
           nearbyPagesPendingOriginRef.current = null;
           nearbyPagesPendingSourceRef.current = null;
+          nearbyPagesPendingRadiusKmRef.current = null;
         }
         if (
           requestId === nearbyPagesRequestIdRef.current &&
@@ -3810,6 +4078,24 @@ export default function NearbyUsersScreen() {
       }
     },
     [loadNearbyPages],
+  );
+
+  useEffect(() => {
+    loadPagesAroundLocationRef.current = loadPagesAroundUser;
+    return () => {
+      if (loadPagesAroundLocationRef.current === loadPagesAroundUser) {
+        loadPagesAroundLocationRef.current = null;
+      }
+    };
+  }, [loadPagesAroundUser]);
+
+  useEffect(
+    () => () => {
+      if (viewportPageLoadTimerRef.current) {
+        clearTimeout(viewportPageLoadTimerRef.current);
+      }
+    },
+    [],
   );
 
   const focusRoute = useCallback(
@@ -3873,7 +4159,9 @@ export default function NearbyUsersScreen() {
               ) {
                 return;
               }
-              mapRef.current?.animateCamera(navigationCamera, { duration: 220 });
+              mapRef.current?.animateCamera(navigationCamera, {
+                duration: 220,
+              });
             }, 700);
           }
         }
@@ -3919,9 +4207,7 @@ export default function NearbyUsersScreen() {
     (route: RouteOption, navigating = isNavigating) => {
       if (!selectedPoint) return;
       const moveCamera =
-        !navigating ||
-        !isNavigatingRef.current ||
-        isAutoCenteringRef.current;
+        !navigating || !isNavigatingRef.current || isAutoCenteringRef.current;
       focusRoute(
         route,
         selectedPoint.coordinate,
@@ -4050,9 +4336,7 @@ export default function NearbyUsersScreen() {
         }
         setRouteOptions(navigating ? [nextOptions[0]] : nextOptions);
         const moveCamera =
-          !navigating ||
-          !isNavigatingRef.current ||
-          isAutoCenteringRef.current;
+          !navigating || !isNavigatingRef.current || isAutoCenteringRef.current;
         focusRoute(
           nextOptions[0],
           destination,
@@ -4436,13 +4720,9 @@ export default function NearbyUsersScreen() {
       let latestCombinedResults = submittedTypeaheadResults;
 
       try {
-        const current = currentLocationRef.current;
-        const searchLat = current?.latitude;
-        const searchLng = current?.longitude;
-        const searchOrigin =
-          searchLat !== undefined && searchLng !== undefined
-            ? { latitude: searchLat, longitude: searchLng }
-            : null;
+        const searchOrigin = deviceLocationRef.current;
+        const searchLat = searchOrigin?.latitude;
+        const searchLng = searchOrigin?.longitude;
         const publishCommittedSearchResults = (result: {
           pages: NearbyPlace[];
           predictions: MapPlacePrediction[];
@@ -4453,7 +4733,7 @@ export default function NearbyUsersScreen() {
             const distance =
               searchOrigin && page.coordinate
                 ? distanceMeters(searchOrigin, page.coordinate)
-                : page.distanceMeters;
+                : undefined;
 
             return {
               id: page.id,
@@ -4463,7 +4743,7 @@ export default function NearbyUsersScreen() {
                 distanceMeters:
                   typeof distance === 'number' && Number.isFinite(distance)
                     ? distance
-                    : page.distanceMeters,
+                    : undefined,
               },
             };
           });
@@ -4477,7 +4757,7 @@ export default function NearbyUsersScreen() {
                       latitude: pred.lat,
                       longitude: pred.lng,
                     })
-                  : pred.distanceMeters;
+                  : undefined;
 
               return {
                 id: pred.placeId,
@@ -4487,7 +4767,7 @@ export default function NearbyUsersScreen() {
                   distanceMeters:
                     typeof distance === 'number' && Number.isFinite(distance)
                       ? distance
-                      : pred.distanceMeters,
+                      : undefined,
                 },
               };
             },
@@ -4538,12 +4818,13 @@ export default function NearbyUsersScreen() {
             return null;
           })
           .filter(Boolean) as LatLng[];
-        const fitAnchor = resultCoordinates[0] || current;
+        const fitAnchor = resultCoordinates[0] || searchOrigin;
         const fitCandidates = [
-          ...(current &&
+          ...(searchOrigin &&
           fitAnchor &&
-          distanceMeters(fitAnchor, current) <= SEARCH_MAP_FIT_CLUSTER_METERS
-            ? [current]
+          distanceMeters(fitAnchor, searchOrigin) <=
+            SEARCH_MAP_FIT_CLUSTER_METERS
+            ? [searchOrigin]
             : []),
           ...resultCoordinates.filter(
             coordinate =>
@@ -4760,9 +5041,9 @@ export default function NearbyUsersScreen() {
     setSearchResults([]);
     committedSearchQueryRef.current = '';
     setQuery('');
-    clearPlacePredictions();
+    clearMapSearchResults();
     Keyboard.dismiss();
-  }, [clearPlacePredictions]);
+  }, [clearMapSearchResults]);
 
   const dismissSearchInput = useCallback(() => {
     if (!isSearchFocused) return;
@@ -4815,6 +5096,7 @@ export default function NearbyUsersScreen() {
         distanceMeters(previousLocation, location) >
           LOCATION_RECENTER_DISTANCE_METERS;
       currentLocationRef.current = location;
+      deviceLocationRef.current = location;
       const now = Date.now();
       if (now - lastPersistedLocationAtRef.current >= 5000) {
         lastPersistedLocationAtRef.current = now;
@@ -4887,10 +5169,12 @@ export default function NearbyUsersScreen() {
         );
       }
 
-      loadPagesAroundUser(location, {
-        source: 'gps',
-        accuracy: coordinate.accuracy,
-      }).catch(() => undefined);
+      if (!isViewportDiscoveryRef.current) {
+        loadPagesAroundUser(location, {
+          source: 'gps',
+          accuracy: coordinate.accuracy,
+        }).catch(() => undefined);
+      }
 
       const latestActiveDestination = activeDestinationRef.current;
       if (!latestActiveDestination || !isNavigatingRef.current) return;
@@ -5248,31 +5532,6 @@ export default function NearbyUsersScreen() {
   ]);
 
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
-
-    requestAndroidLocationPermission()
-      .then(granted => {
-        setLocationAllowed(granted);
-        setLocationAccessError(
-          granted
-            ? null
-            : new LocationAccessError(
-                'permission_denied',
-                'Location permission has not been granted.',
-              ),
-        );
-      })
-      .catch(error => {
-        setLocationAllowed(false);
-        setLocationAccessError(
-          error instanceof LocationAccessError
-            ? error
-            : new LocationAccessError('failed', String(error)),
-        );
-      });
-  }, []);
-
-  useEffect(() => {
     if (!persistedCoordinate || !persistedMapLocation) return;
 
     if (isPersistedDiscoveryLocationFresh(persistedMapLocation)) {
@@ -5318,6 +5577,7 @@ export default function NearbyUsersScreen() {
         }
 
         currentLocationRef.current = coordinate;
+        deviceLocationRef.current = coordinate;
         lastLocationStateRef.current = coordinate;
         lastLocationStateUpdatedAtRef.current = Date.now();
         saveLastMapLocation({
@@ -5340,23 +5600,41 @@ export default function NearbyUsersScreen() {
           320,
         );
 
-        loadPagesAroundUser(coordinate, {
-          source: 'gps',
-          accuracy: location.accuracy,
-        }).catch(() => undefined);
+        if (!isViewportDiscoveryRef.current) {
+          loadPagesAroundUser(coordinate, {
+            source: 'gps',
+            accuracy: location.accuracy,
+          }).catch(() => undefined);
+        }
       })
       .catch(error => {
-        setLocationAccessError(
+        if (cancelled) return;
+        const normalized =
           error instanceof LocationAccessError
             ? error
-            : new LocationAccessError('failed', String(error)),
-        );
+            : new LocationAccessError('failed', String(error));
+        if (normalized.code === 'permission_denied') {
+          setLocationAllowed(false);
+        }
+        setLocationAccessError(normalized);
+        if (
+          Platform.OS === 'android' &&
+          (normalized.code === 'permission_denied' ||
+            normalized.code === 'services_disabled')
+        ) {
+          requestMapLocationAccess();
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [loadPagesAroundUser, locationAllowed]);
+  }, [
+    loadPagesAroundUser,
+    locationAllowed,
+    locationRequestVersion,
+    requestMapLocationAccess,
+  ]);
 
   useEffect(() => {
     const requestId = ++searchEffectRequestIdRef.current;
@@ -5369,16 +5647,25 @@ export default function NearbyUsersScreen() {
     if (trimmed.length < REMOTE_SEARCH_MIN_LENGTH) {
       const shouldRestoreNearbyPages = wasSearchQueryActiveRef.current;
       wasSearchQueryActiveRef.current = false;
-      clearPlacePredictions();
-      if (
-        shouldRestoreNearbyPages &&
-        currentLocationRef.current &&
-        hasLoadedNearbyPagesRef.current
-      ) {
-        loadPagesAroundUser(currentLocationRef.current, {
-          source: locationSource === 'profile' ? 'profile' : 'gps',
-          force: true,
-        }).catch(() => undefined);
+      clearMapSearchResults();
+      if (shouldRestoreNearbyPages && hasLoadedNearbyPagesRef.current) {
+        const restoringViewport = isViewportDiscoveryRef.current;
+        const restoreOrigin = restoringViewport
+          ? currentRegionRef.current
+          : currentLocationRef.current;
+        if (restoreOrigin) {
+          loadPagesAroundUser(restoreOrigin, {
+            source: restoringViewport
+              ? 'viewport'
+              : locationSource === 'profile'
+              ? 'profile'
+              : 'gps',
+            distanceKm: restoringViewport
+              ? mapDiscoveryRadiusKmForRegion(currentRegionRef.current)
+              : DISCOVERY_RADIUS_METERS / 1000,
+            force: true,
+          }).catch(() => undefined);
+        }
       }
       return;
     }
@@ -5387,20 +5674,16 @@ export default function NearbyUsersScreen() {
 
     searchTimerRef.current = setTimeout(
       () => {
-        // Fresh installs may not have a persisted location yet, and the first
-        // GPS fix can take several seconds. Search around the map viewport in
-        // that case so external places still work instead of silently sending
-        // the backend a request without an origin.
-        const searchOrigin =
-          currentLocationRef.current ?? currentRegionRef.current;
+        const searchOrigin = deviceLocationRef.current;
         searchNearbyPagesAndPlaces({
           query: trimmed,
           googleQuery: googleCategory,
-          lat: searchOrigin.latitude,
-          lng: searchOrigin.longitude,
+          lat: searchOrigin?.latitude,
+          lng: searchOrigin?.longitude,
           radius: MAP_TYPEAHEAD_SEARCH_RADIUS_METERS,
           limit: 20,
           fast: true,
+          globalSearch: true,
         })
           .then(result => {
             if (requestId !== searchEffectRequestIdRef.current) return;
@@ -5426,7 +5709,7 @@ export default function NearbyUsersScreen() {
       }
     };
   }, [
-    clearPlacePredictions,
+    clearMapSearchResults,
     loadPagesAroundUser,
     locationSource,
     query,
@@ -5444,7 +5727,13 @@ export default function NearbyUsersScreen() {
         if (!storedLocation) return;
 
         fallbackTimer = setTimeout(() => {
-          if (cancelled || currentLocationRef.current) return;
+          if (
+            cancelled ||
+            currentLocationRef.current ||
+            isViewportDiscoveryRef.current
+          ) {
+            return;
+          }
 
           currentLocationRef.current = storedLocation;
           setCurrentLocation(storedLocation);
@@ -5461,7 +5750,9 @@ export default function NearbyUsersScreen() {
 
           if (!hasLoadedNearbyPagesRef.current) {
             hasLoadedNearbyPagesRef.current = true;
-            loadPagesAroundUser(storedLocation).catch(() => undefined);
+            loadPagesAroundUser(storedLocation, {
+              source: 'profile',
+            }).catch(() => undefined);
           }
         }, 1200);
       })
@@ -5963,7 +6254,9 @@ export default function NearbyUsersScreen() {
       {!isNavigating &&
       !isRoutePreview &&
       !isFullScreen &&
-      !(shouldShowSearchResultsSheet && searchResultsSheetSnap === 'expanded') ? (
+      !(
+        shouldShowSearchResultsSheet && searchResultsSheetSnap === 'expanded'
+      ) ? (
         <View style={exploreTopControlsStyle}>
           <View style={styles.exploreSearchRow}>
             <Animated.View
@@ -6035,7 +6328,7 @@ export default function NearbyUsersScreen() {
                     setSearchResults([]);
                     committedSearchQueryRef.current = '';
                     setIsSearchResultsVisible(false);
-                    clearPlacePredictions();
+                    clearMapSearchResults();
                     clearSelectedPoint();
                   }}
                 >
@@ -6205,7 +6498,9 @@ export default function NearbyUsersScreen() {
                     ? `Đang cập nhật quanh bạn · hiển thị ${activeSearchListResults.length} kết quả gần nhất`
                     : 'Đang tìm Page VNSEEA và địa điểm quanh bạn...'
                   : activeSearchListResults.length > 0
-                  ? `${activeSearchListResults.length} kết quả, ưu tiên theo độ phù hợp và khoảng cách`
+                  ? searchRankingOrigin
+                    ? `${activeSearchListResults.length} kết quả · Page trước · địa chỉ gần đến xa`
+                    : `${activeSearchListResults.length} kết quả · Page trước · bật vị trí để xếp theo khoảng cách`
                   : query.trim().length < REMOTE_SEARCH_MIN_LENGTH
                   ? 'Nhập thêm để tìm Page VNSEEA và mọi địa điểm, gần hoặc xa'
                   : 'Chưa có kết quả phù hợp với từ khóa này'}
@@ -6365,7 +6660,9 @@ export default function NearbyUsersScreen() {
           activeOpacity={0.82}
           style={styles.permissionNotice}
           onPress={() => {
-            if (locationAccessError) {
+            if (Platform.OS === 'android') {
+              requestMapLocationAccess();
+            } else if (locationAccessError) {
               presentLocationAccessRecovery(locationAccessError);
             }
           }}
@@ -6373,7 +6670,9 @@ export default function NearbyUsersScreen() {
           <MapPin size={16} color="#D97706" />
           <Text className="ml-2 flex-1 text-xs font-semibold text-amber-700">
             {locationAccessError
-              ? getLocationAccessRecovery(locationAccessError).message
+              ? Platform.OS === 'android'
+                ? 'Bạn cần cấp quyền và bật vị trí để bản đồ, khoảng cách và chỉ đường hoạt động chính xác.'
+                : getLocationAccessRecovery(locationAccessError).message
               : 'Bật quyền vị trí để zoom quanh bạn trong phạm vi 1km và cập nhật chỉ đường.'}
           </Text>
         </TouchableOpacity>
@@ -7049,9 +7348,7 @@ export default function NearbyUsersScreen() {
                   : null
               }
             >
-              <Text className="text-xs font-extrabold text-info">
-                Bắt đầu
-              </Text>
+              <Text className="text-xs font-extrabold text-info">Bắt đầu</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -7096,7 +7393,7 @@ export default function NearbyUsersScreen() {
               >
                 {(
                   [
-                    ['relevance', 'Liên quan'],
+                    ['relevance', 'Page trước'],
                     ['distance', 'Gần nhất'],
                     ['pages', 'Page VNSEEA'],
                   ] as Array<[SearchResultSort, string]>
@@ -7139,8 +7436,7 @@ export default function NearbyUsersScreen() {
                 nestedScrollEnabled
                 scrollEnabled={searchResultsSheetSnap === 'expanded'}
                 alwaysBounceVertical={
-                  Platform.OS === 'ios' &&
-                  searchResultsSheetSnap === 'expanded'
+                  Platform.OS === 'ios' && searchResultsSheetSnap === 'expanded'
                 }
                 scrollEventThrottle={16}
                 data={displayedSearchResults}
@@ -7154,9 +7450,7 @@ export default function NearbyUsersScreen() {
                   const nextOffset = event.nativeEvent.contentOffset.y;
                   searchResultsScrollOffsetRef.current = nextOffset;
                   const nextIsAtTop = nextOffset <= 0.5;
-                  if (
-                    nextIsAtTop !== isSearchResultsScrollAtTopRef.current
-                  ) {
+                  if (nextIsAtTop !== isSearchResultsScrollAtTopRef.current) {
                     isSearchResultsScrollAtTopRef.current = nextIsAtTop;
                     setIsSearchResultsScrollAtTop(nextIsAtTop);
                   }
@@ -7297,11 +7591,9 @@ export default function NearbyUsersScreen() {
                         }
                     : null;
                   const distMeters =
-                    coordinate && currentLocation
-                      ? distanceMeters(currentLocation, coordinate)
-                      : item.kind === 'page'
-                      ? item.page.distanceMeters
-                      : item.prediction.distanceMeters;
+                    coordinate && searchRankingOrigin
+                      ? distanceMeters(searchRankingOrigin, coordinate)
+                      : undefined;
                   const resultProximity = distanceProximity(distMeters);
                   const googleIconStyle =
                     item.kind === 'google'
@@ -7675,9 +7967,7 @@ export default function NearbyUsersScreen() {
                   <View style={styles.pageDetailStat}>
                     <MapPin size={18} color="#64748B" />
                     <Text style={styles.pageDetailStatValue}>
-                      {pageDetailPlace?.distanceMeters
-                        ? formatDistance(pageDetailPlace.distanceMeters)
-                        : selectedDistance !== undefined
+                      {selectedDistance !== undefined
                         ? formatDistance(selectedDistance)
                         : '--'}
                     </Text>

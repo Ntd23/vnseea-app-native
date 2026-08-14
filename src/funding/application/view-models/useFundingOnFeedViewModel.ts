@@ -31,7 +31,7 @@ export function useFundingOnFeedViewModel(
 ) {
   const { autoLoad = true } = options;
   const [campaigns, setCampaigns] = useState<FundingItem[]>(() => {
-    return feedCacheStorage.getCachedFunding();
+    return autoLoad ? feedCacheStorage.getCachedFunding() : [];
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);

@@ -858,6 +858,14 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
   const lastMessageTime =
     readNumber(lastMessage, 'time') ||
     readNumber(raw, 'last_message_time', 'time', 'chat_time', 'last_time');
+  const relationshipActivityTime = readNumber(
+    raw,
+    'relationship_activity_at',
+  );
+  const hasRelationshipState =
+    chatType === 'user' &&
+    (Object.prototype.hasOwnProperty.call(raw, 'is_following') ||
+      Object.prototype.hasOwnProperty.call(raw, 'is_following_me'));
   const paginationCursorTime =
     readNumber(
       raw,
@@ -887,6 +895,7 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
       lastMessageSenderId === sessionStorage.getSession()?.userId,
     lastMessageIsReply,
     lastMessageTime: lastMessageTime || paginationCursorTime,
+    relationshipActivityTime: relationshipActivityTime || undefined,
     paginationCursorTime: paginationCursorTime || lastMessageTime,
     unreadCount:
       chatType === 'group'
@@ -897,6 +906,12 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
         ? readGroupOnline(raw)
         : readUserOnline(userData),
     isVerified: readBool(userData, 'verified'),
+    isFollowing: hasRelationshipState
+      ? readBool(raw, 'is_following')
+      : undefined,
+    isFollower: hasRelationshipState
+      ? readBool(raw, 'is_following_me')
+      : undefined,
     notificationsMuted:
       readString(asRecord(raw.mute) ?? {}, 'notify') === 'no',
   };
@@ -982,6 +997,54 @@ async function fetchSearchCandidates(
     userOffset = nextOffset;
   }
 }
+function mergeRepositoryRelationshipState(
+  current: ChatItem,
+  incoming: ChatItem,
+) {
+  const currentDefinesState =
+    current.isFollowing !== undefined || current.isFollower !== undefined;
+  const incomingDefinesState =
+    incoming.isFollowing !== undefined || incoming.isFollower !== undefined;
+  const currentRevision = current.relationshipStateRevision ?? 0;
+  const incomingRevision = incoming.relationshipStateRevision ?? 0;
+  const preferIncomingConversationState =
+    incoming.hasConversationRecord === true &&
+    current.hasConversationRecord === false;
+  const preferCurrentConversationState =
+    current.hasConversationRecord === true &&
+    incoming.hasConversationRecord === false;
+  const useIncoming =
+    incomingDefinesState &&
+    !preferCurrentConversationState &&
+    (preferIncomingConversationState ||
+      !currentDefinesState ||
+      incomingRevision > currentRevision ||
+      (incomingRevision === currentRevision &&
+        (incoming.relationshipActivityTime ?? 0) >=
+          (current.relationshipActivityTime ?? 0)));
+  const source = useIncoming ? incoming : current;
+  const fallback = useIncoming ? current : incoming;
+  const isFollowing = source.isFollowing ?? fallback.isFollowing;
+  const isFollower = source.isFollower ?? fallback.isFollower;
+  const hasRelationship = Boolean(isFollowing || isFollower);
+
+  return {
+    isFollowing,
+    isFollower,
+    relationshipActivityTime: hasRelationship
+      ? source.relationshipActivityTime ??
+        fallback.relationshipActivityTime ??
+        undefined
+      : undefined,
+    relationshipStateRevision:
+      Math.max(currentRevision, incomingRevision) || undefined,
+    relationshipEventOccurredAt:
+      Math.max(
+        current.relationshipEventOccurredAt ?? 0,
+        incoming.relationshipEventOccurredAt ?? 0,
+      ) || undefined,
+  };
+}
 function mergeChats(...chatLists: ChatItem[][]): ChatItem[] {
   const chats = new Map<string, ChatItem>();
   for (const chat of chatLists.flat()) {
@@ -990,21 +1053,24 @@ function mergeChats(...chatLists: ChatItem[][]): ChatItem[] {
     const current = chats.get(key);
     if (!current) {
       chats.set(key, chat);
-    } else if (
-      chat.lastMessageTime > current.lastMessageTime ||
-      (chat.lastMessageTime === current.lastMessageTime &&
-        Number(chat.lastMessageId ?? 0) >= Number(current.lastMessageId ?? 0))
-    ) {
-      chats.set(key, chat);
     } else {
+      const chatHasNewerMessage =
+        chat.lastMessageTime > current.lastMessageTime ||
+        (chat.lastMessageTime === current.lastMessageTime &&
+          Number(chat.lastMessageId ?? 0) >=
+            Number(current.lastMessageId ?? 0));
+      const newestMessage = chatHasNewerMessage ? chat : current;
       chats.set(key, {
-        ...current,
+        ...newestMessage,
         isOnline: chat.isOnline,
+        ...mergeRepositoryRelationshipState(current, chat),
       });
     }
   }
   return [...chats.values()].sort(
-    (left, right) => right.lastMessageTime - left.lastMessageTime,
+    (left, right) =>
+      Math.max(right.lastMessageTime, right.relationshipActivityTime ?? 0) -
+      Math.max(left.lastMessageTime, left.relationshipActivityTime ?? 0),
   );
 }
 type CachedChatPageConfig = {
@@ -1195,7 +1261,10 @@ async function fetchUnreadChats() {
   );
 }
 
-async function fetchFriendsList(forceRefresh = false): Promise<{ following: Set<string>; followers: Set<string> }> {
+async function fetchFriendsList(forceRefresh = false): Promise<{
+  following: Set<string>;
+  followers: Set<string>;
+}> {
   const sessionUserId = sessionStorage.getSession()?.userId;
   if (!sessionUserId) return { following: new Set(), followers: new Set() };
   if (
@@ -1220,7 +1289,8 @@ async function fetchFriendsList(forceRefresh = false): Promise<{ following: Set<
       {
         user_id: sessionUserId,
         type: 'following,followers',
-        limit: 500,
+        limit: 50,
+        sort_by_activity: 1,
       },
     );
     const followingList = response.data?.following ?? [];
@@ -1244,8 +1314,8 @@ async function fetchFriendsList(forceRefresh = false): Promise<{ following: Set<
     return { following, followers };
   } catch {
     return {
-      following: followingCache?.followingIds ?? new Set(),
-      followers: followingCache?.followerIds ?? new Set(),
+      following: followingCache?.followingIds ?? new Set<string>(),
+      followers: followingCache?.followerIds ?? new Set<string>(),
     };
   }
 }
@@ -1275,13 +1345,15 @@ async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatIte
   };
 
   try {
-    const friendsResponse = await apiBridge
-      .post<FriendsResponse>(apiRoutes.social.friends, {
+    const friendsResponse = await apiBridge.post<FriendsResponse>(
+      apiRoutes.social.friends,
+      {
         user_id: sessionUserId,
         type: 'following,followers',
-        limit: 500,
-      })
-      .catch(() => ({} as FriendsResponse));
+        limit: 50,
+        sort_by_activity: 1,
+      },
+    );
 
     const followingUserIds = new Set<string>();
     const followerUserIds = new Set<string>();
@@ -1302,9 +1374,20 @@ async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatIte
       const id = readString(user, 'user_id', 'id');
       if (id && id !== sessionUserId) {
         followerUserIds.add(id);
-        if (!candidates.has(id)) {
-          candidates.set(id, user);
-        }
+        const existing = candidates.get(id);
+        candidates.set(
+          id,
+          existing
+            ? {
+                ...existing,
+                ...user,
+                relationship_activity_at: Math.max(
+                  readNumber(existing, 'relationship_activity_at'),
+                  readNumber(user, 'relationship_activity_at'),
+                ),
+              }
+            : user,
+        );
       }
     }
 
@@ -1321,15 +1404,17 @@ async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatIte
       const userId = readString(user, 'user_id', 'id');
       if (!userId) continue;
 
-      chats.push(
-        mapChat({
+      chats.push({
+        ...mapChat({
           ...user,
           chat_type: 'user',
           chat_time: 0,
           last_message: undefined,
           message_count: 0,
-        })
-      );
+        }),
+        isFollowing: followingUserIds.has(userId),
+        isFollower: followerUserIds.has(userId),
+      });
     }
 
     const discoveredChats = mergeChats(chats);
@@ -1340,8 +1425,11 @@ async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatIte
     };
     return discoveredChats;
   } catch (err) {
+    if (forceRefresh) throw err;
     console.error('fetchDiscoveredUserChats error:', err);
-    return [];
+    return discoveryCache?.sessionUserId === sessionUserId
+      ? discoveryCache.chats
+      : [];
   }
 }
 function mapMessage(
@@ -1756,7 +1844,11 @@ export function createMessagesRepository(): MessagesRepository {
       const includeDiscovery = options?.includeDiscovery ?? true;
       const [cachedChats, discoveredChats] = await Promise.all([
         options?.latestOnly ? fetchLatestCachedChats() : fetchCachedChats(),
-        includeDiscovery ? fetchDiscoveredUserChats(options?.forceRefresh).catch(() => []) : [],
+        includeDiscovery
+          ? options?.forceRefresh
+            ? fetchDiscoveredUserChats(true)
+            : fetchDiscoveredUserChats(false).catch(() => [])
+          : [],
       ]);
       return mergeChats(discoveredChats, cachedChats);
     },
