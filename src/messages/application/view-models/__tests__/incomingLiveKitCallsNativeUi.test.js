@@ -19,6 +19,19 @@ describe('incoming LiveKit calls native UI routing', () => {
     expect(source).not.toContain('setActiveIncomingCall(call);');
   });
 
+  it('tracks native direct calls privately so terminal status polling can dismiss them', () => {
+    const source = read(
+      'src/messages/application/view-models/useIncomingLiveKitCalls.ts',
+    );
+
+    expect(source).toContain('trackedDirectCallRef');
+    expect(source).toContain('setTrackedDirectCall(call);');
+    expect(source).toContain('const checkTrackedDirectCall = useCallback');
+    expect(source).toContain('checkTrackedDirectCall();');
+    expect(source).toContain('dismissTrackedDirectCall(callToCheck.callId);');
+    expect(source).not.toContain('setActiveIncomingCall(call);');
+  });
+
   it('uses CallKit for iOS fullscreen group signals while keeping passive groups custom', () => {
     const source = read(
       'src/messages/application/view-models/useIncomingLiveKitCalls.ts',
@@ -104,6 +117,30 @@ describe('incoming LiveKit calls native UI routing', () => {
     );
     expect(incomingSource).toContain(
       'dismissAndroidIncomingCall(call.callId);',
+    );
+  });
+
+  it('expires the Android incoming activity even when React Native polling is suspended', () => {
+    const incomingSource = read(
+      'src/messages/infrastructure/calls/nativeCallService.ts',
+    );
+    const activitySource = read(
+      'android/app/src/main/java/com/vnseea/android/call/IncomingCallActivity.kt',
+    );
+    const actionsSource = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNativeActions.kt',
+    );
+
+    expect(actionsSource).toContain('EXTRA_EXPIRES_AT');
+    expect(incomingSource).toContain(
+      "expires_at: call.expiresAt ? String(call.expiresAt) : '',",
+    );
+    expect(activitySource).toContain('scheduleIncomingCallExpiry()');
+    expect(activitySource).toContain(
+      'incomingCallExpiryHandler.postDelayed',
+    );
+    expect(activitySource).toContain(
+      'LiveKitCallNativeActions.dismissIncomingCall(',
     );
   });
 });

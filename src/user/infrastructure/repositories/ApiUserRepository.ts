@@ -82,6 +82,11 @@ type NearbyPagesResponse = {
   items?: RawApiRecord[];
 };
 
+type GlobalPageSearchResponse = {
+  api_status?: number | string;
+  pages?: RawApiRecord[];
+};
+
 type PageDetailsResponse = ApiEnvelope & {
   page_data?: RawApiRecord;
 };
@@ -399,26 +404,99 @@ async function warmNearbyPageMapPinStatuses(pages: NearbyPlace[]) {
   }
 }
 
-async function requestNearbyPages(input?: NearbyPagesInput) {
-  const payload = buildMapPageSearchRequest(input);
-  const response = await apiBridge.post<NearbyPagesResponse>(
-    apiRoutes.user.mapDiscovery,
-    payload,
-    input?.keyword || input?.signal
-      ? {
-          timeout: input?.keyword ? MAP_SEARCH_RESPONSE_BUDGET_MS : undefined,
-          signal: input?.signal,
-        }
-      : undefined,
-  );
-
-  const pages = (response.items ?? [])
+function mapPageSearchRecords(records?: RawApiRecord[]) {
+  return (records ?? [])
     .map(record =>
       mapNearbyPage(record, apiConfig.webBaseUrl, apiConfig.mediaBaseUrl),
     )
     .filter(Boolean) as NearbyPlace[];
+}
 
-  return pages;
+function mergePageSearchResults(...sets: NearbyPlace[][]) {
+  const merged = new Map<string, NearbyPlace>();
+  sets.forEach(pages => {
+    pages.forEach(page => {
+      const key = page.pageId || page.username || page.id;
+      const existing = merged.get(key);
+      merged.set(
+        key,
+        existing
+          ? {
+              ...existing,
+              ...page,
+              coordinate: page.coordinate ?? existing.coordinate,
+              distance: page.distance ?? existing.distance,
+              distanceMeters:
+                page.distanceMeters ?? existing.distanceMeters,
+              mapPinStatus: page.mapPinStatus ?? existing.mapPinStatus,
+              mapPinApproved:
+                page.mapPinApproved ?? existing.mapPinApproved,
+              isPinned: page.isPinned ?? existing.isPinned,
+            }
+          : page,
+      );
+    });
+  });
+  return [...merged.values()];
+}
+
+function pageSearchRequestOptions(input?: NearbyPagesInput) {
+  return input?.keyword || input?.signal
+    ? {
+        timeout: input?.keyword ? MAP_SEARCH_RESPONSE_BUDGET_MS : undefined,
+        signal: input?.signal,
+      }
+    : undefined;
+}
+
+async function requestMapDiscoveryPages(input?: NearbyPagesInput) {
+  const payload = buildMapPageSearchRequest(input);
+  const response = await apiBridge.post<NearbyPagesResponse>(
+    apiRoutes.user.mapDiscovery,
+    payload,
+    pageSearchRequestOptions(input),
+  );
+
+  return mapPageSearchRecords(response.items);
+}
+
+async function requestGlobalPageSearch(input: NearbyPagesInput) {
+  const response = await apiBridge.post<GlobalPageSearchResponse>(
+    apiRoutes.search.all,
+    {
+      search_key: input.keyword?.trim() ?? '',
+      limit: input.limit ?? 20,
+      user_offset: 0,
+      page_offset: 0,
+      group_offset: 0,
+    },
+    pageSearchRequestOptions(input),
+  );
+
+  return mapPageSearchRecords(response.pages);
+}
+
+async function requestNearbyPages(input?: NearbyPagesInput) {
+  const shouldUseGlobalFallback = Boolean(
+    input?.globalSearch && input.keyword?.trim(),
+  );
+  if (!input || !shouldUseGlobalFallback) {
+    return requestMapDiscoveryPages(input);
+  }
+
+  const [mapResult, globalResult] = await Promise.allSettled([
+    requestMapDiscoveryPages(input),
+    requestGlobalPageSearch(input),
+  ]);
+
+  if (mapResult.status === 'rejected' && globalResult.status === 'rejected') {
+    throw mapResult.reason;
+  }
+
+  return mergePageSearchResults(
+    globalResult.status === 'fulfilled' ? globalResult.value : [],
+    mapResult.status === 'fulfilled' ? mapResult.value : [],
+  );
 }
 
 async function fetchNearbyPages(input?: NearbyPagesInput) {

@@ -2,6 +2,7 @@ import {
   compareMapSearchRankCandidates,
   doesMapSearchCandidateMatchQuery,
   getMapSearchMatchPriority,
+  takePrioritizedMapSearchResults,
   type MapSearchRankCandidate,
 } from '../mapSearchRanking';
 
@@ -170,5 +171,27 @@ describe('map search ranking', () => {
       'Hải Dương Riverside',
       'Hải Dương',
     ]);
+  });
+
+  it('keeps every ranked Page ahead of Google until the result limit is full', () => {
+    const pages = Array.from({ length: 15 }, (_, index) => ({
+      source: 'page' as const,
+      title: `Page ${index + 1}`,
+    }));
+    const googlePlaces = Array.from({ length: 10 }, (_, index) => ({
+      source: 'google' as const,
+      title: `Google ${index + 1}`,
+    }));
+
+    const result = takePrioritizedMapSearchResults(
+      [...googlePlaces, ...pages],
+      20,
+      (left, right) =>
+        compareMapSearchRankCandidates('page', left, right),
+    );
+
+    expect(result.filter(item => item.source === 'page')).toHaveLength(15);
+    expect(result.slice(0, 15).every(item => item.source === 'page')).toBe(true);
+    expect(result.slice(15).every(item => item.source === 'google')).toBe(true);
   });
 });

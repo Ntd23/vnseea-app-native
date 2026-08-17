@@ -285,7 +285,8 @@ describe('map and place discovery performance contracts', () => {
     expect(screenSource).toContain("label: 'Trong khu vực'");
     expect(screenSource).toContain("label: 'Xa bạn'");
     expect(screenSource).toContain('searchDistanceSummary');
-    expect(screenSource).toContain('takeMixedSearchResults');
+    expect(screenSource).toContain('takePrioritizedMapSearchResults');
+    expect(screenSource).not.toContain('takeMixedSearchResults');
     expect(screenSource).toContain('const MAX_COMMITTED_SEARCH_RESULTS = 40;');
     expect(screenSource).toContain('mergeSearchResultSets(');
     expect(screenSource).toContain('waitForAllSources: true,');

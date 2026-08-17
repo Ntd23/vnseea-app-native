@@ -160,6 +160,7 @@ import { getGoogleCategorySearchQuery } from '../../application/utils/mapSearchC
 import {
   compareMapSearchRankCandidates,
   doesMapSearchCandidateMatchQuery,
+  takePrioritizedMapSearchResults,
 } from '../../application/utils/mapSearchRanking';
 import {
   MAP_COMMITTED_SEARCH_RADIUS_METERS,
@@ -1805,34 +1806,6 @@ function sortSearchSuggestions(query: string) {
     );
 }
 
-function takeMixedSearchResults(items: SuggestionItem[], limit: number) {
-  const hasPages = items.some(item => item.kind === 'page');
-  const hasGooglePlaces = items.some(item => item.kind === 'google');
-  if (!hasPages || !hasGooglePlaces) return items.slice(0, limit);
-
-  const sourceLimit = Math.ceil(limit * 0.6);
-  const selected: SuggestionItem[] = [];
-  const deferred: SuggestionItem[] = [];
-  let pageCount = 0;
-  let googleCount = 0;
-
-  items.forEach(item => {
-    const sourceCount = item.kind === 'page' ? pageCount : googleCount;
-    if (selected.length < limit && sourceCount < sourceLimit) {
-      selected.push(item);
-      if (item.kind === 'page') pageCount += 1;
-      else googleCount += 1;
-      return;
-    }
-    deferred.push(item);
-  });
-
-  deferred.forEach(item => {
-    if (selected.length < limit) selected.push(item);
-  });
-  return selected;
-}
-
 function mergeSearchResultSets(...sets: SuggestionItem[][]) {
   const merged = new Map<string, SuggestionItem>();
   sets.forEach(items => {
@@ -2929,11 +2902,10 @@ export default function NearbyUsersScreen() {
           })
         : [];
 
-    return takeMixedSearchResults(
-      [...pageSuggestions, ...googleSuggestions].sort(
-        sortSearchSuggestions(query),
-      ),
+    return takePrioritizedMapSearchResults(
+      [...pageSuggestions, ...googleSuggestions],
       15,
+      sortSearchSuggestions(query),
     );
   }, [
     nearbyPlaces,
@@ -2990,9 +2962,10 @@ export default function NearbyUsersScreen() {
         .slice(0, MAX_COMMITTED_SEARCH_RESULTS);
     }
 
-    return takeMixedSearchResults(
-      items.sort(sortSearchSuggestions(query)),
+    return takePrioritizedMapSearchResults(
+      items,
       MAX_COMMITTED_SEARCH_RESULTS,
+      sortSearchSuggestions(query),
     );
   }, [query, searchResultSort, searchResults]);
 
@@ -3087,11 +3060,10 @@ export default function NearbyUsersScreen() {
       );
     });
 
-    return takeMixedSearchResults(
-      mergeSearchResultSets(suggestions, compatiblePreviousResults).sort(
-        sortSearchSuggestions(query),
-      ),
+    return takePrioritizedMapSearchResults(
+      mergeSearchResultSets(suggestions, compatiblePreviousResults),
       20,
+      sortSearchSuggestions(query),
     );
   }, [nearbyTypeaheadResults, query, searchResults, suggestions]);
 

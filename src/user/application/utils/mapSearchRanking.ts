@@ -132,3 +132,13 @@ export function compareMapSearchRankCandidates(
   }
   return 0;
 }
+
+export function takePrioritizedMapSearchResults<T>(
+  items: readonly T[],
+  limit: number,
+  compare: (left: T, right: T) => number,
+) {
+  return [...items]
+    .sort(compare)
+    .slice(0, Math.max(0, Math.floor(limit)));
+}

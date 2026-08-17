@@ -1079,6 +1079,7 @@ export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
         avatar: call.peer.avatar || '',
         action_token: call.actionToken || '',
         api_url: call.apiUrl || '',
+        expires_at: call.expiresAt ? String(call.expiresAt) : '',
         client_endpoint_id:
           call.clientEndpointId || getClientEndpointIdentity(),
         call_context: 'direct',
@@ -1146,6 +1147,7 @@ export async function displayNativeIncomingGroupCall(
         avatar: call.caller.avatar || '',
         action_token: call.actionToken || '',
         api_url: call.apiUrl || '',
+        expires_at: call.expiresAt ? String(call.expiresAt) : '',
         client_endpoint_id:
           call.clientEndpointId || getClientEndpointIdentity(),
         call_context: 'group',
