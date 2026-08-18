@@ -5,6 +5,7 @@ import type {
 import {
   mergePendingVideoSnapshots,
   resolveDeferredFeedCommit,
+  resolveDeferredFeedPreservedPosts,
 } from '../feedDeferredCommit';
 
 const lightPost = (id: string, postedAt: number) =>
@@ -37,6 +38,31 @@ describe('resolveDeferredFeedCommit', () => {
     expect(result.videoPosts.map(post => post.id)).toEqual(['video-1']);
   });
 
+  it('applies a deferred fresh light snapshot and retains rows appended while scrolling', () => {
+    const cachedHead = lightPost('cached-head', 4);
+    const cachedTail = lightPost('cached-tail', 1);
+    const freshHead = lightPost('fresh-head', 5);
+    const pendingCachedHead = {
+      ...cachedHead,
+      text: 'fresh network value',
+    } as unknown as FeedPost;
+
+    const result = resolveDeferredFeedCommit({
+      latestLightPosts: [cachedHead, cachedTail, lightPost('appended', 0)],
+      latestVideoPosts: [],
+      pendingLightPosts: [freshHead, pendingCachedHead, cachedTail],
+      pendingVideoPosts: [],
+    });
+
+    expect(result.lightPosts.map(post => post.id)).toEqual([
+      'fresh-head',
+      'cached-head',
+      'cached-tail',
+      'appended',
+    ]);
+    expect(result.lightPosts[1]).toBe(pendingCachedHead);
+  });
+
   it('preserves current video updates and only appends newly prepared videos', () => {
     const currentVideo = videoPost('video-1', 5);
     const staleVideo = { ...currentVideo, postedAt: 1 } as FeedVideoPost;
@@ -60,5 +86,22 @@ describe('resolveDeferredFeedCommit', () => {
     );
 
     expect(merged.map(post => post.id)).toEqual(['video-1', 'video-2']);
+  });
+
+  it('does not accidentally preserve the old head when a deferred initial video should backfill it', () => {
+    const renderedPosts = [lightPost('a', 2), lightPost('b', 1)];
+
+    expect(
+      resolveDeferredFeedPreservedPosts({
+        preserveRenderedOrder: false,
+        renderedPosts,
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveDeferredFeedPreservedPosts({
+        preserveRenderedOrder: true,
+        renderedPosts,
+      }),
+    ).toBe(renderedPosts);
   });
 });

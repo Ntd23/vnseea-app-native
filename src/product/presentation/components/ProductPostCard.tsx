@@ -254,6 +254,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
             className="w-full"
             style={{ aspectRatio: 1.15 }}
             resizeMode="cover"
+            resizeMethod="resize"
             onLoad={() => markFeedMediaLoaded(imageUrl)}
           />
         ) : (
@@ -485,6 +486,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 source={{ uri: product.seller.avatar }}
                 className="h-10 w-10 rounded-full"
                 resizeMode="cover"
+                resizeMethod="resize"
               />
             ) : (
               <View className="h-10 w-10 items-center justify-center rounded-full bg-brand">
@@ -549,6 +551,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
               className="w-full"
               style={{ aspectRatio: 1.4 }}
               resizeMode="cover"
+              resizeMethod="resize"
               fadeDuration={0}
               onLoad={() => markFeedMediaLoaded(imageUrl)}
             />

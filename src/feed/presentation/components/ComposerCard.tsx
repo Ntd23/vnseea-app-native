@@ -1,7 +1,6 @@
 // Description: Shared composer card used by Home feed and Profile to open the post composer.
 import React from 'react';
 import {
-  Image,
   Platform,
   StyleSheet,
   Text,
@@ -19,6 +18,7 @@ import {
   FEED_CARD_CLASS,
   FEED_CARD_PADDING_CLASS,
 } from './FeedCardChrome';
+import { FeedMediaImage } from './FeedMediaImage';
 
 const FALLBACK_AVATAR =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw';
@@ -50,16 +50,14 @@ const Avatar = React.memo(function Avatar({
   uri: string;
   size?: number;
 }) {
-  const source = React.useMemo(() => ({ uri }), [uri]);
   const style = React.useMemo(() => ({ height: size, width: size }), [size]);
 
   return (
-    <Image
-      source={source}
+    <FeedMediaImage
+      uri={uri}
       style={style}
       className="rounded-full"
       resizeMode="cover"
-      fadeDuration={0}
     />
   );
 });

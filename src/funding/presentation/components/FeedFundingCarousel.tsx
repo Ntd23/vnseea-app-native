@@ -31,6 +31,8 @@ export type FeedFundingCopy = {
 const FUNDING_SKELETONS = ['funding-skeleton-1', 'funding-skeleton-2', 'funding-skeleton-3'];
 
 const CAROUSEL_SEPARATOR_STYLE = { width: 12 };
+const FUNDING_CAROUSEL_INITIAL_RENDER_COUNT = Platform.OS === 'android' ? 2 : 3;
+const FUNDING_CAROUSEL_BATCH_SIZE = Platform.OS === 'android' ? 1 : 3;
 
 function CarouselSeparator() {
   return <View style={CAROUSEL_SEPARATOR_STYLE} />;
@@ -102,9 +104,10 @@ const FeedFundingCarousel = React.memo(function FeedFundingCarousel({
           {/* Cover image */}
           {item.image ? (
             <Image
-              source={{ uri: item.image }}
+              source={{ uri: item.image, cache: 'force-cache' }}
               className="h-28 w-full"
               resizeMode="cover"
+              resizeMethod="resize"
               fadeDuration={0}
             />
           ) : (
@@ -195,8 +198,8 @@ const FeedFundingCarousel = React.memo(function FeedFundingCarousel({
         contentContainerStyle={{ paddingHorizontal: 16 }}
         ItemSeparatorComponent={CarouselSeparator}
         nestedScrollEnabled
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
+        initialNumToRender={FUNDING_CAROUSEL_INITIAL_RENDER_COUNT}
+        maxToRenderPerBatch={FUNDING_CAROUSEL_BATCH_SIZE}
         windowSize={3}
         removeClippedSubviews={Platform.OS === 'android'}
         renderItem={renderItem}

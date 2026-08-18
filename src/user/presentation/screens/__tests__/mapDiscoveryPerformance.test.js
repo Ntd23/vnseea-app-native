@@ -47,15 +47,19 @@ describe('map and place discovery performance contracts', () => {
     );
 
     expect(source).toContain('nearbyPagesCache.getOrLoad');
-    expect(source).toContain('placePredictionsCache.getOrLoad');
+    expect(source).toContain(
+      'const cachedPredictions = placePredictionsCache.get(cacheKey);',
+    );
+    expect(source).toContain(
+      'placePredictionsCache.set(cacheKey, predictions);',
+    );
+    expect(source).toContain('Promise.allSettled([');
     expect(source).toContain('placeDetailsCache.getOrLoad');
     expect(source).toContain('const firstResult = await Promise.race([');
     expect(source).toContain("'X-Android-Package'");
     expect(source).toContain("'X-Android-Cert'");
     expect(source).toContain('const MAP_SEARCH_RESPONSE_BUDGET_MS = 3600;');
-    expect(source).not.toContain(
-      "googleRequestHeaders()['X-Android-Cert'],",
-    );
+    expect(source).not.toContain("googleRequestHeaders()['X-Android-Cert'],");
     expect(source).not.toContain(
       'https://maps.googleapis.com/maps/api/place/nearbysearch/json',
     );
@@ -77,7 +81,7 @@ describe('map and place discovery performance contracts', () => {
 
     expect(screenSource).toContain('const CATEGORY_SEARCH_DEBOUNCE_MS = 80;');
     expect(screenSource).toContain('const TEXT_SEARCH_DEBOUNCE_MS = 120;');
-    expect(screenSource).toContain('const REMOTE_SEARCH_MIN_LENGTH = 2;');
+    expect(screenSource).toContain('const REMOTE_SEARCH_MIN_LENGTH = 1;');
     expect(screenSource).toContain('styles.typeaheadOverlay');
     expect(screenSource).toContain('typeaheadResultDistance');
     expect(screenSource).toContain('useAuthBranding');
@@ -132,9 +136,7 @@ describe('map and place discovery performance contracts', () => {
     expect(source).toContain('withSpring(');
     expect(source).toContain('runOnJS(commitSearchResultsSheetSnap)');
     expect(source).not.toContain('PanResponder.create');
-    expect(source).toContain(
-      "useState<SearchResultsSheetSnap>('peek');",
-    );
+    expect(source).toContain("useState<SearchResultsSheetSnap>('peek');");
     expect(source).toContain("setSearchResultsSheetSnap('peek');");
     expect(source).not.toContain("animateSearchResultsSheetTo('half');");
     expect(source).toContain('openSearchResultsSheet();');
@@ -168,9 +170,7 @@ describe('map and place discovery performance contracts', () => {
     expect(source).toContain(
       "searchResultsSheetSnap !== 'expanded' ||\n          (Platform.OS !== 'ios' && isSearchResultsScrollAtTop)",
     );
-    expect(source).toContain(
-      "searchResultsSheetSnap === 'expanded',",
-    );
+    expect(source).toContain("searchResultsSheetSnap === 'expanded',");
     expect(source).toContain(
       'if (downwardOnly) {\n            targetIndex = Math.max(targetIndex, currentIndex - 1);',
     );
@@ -180,11 +180,9 @@ describe('map and place discovery performance contracts', () => {
     expect(source).toContain(
       "Platform.OS === 'ios' &&\n                    searchResultsSheetSnap === 'expanded' &&\n                    nextOffset <= -SEARCH_RESULTS_IOS_PULL_TO_HALF_THRESHOLD",
     );
-    expect(source).toContain(
-      'collapseExpandedSearchResultsFromListPull();',
-    );
-    expect(source).toContain(
-      "alwaysBounceVertical={\n                  Platform.OS === 'ios' &&\n                  searchResultsSheetSnap === 'expanded'\n                }",
+    expect(source).toContain('collapseExpandedSearchResultsFromListPull();');
+    expect(source).toMatch(
+      /alwaysBounceVertical=\{\s*Platform\.OS === 'ios' &&\s*searchResultsSheetSnap === 'expanded'\s*\}/,
     );
   });
 
@@ -259,7 +257,7 @@ describe('map and place discovery performance contracts', () => {
     );
   });
 
-  it('hard-limits typeahead to 5 km and committed search to 20 km', () => {
+  it('keeps nearby discovery scoped while typed and committed search resolve nationwide', () => {
     const screenSource = read(
       'src/user/presentation/screens/NearbyUsersScreen.tsx',
     );
@@ -277,11 +275,18 @@ describe('map and place discovery performance contracts', () => {
       'const GLOBAL_SEARCH_BIAS_RADIUS_METERS = 50000;',
     );
     expect(screenSource).toContain('globalSearch: true,');
+    expect(screenSource).toContain(
+      `radius: MAP_TYPEAHEAD_SEARCH_RADIUS_METERS,
+          limit: 20,
+          fast: true,
+          globalSearch: true,`,
+    );
     expect(screenSource).toContain("label: 'Gần bạn'");
     expect(screenSource).toContain("label: 'Trong khu vực'");
     expect(screenSource).toContain("label: 'Xa bạn'");
     expect(screenSource).toContain('searchDistanceSummary');
-    expect(screenSource).toContain('takeMixedSearchResults');
+    expect(screenSource).toContain('takePrioritizedMapSearchResults');
+    expect(screenSource).not.toContain('takeMixedSearchResults');
     expect(screenSource).toContain('const MAX_COMMITTED_SEARCH_RESULTS = 40;');
     expect(screenSource).toContain('mergeSearchResultSets(');
     expect(screenSource).toContain('waitForAllSources: true,');
@@ -289,6 +294,7 @@ describe('map and place discovery performance contracts', () => {
       'onPartialResults: publishCommittedSearchResults',
     );
     expect(viewModelSource).toContain('filterDistanceScopedResults');
+    expect(viewModelSource).toContain('resolveMapSearchScopeRadius(input)');
     expect(viewModelSource).toContain('page => page.distanceMeters');
     expect(viewModelSource).toContain(
       'prediction => prediction.distanceMeters',
@@ -307,22 +313,22 @@ describe('map and place discovery performance contracts', () => {
     expect(requestSource).toContain(
       'global_search: input.globalSearch ? 1 : undefined',
     );
+    expect(requestSource).toContain('origin_lat: input.lat');
+    expect(requestSource).toContain(
+      'radius: input.globalSearch ? undefined : input.radius',
+    );
     expect(backendSource).toContain(
       "$global_search = !empty($_POST['global_search'])",
     );
     expect(backendSource).toContain(
-      "$search_mode !== 'business' &&",
+      '$has_origin = $origin_lat !== null && $origin_lng !== null',
     );
+    expect(backendSource).toContain('if ($has_origin && !$global_search)');
+    expect(backendSource).toContain("$search_mode !== 'business' &&");
     expect(backendSource).toContain("'query' => $input");
-    expect(backendSource).toContain(
-      "'keyword' => $input",
-    );
-    expect(backendSource).toContain(
-      'count($places_results) === 0',
-    );
-    expect(backendSource).toContain(
-      '$place_distance <= $radius',
-    );
+    expect(backendSource).toContain("'keyword' => $input");
+    expect(backendSource).toContain('count($places_results) === 0');
+    expect(backendSource).toContain('$place_distance <= $radius');
     expect(backendSource).toContain(
       '$result_limit = ($fast && !$global_search) ? 12 : 20;',
     );
@@ -339,9 +345,12 @@ describe('map and place discovery performance contracts', () => {
 
     expect(requestSource).toContain('fast: input.fast ? 1 : undefined');
     expect(backendSource).toContain(
-      '$google_timeout_ms = $fast ? 1500 : 20000;',
+      '$google_timeout_ms = $fast ? 1300 : WO_API_MAP_DISCOVERY_TIMEOUT_MS;',
     );
-    expect(backendSource).toContain("while (!$fast && $next_page_token !== ''");
+    expect(backendSource).toContain(
+      '$google_connect_timeout_ms = $fast ? 500 : WO_API_MAP_DISCOVERY_CONNECT_TIMEOUT_MS;',
+    );
+    expect(backendSource).not.toContain('next_page_token');
     expect(backendSource).toContain(
       '`page_id`, `page_name`, `page_title`, `page_description`, `address`, `avatar`, `cover`, `place_id`, `lat`, `lng`',
     );
@@ -357,17 +366,21 @@ describe('map and place discovery performance contracts', () => {
   });
 
   it('keeps short Vietnamese category searches aligned across app and backend', () => {
+    const categorySource = read(
+      'src/user/application/utils/mapSearchCategory.ts',
+    );
     const backendSource = read('phtml/api/v2/endpoints/map_discovery.php');
 
-    expect(backendSource).toContain(
-      "preg_match('/\\b(toc|cat toc|tiem toc|quan toc|salon toc|lam toc|toc nam|toc nu|uon toc|nhuom toc|barber|barbershop|barber shop|haircut|hair salon|hairdresser)\\b/'",
+    expect(categorySource).toContain(
+      'barber|barbershop|barber shop|haircut|hair salon|hairdresser',
     );
-    expect(backendSource).toContain("return 'hair_care';");
-    expect(backendSource).toContain("strpos($clean, 'toc') !== false");
-    expect(backendSource).toContain(
-      "preg_match('/\\b(xang|xang dau|cay xang|tram xang|tram xang dau|tram do xang|cua hang xang dau|do xang|gas|gas station|gasoline|petrol|petrol station|fuel|fuel station)\\b/'",
+    expect(categorySource).toContain("return 'hair_care';");
+    expect(categorySource).toContain(
+      'xang|xang dau|cay xang|tram xang|tram xang dau|tram do xang',
     );
-    expect(backendSource).toContain("return 'gas_station';");
+    expect(categorySource).toContain("return 'gas_station';");
+    expect(backendSource).toContain("'hair_care'");
+    expect(backendSource).toContain("'gas_station'");
     expect(backendSource).toContain(
       "$text_search_query['type'] = $detected_type;",
     );

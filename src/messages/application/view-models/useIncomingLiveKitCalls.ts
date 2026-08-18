@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigationRef } from '../../../navigation/navigationRef';
-import type { IncomingLiveKitCall } from '../../domain/types/call.types';
+import type {
+  IncomingLiveKitCall,
+  LiveKitCallCheckResult,
+} from '../../domain/types/call.types';
 import type { IncomingGroupLiveKitCall } from '../../domain/types/groupCall.types';
 import { useGroupLiveKitCallSession } from './useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from './useLiveKitCallSession';
@@ -41,6 +44,20 @@ function isAppForeground() {
   );
 }
 
+function shouldDismissTrackedDirectCall(status: LiveKitCallCheckResult) {
+  return (
+    (status.status === 'answered' && status.endpointOwned === false) ||
+    status.finished ||
+    status.status === 'declined' ||
+    status.status === 'cancelled' ||
+    status.status === 'ended' ||
+    status.status === 'no_answer' ||
+    status.status === 'missed' ||
+    status.status === 'not_answered' ||
+    status.status === 'busy'
+  );
+}
+
 type NativeCallServiceModule =
   typeof import('../../infrastructure/calls/nativeCallService');
 
@@ -72,6 +89,7 @@ export function useIncomingLiveKitCalls() {
   const sessionRef = useRef(session);
   const groupSessionRef = useRef(groupSession);
   const incomingCallRef = useRef<IncomingLiveKitCall | null>(null);
+  const trackedDirectCallRef = useRef<IncomingLiveKitCall | null>(null);
   const incomingGroupCallRef = useRef<IncomingGroupLiveKitCall | null>(null);
   const isConsumingInitialNativeActionRef = useRef(false);
   const incomingCallPollRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -88,6 +106,8 @@ export function useIncomingLiveKitCalls() {
   const [incomingCall, setIncomingCall] = useState<IncomingLiveKitCall | null>(
     null,
   );
+  const [trackedDirectCall, setTrackedDirectCallState] =
+    useState<IncomingLiveKitCall | null>(null);
   const [incomingGroupCall, setIncomingGroupCall] =
     useState<IncomingGroupLiveKitCall | null>(null);
 
@@ -114,9 +134,20 @@ export function useIncomingLiveKitCalls() {
   const setActiveIncomingCall = useCallback(
     (nextCall: IncomingLiveKitCall | null) => {
       incomingCallRef.current = nextCall;
-      activeCallIdRef.current = nextCall?.callId ?? '';
       setIncomingCall(nextCall);
-      if (!nextCall) {
+      if (!nextCall && !trackedDirectCallRef.current) {
+        clearIncomingCallTimers();
+      }
+    },
+    [clearIncomingCallTimers],
+  );
+
+  const setTrackedDirectCall = useCallback(
+    (nextCall: IncomingLiveKitCall | null) => {
+      trackedDirectCallRef.current = nextCall;
+      activeCallIdRef.current = nextCall?.callId ?? '';
+      setTrackedDirectCallState(nextCall);
+      if (!nextCall && !incomingCallRef.current) {
         clearIncomingCallTimers();
       }
     },
@@ -162,8 +193,53 @@ export function useIncomingLiveKitCalls() {
     [dismissNativeIncomingCall],
   );
 
+  const dismissTrackedDirectCall = useCallback(
+    (callId?: string) => {
+      if (!callId) return;
+      dismissNativeIncomingCall(callId);
+      if (trackedDirectCallRef.current?.callId === callId) {
+        setTrackedDirectCall(null);
+      }
+      if (incomingCallRef.current?.callId === callId) {
+        setActiveIncomingCall(null);
+      }
+    },
+    [dismissNativeIncomingCall, setActiveIncomingCall, setTrackedDirectCall],
+  );
+
+  const checkTrackedDirectCall = useCallback(() => {
+    if (isPollingIncomingRef.current) return;
+    const callToCheck =
+      trackedDirectCallRef.current ?? incomingCallRef.current;
+    if (!callToCheck) {
+      clearIncomingCallTimers();
+      return;
+    }
+
+    isPollingIncomingRef.current = true;
+    repository
+      .checkCall({
+        callId: callToCheck.callId,
+        callType: callToCheck.callType,
+      })
+      .then(status => {
+        if (!shouldDismissTrackedDirectCall(status)) return;
+        console.log(
+          '[LiveKitIncoming] poll detected call ended:',
+          callToCheck.callId,
+          status.status,
+        );
+        dismissTrackedDirectCall(callToCheck.callId);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        isPollingIncomingRef.current = false;
+      });
+  }, [clearIncomingCallTimers, dismissTrackedDirectCall, repository]);
+
   const openIncomingCallRoom = useCallback(
     (call: IncomingLiveKitCall) => {
+      setTrackedDirectCall(null);
       dismissAndroidIncomingCall(call.callId);
       runWhenNavigationReady(() => {
         answerIncomingCall(call)
@@ -180,7 +256,12 @@ export function useIncomingLiveKitCalls() {
           .catch(() => undefined);
       });
     },
-    [answerIncomingCall, dismissAndroidIncomingCall, runWhenNavigationReady],
+    [
+      answerIncomingCall,
+      dismissAndroidIncomingCall,
+      runWhenNavigationReady,
+      setTrackedDirectCall,
+    ],
   );
 
   const openIncomingGroupCallRoom = useCallback(
@@ -213,8 +294,9 @@ export function useIncomingLiveKitCalls() {
     if (!call) return;
 
     setActiveIncomingCall(null);
+    setTrackedDirectCall(null);
     openIncomingCallRoom(call);
-  }, [openIncomingCallRoom, setActiveIncomingCall]);
+  }, [openIncomingCallRoom, setActiveIncomingCall, setTrackedDirectCall]);
 
   const prepareAndAnswerPassiveIosGroupCall = useCallback(
     async (call: IncomingGroupLiveKitCall) => {
@@ -231,6 +313,7 @@ export function useIncomingLiveKitCalls() {
   const declineIncomingCall = useCallback(() => {
     const call = incomingCallRef.current;
     setActiveIncomingCall(null);
+    setTrackedDirectCall(null);
     if (!call) return;
 
     dismissNativeIncomingCall(call.callId);
@@ -242,7 +325,12 @@ export function useIncomingLiveKitCalls() {
         duration: 0,
       })
       .catch(() => undefined);
-  }, [dismissNativeIncomingCall, repository, setActiveIncomingCall]);
+  }, [
+    dismissNativeIncomingCall,
+    repository,
+    setActiveIncomingCall,
+    setTrackedDirectCall,
+  ]);
 
   const acceptIncomingGroupCall = useCallback(() => {
     const call = incomingGroupCallRef.current;
@@ -278,8 +366,13 @@ export function useIncomingLiveKitCalls() {
 
   const clearNativeAnsweredIncomingState = useCallback(() => {
     setActiveIncomingCall(null);
+    setTrackedDirectCall(null);
     setActiveIncomingGroupCall(null);
-  }, [setActiveIncomingCall, setActiveIncomingGroupCall]);
+  }, [
+    setActiveIncomingCall,
+    setActiveIncomingGroupCall,
+    setTrackedDirectCall,
+  ]);
 
   const shouldIgnoreIncomingSignal = useCallback(() => {
     if (!navigationRef.isReady()) return true;
@@ -296,17 +389,21 @@ export function useIncomingLiveKitCalls() {
   const handleIncomingCallSignal = useCallback(
     (call: IncomingLiveKitCall) => {
       if (shouldIgnoreIncomingSignal()) return;
-      if (call.callId === activeCallIdRef.current && incomingCallRef.current) {
+      if (Platform.OS !== 'android' && !isAppForeground()) return;
+      if (
+        call.callId === activeCallIdRef.current &&
+        trackedDirectCallRef.current
+      ) {
         return;
       }
+      setTrackedDirectCall(call);
       if (Platform.OS === 'android') {
         loadNativeCallService()?.displayNativeIncomingCall?.(call);
       } else {
-        if (!isAppForeground()) return;
         loadNativeCallService()?.displayNativeIncomingCall?.(call);
       }
     },
-    [shouldIgnoreIncomingSignal],
+    [setTrackedDirectCall, shouldIgnoreIncomingSignal],
   );
 
   const handleIncomingGroupCallSignal = useCallback(
@@ -368,8 +465,7 @@ export function useIncomingLiveKitCalls() {
       .getInitialNativeMessageAction()
       .then(action => {
         if (!action) return;
-        dismissNativeIncomingCall(action.callId);
-        setActiveIncomingCall(null);
+        dismissTrackedDirectCall(action.callId);
         setActiveIncomingGroupCall(null);
         runWhenNavigationReady(() => {
           navigationRef.navigate(ROUTES.CHAT, { chat: action.chat });
@@ -377,9 +473,8 @@ export function useIncomingLiveKitCalls() {
       })
       .catch(() => undefined);
   }, [
-    dismissNativeIncomingCall,
+    dismissTrackedDirectCall,
     runWhenNavigationReady,
-    setActiveIncomingCall,
     setActiveIncomingGroupCall,
   ]);
 
@@ -393,26 +488,21 @@ export function useIncomingLiveKitCalls() {
     const cleanupIncomingGroupSocket = onLiveKitGroupCallIncoming(
       handleIncomingGroupCallSignal,
     );
-    const clearIncomingDirectCall = (callId: string) => {
-      nativeCallService?.dismissNativeIncomingCall?.(callId);
-      if (incomingCallRef.current?.callId === callId) {
-        setActiveIncomingCall(null);
-      }
-    };
     const cleanupDeclinedSocket = onLiveKitCallDeclined(event => {
-      clearIncomingDirectCall(event.callId);
+      dismissTrackedDirectCall(event.callId);
     });
     const cleanupClosedSocket = onLiveKitCallClosed(event => {
-      clearIncomingDirectCall(event.callId);
+      dismissTrackedDirectCall(event.callId);
     });
     const cleanupAnsweredSocket = onLiveKitCallAnswered(event => {
-      const current = incomingCallRef.current;
+      const current =
+        trackedDirectCallRef.current ?? incomingCallRef.current;
       if (!current || current.callId !== event.callId) return;
       repository
         .checkCall({ callId: current.callId, callType: current.callType })
         .then(status => {
           if (status.status === 'answered' && status.endpointOwned === false) {
-            clearIncomingDirectCall(event.callId);
+            dismissTrackedDirectCall(event.callId);
           }
         })
         .catch(() => undefined);
@@ -509,6 +599,12 @@ export function useIncomingLiveKitCalls() {
             }
             return;
           }
+          if (
+            !nativeCall?.callId ||
+            trackedDirectCallRef.current?.callId === nativeCall.callId
+          ) {
+            setTrackedDirectCall(null);
+          }
           if (!nativeCall?.callId) {
             endCall('declined').catch(() => undefined);
             return;
@@ -544,6 +640,7 @@ export function useIncomingLiveKitCalls() {
       nextState => {
         if (nextState !== 'active') return;
         connectLiveKitCallRealtime();
+        checkTrackedDirectCall();
         handleInitialNativeCallAction();
         handleInitialNativeMessageAction();
       },
@@ -564,8 +661,10 @@ export function useIncomingLiveKitCalls() {
     };
   }, [
     answerIncomingCall,
+    checkTrackedDirectCall,
     clearNativeAnsweredIncomingState,
     clearIncomingCallTimers,
+    dismissTrackedDirectCall,
     endCall,
     groupRepository,
     handleIncomingCallSignal,
@@ -576,82 +675,46 @@ export function useIncomingLiveKitCalls() {
     openIncomingCallRoom,
     openIncomingGroupCallRoom,
     repository,
-    setActiveIncomingCall,
     setActiveIncomingGroupCall,
+    setTrackedDirectCall,
   ]);
 
-  // Poll incoming call status and auto-dismiss if the call is no longer active
+  // Track native direct calls separately from the React Native modal so a
+  // terminal server status can still close Android/iOS native incoming UI.
   useEffect(() => {
-    const currentIncoming = incomingCall;
+    const currentIncoming = trackedDirectCall ?? incomingCall;
     if (!currentIncoming) {
       clearIncomingCallTimers();
       return;
     }
 
-    // Auto-dismiss after INCOMING_CALL_AUTO_DISMISS_MS (fallback safety net)
     incomingCallTimeoutRef.current = setTimeout(() => {
-      if (incomingCallRef.current?.callId === currentIncoming.callId) {
+      const latestTrackedCall =
+        trackedDirectCallRef.current ?? incomingCallRef.current;
+      if (latestTrackedCall?.callId === currentIncoming.callId) {
         console.log(
           '[LiveKitIncoming] auto-dismiss timeout fired for',
           currentIncoming.callId,
         );
-        loadNativeCallService()?.dismissNativeIncomingCall?.(
-          currentIncoming.callId,
-        );
-        setActiveIncomingCall(null);
+        dismissTrackedDirectCall(currentIncoming.callId);
       }
     }, INCOMING_CALL_AUTO_DISMISS_MS);
 
-    // Poll the server periodically to check if the call is still active
-    incomingCallPollRef.current = setInterval(() => {
-      if (isPollingIncomingRef.current) return;
-      const callToCheck = incomingCallRef.current;
-      if (!callToCheck) {
-        clearIncomingCallTimers();
-        return;
-      }
-
-      isPollingIncomingRef.current = true;
-      repository
-        .checkCall({
-          callId: callToCheck.callId,
-          callType: callToCheck.callType,
-        })
-        .then(status => {
-          if (
-            status &&
-            ((status.endpointOwned === false && status.status === 'answered') ||
-              status.finished ||
-              status.status === 'cancelled' ||
-              status.status === 'ended' ||
-              status.status === 'no_answer' ||
-              status.status === 'missed')
-          ) {
-            console.log(
-              '[LiveKitIncoming] poll detected call ended:',
-              callToCheck.callId,
-              status.status,
-            );
-            loadNativeCallService()?.dismissNativeIncomingCall?.(
-              callToCheck.callId,
-            );
-            setActiveIncomingCall(null);
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          isPollingIncomingRef.current = false;
-        });
-    }, INCOMING_CALL_POLL_INTERVAL_MS);
+    checkTrackedDirectCall();
+    incomingCallPollRef.current = setInterval(
+      checkTrackedDirectCall,
+      INCOMING_CALL_POLL_INTERVAL_MS,
+    );
 
     return () => {
       clearIncomingCallTimers();
     };
   }, [
+    checkTrackedDirectCall,
     clearIncomingCallTimers,
+    dismissTrackedDirectCall,
     incomingCall,
-    repository,
-    setActiveIncomingCall,
+    trackedDirectCall,
   ]);
 
   useEffect(() => {

@@ -14,21 +14,27 @@ jest.mock('../../../../shared-kernel/infrastructure/config/env', () => ({
   },
 }));
 
-jest.mock('../../../../shared-kernel/infrastructure/storage/sessionStorage', () => ({
-  sessionStorage: {
-    getSession: jest.fn(() => ({
-      accessToken: 'test-token',
-      userId: '1',
-    })),
-    getAccessToken: jest.fn(() => 'test-token'),
-  },
-}));
+jest.mock(
+  '../../../../shared-kernel/infrastructure/storage/sessionStorage',
+  () => ({
+    sessionStorage: {
+      getSession: jest.fn(() => ({
+        accessToken: 'test-token',
+        userId: '1',
+      })),
+      getAccessToken: jest.fn(() => 'test-token'),
+    },
+  }),
+);
 
-jest.mock('../../../../reels/infrastructure/storage/reelsReactionsStorage', () => ({
-  reelsReactionsStorage: {
-    get: jest.fn(() => null),
-  },
-}));
+jest.mock(
+  '../../../../reels/infrastructure/storage/reelsReactionsStorage',
+  () => ({
+    reelsReactionsStorage: {
+      get: jest.fn(() => null),
+    },
+  }),
+);
 
 import { backendApi } from '../../../../shared-kernel/infrastructure/api/backendApi';
 import type { CreatePostDraft } from '../../../domain/types/feed.types';
@@ -288,8 +294,7 @@ describe('ApiFeedRepository post metadata', () => {
       id: '92',
       post_id: '92',
       user_id: '1',
-      postText_API:
-        'Dòng đầu tiên<br>Dòng thứ hai<br><br>Đoạn tiếp theo',
+      postText_API: 'Dòng đầu tiên<br>Dòng thứ hai<br><br>Đoạn tiếp theo',
       postPrivacy: '0',
       time: '1781712000',
       postLikes: '0',
@@ -300,6 +305,32 @@ describe('ApiFeedRepository post metadata', () => {
     expect(mapped).toMatchObject({
       kind: 'text',
       caption: 'Dòng đầu tiên\nDòng thứ hai\n\nĐoạn tiếp theo',
+    });
+  });
+
+  it('maps canonical video geometry supplied by the server', () => {
+    const mapped = mapFeedPost({
+      id: '93',
+      post_id: '93',
+      user_id: '1',
+      postType: 'video',
+      postFile: 'https://demo.vnseea.vn/post.mp4',
+      postFileThumb: 'https://demo.vnseea.vn/post.jpg',
+      media_geometry: { width: 1080, height: 1920 },
+      postPrivacy: '0',
+      time: '1781712000',
+      postLikes: '0',
+      post_comments: '0',
+      publisher,
+    });
+
+    expect(mapped).toMatchObject({
+      kind: 'video',
+      mediaGeometry: {
+        width: 1080,
+        height: 1920,
+        aspectRatio: 0.5625,
+      },
     });
   });
 

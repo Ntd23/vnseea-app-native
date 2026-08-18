@@ -31,6 +31,11 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
       Log.i("LiveKitCallPush", "ignored: no livekit data")
       return
     }
+    if (MessagePushNotification.isDuplicateCallActivityPush(data, notification.body)) {
+      event.preventDefault()
+      Log.i("LiveKitCallPush", "suppressed duplicate call activity message")
+      return
+    }
     if (MessagePushNotification.isMessagePush(data)) {
       event.preventDefault()
       val context: Context = event.context ?: return
@@ -162,7 +167,7 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
       LiveKitCallNativeActions.EXTRA_API_URL,
       LiveKitCallNativeActions.EXTRA_RING_MODE,
       LiveKitCallNativeActions.EXTRA_CALL_CONTEXT,
-      "expires_at",
+      LiveKitCallNativeActions.EXTRA_EXPIRES_AT,
     )) {
       intent.putExtra(key, data.optString(key))
     }

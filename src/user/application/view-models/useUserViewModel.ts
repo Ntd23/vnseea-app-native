@@ -12,7 +12,10 @@ import type {
   UserSuggestionsInput,
 } from '../../domain/types/user.types';
 import { createUserRepository } from '../../infrastructure/repositories/ApiUserRepository';
-import { filterDistanceScopedResults } from '../utils/mapSearchRadius';
+import {
+  filterDistanceScopedResults,
+  resolveMapSearchScopeRadius,
+} from '../utils/mapSearchRadius';
 
 const repository = createUserRepository();
 const MAP_SEARCH_FIRST_RESULT_DEADLINE_MS = 1850;
@@ -151,14 +154,21 @@ export function useUserViewModel() {
   );
 
   const loadNearbyPages = useCallback(
-    (input?: { lat?: number; lng?: number; limit?: number }) => {
+    (input?: {
+      lat?: number;
+      lng?: number;
+      distance?: number;
+      limit?: number;
+      fast?: boolean;
+    }) => {
       const requestId = ++discoveryRequestIdRef.current;
       return runUserAction(async () => {
         const pages = await repository.getNearbyPages({
-          distance: 3,
+          distance: input?.distance ?? 3,
           limit: input?.limit ?? 30,
           lat: input?.lat,
           lng: input?.lng,
+          fast: input?.fast,
         });
         if (requestId === discoveryRequestIdRef.current) {
           setNearbyUsers([]);
@@ -192,7 +202,7 @@ export function useUserViewModel() {
       const requestId = ++mapSearchRequestIdRef.current;
       const trimmedQuery = input.query.trim();
 
-      if (trimmedQuery.length < 2) {
+      if (trimmedQuery.length < 1) {
         setIsMapSearchLoading(false);
         return Promise.resolve({ pages: [], predictions: [] });
       }
@@ -249,13 +259,20 @@ export function useUserViewModel() {
           typeof input.radius === 'number' && Number.isFinite(input.radius)
             ? Math.max(0.001, input.radius / 1000)
             : 3;
-        const scopedRadius =
-          typeof input.lat === 'number' &&
-          Number.isFinite(input.lat) &&
-          typeof input.lng === 'number' &&
-          Number.isFinite(input.lng)
-            ? input.radius
-            : undefined;
+        const scopedRadius = resolveMapSearchScopeRadius(input);
+        const publishPredictions = (predictions: MapPlacePrediction[]) => {
+          predictionsSnapshot = filterDistanceScopedResults(
+            predictions,
+            scopedRadius,
+            prediction => prediction.distanceMeters,
+          );
+          if (isLatestRequest()) {
+            setPlacePredictions(predictionsSnapshot);
+            setPlacePredictionsQuery(trimmedQuery);
+          }
+          publishPartialResults();
+          resolveWhenUseful();
+        };
 
         const pagesPromise = repository
           .getNearbyPages({
@@ -301,19 +318,10 @@ export function useUserViewModel() {
             fast: input.fast,
             globalSearch: input.globalSearch,
             signal: abortController.signal,
+            onPartialPredictions: publishPredictions,
           })
           .then(predictions => {
-            predictionsSnapshot = filterDistanceScopedResults(
-              predictions,
-              scopedRadius,
-              prediction => prediction.distanceMeters,
-            );
-            if (isLatestRequest()) {
-              setPlacePredictions(predictionsSnapshot);
-              setPlacePredictionsQuery(trimmedQuery);
-            }
-            publishPartialResults();
-            resolveWhenUseful();
+            publishPredictions(predictions);
             return predictions;
           })
           .catch(caughtError => {
@@ -421,6 +429,12 @@ export function useUserViewModel() {
     setPlacePredictionsQuery('');
   }, []);
 
+  const clearMapSearchResults = useCallback(() => {
+    discoveryRequestIdRef.current += 1;
+    setNearbyPlaces([]);
+    clearPlacePredictions();
+  }, [clearPlacePredictions]);
+
   const updateCurrentUser = useCallback(
     (input: UpdateCurrentUserInput) =>
       runUserAction(() => repository.updateCurrentUser(input)),
@@ -449,6 +463,7 @@ export function useUserViewModel() {
     getRoute,
     getRoutes,
     clearNearbyDiscovery,
+    clearMapSearchResults,
     clearPlacePredictions,
     updateCurrentUser,
   };

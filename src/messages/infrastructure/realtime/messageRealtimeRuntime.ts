@@ -35,6 +35,7 @@ export type MessageTypingRealtimeEvent = {
 
 export type MessageRealtimeEventName =
   | 'message:presence'
+  | 'relationship:changed'
   | 'livekit_call_incoming'
   | 'livekit_call_answered'
   | 'livekit_call_declined'
@@ -63,6 +64,7 @@ const eventListeners = new Map<
 >();
 const forwardedEventNames: MessageRealtimeEventName[] = [
   'message:presence',
+  'relationship:changed',
   'livekit_call_incoming',
   'livekit_call_answered',
   'livekit_call_declined',

@@ -1,7 +1,11 @@
 import type { FeedPost, FeedVideoPost } from '../../../domain/types/feed.types';
 import {
+  appendFeedContentWithVideos,
+  DEFAULT_FEED_VIDEO_MIX_CONFIG,
+  getUnusedFeedVideoCount,
   getFeedVideoBufferTarget,
   mergeFeedContentWithVideos,
+  shouldPreserveRenderedFeedForVideoCommit,
 } from '../feedVideoScheduler';
 
 function lightPost(id: string): FeedPost {
@@ -35,15 +39,69 @@ describe('feed video scheduler', () => {
       .map((post, index) => (post.kind === 'video' ? index : -1))
       .filter(index => index >= 0);
 
-    expect(videoPositions).toEqual([5, 12]);
-    expect(postKinds(merged).slice(0, 6)).toEqual([
-      'text',
+    expect(videoPositions).toEqual([4, 11]);
+    expect(postKinds(merged).slice(0, 5)).toEqual([
       'text',
       'text',
       'text',
       'text',
       'video',
     ]);
+  });
+
+  it('keeps the video gap bounded when older light pages are appended', () => {
+    const firstLightPage = Array.from({ length: 10 }, (_, index) =>
+      lightPost(`post-${index + 1}`),
+    );
+    const allLightPosts = Array.from({ length: 30 }, (_, index) =>
+      lightPost(`post-${index + 1}`),
+    );
+    const videos = Array.from({ length: 8 }, (_, index) =>
+      videoPost(`video-${index + 1}`),
+    );
+    const firstMergedPage = mergeFeedContentWithVideos(firstLightPage, videos);
+
+    const merged = appendFeedContentWithVideos(
+      allLightPosts,
+      videos,
+      firstMergedPage,
+    );
+
+    expect(merged.slice(0, firstMergedPage.length).map(post => post.id)).toEqual(
+      firstMergedPage.map(post => post.id),
+    );
+
+    let longestNonVideoRun = 0;
+    let currentNonVideoRun = 0;
+    for (const post of merged) {
+      if (post.kind === 'video') {
+        currentNonVideoRun = 0;
+      } else {
+        currentNonVideoRun += 1;
+        longestNonVideoRun = Math.max(
+          longestNonVideoRun,
+          currentNonVideoRun,
+        );
+      }
+    }
+
+    expect(longestNonVideoRun).toBeLessThanOrEqual(
+      DEFAULT_FEED_VIDEO_MIX_CONFIG.maxNonVideoItemsBetweenVideos,
+    );
+    expect(new Set(merged.map(post => post.id)).size).toBe(merged.length);
+  });
+
+  it('counts only unique videos that have not already appeared in the feed', () => {
+    const video1 = videoPost('video-1');
+    const video2 = videoPost('video-2');
+    const video3 = videoPost('video-3');
+
+    expect(
+      getUnusedFeedVideoCount(
+        [video1, video2, video2, video3],
+        [lightPost('post-1'), video1],
+      ),
+    ).toBe(2);
   });
 
   it('preserves non-video order and avoids adjacent videos while alternatives exist', () => {
@@ -115,8 +173,8 @@ describe('feed video scheduler', () => {
       'post-2',
       'post-3',
       'post-4',
-      'post-5',
       'video-2',
+      'post-5',
       'post-6',
     ]);
     expect(merged.some(post => post.id === 'video-1')).toBe(false);
@@ -149,6 +207,56 @@ describe('feed video scheduler', () => {
       'post-14',
       'video-1',
     ]);
+  });
+
+  it('backfills the initial video lane before the first feed scroll', () => {
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
+      lightPost(`post-${index + 1}`),
+    );
+
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: firstPage,
+        forceNewest: true,
+        hasFeedScrolledSinceLoad: false,
+      }),
+    ).toBe(false);
+
+    const remixed = mergeFeedContentWithVideos(firstPage, [
+      videoPost('video-1'),
+    ]);
+    expect(remixed.findIndex(post => post.kind === 'video')).toBe(4);
+  });
+
+  it('does not move the rendered feed after the first scroll or when a head video already exists', () => {
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
+      lightPost(`post-${index + 1}`),
+    );
+    const withHeadVideo = mergeFeedContentWithVideos(firstPage, [
+      videoPost('video-1'),
+    ]);
+
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: firstPage,
+        forceNewest: true,
+        hasFeedScrolledSinceLoad: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: withHeadVideo,
+        forceNewest: true,
+        hasFeedScrolledSinceLoad: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveRenderedFeedForVideoCommit({
+        renderedPosts: firstPage,
+        forceNewest: false,
+        hasFeedScrolledSinceLoad: false,
+      }),
+    ).toBe(true);
   });
 
   it('requests enough secondary video buffer for the dynamic mix', () => {

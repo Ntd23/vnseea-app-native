@@ -1,12 +1,13 @@
 // Description: Renders the iOS home feed intro composer and stories rail.
 import React from 'react';
 import {
+  FlatList,
   Image,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  type ListRenderItem,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -21,6 +22,39 @@ import {
   useHomeStoriesRail,
 } from './HomeFeedIntro.shared';
 import { ComposerCard } from './ComposerCard';
+
+const IOS_STORY_CARD_WIDTH = 116;
+const IOS_STORY_CARD_GAP = 5;
+const IOS_STORY_RAIL_ITEM_SPAN = IOS_STORY_CARD_WIDTH + IOS_STORY_CARD_GAP;
+
+type IosStoryRailItem =
+  | { id: 'create-story'; type: 'create' }
+  | { id: string; type: 'live'; item: LiveStreamItem }
+  | { id: string; type: 'story'; story: StoryItem; storyIndex: number };
+
+const CREATE_STORY_RAIL_ITEM: IosStoryRailItem = {
+  id: 'create-story',
+  type: 'create',
+};
+
+function getIosStoryRailItemKey(item: IosStoryRailItem) {
+  return item.id;
+}
+
+function getIosStoryRailItemLayout(
+  _data: ArrayLike<IosStoryRailItem> | null | undefined,
+  index: number,
+) {
+  return {
+    index,
+    length: IOS_STORY_RAIL_ITEM_SPAN,
+    offset: IOS_STORY_RAIL_ITEM_SPAN * index,
+  };
+}
+
+function IosStoryRailSeparator() {
+  return <View style={styles.storySeparator} />;
+}
 
 function GlassSurface({
   children,
@@ -69,6 +103,7 @@ function HomeAvatar({
         source={{ uri: uri ?? HOME_INTRO_FALLBACK_AVATAR }}
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
+        resizeMethod="resize"
         fadeDuration={0}
       />
     </View>
@@ -86,6 +121,7 @@ function StoryCardCover({ story }: { story: StoryItem }) {
       source={{ uri: coverUri || HOME_INTRO_FALLBACK_AVATAR }}
       style={StyleSheet.absoluteFill}
       resizeMode="cover"
+      resizeMethod="resize"
       fadeDuration={0}
     />
   );
@@ -111,6 +147,7 @@ function LiveStoryCard({
         source={{ uri: coverUri }}
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
+        resizeMethod="resize"
         fadeDuration={0}
       />
       <View style={styles.storyImageOverlay} />
@@ -126,6 +163,89 @@ function LiveStoryCard({
       </View>
       <Text style={styles.storyName} numberOfLines={1}>
         {item.publisher.name}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function CreateStoryCard({
+  avatarUrl,
+  copy,
+  onPress,
+}: {
+  avatarUrl?: string;
+  copy: HomeFeedIntroProps['copy'];
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      onPress={onPress}
+      style={[styles.storyCard, styles.createStoryCard]}
+    >
+      <View style={styles.createStoryCover}>
+        <Image
+          source={{ uri: avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          resizeMethod="resize"
+          fadeDuration={0}
+        />
+        <View style={styles.createStoryPlusAnchor}>
+          <View style={styles.createStoryPlusShell}>
+            <GlassSurface
+              style={styles.createStoryPlus}
+              fallbackColor="rgba(8, 114, 255, 0.72)"
+              blurAmount={18}
+            />
+            <View pointerEvents="none" style={styles.createStoryPlusIconLayer}>
+              <Plus size={21} color="#ffffff" strokeWidth={3} />
+            </View>
+          </View>
+        </View>
+      </View>
+      <View style={styles.createStoryBody}>
+        <Text style={styles.createStoryTitle}>{copy.createStory}</Text>
+        <Text style={styles.createStorySubtitle} numberOfLines={1}>
+          {copy.createStorySubtitle}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function IosStoryCard({
+  story,
+  storyIndex,
+  onPress,
+}: {
+  story: StoryItem;
+  storyIndex: number;
+  onPress: (index: number) => void;
+}) {
+  const hasUnseen = story.hasUnseen && !story.isViewed;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      onPress={() => onPress(storyIndex)}
+      style={[styles.storyCard, hasUnseen ? null : styles.storyCardViewed]}
+    >
+      <StoryCardCover story={story} />
+      <View style={styles.storyImageOverlay} />
+      {hasUnseen ? (
+        <View pointerEvents="none" style={styles.storyCardUnseenRing} />
+      ) : null}
+      <View style={styles.storyAvatarPosition}>
+        <HomeAvatar uri={story.publisher.avatarUrl} size={34} />
+      </View>
+      {story.media.length > 1 ? (
+        <View style={styles.storyCountBadge}>
+          <Text style={styles.storyCountText}>{story.media.length}</Text>
+        </View>
+      ) : null}
+      <Text style={styles.storyName} numberOfLines={1}>
+        {story.publisher.name}
       </Text>
     </TouchableOpacity>
   );
@@ -151,90 +271,70 @@ function HomeStoriesRail({
     onLivePress,
   });
 
+  const railItems = React.useMemo<IosStoryRailItem[]>(
+    () => [
+      CREATE_STORY_RAIL_ITEM,
+      ...liveStreams.map(item => ({
+        id: `live-${item.postId}`,
+        type: 'live' as const,
+        item,
+      })),
+      ...stories.map((story, storyIndex) => ({
+        id: `story-${story.publisher.userId || story.id}`,
+        type: 'story' as const,
+        story,
+        storyIndex,
+      })),
+    ],
+    [liveStreams, stories],
+  );
+
+  const renderStoryRailItem = React.useCallback<
+    ListRenderItem<IosStoryRailItem>
+  >(
+    ({ item }) => {
+      if (item.type === 'create') {
+        return (
+          <CreateStoryCard
+            avatarUrl={avatarUrl}
+            copy={copy}
+            onPress={goToCreateStory}
+          />
+        );
+      }
+
+      if (item.type === 'live') {
+        return <LiveStoryCard item={item.item} onPress={goToLive} />;
+      }
+
+      return (
+        <IosStoryCard
+          story={item.story}
+          storyIndex={item.storyIndex}
+          onPress={goToViewerForGroup}
+        />
+      );
+    },
+    [avatarUrl, copy, goToCreateStory, goToLive, goToViewerForGroup],
+  );
+
   return (
     <View style={[styles.surface, styles.storiesSurface]}>
-      <ScrollView
+      <FlatList
+        data={railItems}
         horizontal
+        renderItem={renderStoryRailItem}
+        keyExtractor={getIosStoryRailItemKey}
+        getItemLayout={getIosStoryRailItemLayout}
+        ItemSeparatorComponent={IosStoryRailSeparator}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.storiesContent}
-      >
-        <TouchableOpacity
-          activeOpacity={0.86}
-          onPress={goToCreateStory}
-          style={[styles.storyCard, styles.createStoryCard]}
-        >
-          <View style={styles.createStoryCover}>
-            <Image
-              source={{ uri: avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              fadeDuration={0}
-            />
-            <View style={styles.createStoryPlusAnchor}>
-              <View style={styles.createStoryPlusShell}>
-                <GlassSurface
-                  style={styles.createStoryPlus}
-                  fallbackColor="rgba(8, 114, 255, 0.72)"
-                  blurAmount={18}
-                />
-                <View
-                  pointerEvents="none"
-                  style={styles.createStoryPlusIconLayer}
-                >
-                  <Plus size={21} color="#ffffff" strokeWidth={3} />
-                </View>
-              </View>
-            </View>
-          </View>
-          <View style={styles.createStoryBody}>
-            <Text style={styles.createStoryTitle}>{copy.createStory}</Text>
-            <Text style={styles.createStorySubtitle} numberOfLines={1}>
-              {copy.createStorySubtitle}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {liveStreams.map(item => (
-          <LiveStoryCard
-            key={`live-${item.postId}`}
-            item={item}
-            onPress={goToLive}
-          />
-        ))}
-
-        {stories.map((story, index) => {
-          const hasUnseen = story.hasUnseen && !story.isViewed;
-
-          return (
-            <TouchableOpacity
-              key={story.publisher.userId || story.id}
-              activeOpacity={0.86}
-              onPress={() => goToViewerForGroup(index)}
-              style={[
-                styles.storyCard,
-                hasUnseen ? null : styles.storyCardViewed,
-              ]}
-            >
-              <StoryCardCover story={story} />
-              <View style={styles.storyImageOverlay} />
-              {hasUnseen ? (
-                <View pointerEvents="none" style={styles.storyCardUnseenRing} />
-              ) : null}
-              <View style={styles.storyAvatarPosition}>
-                <HomeAvatar uri={story.publisher.avatarUrl} size={34} />
-              </View>
-              {story.media.length > 1 ? (
-                <View style={styles.storyCountBadge}>
-                  <Text style={styles.storyCountText}>{story.media.length}</Text>
-                </View>
-              ) : null}
-              <Text style={styles.storyName} numberOfLines={1}>
-                {story.publisher.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+        initialNumToRender={4}
+        maxToRenderPerBatch={3}
+        windowSize={3}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
+      />
     </View>
   );
 }
@@ -311,11 +411,13 @@ const styles = StyleSheet.create({
   },
   storiesContent: {
     paddingHorizontal: 5,
-    columnGap: 5,
     alignItems: 'stretch',
   },
+  storySeparator: {
+    width: IOS_STORY_CARD_GAP,
+  },
   storyCard: {
-    width: 116,
+    width: IOS_STORY_CARD_WIDTH,
     height: 190,
     overflow: 'hidden',
     borderRadius: 24,

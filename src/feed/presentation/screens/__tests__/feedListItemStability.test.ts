@@ -69,4 +69,29 @@ describe('reuseStableItemsById', () => {
     expect(result).not.toBe(previous);
     expect(result).toEqual([previous[1], previous[0]]);
   });
+
+  it('keeps the existing deep-feed order and appends newly arriving rows', () => {
+    const previous = [
+      { id: 'post-1', payload: {} },
+      { id: 'post-2', payload: {} },
+      { id: 'post-3', payload: {} },
+    ];
+    const insertedRow = { id: 'product-1', payload: {} };
+    const appendedRow = { id: 'post-4', payload: {} };
+
+    const result = reuseStableItemsById(
+      previous,
+      [previous[0], insertedRow, previous[1], previous[2], appendedRow],
+      samePayload,
+      { preserveExistingOrder: true },
+    );
+
+    expect(result).toEqual([
+      previous[0],
+      previous[1],
+      previous[2],
+      insertedRow,
+      appendedRow,
+    ]);
+  });
 });

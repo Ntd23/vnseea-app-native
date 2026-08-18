@@ -50,6 +50,10 @@ function writeEdits(
 }
 
 export const localPostEditsStorage = {
+  getCaptionEdits(userId?: string): Record<string, LocalPostCaptionEdit> {
+    return readEdits(userId);
+  },
+
   getCaptionEdit(postId: string, userId?: string): LocalPostCaptionEdit | null {
     const normalizedPostId = String(postId ?? '').trim();
     if (!normalizedPostId) return null;

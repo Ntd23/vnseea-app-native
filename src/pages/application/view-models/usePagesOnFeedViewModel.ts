@@ -30,7 +30,7 @@ export function usePagesOnFeedViewModel(
 ) {
   const { autoLoad = true } = options;
   const [pages, setPages] = useState<PagesItem[]>(() => {
-    return feedCacheStorage.getCachedPages();
+    return autoLoad ? feedCacheStorage.getCachedPages() : [];
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);

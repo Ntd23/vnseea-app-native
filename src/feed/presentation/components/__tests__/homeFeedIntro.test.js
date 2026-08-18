@@ -88,6 +88,10 @@ describe('HomeFeedIntro iOS header modules', () => {
     );
     const storiesContentStyle = iosSource.slice(
       iosSource.indexOf('storiesContent: {'),
+      iosSource.indexOf('storySeparator: {'),
+    );
+    const storySeparatorStyle = iosSource.slice(
+      iosSource.indexOf('storySeparator: {'),
       iosSource.indexOf('storyCard: {'),
     );
     const storyCardStyle = iosSource.slice(
@@ -99,11 +103,44 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(surfaceStyle).not.toContain('borderRadius');
     expect(surfaceStyle).not.toContain('marginBottom');
     expect(storiesContentStyle).toContain('paddingHorizontal: 5');
-    expect(storiesContentStyle).toContain('columnGap: 5');
+    expect(storySeparatorStyle).toContain('width: IOS_STORY_CARD_GAP');
+    expect(iosSource).toContain('const IOS_STORY_CARD_GAP = 5;');
     expect(storyCardStyle).toContain('borderRadius: 24');
     expect(iosSource).not.toContain('style={styles.root}');
     expect(defaultSource).toContain('paddingHorizontal: 16');
     expect(defaultSource).toContain('rounded-[20px]');
+  });
+
+  it('virtualizes the fixed-layout iOS story and live rail', () => {
+    const iosSource = read(
+      'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
+    );
+    const railDataSource = iosSource.slice(
+      iosSource.indexOf('const railItems = React.useMemo'),
+      iosSource.indexOf('const renderStoryRailItem = React.useCallback'),
+    );
+
+    expect(iosSource).toContain('<FlatList');
+    expect(iosSource).not.toContain('<ScrollView');
+    expect(iosSource).toContain('type IosStoryRailItem =');
+    expect(railDataSource.indexOf('CREATE_STORY_RAIL_ITEM')).toBeLessThan(
+      railDataSource.indexOf('...liveStreams.map'),
+    );
+    expect(railDataSource.indexOf('...liveStreams.map')).toBeLessThan(
+      railDataSource.indexOf('...stories.map'),
+    );
+    expect(iosSource).toContain(
+      'getItemLayout={getIosStoryRailItemLayout}',
+    );
+    expect(iosSource).toContain('keyExtractor={getIosStoryRailItemKey}');
+    expect(iosSource).toContain(
+      'ItemSeparatorComponent={IosStoryRailSeparator}',
+    );
+    expect(iosSource).toContain('initialNumToRender={4}');
+    expect(iosSource).toContain('maxToRenderPerBatch={3}');
+    expect(iosSource).toContain('windowSize={3}');
+    expect(iosSource).toContain('updateCellsBatchingPeriod={50}');
+    expect(iosSource).toContain('removeClippedSubviews');
   });
 
   it('uses the logged-in avatar for the iOS create-story card', () => {
@@ -171,5 +208,4 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(iosSource).toContain('style={styles.createStoryPlusIconLayer}');
     expect(iosSource).toContain('<Plus size={21}');
   });
-
 });

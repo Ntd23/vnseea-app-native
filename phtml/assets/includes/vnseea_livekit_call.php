@@ -397,6 +397,66 @@ if (!function_exists('Wo_DismissCanonicalLiveKitGroupOtherEndpoints')) {
     }
 }
 
+if (!function_exists('Wo_ExpireCanonicalLiveKitRingingCalls')) {
+    function Wo_ExpireCanonicalLiveKitRingingCalls($recipient_id, $ringing_cutoff = 0)
+    {
+        global $sqlConnect;
+
+        $recipient_id = intval($recipient_id);
+        $ringing_cutoff = intval($ringing_cutoff);
+        if ($recipient_id <= 0) {
+            return 0;
+        }
+        if ($ringing_cutoff <= 0) {
+            $ringing_cutoff = time() - 45;
+        }
+
+        $expired_count = 0;
+        $sources = array(
+            array('table' => T_VIDEOS_CALLES, 'call_type' => 'video'),
+            array('table' => T_AUDIO_CALLES, 'call_type' => 'audio')
+        );
+        foreach ($sources as $source) {
+            $table = $source['table'];
+            $call_type = $source['call_type'];
+            $where = "`to_id` = '{$recipient_id}'" .
+                " AND `active` = '0'" .
+                " AND (`declined` = '0' OR `declined` IS NULL)" .
+                " AND (`status` = '' OR `status` = 'calling')" .
+                " AND `time` > 0 AND `time` < '{$ringing_cutoff}'";
+            $query = mysqli_query(
+                $sqlConnect,
+                "SELECT `id`,`from_id`,`to_id` FROM " . $table . " WHERE {$where}"
+            );
+            if (!$query) {
+                continue;
+            }
+            while ($call = mysqli_fetch_assoc($query)) {
+                $call_id = intval($call['id']);
+                $updated = mysqli_query(
+                    $sqlConnect,
+                    "UPDATE " . $table .
+                    " SET `active` = '0', `status` = 'no_answer'" .
+                    " WHERE `id` = '{$call_id}' AND {$where}"
+                );
+                if (!$updated || mysqli_affected_rows($sqlConnect) !== 1) {
+                    continue;
+                }
+                $expired_count++;
+                if (function_exists('Wo_UpdateCallLog')) {
+                    Wo_UpdateCallLog($call_id, $call_type, 'no_answer', array(
+                        'provider' => 'livekit',
+                        'from_id' => intval($call['from_id']),
+                        'to_id' => intval($call['to_id']),
+                        'ended_at' => time()
+                    ));
+                }
+            }
+        }
+        return $expired_count;
+    }
+}
+
 if (!function_exists('Wo_PrepareCanonicalLiveKitDirectCall')) {
     function Wo_PrepareCanonicalLiveKitDirectCall($caller_id, $recipient_id)
     {
@@ -410,9 +470,11 @@ if (!function_exists('Wo_PrepareCanonicalLiveKitDirectCall')) {
         $tables = array(T_VIDEOS_CALLES, T_AUDIO_CALLES);
         $finished_statuses = "'ended','cancelled','no_answer','missed','declined'";
         $ringing_cutoff = time() - 45;
+        Wo_ExpireCanonicalLiveKitRingingCalls($recipient_id, $ringing_cutoff);
         foreach ($tables as $table) {
             mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = 'cancelled', `declined` = '1' WHERE `from_id` = '" . Wo_Secure($caller_id) . "' AND `to_id` = '" . Wo_Secure($recipient_id) . "' AND `active` = '0' AND (`declined` = '0' OR `declined` IS NULL) AND (`status` = '' OR `status` = 'calling')");
-            mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = 'no_answer' WHERE `to_id` = '" . Wo_Secure($recipient_id) . "' AND `active` = '0' AND (`declined` = '0' OR `declined` IS NULL) AND (`status` = '' OR `status` = 'calling') AND `time` > 0 AND `time` < '" . Wo_Secure($ringing_cutoff) . "'");
+        }
+        foreach ($tables as $table) {
             mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0' WHERE (`from_id` IN ('" . Wo_Secure($caller_id) . "','" . Wo_Secure($recipient_id) . "') OR `to_id` IN ('" . Wo_Secure($caller_id) . "','" . Wo_Secure($recipient_id) . "')) AND `active` = '1' AND (`declined` = '1' OR `status` IN (" . $finished_statuses . "))");
         }
     }

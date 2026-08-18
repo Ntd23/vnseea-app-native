@@ -2,7 +2,9 @@
 package com.vnseea.android.location
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -10,16 +12,75 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import com.facebook.react.bridge.ActivityEventListener
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 
 class CurrentLocationModule(
   private val reactContext: ReactApplicationContext,
-) : ReactContextBaseJavaModule(reactContext) {
+) : ReactContextBaseJavaModule(reactContext), ActivityEventListener {
+  private var pendingLocationServicesPromise: Promise? = null
+
+  init {
+    reactContext.addActivityEventListener(this)
+  }
+
   override fun getName(): String = "VnseeaCurrentLocation"
+
+  @ReactMethod
+  fun requestLocationServices(promise: Promise) {
+    val activity = reactContext.currentActivity
+    if (activity == null) {
+      promise.reject("unavailable", "The current Android activity is unavailable.")
+      return
+    }
+    if (pendingLocationServicesPromise != null) {
+      promise.reject("request_in_progress", "A location-services request is already active.")
+      return
+    }
+
+    val locationRequest =
+      LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10_000L)
+        .setMinUpdateIntervalMillis(5_000L)
+        .build()
+    val settingsRequest =
+      LocationSettingsRequest.Builder()
+        .addLocationRequest(locationRequest)
+        .setAlwaysShow(true)
+        .build()
+
+    pendingLocationServicesPromise = promise
+    LocationServices.getSettingsClient(activity)
+      .checkLocationSettings(settingsRequest)
+      .addOnSuccessListener {
+        if (pendingLocationServicesPromise !== promise) return@addOnSuccessListener
+        pendingLocationServicesPromise = null
+        promise.resolve(true)
+      }
+      .addOnFailureListener { error ->
+        if (pendingLocationServicesPromise !== promise) return@addOnFailureListener
+        if (error !is ResolvableApiException) {
+          pendingLocationServicesPromise = null
+          promise.reject("provider_unavailable", error)
+          return@addOnFailureListener
+        }
+
+        try {
+          error.startResolutionForResult(activity, REQUEST_ENABLE_LOCATION_SERVICES)
+        } catch (resolutionError: Exception) {
+          pendingLocationServicesPromise = null
+          promise.reject("provider_unavailable", resolutionError)
+        }
+      }
+  }
 
   @ReactMethod
   fun getCurrentLocation(timeoutMs: Double, promise: Promise) {
@@ -166,4 +227,33 @@ class CurrentLocationModule(
       putString("provider", location.provider)
       putDouble("timestamp", location.time.toDouble())
     }
+
+  override fun onActivityResult(
+    activity: Activity,
+    requestCode: Int,
+    resultCode: Int,
+    data: Intent?,
+  ) {
+    if (requestCode != REQUEST_ENABLE_LOCATION_SERVICES) return
+
+    val promise = pendingLocationServicesPromise ?: return
+    pendingLocationServicesPromise = null
+    promise.resolve(resultCode == Activity.RESULT_OK)
+  }
+
+  override fun onNewIntent(intent: Intent) = Unit
+
+  override fun invalidate() {
+    reactContext.removeActivityEventListener(this)
+    pendingLocationServicesPromise?.reject(
+      "cancelled",
+      "The location-services request was cancelled.",
+    )
+    pendingLocationServicesPromise = null
+    super.invalidate()
+  }
+
+  private companion object {
+    const val REQUEST_ENABLE_LOCATION_SERVICES = 8091
+  }
 }

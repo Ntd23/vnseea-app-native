@@ -32,4 +32,25 @@ describe('post realtime runtime', () => {
       /nextSocket\.on\('connect_error',[\s\S]*nextSocket\.disconnect\(\)[\s\S]*socket = null[\s\S]*accessToken = ''/,
     );
   });
+
+  it('cancels pending token requests and disconnects when realtime has no demand', () => {
+    expect(source).toContain('signal: AbortSignal');
+    expect(source).toContain('signal,');
+    expect(source).toContain('activeTokenRequest?.controller.abort();');
+    expect(source).toContain('function releaseRealtimeResourcesIfIdle()');
+    expect(source).toContain('IDLE_RELEASE_GRACE_MS = 250');
+    expect(source).toMatch(
+      /release\(\);[\s\S]*scheduleRealtimeResourceReleaseIfIdle\(\)/,
+    );
+  });
+
+  it('rechecks active demand after token acquisition before creating a socket', () => {
+    expect(source).toContain('function hasRealtimeDemand()');
+    expect(source).toMatch(
+      /await requestToken\(token, request\.controller\.signal\);[\s\S]*!hasRealtimeDemand\(\)/,
+    );
+    expect(source).toMatch(
+      /if \(nextState !== 'active'\) \{[\s\S]*releaseRealtimeResourcesIfIdle\(\)/,
+    );
+  });
 });

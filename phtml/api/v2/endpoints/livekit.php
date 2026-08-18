@@ -85,17 +85,11 @@ function Wo_ApiLiveKitCancelPendingCallsBetween($caller_id, $recipient_id) {
 }
 
 function Wo_ApiLiveKitExpireStaleRingingCalls($user_id) {
-    global $sqlConnect;
-
     $user_id = intval($user_id);
     if ($user_id <= 0) {
         return;
     }
-
-    $ringing_cutoff = time() - 45;
-    foreach (Wo_ApiLiveKitCallTables() as $table) {
-        mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = 'no_answer' WHERE `to_id` = '" . Wo_Secure($user_id) . "' AND `active` = '0' AND (`declined` = '0' OR `declined` IS NULL) AND (`status` = '' OR `status` = 'calling') AND `time` > 0 AND `time` < '" . Wo_Secure($ringing_cutoff) . "'");
-    }
+    Wo_ExpireCanonicalLiveKitRingingCalls($user_id, time() - 45);
 }
 
 function Wo_ApiLiveKitClearFinishedActiveCalls($user_id) {
@@ -622,6 +616,7 @@ function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor
     global $sqlConnect;
 
     $final_status = in_array($status, array('ended', 'declined', 'no_answer', 'missed')) ? $status : 'cancelled';
+    $requires_ringing_source = in_array($final_status, array('missed', 'no_answer'), true);
     $call_source = ($call_id > 0) ? Wo_GetCallSourceById($call_id, $call_type) : false;
     if (empty($call_source) || !is_array($call_source)) {
         return Wo_ApiLiveKitError('call_not_found', 'Call not found.', 404);
@@ -648,20 +643,28 @@ function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor
     if (!VNSEEA_IsLiveKitEndpointOwner($endpoint_scope, $call_id, $actor_id, $endpoint_role, $endpoint_id)) {
         return Wo_ApiLiveKitError('call_active_on_another_device', 'Call is active on another device.', 409);
     }
+    $source_updated = false;
     if ($call_id > 0) {
         $table = ($call_type == 'audio') ? T_AUDIO_CALLES : T_VIDEOS_CALLES;
-        mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = '" . Wo_Secure($final_status) . "', `declined` = '" . ($final_status == 'declined' ? '1' : '0') . "' WHERE `id` = '" . Wo_Secure($call_id) . "'");
-        Wo_UpdateCallLog($call_id, $call_type, ($final_status == 'missed' ? 'no_answer' : $final_status), array(
-            'provider' => 'livekit',
-            'duration' => $duration,
-            'duration_ms' => $duration * 1000,
-            'ended_at' => time(),
-            'ended_at_ms' => (int) round(microtime(true) * 1000),
-            'status_by' => $actor_id > 0 ? $actor_id : 0
-        ));
-        VNSEEA_ReleaseLiveKitEndpoint($endpoint_scope, $call_id);
+        $source_where = "`id` = '" . Wo_Secure($call_id) . "'";
+            if ($requires_ringing_source) {
+                $source_where .= " AND `active` = '0' AND (`declined` = '0' OR `declined` IS NULL) AND (`status` = '' OR `status` = 'calling')";
+            }
+        $source_query = mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = '" . Wo_Secure($final_status) . "', `declined` = '" . ($final_status == 'declined' ? '1' : '0') . "' WHERE {$source_where}");
+        $source_updated = $source_query && mysqli_affected_rows($sqlConnect) === 1;
+        if ($source_updated) {
+            Wo_UpdateCallLog($call_id, $call_type, ($final_status == 'missed' ? 'no_answer' : $final_status), array(
+                'provider' => 'livekit',
+                'duration' => $duration,
+                'duration_ms' => $duration * 1000,
+                'ended_at' => time(),
+                'ended_at_ms' => (int) round(microtime(true) * 1000),
+                'status_by' => $actor_id > 0 ? $actor_id : 0
+            ));
+            VNSEEA_ReleaseLiveKitEndpoint($endpoint_scope, $call_id);
+        }
     }
-    if (!empty($call_source) && is_array($call_source)) {
+    if ($source_updated && !empty($call_source) && is_array($call_source)) {
         Wo_ApiLiveKitPublishRealtime($final_status == 'declined' ? 'declined' : 'closed', $call_source, $call_type, array(
             'status' => $final_status,
             'active' => false,
@@ -672,13 +675,17 @@ function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor
         Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id);
     }
 
+    $persisted_source = Wo_GetCallSourceById($call_id, $call_type);
+    $persisted_status = !empty($persisted_source['status']) ? $persisted_source['status'] : $final_status;
+    $persisted_active = intval(!empty($persisted_source['active']) ? $persisted_source['active'] : 0);
+
     return array(
         'api_status' => 200,
         'call_id' => (string) $call_id,
         'call_type' => $call_type,
-        'call_status' => $final_status,
-        'active' => false,
-        'finished' => true,
+        'call_status' => $persisted_status,
+        'active' => $persisted_active === 1,
+        'finished' => in_array($persisted_status, array('declined', 'cancelled', 'no_answer', 'missed', 'ended'), true),
         'duration' => $duration
     );
 }
@@ -701,8 +708,8 @@ else if ($action == 'create') {
             $response_data = Wo_ApiLiveKitError('recipient_not_found', 'Recipient not found.', 404);
         }
         else {
-            Wo_ApiLiveKitCancelPendingCallsBetween($wo['user']['user_id'], $recipient_id);
             Wo_ApiLiveKitExpireStaleRingingCalls($recipient_id);
+            Wo_ApiLiveKitCancelPendingCallsBetween($wo['user']['user_id'], $recipient_id);
             Wo_ApiLiveKitClearFinishedActiveCalls($wo['user']['user_id']);
             Wo_ApiLiveKitClearFinishedActiveCalls($recipient_id);
 
@@ -752,15 +759,18 @@ else if ($action == 'check') {
         $call_status = !empty($call_source['status']) ? $call_source['status'] : 'calling';
         if ($call_status == 'calling' && !empty($call_source['time']) && (time() - intval($call_source['time'])) > 43) {
             $table = ($call_type == 'audio') ? T_AUDIO_CALLES : T_VIDEOS_CALLES;
-            mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = 'no_answer' WHERE `id` = '" . Wo_Secure($call_id) . "'");
-            Wo_UpdateCallLog($call_id, $call_type, 'no_answer', array(
-                'provider' => 'livekit',
-                'status_by' => $wo['user']['user_id']
-            ));
-            $call_status = 'no_answer';
-            Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']));
+            $timeout_query = mysqli_query($sqlConnect, "UPDATE " . $table . " SET `active` = '0', `status` = 'no_answer' WHERE `id` = '" . Wo_Secure($call_id) . "' AND `active` = '0' AND (`declined` = '0' OR `declined` IS NULL) AND (`status` = '' OR `status` = 'calling')");
+            $expired_rows = $timeout_query ? mysqli_affected_rows($sqlConnect) : 0;
+            if ($expired_rows === 1) {
+                Wo_UpdateCallLog($call_id, $call_type, 'no_answer', array(
+                    'provider' => 'livekit',
+                    'status_by' => $wo['user']['user_id']
+                ));
+                Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']));
+            }
         }
         $call_source = Wo_GetCallSourceById($call_id, $call_type);
+        $call_status = !empty($call_source['status']) ? $call_source['status'] : 'calling';
         $timing = Wo_ApiLiveKitTiming($call_source, $call_type);
         $actor_id = intval($wo['user']['user_id']);
         $endpoint_role = intval($call_source['from_id']) === $actor_id ? 'caller' : (intval($call_source['to_id']) === $actor_id ? 'receiver' : '');

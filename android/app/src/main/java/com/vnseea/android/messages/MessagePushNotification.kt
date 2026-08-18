@@ -62,6 +62,26 @@ object MessagePushNotification {
     }
   }
 
+  fun isDuplicateCallActivityPush(data: JSONObject?, body: String?): Boolean {
+    if (data == null) return false
+    if (!isMessagePush(data)) return false
+    val messageType = data.optString("message_type").trim().lowercase()
+    if (messageType != "call_event") return false
+    val conversationType = data.optString("conversation_type").ifBlank {
+      data.optString("type")
+    }.trim().lowercase()
+    if (conversationType != "user") return false
+
+    val status = data.optString("call_status").trim().lowercase()
+    if (status == "missed" || status == "no_answer") return false
+
+    // Older queued missed-call pushes do not carry call_status. Preserve them
+    // while suppressing the chat-style "Call activity" notification.
+    val normalizedBody = body.orEmpty().trim().lowercase()
+    if (normalizedBody == "missed call" || normalizedBody == "cuộc gọi nhỡ") return false
+    return true
+  }
+
   fun show(context: Context, notification: INotification) {
     VnseeaNotificationChannels.ensure(context)
 

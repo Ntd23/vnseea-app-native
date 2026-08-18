@@ -539,8 +539,7 @@ const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeMediaUrl(url: string | undefined): string | undefined {
   return (
-    normalizeHostedMediaUrl(url, _siteRoot, apiConfig.mediaBaseUrl) ||
-    undefined
+    normalizeHostedMediaUrl(url, _siteRoot, apiConfig.mediaBaseUrl) || undefined
   );
 }
 
@@ -1169,6 +1168,7 @@ function extractLinkPreview(
 function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   if (looksLikeAd(raw)) return false;
   if (looksLikeLive(raw)) return false;
+  if (looksLikeProductPost(raw)) return false;
   if (looksLikeJobPost(raw)) return false;
   if (looksLikeVideo(raw)) return false;
   const text = readString(raw, 'postText').trim();
@@ -2654,6 +2654,7 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
   const buckets = {
     ad: 0,
     live: 0,
+    product: 0,
     job: 0,
     poll: 0,
     text: 0,
@@ -2669,6 +2670,11 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
     if (looksLikeAd(item)) {
       posts.push(mapAdPost(item));
       buckets.ad += 1;
+    } else if (looksLikeProductPost(item)) {
+      // Marketplace rows are supplied by the independently paged product
+      // lane. Keeping them out of the text lane prevents duplicate list keys
+      // and ensures the richer product card wins when both APIs overlap.
+      buckets.product += 1;
     } else if (looksLikeJobPost(item)) {
       posts.push(mapJobPost(item));
       buckets.job += 1;
@@ -2696,6 +2702,69 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
     mapped: posts.length,
   });
   return posts;
+}
+
+async function fetchVideoFeedPostsPage(
+  limit = 20,
+  afterPostId?: string,
+  source: FeedSource = 'all',
+  maxScanPages = 3,
+): Promise<FeedPostsPage<FeedVideoPost>> {
+  const mappedById = new Map<string, FeedVideoPost>();
+  const visitedCursors = new Set<string>();
+  let cursor = afterPostId;
+  let nextCursor = afterPostId;
+  let reachedEnd = false;
+
+  for (
+    let pageIndex = 0;
+    pageIndex < Math.max(1, maxScanPages) && mappedById.size < limit;
+    pageIndex += 1
+  ) {
+    const page = await fetchRecommendedRawFeedPostsWithFallback(
+      Math.max(limit, Math.ceil(limit * 1.5)),
+      cursor,
+      source,
+    );
+
+    page.posts
+      .filter(looksLikeVideo)
+      .map(mapVideoPost)
+      .forEach(post => {
+        if (!mappedById.has(post.id)) mappedById.set(post.id, post);
+      });
+
+    const candidateCursor = page.nextCursor ?? getOldestRawPostId(page.posts);
+    const canAdvance = Boolean(
+      candidateCursor &&
+        candidateCursor !== cursor &&
+        !visitedCursors.has(candidateCursor),
+    );
+
+    // The recommended endpoint can report `reached_end=true` while still
+    // returning a valid older cursor. The cursor is the stronger pagination
+    // signal here; stopping on the stale flag permanently starves sparse
+    // video lanes even though older videos are still reachable.
+    if (!canAdvance) {
+      nextCursor = undefined;
+      reachedEnd = true;
+      break;
+    }
+
+    if (cursor) visitedCursors.add(cursor);
+    nextCursor = candidateCursor;
+    cursor = candidateCursor;
+  }
+
+  const mappedPosts = Array.from(mappedById.values());
+  const posts = mappedPosts.slice(0, limit);
+  const prefetchedPosts = mappedPosts.slice(limit);
+  return {
+    posts,
+    prefetchedPosts: prefetchedPosts.length > 0 ? prefetchedPosts : undefined,
+    nextCursor: reachedEnd ? undefined : nextCursor,
+    reachedEnd,
+  };
 }
 
 export function createFeedRepository(): FeedRepository {
@@ -2927,15 +2996,17 @@ export function createFeedRepository(): FeedRepository {
       afterPostId?: string,
       source: FeedSource = 'all',
     ) {
-      const page = await fetchRecommendedRawFeedPostsWithFallback(
-        Math.max(limit, Math.ceil(limit * 1.5)),
-        afterPostId,
-        source,
-      );
-      return page.posts
-        .filter(looksLikeVideo)
-        .map(mapVideoPost)
-        .slice(0, limit);
+      const page = await fetchVideoFeedPostsPage(limit, afterPostId, source);
+      return page.posts;
+    },
+
+    async getVideoPostsPage(
+      limit = 20,
+      afterPostId?: string,
+      source: FeedSource = 'all',
+      maxScanPages = 3,
+    ) {
+      return fetchVideoFeedPostsPage(limit, afterPostId, source, maxScanPages);
     },
 
     async getTextPosts(

@@ -16,13 +16,25 @@ const sharedCatalogSource = fs.readFileSync(
   'utf8',
 );
 
+function readPngMetadata(relativePath) {
+  const image = fs.readFileSync(path.join(projectRoot, relativePath));
+  if (image.toString('ascii', 1, 4) !== 'PNG') {
+    throw new Error(`${relativePath} is not a PNG file`);
+  }
+
+  return {
+    width: image.readUInt32BE(16),
+    height: image.readUInt32BE(20),
+    colorType: image[25],
+  };
+}
+
 const reactionSurfaces = [
   'src/feed/presentation/components/PollPostCard.tsx',
   'src/feed/presentation/components/PostCards.tsx',
   'src/feed/presentation/components/PostReactionsSheet.tsx',
   'src/feed/presentation/screens/PostDetailScreen.tsx',
   'src/live/presentation/screens/LiveRoomScreen.tsx',
-  'src/popular/presentation/screens/PopularScreen.tsx',
   'src/reels/presentation/components/ReelCommentsSheet.tsx',
   'src/reels/presentation/components/ReelItem.tsx',
   'src/shared-kernel/presentation/components/PhotoViewerModal.tsx',
@@ -41,6 +53,18 @@ describe('Feed reaction assets', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 
+  it('ships transparent high-resolution assets for crisp picker icons', () => {
+    ['like', 'love', 'haha', 'wow', 'sad', 'angry'].forEach(type => {
+      expect(
+        readPngMetadata(`src/assets/reactions/reactions_${type}.png`),
+      ).toEqual({
+        width: 112,
+        height: 112,
+        colorType: 6,
+      });
+    });
+  });
+
   it('keeps every reaction surface connected to the Feed asset module', () => {
     reactionSurfaces.forEach(relativePath => {
       const source = fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
@@ -48,6 +72,16 @@ describe('Feed reaction assets', () => {
       expect(source).not.toMatch(/const\s+(REACTION_EMOJI|STORY_REACTION_EMOJI)/);
       expect(source).not.toContain('assets/reactions/reactions_');
     });
+
+    const popularSource = fs.readFileSync(
+      path.join(
+        projectRoot,
+        'src/popular/presentation/screens/PopularScreen.tsx',
+      ),
+      'utf8',
+    );
+    expect(popularSource).toContain('ReactionPickerOverlay');
+    expect(popularSource).toContain('PostReactionsSheet');
   });
 
   it('uses one shared type and wire mapping across Feed, Reels and Stories', () => {

@@ -36,7 +36,7 @@ describe('message chat merge', () => {
       name: 'Updated name',
       hasConversationRecord: false,
       lastMessage: '',
-      lastMessageTime: 999,
+      relationshipActivityTime: 200,
       isFollower: true,
       isOnline: true,
     });
@@ -47,6 +47,7 @@ describe('message chat merge', () => {
         hasConversationRecord: true,
         lastMessage: 'old message',
         lastMessageTime: 100,
+        relationshipActivityTime: 200,
         name: 'Updated name',
         isFollower: true,
         isOnline: true,
@@ -60,7 +61,7 @@ describe('message chat merge', () => {
       userId: '10',
       hasConversationRecord: false,
       isFollowing: true,
-      lastMessageTime: 999,
+      relationshipActivityTime: 200,
     });
     const conversation = chat({
       id: 'conversation-10',
@@ -77,12 +78,13 @@ describe('message chat merge', () => {
         hasConversationRecord: true,
         lastMessage: 'hello',
         lastMessageTime: 100,
+        relationshipActivityTime: 200,
         isFollowing: true,
       }),
     ]);
   });
 
-  it('keeps conversations above discovery rows in the merged state', () => {
+  it('sorts discovery and conversation rows by their latest activity', () => {
     const conversation = chat({
       id: 'conversation-10',
       userId: '10',
@@ -95,12 +97,37 @@ describe('message chat merge', () => {
       userId: '20',
       hasConversationRecord: false,
       isFollower: true,
-      lastMessageTime: 999,
+      relationshipActivityTime: 200,
     });
 
     expect(mergeChatItems([discovery, conversation])).toEqual([
-      conversation,
       discovery,
+      conversation,
+    ]);
+  });
+
+  it('keeps unread-first ordering for group chats', () => {
+    const olderUnreadGroup = chat({
+      id: 'group:10',
+      chatType: 'group',
+      groupId: '10',
+      userId: '10',
+      lastMessage: 'old unread',
+      lastMessageTime: 100,
+      unreadCount: 1,
+    });
+    const newerReadGroup = chat({
+      id: 'group:11',
+      chatType: 'group',
+      groupId: '11',
+      userId: '11',
+      lastMessage: 'new read',
+      lastMessageTime: 200,
+    });
+
+    expect(mergeChatItems([newerReadGroup, olderUnreadGroup])).toEqual([
+      olderUnreadGroup,
+      newerReadGroup,
     ]);
   });
 

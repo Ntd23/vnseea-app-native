@@ -120,14 +120,24 @@ describe('reels startup feed', () => {
     expect(reelItem.isReposted).toBe(true);
   });
 
-  it('keeps the currently rendered order while refreshing item data in place', () => {
+  it('uses the fresh first page as the authoritative startup sequence', () => {
     const merged = mergeReelsStartupItems(
       [createReel('current', 1), createReel('second', 2)],
       [createReel('new', 3), createReel('current', 9)],
     );
 
-    expect(merged.map(item => item.id)).toEqual(['current', 'second', 'new']);
-    expect(merged[0].likeCount).toBe(9);
+    expect(merged.map(item => item.id)).toEqual(['new', 'current']);
+    expect(merged[1].likeCount).toBe(9);
+  });
+
+  it('keeps an explicitly opened reel pinned ahead of the fresh first page', () => {
+    const merged = mergeReelsStartupItems(
+      [createReel('opened')],
+      [createReel('new'), createReel('second')],
+      createReel('opened'),
+    );
+
+    expect(merged.map(item => item.id)).toEqual(['opened', 'new', 'second']);
   });
 
   it('applies authoritative realtime engagement without dropping reel-only media state', () => {
@@ -145,8 +155,11 @@ describe('reels startup feed', () => {
     };
     const snapshot: FeedVideoPost = {
       ...createFeedVideo('10'),
-      videoUrl: '',
-      thumbnailUrl: undefined,
+      // The post-detail/realtime endpoint can return a different, but still
+      // non-empty, alias for the same media. Swapping to that alias would make
+      // Android rebuild the active native player during a reaction update.
+      videoUrl: 'https://detail.example.com/post-10-video.mp4',
+      thumbnailUrl: 'https://detail.example.com/post-10-thumb.jpg',
       likeCount: 9,
       commentCount: 4,
       isLiked: true,

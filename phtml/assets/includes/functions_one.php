@@ -2582,11 +2582,16 @@ function Wo_RegisterFollow($following_id = 0, $followers_id = 0)
         if ($wo['config']['connectivitySystem'] == 1) {
             $active = 0;
         }
-        $query = mysqli_query($sqlConnect, " INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`) VALUES ({$following_id},{$follower_id},'{$active}')");
+        $relationship_time = time();
+        $query = mysqli_query($sqlConnect, " INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`,`time`) VALUES ({$following_id},{$follower_id},'{$active}',{$relationship_time})");
         if ($query) {
             cache($following_id, 'users', 'delete');
             cache($follower_id, 'users', 'delete');
             if ($active == 1) {
+                VNSEEA_PublishRealtimeRelationshipPair(
+                    $follower_id,
+                    $following_id
+                );
                 $notification_data = array(
                     'recipient_id' => $following_id,
                     'notifier_id' => $follower_id,
@@ -2699,6 +2704,10 @@ function Wo_DeleteFollow($following_id = 0, $follower_id = 0)
         if ($query) {
             cache($following_id, 'users', 'delete');
             cache($follower_id, 'users', 'delete');
+            VNSEEA_PublishRealtimeRelationshipPair(
+                $follower_id,
+                $following_id
+            );
             return true;
         }
     }
@@ -2769,42 +2778,67 @@ function Wo_AcceptFollowRequest($following_id = 0, $follower_id = 0)
     }
     $following_id = Wo_Secure($following_id);
     $follower_id = Wo_Secure($follower_id);
-    if (Wo_IsFollowRequested($following_id, $follower_id) === false) {
+    if (Wo_IsFollowRequested($follower_id, $following_id) === false) {
         return false;
     }
     $follower_data = Wo_UserData($follower_id);
     if (empty($follower_data['user_id'])) {
         return false;
     }
-    $query = mysqli_query($sqlConnect, "UPDATE " . T_FOLLOWERS . " SET `active` = '1' WHERE `following_id` = {$follower_id} AND `follower_id` = {$following_id} AND `active` = '0'");
-    if ($wo['config']['connectivitySystem'] == 1) {
-        $query_two = mysqli_query($sqlConnect, "INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`) VALUES ({$following_id},{$follower_id},'1') ");
+    $relationship_time = time();
+    if (!mysqli_begin_transaction($sqlConnect)) {
+        return false;
     }
-    if ($query) {
-        $notification_data = array(
-            'recipient_id' => $following_id,
-            'type' => 'accepted_request',
-            'url' => 'index.php?link1=timeline&u=' . $follower_data['username']
-        );
-        $activity_data = array(
-            'user_id' => $follower_id,
-            'follow_id' => $following_id,
-            'activity_type' => 'friend'
-        );
-        $add_activity = Wo_RegisterActivity($activity_data);
-        $activity_data = array(
-            'user_id' => $following_id,
-            'follow_id' => $follower_id,
-            'activity_type' => 'friend'
-        );
-        $add_activity = Wo_RegisterActivity($activity_data);
-        if (Wo_RegisterNotification($notification_data) === true) {
-            Wo_PublishRealtimeNotification($follower_id, 0, 'request');
-            return true;
-        } else {
+    $query = mysqli_query($sqlConnect, "UPDATE " . T_FOLLOWERS . " SET `active` = '1', `time` = {$relationship_time} WHERE `following_id` = {$follower_id} AND `follower_id` = {$following_id} AND `active` = '0'");
+    $updated_request = $query && mysqli_affected_rows($sqlConnect) === 1;
+    if (!$updated_request) {
+        mysqli_rollback($sqlConnect);
+        return false;
+    }
+    if ($wo['config']['connectivitySystem'] == 1) {
+        $query_two = mysqli_query($sqlConnect, "UPDATE " . T_FOLLOWERS . " SET `active` = '1', `time` = {$relationship_time} WHERE `following_id` = {$following_id} AND `follower_id` = {$follower_id}");
+        if (!$query_two) {
+            mysqli_rollback($sqlConnect);
             return false;
         }
+        if (mysqli_affected_rows($sqlConnect) === 0 && !Wo_IsFollowing($following_id, $follower_id)) {
+            $query_two = mysqli_query($sqlConnect, "INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`,`time`) VALUES ({$following_id},{$follower_id},'1',{$relationship_time}) ");
+            if (!$query_two) {
+                mysqli_rollback($sqlConnect);
+                return false;
+            }
+        }
     }
+    if (!mysqli_commit($sqlConnect)) {
+        mysqli_rollback($sqlConnect);
+        return false;
+    }
+    cache($following_id, 'users', 'delete');
+    cache($follower_id, 'users', 'delete');
+    VNSEEA_PublishRealtimeRelationshipPair(
+        $following_id,
+        $follower_id
+    );
+    $notification_data = array(
+        'recipient_id' => $following_id,
+        'type' => 'accepted_request',
+        'url' => 'index.php?link1=timeline&u=' . $follower_data['username']
+    );
+    $activity_data = array(
+        'user_id' => $follower_id,
+        'follow_id' => $following_id,
+        'activity_type' => 'friend'
+    );
+    $add_activity = Wo_RegisterActivity($activity_data);
+    $activity_data = array(
+        'user_id' => $following_id,
+        'follow_id' => $follower_id,
+        'activity_type' => 'friend'
+    );
+    $add_activity = Wo_RegisterActivity($activity_data);
+    Wo_RegisterNotification($notification_data);
+    Wo_PublishRealtimeNotification($follower_id, 0, 'request');
+    return true;
 }
 
 function Wo_DeleteFollowRequest($following_id, $follower_id)
@@ -3191,7 +3225,7 @@ function Wo_GetFollowNotifyUsers($user_id = 0)
     return $data;
 }
 
-function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $kind = 'notification')
+function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $kind = 'notification', $extra_payload = array())
 {
     static $realtime_config = null;
     if ($realtime_config === null) {
@@ -3233,11 +3267,15 @@ function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $ki
     if (!function_exists('curl_init')) {
         return false;
     }
-    $payload = json_encode(array(
+    $payload_data = array(
         'recipientId' => (string) $recipient_id,
         'notificationId' => (string) $notification_id,
         'kind' => (string) $kind
-    ));
+    );
+    if (is_array($extra_payload) && !empty($extra_payload)) {
+        $payload_data = array_merge($payload_data, $extra_payload);
+    }
+    $payload = json_encode($payload_data);
     $endpoint = rtrim($internal_url, '/') . '/internal/notifications/publish';
     $ch = curl_init($endpoint);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -3253,6 +3291,70 @@ function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $ki
     curl_exec($ch);
     curl_close($ch);
     return true;
+}
+
+function VNSEEA_PublishRealtimeRelationshipChange($recipient_id, $peer_user_id, $occurred_at = 0)
+{
+    $recipient_id = (int) $recipient_id;
+    $peer_user_id = (int) $peer_user_id;
+    $occurred_at = (int) $occurred_at;
+    if ($recipient_id < 1 || $peer_user_id < 1 || $recipient_id === $peer_user_id) {
+        return false;
+    }
+    if ($occurred_at < 1) {
+        $occurred_at = (int) round(microtime(true) * 1000);
+    } elseif ($occurred_at < 100000000000) {
+        $occurred_at *= 1000;
+    }
+    return Wo_PublishRealtimeNotification(
+        $recipient_id,
+        0,
+        'relationship',
+        array(
+            'peerUserId' => (string) $peer_user_id,
+            'occurredAt' => $occurred_at,
+            'isFollowing' => Wo_IsFollowing($peer_user_id, $recipient_id) ? 1 : 0,
+            'isFollower' => Wo_IsFollowing($recipient_id, $peer_user_id) ? 1 : 0
+        )
+    );
+}
+
+function VNSEEA_PublishRealtimeRelationshipPair($first_user_id, $second_user_id, $occurred_at = 0)
+{
+    $first_user_id = (int) $first_user_id;
+    $second_user_id = (int) $second_user_id;
+    if ($first_user_id < 1 || $second_user_id < 1 || $first_user_id === $second_user_id) {
+        return false;
+    }
+    $occurred_at = (int) $occurred_at;
+    if ($occurred_at < 1) {
+        $occurred_at = (int) round(microtime(true) * 1000);
+    } elseif ($occurred_at < 100000000000) {
+        $occurred_at *= 1000;
+    }
+    return Wo_PublishRealtimeNotification(
+        $first_user_id,
+        0,
+        'relationship',
+        array(
+            'relationships' => array(
+                array(
+                    'recipientId' => (string) $first_user_id,
+                    'peerUserId' => (string) $second_user_id,
+                    'occurredAt' => $occurred_at,
+                    'isFollowing' => Wo_IsFollowing($second_user_id, $first_user_id) ? 1 : 0,
+                    'isFollower' => Wo_IsFollowing($first_user_id, $second_user_id) ? 1 : 0
+                ),
+                array(
+                    'recipientId' => (string) $second_user_id,
+                    'peerUserId' => (string) $first_user_id,
+                    'occurredAt' => $occurred_at,
+                    'isFollowing' => Wo_IsFollowing($first_user_id, $second_user_id) ? 1 : 0,
+                    'isFollower' => Wo_IsFollowing($second_user_id, $first_user_id) ? 1 : 0
+                )
+            )
+        )
+    );
 }
 
 function VNSEEA_PublishRealtimeMessageChange($message_id, $message_data = null)

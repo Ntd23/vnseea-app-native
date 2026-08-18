@@ -14,6 +14,9 @@ patchedDependencies:
   '@livekit/react-native@2.11.1':
     hash: 98b7279d30203b95cfa6a00cbfc52b030c86d8ef72c692e89489ed41f5adc24e
     path: patches/@livekit__react-native@2.11.1.patch
+  '@shopify/flash-list@2.3.1':
+    hash: 485afb0199db1703f8181628e16051905c9b20906baeefb6006d9d32f2a55e45
+    path: patches/@shopify__flash-list@2.3.1.patch
   react-native-callkeep@4.3.16:
     hash: 6a4b0a65642336494d8cfd176c6b68861cb0ff17e6b85e81dd36d647f89e9ad4
     path: patches/react-native-callkeep@4.3.16.patch
@@ -66,7 +69,7 @@ importers:
         version: 7.17.5(5450d1fefe360a8785f573e9120fabae)
       '@shopify/flash-list':
         specifier: ^2.3.1
-        version: 2.3.1(@babel/runtime@7.29.2)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+        version: 2.3.1(patch_hash=485afb0199db1703f8181628e16051905c9b20906baeefb6006d9d32f2a55e45)(@babel/runtime@7.29.2)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       '@tanstack/react-query':
         specifier: ^5.100.9
         version: 5.100.9(react@19.2.3)
@@ -6388,7 +6391,7 @@ snapshots:
     dependencies:
       nanoid: 3.3.12
 
-  '@shopify/flash-list@2.3.1(@babel/runtime@7.29.2)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
+  '@shopify/flash-list@2.3.1(patch_hash=485afb0199db1703f8181628e16051905c9b20906baeefb6006d9d32f2a55e45)(@babel/runtime@7.29.2)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)':
     dependencies:
       '@babel/runtime': 7.29.2
       react: 19.2.3

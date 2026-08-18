@@ -21,6 +21,16 @@ if (releaseBuildRequested && !(releaseMapsCertificateSha1 ==~ /[0-9A-F]{40}/)) {
     )
 }
 
+def standaloneDebugBuild = project.hasProperty("standaloneDebug")
+def standaloneNativeBuildDirectory = project
+    .findProperty("standaloneNativeBuildDirectory")
+    ?.toString()
+    ?.trim()
+def metroMaxWorkers = project
+    .findProperty("metroMaxWorkers")
+    ?.toString()
+    ?.trim()
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -41,6 +51,9 @@ react {
     //   skip the bundling of the JS bundle and the assets. Default is "debug", "debugOptimized".
     //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
     // debuggableVariants = ["liteDebug", "liteDebugOptimized", "prodDebug", "prodDebugOptimized"]
+    // Normal debug builds keep Metro/hot reload. Passing -PstandaloneDebug
+    // makes the APK bundle the current JavaScript source for device installs.
+    debuggableVariants = standaloneDebugBuild ? [] : ["debug", "debugOptimized"]
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
@@ -60,7 +73,9 @@ react {
     //
     //   A list of extra flags to pass to the 'bundle' commands.
     //   See https://github.com/react-native-community/cli/blob/main/docs/commands.md#bundle
-    // extraPackagerArgs = []
+    if (metroMaxWorkers) {
+        extraPackagerArgs = ["--max-workers", metroMaxWorkers]
+    }
 
     /* Hermes Commands */
     //   The hermes compiler command to run. By default it is 'hermesc'
@@ -96,13 +111,27 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    if (standaloneDebugBuild) {
+        // Keep standalone/benchmark CMake metadata separate from the regular
+        // developer cache. Besides making the build reproducible, this lets
+        // Windows builds regenerate native paths from a short Gradle cache
+        // instead of reusing stale paths that exceed MAX_PATH.
+        externalNativeBuild {
+            cmake {
+                buildStagingDirectory file(
+                    standaloneNativeBuildDirectory ?: "$projectDir/.cxx/standalone"
+                )
+            }
+        }
+    }
+
     namespace "com.vnseea.android"
     defaultConfig {
         applicationId "com.vnseea.android"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "8.0"
+        versionCode 16
+        versionName "9.0.16"
         ndk {
             abiFilters "arm64-v8a"
         }
@@ -152,6 +181,7 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

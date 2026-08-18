@@ -1,6 +1,22 @@
 export const MAP_TYPEAHEAD_SEARCH_RADIUS_METERS = 5000;
 export const MAP_COMMITTED_SEARCH_RADIUS_METERS = 20000;
 
+export function resolveMapSearchScopeRadius(input: {
+  globalSearch?: boolean;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+}) {
+  if (input.globalSearch) return undefined;
+
+  return typeof input.lat === 'number' &&
+    Number.isFinite(input.lat) &&
+    typeof input.lng === 'number' &&
+    Number.isFinite(input.lng)
+    ? input.radius
+    : undefined;
+}
+
 export function filterDistanceScopedResults<T>(
   items: T[],
   radiusMeters: number | undefined,

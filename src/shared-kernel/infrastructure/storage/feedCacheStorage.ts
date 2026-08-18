@@ -15,18 +15,19 @@ import type { EventsItem } from '../../../events/domain/types/events.types';
 
 const LEGACY_POSTS_CACHE_KEY = 'feed.posts.page1';
 const LEGACY_VIDEOS_CACHE_KEY = 'feed.videos.page1';
-// v3 invalidates snapshots whose Page posts stored the owner's user identity.
-const POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v3';
-const VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v3';
-const PREVIOUS_POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v2';
-const PREVIOUS_VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v2';
+// v4 bounds the synchronous cold-start runway. Ignore older, oversized
+// snapshots instead of parsing and mounting them during the first scroll.
+const POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v4';
+const VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v4';
+const PREVIOUS_POSTS_CACHE_KEY_PREFIX = 'feed.posts.snapshot.v3';
+const PREVIOUS_VIDEOS_CACHE_KEY_PREFIX = 'feed.videos.v3';
 const PRODUCTS_CACHE_KEY = 'feed.products.page1';
 const JOBS_CACHE_KEY = 'feed.jobs.page1';
 const EVENTS_CACHE_KEY = 'feed.events.page1';
 const PAGES_CACHE_KEY = 'feed.pages.page1';
 const FUNDING_CACHE_KEY = 'feed.funding.page1';
-const MAX_CACHED_POSTS = 100;
-const MAX_CACHED_VIDEOS = 30;
+const MAX_CACHED_POSTS = 30;
+const MAX_CACHED_VIDEOS = 8;
 
 export type FeedPostsCacheSnapshot = {
   posts: FeedPost[];
@@ -76,6 +77,7 @@ export const feedCacheStorage = {
       const parsed = JSON.parse(json) as Partial<FeedPostsCacheSnapshot>;
       if (!Array.isArray(parsed.posts)) return null;
 
+      const wasTruncated = parsed.posts.length > MAX_CACHED_POSTS;
       const cachedPosts = parsed.posts.slice(0, MAX_CACHED_POSTS);
       const parsedNextCursor =
         typeof parsed.nextCursor === 'string' && parsed.nextCursor.trim()
@@ -85,14 +87,17 @@ export const feedCacheStorage = {
         cachedPosts,
         parsedNextCursor,
       );
+      const shouldReanchorPagination = wasTruncated || poisonedCursor;
 
       return {
         posts: cachedPosts,
-        nextCursor: poisonedCursor ? undefined : parsedNextCursor,
+        nextCursor: shouldReanchorPagination ? undefined : parsedNextCursor,
         // Old app versions could persist ad id 18 as both the cursor and an
         // end-of-feed verdict. Keep the warm rows, but force pagination to
         // re-anchor from real posts after upgrading.
-        reachedEnd: poisonedCursor ? false : parsed.reachedEnd === true,
+        reachedEnd: shouldReanchorPagination
+          ? false
+          : parsed.reachedEnd === true,
         updatedAt: Math.max(0, Number(parsed.updatedAt) || 0),
       };
     } catch (err) {
@@ -106,12 +111,16 @@ export const feedCacheStorage = {
     userId?: string,
   ) {
     try {
+      const wasTruncated = snapshot.posts.length > MAX_CACHED_POSTS;
       storage.set(
         getPostsCacheKey(userId),
         JSON.stringify({
           posts: snapshot.posts.slice(0, MAX_CACHED_POSTS),
-          nextCursor: snapshot.nextCursor,
-          reachedEnd: snapshot.reachedEnd,
+          // A cursor beyond rows removed from the cache would permanently
+          // skip those rows on the next pagination request. Re-anchor from
+          // the fresh head request whenever the persisted runway is cut.
+          nextCursor: wasTruncated ? undefined : snapshot.nextCursor,
+          reachedEnd: wasTruncated ? false : snapshot.reachedEnd,
           updatedAt: Date.now(),
         }),
       );

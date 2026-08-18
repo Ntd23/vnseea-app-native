@@ -1,6 +1,9 @@
 export const videoPlaybackTimes = new Map<string, number>();
 const MAX_REMEMBERED_REEL_PLAYBACK_TIMES = 200;
 
+export type ReelPlayerRole = 'none' | 'previous' | 'current' | 'next';
+export type ReelPlayerBufferMode = 'standard' | 'next-preload';
+
 function toPlaybackKey(postId: string | number | null | undefined) {
   if (postId === null || postId === undefined) return null;
   const key = String(postId);
@@ -43,16 +46,130 @@ export function setVideoPlaybackTime(
   }
 }
 
-export function isReelItemActive({
-  isScreenFocused,
+export function shouldPlayCurrentReel({
+  isPlaybackRouteFocused,
+  isDismissing,
+  commentsOpen: _commentsOpen,
+  shareOpen,
+  editOpen,
+  publisherOpen,
+}: {
+  isPlaybackRouteFocused: boolean;
+  isDismissing: boolean;
+  commentsOpen: boolean;
+  shareOpen: boolean;
+  editOpen: boolean;
+  publisherOpen: boolean;
+}) {
+  return (
+    isPlaybackRouteFocused &&
+    !isDismissing &&
+    // Comments use a contained video preview, so the current Reel keeps
+    // playing while paging and auto-advance remain locked by ReelsScreen.
+    !shareOpen &&
+    !editOpen &&
+    !publisherOpen
+  );
+}
+
+export function shouldRetainCurrentReelPlayer({
+  hasActivatedPlayback,
+  isTabRoute,
+  isMainTabsRootSelected,
+  isAppActive,
+  isDismissing,
+}: {
+  hasActivatedPlayback: boolean;
+  isTabRoute: boolean;
+  isMainTabsRootSelected: boolean;
+  isAppActive: boolean;
+  isDismissing: boolean;
+}) {
+  return (
+    hasActivatedPlayback &&
+    isTabRoute &&
+    isMainTabsRootSelected &&
+    isAppActive &&
+    !isDismissing
+  );
+}
+
+export function shouldDeferReelsPlaybackForPendingTarget({
+  initialVideoId,
+  hasInitialPost,
+  activeReelId,
+  consumedInitialVideoId,
+}: {
+  initialVideoId: string | number | null | undefined;
+  hasInitialPost: boolean;
+  activeReelId: string | number | null | undefined;
+  consumedInitialVideoId: string | number | null | undefined;
+}) {
+  const targetKey = toPlaybackKey(initialVideoId);
+  if (!targetKey || !hasInitialPost) return false;
+  if (toPlaybackKey(consumedInitialVideoId) === targetKey) return false;
+  return toPlaybackKey(activeReelId) !== targetKey;
+}
+
+export function resolveReelPlayerRole({
+  isPlaybackRouteFocused,
+  keepCurrentPlayerMounted = false,
   index,
   activeIndex,
+  allowPreviousPreload = true,
+  allowNextPreload,
 }: {
-  isScreenFocused: boolean;
+  isPlaybackRouteFocused: boolean;
+  keepCurrentPlayerMounted?: boolean;
   index: number;
   activeIndex: number;
+  allowPreviousPreload?: boolean;
+  allowNextPreload: boolean;
+}): ReelPlayerRole {
+  if (!isPlaybackRouteFocused) {
+    return keepCurrentPlayerMounted && index === activeIndex
+      ? 'current'
+      : 'none';
+  }
+  if (index === activeIndex) return 'current';
+  if (allowPreviousPreload && index === activeIndex - 1) return 'previous';
+  if (allowNextPreload && index === activeIndex + 1) return 'next';
+  return 'none';
+}
+
+export function isReelPlayerRoleActive({
+  role,
+  playbackAllowed,
+}: {
+  role: ReelPlayerRole;
+  playbackAllowed: boolean;
 }) {
-  return isScreenFocused && index === activeIndex;
+  return playbackAllowed && role === 'current';
+}
+
+export function resolveReelBufferModeForMount(
+  role: ReelPlayerRole,
+): ReelPlayerBufferMode {
+  return role === 'next' ? 'next-preload' : 'standard';
+}
+
+export function shouldAllowNextReelPreload({
+  isNeighborPreloadReady,
+  isNextPreloadSuppressed,
+  activeIndex,
+  suppressionAnchorIndex,
+}: {
+  isNeighborPreloadReady: boolean;
+  isNextPreloadSuppressed: boolean;
+  activeIndex: number;
+  suppressionAnchorIndex: number | null;
+}) {
+  if (!isNeighborPreloadReady) return false;
+  if (!isNextPreloadSuppressed) return true;
+
+  // Preserve the already-mounted Reel that is entering the viewport. Once it
+  // becomes current, suppress the new next neighbor until momentum settles.
+  return suppressionAnchorIndex === activeIndex;
 }
 
 export function resolveReelsViewportHeight({
@@ -106,20 +223,6 @@ export function isNavigationRouteSelected(
   }
 
   return Boolean(routeName && activeRoute.name === routeName);
-}
-
-export function shouldMountReelVideoPlayer({
-  isPlaybackRouteFocused,
-  index,
-  activeIndex,
-  preloadRadius,
-}: {
-  isPlaybackRouteFocused: boolean;
-  index: number;
-  activeIndex: number;
-  preloadRadius: number;
-}) {
-  return isPlaybackRouteFocused && Math.abs(index - activeIndex) <= preloadRadius;
 }
 
 export function shouldPrefetchMoreReels({

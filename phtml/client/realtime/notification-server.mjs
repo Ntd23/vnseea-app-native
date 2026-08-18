@@ -38,6 +38,7 @@ const realtimeEventNames = {
   notification: ["notification:new", "notification:counts-changed"],
   request: ["request:new", "navigation:counts-changed"],
   message: ["messages:count", "navigation:counts-changed"],
+  relationship: ["relationship:changed"],
   group_chat_request: ["group-chat-request:new", "navigation:counts-changed"],
   counts: ["navigation:counts-changed"],
 }
@@ -238,9 +239,31 @@ export function createRealtimeRelay({
       }
       const kind = String(payload.kind || "notification").trim()
       const eventNames = realtimeEventNames[kind] || realtimeEventNames.notification
+      if (kind === "relationship" && Array.isArray(payload.relationships)) {
+        payload.relationships.slice(0, 10).forEach(relationship => {
+          const relationshipRecipientId = String(relationship?.recipientId || "").trim()
+          const peerUserId = String(relationship?.peerUserId || "").trim()
+          if (!relationshipRecipientId || !peerUserId) return
+          io.to(`user:${relationshipRecipientId}`).emit("relationship:changed", {
+            kind,
+            peerUserId,
+            occurredAt: Number(relationship?.occurredAt) || Date.now(),
+            isFollowing: Boolean(Number(relationship?.isFollowing)),
+            isFollower: Boolean(Number(relationship?.isFollower)),
+          })
+        })
+        send(encodeJson(200, { ok: true }))
+        return
+      }
       const eventPayload = {
         notificationId: String(payload.notificationId || ""),
         kind,
+      }
+      if (kind === "relationship") {
+        eventPayload.peerUserId = String(payload.peerUserId || "")
+        eventPayload.occurredAt = Number(payload.occurredAt) || Date.now()
+        eventPayload.isFollowing = Boolean(Number(payload.isFollowing))
+        eventPayload.isFollower = Boolean(Number(payload.isFollower))
       }
       eventNames.forEach((eventName) => {
         io.to(`user:${recipientId}`).emit(eventName, eventPayload)

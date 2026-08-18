@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, TrendingUp } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSharedValue } from 'react-native-reanimated';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -91,6 +91,7 @@ function LoadingSkeleton() {
 
 function PopularScreen() {
   const navigation = useNavigation<PopularNav>();
+  const isFocused = useIsFocused();
   const language = useAppLanguage();
   const copy = FEED_COPY[language];
   const { posts, isLoading, error, reload, updatePost, removePost } =
@@ -216,7 +217,7 @@ function PopularScreen() {
             <HomeVideoPostCard
               {...sharedProps}
               post={item as FeedVideoPost}
-              isScreenFocused
+              isScreenFocused={isFocused}
             />
           );
         case 'text':
@@ -282,6 +283,7 @@ function PopularScreen() {
       handleProfilePress,
       handleToggleReaction,
       handleVote,
+      isFocused,
       language,
       navigation,
       renderFallbackPost,

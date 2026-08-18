@@ -27,6 +27,19 @@ const SLOW_REQUEST_MS = 1_800;
 const FAST_REQUEST_MS = 800;
 const CONSTRAINED_HOLD_MS = 20_000;
 const FAST_SAMPLES_TO_RECOVER = 2;
+const PREFETCH_RETRY_BASE_DELAY_MS = 900;
+const PREFETCH_RETRY_MAX_DELAY_MS = 30_000;
+
+export function getFeedPrefetchRetryDelay(attempt: number): number {
+  const normalizedAttempt = Number.isFinite(attempt)
+    ? Math.max(1, Math.floor(attempt))
+    : 1;
+
+  return Math.min(
+    PREFETCH_RETRY_MAX_DELAY_MS,
+    PREFETCH_RETRY_BASE_DELAY_MS * 2 ** (normalizedAttempt - 1),
+  );
+}
 
 export function createFeedNetworkPolicy() {
   let mode: FeedNetworkMode = 'normal';

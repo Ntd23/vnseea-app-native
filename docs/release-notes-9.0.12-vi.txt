@@ -1,0 +1,7 @@
+Phiên bản 9.0.12
+
+• Bổ sung quy trình ứng tuyển và quản lý ứng viên.
+• Cải thiện tin nhắn nhóm: nhắc tên thành viên, trả lời và xem nội dung chia sẻ.
+• Nâng cấp gọi thoại/video, livestream và đồng bộ thời gian thực.
+• Cải thiện trải nghiệm đăng bài, Bảng tin, Reels, Stories và Marketplace.
+• Tối ưu giao diện Android, bàn phím Samsung, điều hướng và độ ổn định chung.

@@ -200,6 +200,7 @@ object LiveKitCallNotifier {
       LiveKitCallNativeActions.EXTRA_ACTION_TOKEN,
       LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID,
       LiveKitCallNativeActions.EXTRA_API_URL,
+      LiveKitCallNativeActions.EXTRA_EXPIRES_AT,
       LiveKitCallNativeActions.EXTRA_RING_MODE,
       LiveKitCallNativeActions.EXTRA_CALL_CONTEXT,
     )) {

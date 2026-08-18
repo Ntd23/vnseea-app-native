@@ -603,7 +603,7 @@ function RegisterScreen() {
 
               <AuthTextField
                 label={copy.registerEmail}
-                placeholder={copy.emailPlaceholder}
+                placeholder={copy.registerIdentityPlaceholder}
                 value={email}
                 onChangeText={value => {
                   setEmail(value);

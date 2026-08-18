@@ -29,15 +29,30 @@ function appendMissingById<T extends { id: string }>(
 export function resolveDeferredFeedCommit(input: {
   latestLightPosts: readonly FeedPost[];
   latestVideoPosts: readonly FeedVideoPost[];
+  pendingLightPosts?: readonly FeedPost[];
   pendingVideoPosts: readonly FeedVideoPost[];
 }) {
   return {
-    lightPosts: [...input.latestLightPosts],
+    lightPosts: input.pendingLightPosts
+      ? appendMissingById(input.pendingLightPosts, input.latestLightPosts)
+      : [...input.latestLightPosts],
     videoPosts: appendMissingById(
       input.latestVideoPosts,
       input.pendingVideoPosts,
     ),
   };
+}
+
+export function resolveDeferredFeedPreservedPosts(input: {
+  preserveRenderedOrder?: boolean;
+  preserveExistingPosts?: readonly FeedPost[];
+  renderedPosts: readonly FeedPost[];
+}) {
+  if (input.preserveExistingPosts !== undefined) {
+    return input.preserveExistingPosts;
+  }
+
+  return input.preserveRenderedOrder ? input.renderedPosts : undefined;
 }
 
 export function mergePendingVideoSnapshots(

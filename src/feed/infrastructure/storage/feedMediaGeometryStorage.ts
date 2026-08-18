@@ -33,7 +33,9 @@ function readCache() {
 }
 
 function persist(cache: Map<string, number>) {
-  const entries = Array.from(cache.entries()).slice(-MAX_ENTRIES) as StoredEntry[];
+  const entries = Array.from(cache.entries()).slice(
+    -MAX_ENTRIES,
+  ) as StoredEntry[];
   storage.set(CACHE_KEY, JSON.stringify(entries));
 }
 

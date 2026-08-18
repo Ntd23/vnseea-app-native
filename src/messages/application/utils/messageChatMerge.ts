@@ -1,4 +1,5 @@
 import type { ChatItem } from '../../domain/types/messages.types';
+import { getChatActivityTime } from '../../domain/utils/messageChatActivity';
 
 function getChatMergeKey(chat: ChatItem) {
   return chat.chatType === 'user' ? `${chat.chatType}:${chat.userId}` : chat.id;
@@ -17,10 +18,45 @@ function hasConversationActivity(chat: ChatItem) {
 }
 
 function mergeRelationshipState(base: ChatItem, incoming: ChatItem) {
+  const baseDefinesState =
+    base.isFollowing !== undefined || base.isFollower !== undefined;
+  const incomingDefinesState =
+    incoming.isFollowing !== undefined || incoming.isFollower !== undefined;
+  const baseRevision = base.relationshipStateRevision ?? 0;
+  const incomingRevision = incoming.relationshipStateRevision ?? 0;
+  const useIncoming =
+    incomingDefinesState &&
+    (!baseDefinesState ||
+      incomingRevision > baseRevision ||
+      (incomingRevision === baseRevision &&
+        ((incomingRevision > 0) ||
+          (incoming.relationshipActivityTime ?? 0) >=
+            (base.relationshipActivityTime ?? 0))));
+  const source = useIncoming ? incoming : base;
+  const fallback = useIncoming ? base : incoming;
+  const isFollowing = source.isFollowing ?? fallback.isFollowing;
+  const isFollower = source.isFollower ?? fallback.isFollower;
+  const hasRelationship = Boolean(isFollowing || isFollower);
+  const relationshipActivityTime = hasRelationship
+    ? source.relationshipActivityTime ?? fallback.relationshipActivityTime ?? 0
+    : 0;
+  const relationshipStateRevision = Math.max(baseRevision, incomingRevision);
+
   return {
-    isFollowing: incoming.isFollowing ?? base.isFollowing,
-    isFollower: incoming.isFollower ?? base.isFollower,
+    isFollowing,
+    isFollower,
     isOnline: incoming.isOnline,
+    relationshipActivityTime:
+      relationshipActivityTime > 0 ? relationshipActivityTime : undefined,
+    relationshipStateRevision:
+      relationshipStateRevision > 0
+        ? relationshipStateRevision
+        : undefined,
+    relationshipEventOccurredAt:
+      Math.max(
+        base.relationshipEventOccurredAt ?? 0,
+        incoming.relationshipEventOccurredAt ?? 0,
+      ) || undefined,
   };
 }
 
@@ -48,9 +84,8 @@ function mergeSameChat(current: ChatItem, incoming: ChatItem) {
   if (incomingHasConversation && !currentHasConversation) {
     return {
       ...incoming,
-      isFollowing: incoming.isFollowing ?? current.isFollowing,
-      isFollower: incoming.isFollower ?? current.isFollower,
       labels: current.labels ?? incoming.labels,
+      ...mergeRelationshipState(current, incoming),
     };
   }
 
@@ -73,9 +108,8 @@ function mergeSameChat(current: ChatItem, incoming: ChatItem) {
     avatar: incoming.avatar || newest.avatar,
     notificationsMuted:
       incoming.notificationsMuted ?? newest.notificationsMuted,
-    isFollowing: newest.isFollowing ?? oldest.isFollowing,
-    isFollower: newest.isFollower ?? oldest.isFollower,
     labels: newest.labels ?? oldest.labels,
+    ...mergeRelationshipState(oldest, newest),
   };
 }
 
@@ -87,15 +121,28 @@ function getSortBucket(chat: ChatItem) {
 }
 
 function compareChatItems(left: ChatItem, right: ChatItem) {
+  const bothDirectUsers =
+    left.chatType === 'user' && right.chatType === 'user';
+  if (bothDirectUsers) {
+    const timeDifference =
+      getChatActivityTime(right) - getChatActivityTime(left);
+    if (timeDifference !== 0) return timeDifference;
+  }
+
+  const unreadDifference = right.unreadCount - left.unreadCount;
+  if (unreadDifference !== 0) return unreadDifference;
+
   const leftBucket = getSortBucket(left);
   const rightBucket = getSortBucket(right);
 
   if (leftBucket !== rightBucket) return leftBucket - rightBucket;
 
-  const timeDifference = right.lastMessageTime - left.lastMessageTime;
-  if (timeDifference !== 0) return timeDifference;
+  if (!bothDirectUsers) {
+    const timeDifference = right.lastMessageTime - left.lastMessageTime;
+    if (timeDifference !== 0) return timeDifference;
+  }
 
-  return right.unreadCount - left.unreadCount;
+  return 0;
 }
 
 export function mergeChatItems(...chatLists: ChatItem[][]) {

@@ -339,19 +339,8 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
     }
   }
 
-  // DEBUG: Log raw timestamps for debugging new uploads
   const postedAt = readNumber(raw, 'posted', 'time');
   const expiresAt = readNumber(raw, 'expire');
-  console.log(
-    '[ApiStoriesRepository] mapStory - ID:',
-    id,
-    'posted:',
-    postedAt,
-    'expire:',
-    expiresAt,
-    'current time:',
-    Math.floor(Date.now() / 1000)
-  );
 
   const title = readString(raw, 'title') || undefined;
   const description = readString(raw, 'description') || undefined;
@@ -397,9 +386,6 @@ export function createStoriesRepository(): StoriesRepository {
 
       const rows = response.stories ?? [];
 
-      // DEBUG: Log raw response for debugging
-      console.log('[StoriesRepo] getStories - received', rows.length, 'rows');
-
       const validRows = rows;
 
       // WoWonder's get_stories returns EACH STORY SEGMENT AS A SEPARATE ROW.
@@ -431,12 +417,6 @@ export function createStoriesRepository(): StoriesRepository {
         }
       }
 
-      console.log(
-        '[StoriesRepo] getStories - final grouped count:',
-        grouped.size,
-        'stories'
-      );
-
       return filterActiveStories(Array.from(grouped.values()));
     },
 
@@ -448,13 +428,6 @@ export function createStoriesRepository(): StoriesRepository {
 
       const users = response.stories ?? [];
 
-      // DEBUG: Log raw response for debugging
-      console.log(
-        '[StoriesRepo] getUserStories - received',
-        users.length,
-        'users'
-      );
-
       // Group multi-segment stories by publisher + storyId
       // CRITICAL: Each user's stories are already grouped by PHP on server side
       // But we still need to dedupe media segments within each story
@@ -462,9 +435,6 @@ export function createStoriesRepository(): StoriesRepository {
 
       for (const user of users) {
         const storiesList = Array.isArray(user.stories) ? user.stories : [];
-        console.log(
-          `[StoriesRepo] getUserStories - user ${user.user_id || user.id} has ${storiesList.length} story rows`
-        );
 
         for (const storyRaw of storiesList) {
           const raw = storyRaw as Record<string, unknown>;
@@ -491,12 +461,6 @@ export function createStoriesRepository(): StoriesRepository {
           }
         }
       }
-
-      console.log(
-        '[StoriesRepo] getUserStories - final grouped count:',
-        grouped.size,
-        'stories'
-      );
 
       return filterActiveStories(Array.from(grouped.values()));
     },

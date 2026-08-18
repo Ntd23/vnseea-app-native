@@ -18,6 +18,11 @@ import type {
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { mergeChatItems } from '../utils/messageChatMerge';
 import {
+  applyRelationshipChange as applyRelationshipChangeToChats,
+  stampAuthoritativeRelationshipSnapshot,
+  type MessageRelationshipChange,
+} from '../utils/messageRelationshipState';
+import {
   getMessagesStartupSnapshot,
   preloadMessagesStartupChats,
   setMessagesStartupSnapshot,
@@ -25,6 +30,21 @@ import {
 
 const repository = createMessagesRepository();
 const CHAT_SYNC_INTERVAL_MS = 3500;
+
+function reconcileDiscoverySnapshot(
+  currentChats: ChatItem[],
+  incomingChats: ChatItem[],
+) {
+  const incomingUserIds = new Set(
+    incomingChats
+      .filter(chat => chat.chatType === 'user')
+      .map(chat => chat.userId),
+  );
+  return currentChats.filter(
+    chat =>
+      chat.hasConversationRecord !== false || incomingUserIds.has(chat.userId),
+  );
+}
 
 function areLabelsEqual(
   left: MessageLabel[] | undefined,
@@ -43,33 +63,6 @@ function areLabelsEqual(
       label.color === other?.color
     );
   });
-}
-
-function applyFollowingStatus(
-  chats: ChatItem[],
-  followingIds: Set<string>,
-  followerIds: Set<string> = new Set(),
-): ChatItem[] {
-  let changed = false;
-  const nextChats = chats.map(chat => {
-    const isFollowing =
-      chat.chatType === 'user' ? followingIds.has(chat.userId) : false;
-    const isFollower =
-      chat.chatType === 'user' ? followerIds.has(chat.userId) : false;
-
-    if (chat.isFollowing === isFollowing && chat.isFollower === isFollower) {
-      return chat;
-    }
-
-    changed = true;
-    return {
-      ...chat,
-      isFollowing,
-      isFollower,
-    };
-  });
-
-  return changed ? nextChats : chats;
 }
 
 function syncUnreadBadgeCount(chats: ChatItem[]) {
@@ -178,27 +171,13 @@ export function useMessagesViewModel() {
   const isSyncingLatestChatsRef = useRef(false);
   const isLoadingLabelsRef = useRef(false);
   const labelRecipientsRef = useRef<LabelRecipient[]>([]);
-  const followingUserIdsRef = useRef<Set<string>>(new Set());
-  const followerUserIdsRef = useRef<Set<string>>(new Set());
-
-  // Load following and follower user IDs from API
-  const loadFollowingUserIds = useCallback(async (forceRefresh = false) => {
-    try {
-      const [followingIds, followerIds] = await Promise.all([
-        repository.getFollowingUserIds(forceRefresh),
-        repository.getFollowerUserIds(forceRefresh),
-      ]);
-      followingUserIdsRef.current = followingIds;
-      followerUserIdsRef.current = followerIds;
-      // Re-stamp following and follower status on current chats
-      setState(prev => ({
-        ...prev,
-        chats: applyFollowingStatus(prev.chats, followingIds, followerIds),
-      }));
-    } catch {
-      // Silent: keep current state
-    }
-  }, []);
+  const relationshipRevisionRef = useRef(
+    getMessagesStartupSnapshot().reduce(
+      (highestRevision, chat) =>
+        Math.max(highestRevision, chat.relationshipStateRevision ?? 0),
+      0,
+    ),
+  );
 
   // Load all chats
   const loadChats = useCallback(async (
@@ -215,35 +194,80 @@ export function useMessagesViewModel() {
     }));
 
     try {
+      const isAuthoritativeRelationshipRefresh =
+        Boolean(options.forceRefresh) &&
+        (options.includeDiscovery ?? true);
+      const requestRevision = isAuthoritativeRelationshipRefresh
+        ? relationshipRevisionRef.current + 1
+        : relationshipRevisionRef.current;
+      if (isAuthoritativeRelationshipRefresh) {
+        relationshipRevisionRef.current = requestRevision;
+      }
       const chats = await repository.getChats({
         includeDiscovery: options.includeDiscovery ?? true,
         latestOnly: options.latestOnly,
         forceRefresh: options.forceRefresh,
       });
+      if (
+        isAuthoritativeRelationshipRefresh &&
+        requestRevision !== relationshipRevisionRef.current
+      ) {
+        setState(prev => ({ ...prev, isLoadingChats: false }));
+        return false;
+      }
       setState(prev => {
+        if (
+          isAuthoritativeRelationshipRefresh &&
+          requestRevision !== relationshipRevisionRef.current
+        ) {
+          return { ...prev, isLoadingChats: false };
+        }
+        const incomingChats = isAuthoritativeRelationshipRefresh
+          ? stampAuthoritativeRelationshipSnapshot(chats, requestRevision)
+          : chats;
+        const currentChats = isAuthoritativeRelationshipRefresh
+          ? reconcileDiscoverySnapshot(prev.chats, incomingChats)
+          : prev.chats;
         const nextChats =
-          options.merge || prev.chats.length > 0
-            ? mergeChatItems(prev.chats, chats)
-            : chats;
+          options.merge || currentChats.length > 0
+            ? mergeChatItems(currentChats, incomingChats)
+            : incomingChats;
+
+        const labeledChats = applyLabelsToChats(
+          nextChats,
+          labelRecipientsRef.current,
+        );
 
         return {
           ...prev,
-          chats: applyFollowingStatus(
-            applyLabelsToChats(nextChats, labelRecipientsRef.current),
-            followingUserIdsRef.current,
-            followerUserIdsRef.current,
-          ),
+          chats: labeledChats,
           isLoadingChats: false,
         };
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Không tải được danh sách tin nhắn';
       setState(prev => ({ ...prev, error: errorMessage, isLoadingChats: false }));
+      return false;
     } finally {
       isLoadingChatsRef.current = false;
     }
     return true;
   }, []);
+
+  const applyRelationshipChange = useCallback(
+    (change: Omit<MessageRelationshipChange, 'revision'>) => {
+      const revision = relationshipRevisionRef.current + 1;
+      relationshipRevisionRef.current = revision;
+      setState(prev => ({
+        ...prev,
+        chats: applyRelationshipChangeToChats(prev.chats, {
+          ...change,
+          revision,
+        }),
+      }));
+    },
+    [],
+  );
 
   const syncLatestChats = useCallback(async () => {
     if (isSyncingLatestChatsRef.current) return;
@@ -266,11 +290,7 @@ export function useMessagesViewModel() {
 
         return {
           ...prev,
-          chats: applyFollowingStatus(
-            applyLabelsToChats(chats, labelRecipientsRef.current),
-            followingUserIdsRef.current,
-            followerUserIdsRef.current,
-          ),
+          chats: applyLabelsToChats(chats, labelRecipientsRef.current),
         };
       });
     } catch {
@@ -664,7 +684,6 @@ export function useMessagesViewModel() {
           merge: true,
         }).catch(() => undefined);
         loadLabels().catch(() => undefined);
-        loadFollowingUserIds(false).catch(() => undefined);
       }, 120);
     };
     const task = InteractionManager.runAfterInteractions(() => {
@@ -704,7 +723,7 @@ export function useMessagesViewModel() {
       task.cancel();
       if (enrichmentTimer) clearTimeout(enrichmentTimer);
     };
-  }, [loadChats, loadLabels, loadFollowingUserIds]);
+  }, [loadChats, loadLabels]);
 
   useEffect(() => {
     if (state.chats.length > 0) {
@@ -772,7 +791,7 @@ export function useMessagesViewModel() {
     syncLatestChats,
     chatSyncIntervalMs: CHAT_SYNC_INTERVAL_MS,
     loadLabels,
-    loadFollowingUserIds,
+    applyRelationshipChange,
     loadGroupChats,
     createGroupChat,
     createLabel,

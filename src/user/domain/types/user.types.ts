@@ -204,6 +204,7 @@ export type MapPlacePredictionsInput = {
   fast?: boolean;
   globalSearch?: boolean;
   signal?: AbortSignal;
+  onPartialPredictions?: (predictions: MapPlacePrediction[]) => void;
 };
 
 export type MapPlacePrediction = {

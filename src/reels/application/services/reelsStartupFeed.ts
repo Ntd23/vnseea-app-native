@@ -117,8 +117,12 @@ export function mergeFeedVideoPostSnapshotIntoReel(
     ...current,
     ...snapshot,
     ...sharePermission,
-    videoUrl: snapshot.videoUrl || current.videoUrl,
-    thumbnailUrl: snapshot.thumbnailUrl ?? current.thumbnailUrl,
+    // Realtime comes from a different endpoint than the Reels lane and may
+    // describe the same file with another CDN/normalized URL. Keep the media
+    // identity already owned by the mounted reel so an engagement-only update
+    // cannot rebuild the Android native player and flash the video surface.
+    videoUrl: current.videoUrl || snapshot.videoUrl,
+    thumbnailUrl: current.thumbnailUrl ?? snapshot.thumbnailUrl,
     viewCount: post.viewCount ?? current.viewCount,
     isSaved: post.isSaved ?? current.isSaved,
     isReposted: snapshot.isReposted || current.isReposted,
@@ -136,30 +140,35 @@ export function mergeFeedVideoPostSnapshotIntoReel(
 export function mergeReelsStartupItems(
   currentItems: ReelsItem[],
   freshItems: ReelsItem[],
+  pinnedItem?: ReelsItem,
 ) {
-  if (currentItems.length === 0) return playableItems(freshItems);
-
-  const freshById = new Map(
-    playableItems(freshItems).map(item => [String(item.id), item]),
+  const currentById = new Map(
+    playableItems(currentItems).map(item => [String(item.id), item]),
   );
-  const seen = new Set<string>();
-  const merged = currentItems
-    .filter(item => Boolean(item?.id && item.videoUrl))
-    .map(item => {
-      const id = String(item.id);
-      seen.add(id);
-      return freshById.get(id) ?? item;
-    });
 
-  for (const item of freshById.values()) {
-    const id = String(item.id);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    merged.push(item);
-    if (merged.length >= REELS_STARTUP_ITEM_LIMIT) break;
-  }
+  const authoritativeItems = playableItems(freshItems)
+    .map(freshItem => {
+      const currentItem = currentById.get(String(freshItem.id));
+      if (!currentItem) return freshItem;
+      return {
+        ...currentItem,
+        ...freshItem,
+        publisher: {
+          ...currentItem.publisher,
+          ...freshItem.publisher,
+        },
+      };
+    })
+    .slice(0, REELS_STARTUP_ITEM_LIMIT);
 
-  return merged.slice(0, REELS_STARTUP_ITEM_LIMIT);
+  if (!pinnedItem?.id || !pinnedItem.videoUrl) return authoritativeItems;
+
+  return [
+    pinnedItem,
+    ...authoritativeItems.filter(
+      item => String(item.id) !== String(pinnedItem.id),
+    ),
+  ].slice(0, REELS_STARTUP_ITEM_LIMIT);
 }
 
 export function getReelsStartupSnapshot(initialVideo?: {

@@ -145,10 +145,12 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
 import { feedLogoEvents } from '../../../feed/application/events/feedLogoEvents';
+import { getChatPreviewTime } from '../../domain/utils/messageChatActivity';
 import { sortMessageUserChats } from '../utils/messageListOrdering';
 import {
   isMessageRealtimeConnected,
   subscribeToMessageInvalidations,
+  subscribeToMessageRealtimeEvent,
   subscribeToMessageRealtimeConnection,
 } from '../../infrastructure/realtime/messageRealtimeRuntime';
 import {
@@ -170,6 +172,13 @@ const MESSAGE_BROADCAST_RECIPIENT_LIST_MAX_HEIGHT = 240;
 const MESSAGE_LIST_INITIAL_RENDER_COUNT = 8;
 const MESSAGE_LIST_BATCH_SIZE = 8;
 const MESSAGE_LIST_WINDOW_SIZE = 5;
+const MESSAGE_RELATIONSHIP_REFRESH_RETRY_DELAYS_MS = [
+  1000,
+  2000,
+  5000,
+  10000,
+  30000,
+] as const;
 
 const MESSAGE_COPY: Record<
 
@@ -1417,7 +1426,7 @@ const ChatListItem = React.memo(function ChatListItem({
 
           <Text className="ml-2 shrink-0 text-xs text-gray-500">
 
-            {formatTime(chat.lastMessageTime, copy)}
+            {formatTime(getChatPreviewTime(chat), copy)}
 
           </Text>
 
@@ -2253,7 +2262,7 @@ function MessageScreen() {
 
     loadLabels,
 
-    loadFollowingUserIds,
+    applyRelationshipChange,
 
     isSending,
 
@@ -2503,11 +2512,21 @@ function MessageScreen() {
       let realtimeRefreshCancelled = false;
       let completedFallbackPollCount = 0;
       let fallbackPollTimer: ReturnType<typeof setTimeout> | null = null;
+      let relationshipRefreshRunning = false;
+      let relationshipRefreshDirty = false;
+      let relationshipRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+      let relationshipRefreshRetryCount = 0;
 
       const clearFallbackPollTimer = () => {
         if (!fallbackPollTimer) return;
         clearTimeout(fallbackPollTimer);
         fallbackPollTimer = null;
+      };
+
+      const clearRelationshipRefreshTimer = () => {
+        if (!relationshipRefreshTimer) return;
+        clearTimeout(relationshipRefreshTimer);
+        relationshipRefreshTimer = null;
       };
 
       const flushRealtimeRefresh = async () => {
@@ -2523,22 +2542,62 @@ function MessageScreen() {
         }
       };
 
+      function scheduleRelationshipRefresh(delay = 0) {
+        if (realtimeRefreshCancelled || relationshipRefreshTimer) return;
+        relationshipRefreshTimer = setTimeout(() => {
+          relationshipRefreshTimer = null;
+          flushRelationshipRefresh().catch(() => undefined);
+        }, delay);
+      }
+
+      async function flushRelationshipRefresh() {
+        if (relationshipRefreshRunning || realtimeRefreshCancelled) return;
+        relationshipRefreshRunning = true;
+        relationshipRefreshDirty = false;
+        let retryDelay = 0;
+        try {
+          const loaded = await loadChats(false, {
+            forceRefresh: true,
+            includeDiscovery: true,
+            merge: true,
+          });
+          if (loaded) {
+            relationshipRefreshRetryCount = 0;
+          } else if (
+            relationshipRefreshRetryCount <
+            MESSAGE_RELATIONSHIP_REFRESH_RETRY_DELAYS_MS.length
+          ) {
+            retryDelay =
+              MESSAGE_RELATIONSHIP_REFRESH_RETRY_DELAYS_MS[
+                relationshipRefreshRetryCount
+              ];
+            relationshipRefreshRetryCount += 1;
+            relationshipRefreshDirty = true;
+          }
+        } finally {
+          relationshipRefreshRunning = false;
+          if (relationshipRefreshDirty && !realtimeRefreshCancelled) {
+            scheduleRelationshipRefresh(retryDelay);
+          }
+        }
+      }
+
+      const requestRelationshipRefresh = () => {
+        relationshipRefreshRetryCount = 0;
+        relationshipRefreshDirty = true;
+        scheduleRelationshipRefresh();
+      };
+
       if (hasFocusedOnceRef.current) {
 
         loadLabels()
-          .then(() =>
-            loadChats(false, {
-              forceRefresh: true,
-              includeDiscovery: true,
-            }),
-          )
-          .catch(() => undefined);
-
-        loadFollowingUserIds(true).catch(() => undefined);
+          .catch(() => undefined)
+          .finally(requestRelationshipRefresh);
 
       } else {
 
         hasFocusedOnceRef.current = true;
+        requestRelationshipRefresh();
 
       }
 
@@ -2546,11 +2605,34 @@ function MessageScreen() {
         realtimeRefreshDirty = true;
         flushRealtimeRefresh().catch(() => undefined);
       });
+      const unsubscribeRelationshipRealtime = subscribeToMessageRealtimeEvent(
+        'relationship:changed',
+        payload => {
+          if (!payload || typeof payload !== 'object') return;
+          const event = payload as Record<string, unknown>;
+          const peerUserId = String(event.peerUserId ?? '').trim();
+          const occurredAt = Number(event.occurredAt);
+          if (!/^[1-9][0-9]*$/.test(peerUserId) || !Number.isFinite(occurredAt)) {
+            return;
+          }
+          const readBoolean = (value: unknown) =>
+            value === true || value === 1 || value === '1';
+          applyRelationshipChange({
+            peerUserId,
+            occurredAt,
+            isFollowing: readBoolean(event.isFollowing),
+            isFollower: readBoolean(event.isFollower),
+          });
+          requestRelationshipRefresh();
+        },
+      );
 
       if (isRealtimeConnected) {
         return () => {
           realtimeRefreshCancelled = true;
           unsubscribeRealtime();
+          unsubscribeRelationshipRealtime();
+          clearRelationshipRefreshTimer();
         };
       }
 
@@ -2570,6 +2652,9 @@ function MessageScreen() {
             .finally(() => {
               if (realtimeRefreshCancelled) return;
               completedFallbackPollCount += 1;
+              if (completedFallbackPollCount % 3 === 0) {
+                requestRelationshipRefresh();
+              }
               scheduleFallbackPoll();
             });
         }, getBoundedFallbackPollDelay(
@@ -2595,14 +2680,16 @@ function MessageScreen() {
       return () => {
         realtimeRefreshCancelled = true;
         unsubscribeRealtime();
+        unsubscribeRelationshipRealtime();
         clearFallbackPollTimer();
+        clearRelationshipRefreshTimer();
         appStateSubscription.remove();
       };
 
     }, [
       isRealtimeConnected,
+      applyRelationshipChange,
       loadChats,
-      loadFollowingUserIds,
       loadLabels,
       syncLatestChats,
     ]),
@@ -2755,17 +2842,11 @@ function MessageScreen() {
 
     setRefreshing(true);
 
-    await Promise.all([
-
-      loadChats(true, { forceRefresh: true }),
-
-      loadFollowingUserIds(true),
-
-    ]).catch(() => undefined);
+    await loadChats(true, { forceRefresh: true }).catch(() => undefined);
 
     setRefreshing(false);
 
-  }, [loadChats, loadFollowingUserIds]);
+  }, [loadChats]);
 
   const handleChatPress = useCallback(
 

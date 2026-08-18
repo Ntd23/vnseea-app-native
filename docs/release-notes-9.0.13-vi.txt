@@ -1,0 +1,6 @@
+Phiên bản 9.0.13
+
+• Ổn định phát video khi quay lại ứng dụng và chuyển giữa Bảng tin với Trang cá nhân.
+• Tối ưu tài nguyên phát video, hạn chế decoder chạy chồng chéo khi cuộn nhanh.
+• Giữ bố cục ảnh bài viết ổn định trong lúc tải, giảm hiện tượng Bảng tin bị nhảy.
+• Cải thiện hiệu năng và độ ổn định chung trên Android.

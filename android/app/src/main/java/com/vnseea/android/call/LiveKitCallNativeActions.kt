@@ -36,6 +36,7 @@ object LiveKitCallNativeActions {
   const val EXTRA_ACTION_TOKEN = "action_token"
   const val EXTRA_CLIENT_ENDPOINT_ID = "client_endpoint_id"
   const val EXTRA_API_URL = "api_url"
+  const val EXTRA_EXPIRES_AT = "expires_at"
   const val EXTRA_RING_MODE = "ring_mode"
   const val EXTRA_CALL_CONTEXT = "call_context"
   const val EXTRA_NATIVE_ACTION = "vnseea_call_action"

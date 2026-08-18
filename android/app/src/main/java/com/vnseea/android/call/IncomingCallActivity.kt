@@ -43,10 +43,23 @@ import java.util.Calendar
 class IncomingCallActivity : Activity() {
   private companion object {
     const val INCOMING_CALL_RINGTONE_RES_NAME = "incoming_call_ringtone"
+    const val DEFAULT_INCOMING_CALL_EXPIRY_DELAY_MS = 50_000L
+    const val MAX_INCOMING_CALL_EXPIRY_DELAY_MS = 60_000L
   }
 
   private var dismissReceiver: BroadcastReceiver? = null
   private var ringtone: Ringtone? = null
+  private val incomingCallExpiryHandler = Handler(Looper.getMainLooper())
+  private val incomingCallExpiryRunnable = Runnable {
+    val callId = extra(LiveKitCallNativeActions.EXTRA_CALL_ID)
+    if (callId.isBlank()) {
+      stopRingtone()
+      cancelNotification()
+      finishAndRemoveTask()
+      return@Runnable
+    }
+    LiveKitCallNativeActions.dismissIncomingCall(this, callId)
+  }
 
   private fun extra(key: String) = intent.getStringExtra(key).orEmpty()
 
@@ -66,6 +79,7 @@ class IncomingCallActivity : Activity() {
     window.navigationBarColor = Color.TRANSPARENT
 
     registerDismissReceiver()
+    scheduleIncomingCallExpiry()
 
     val isGroupCall = extra(LiveKitCallNativeActions.EXTRA_EVENT_TYPE) == "livekit_group_call"
     val callerName = if (isGroupCall) {
@@ -329,7 +343,29 @@ class IncomingCallActivity : Activity() {
   override fun onNewIntent(nextIntent: Intent) {
     super.onNewIntent(nextIntent)
     setIntent(nextIntent)
-    finishIfIncomingCallWasHandled()
+    if (!finishIfIncomingCallWasHandled()) {
+      scheduleIncomingCallExpiry()
+    }
+  }
+
+  private fun scheduleIncomingCallExpiry() {
+    incomingCallExpiryHandler.removeCallbacks(incomingCallExpiryRunnable)
+    val rawExpiresAt = extra(LiveKitCallNativeActions.EXTRA_EXPIRES_AT)
+      .trim()
+      .toLongOrNull()
+    val expiresAtMillis = rawExpiresAt?.let { value ->
+      if (value >= 10_000_000_000L) value else value * 1_000L
+    }
+    val delayMs = if (expiresAtMillis != null && expiresAtMillis > 0L) {
+      (expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(0L)
+    } else {
+      DEFAULT_INCOMING_CALL_EXPIRY_DELAY_MS
+    }.coerceAtMost(MAX_INCOMING_CALL_EXPIRY_DELAY_MS)
+
+    incomingCallExpiryHandler.postDelayed(
+      incomingCallExpiryRunnable,
+      delayMs,
+    )
   }
 
   private fun finishIfIncomingCallWasHandled(): Boolean {
@@ -344,6 +380,7 @@ class IncomingCallActivity : Activity() {
   }
 
   override fun onDestroy() {
+    incomingCallExpiryHandler.removeCallbacks(incomingCallExpiryRunnable)
     stopRingtone()
     dismissReceiver?.let { receiver ->
       try {

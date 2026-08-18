@@ -106,7 +106,10 @@ describe('getCurrentDeviceLocation performance behavior', () => {
       const getCurrentLocation = jest.fn().mockRejectedValue(nativeError);
       mockAndroidLocation(getCurrentLocation);
 
-      const { getCurrentDeviceLocation, isLocationAccessError } = require('../currentLocation');
+      const {
+        getCurrentDeviceLocation,
+        isLocationAccessError,
+      } = require('../currentLocation');
 
       await expect(getCurrentDeviceLocation()).rejects.toMatchObject({
         name: 'LocationAccessError',
@@ -168,5 +171,33 @@ describe('getCurrentDeviceLocation performance behavior', () => {
 
     await expect(requestAndroidLocationPermission()).resolves.toBe(true);
     expect(requestMultiple).not.toHaveBeenCalled();
+  });
+
+  it('delegates Android location-services consent to the native system dialog', async () => {
+    const requestLocationServices = jest.fn().mockResolvedValue(true);
+
+    jest.doMock('react-native', () => ({
+      NativeModules: {
+        VnseeaCurrentLocation: {
+          getCurrentLocation: jest.fn(),
+          requestLocationServices,
+        },
+      },
+      Platform: { OS: 'android' },
+      PermissionsAndroid: {
+        PERMISSIONS: {
+          ACCESS_FINE_LOCATION: 'android.permission.ACCESS_FINE_LOCATION',
+          ACCESS_COARSE_LOCATION: 'android.permission.ACCESS_COARSE_LOCATION',
+        },
+        RESULTS: { GRANTED: 'granted' },
+        check: jest.fn().mockResolvedValue(true),
+        requestMultiple: jest.fn(),
+      },
+    }));
+
+    const { requestAndroidLocationServices } = require('../currentLocation');
+
+    await expect(requestAndroidLocationServices()).resolves.toBe(true);
+    expect(requestLocationServices).toHaveBeenCalledTimes(1);
   });
 });

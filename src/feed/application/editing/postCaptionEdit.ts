@@ -36,6 +36,15 @@ export function applyLocalPostCaptionEdit<
   T extends { id: string; caption?: string; mentionNames?: string[] },
 >(post: T): T {
   const localEdit = localPostEditsStorage.getCaptionEdit(post.id);
+  return applyResolvedLocalPostCaptionEdit(post, localEdit);
+}
+
+function applyResolvedLocalPostCaptionEdit<
+  T extends { id: string; caption?: string; mentionNames?: string[] },
+>(
+  post: T,
+  localEdit: ReturnType<typeof localPostEditsStorage.getCaptionEdit>,
+): T {
   if (!localEdit) return post;
   if (post.caption === localEdit.text && post.mentionNames === undefined) {
     return post;
@@ -49,6 +58,9 @@ export function applyLocalPostCaptionEdit<
 
 export function applyLocalPostCaptionEdits<
   T extends { id: string; caption?: string; mentionNames?: string[] },
->(posts: T[]): T[] {
-  return posts.map(applyLocalPostCaptionEdit);
+>(posts: T[], userId?: string): T[] {
+  const localEdits = localPostEditsStorage.getCaptionEdits(userId);
+  return posts.map(post =>
+    applyResolvedLocalPostCaptionEdit(post, localEdits[post.id] ?? null),
+  );
 }

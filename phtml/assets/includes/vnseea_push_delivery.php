@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/vnseea_call_notification_policy.php';
+
 if (!function_exists('VNSEEA_PushUuidV4')) {
     function VNSEEA_PushUuidV4()
     {
@@ -672,7 +674,11 @@ if (!function_exists('VNSEEA_MessagePushDescriptor')) {
             return array('type' => 'location', 'text' => $is_vi ? 'Đã chia sẻ một vị trí' : 'Shared a location');
         }
         if (strpos($type_two, 'call') !== false) {
-            return array('type' => 'call_event', 'text' => $is_vi ? 'Hoạt động cuộc gọi' : 'Call activity');
+            $status = VNSEEA_MessageCallStatus($message);
+            $call_text = in_array($status, array('missed', 'no_answer'), true)
+                ? ($is_vi ? 'Cuộc gọi nhỡ' : 'Missed call')
+                : ($is_vi ? 'Hoạt động cuộc gọi' : 'Call activity');
+            return array('type' => 'call_event', 'text' => $call_text);
         }
         if ($recipient_was_mentioned) {
             $mention_label = $is_vi ? 'Đã nhắc đến bạn' : 'Mentioned you';
@@ -852,6 +858,9 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
         );
         $message = $message_query ? mysqli_fetch_assoc($message_query) : null;
         if (empty($message)) {
+            return false;
+        }
+        if (!VNSEEA_ShouldDeliverMessagePush($message)) {
             return false;
         }
 
@@ -1497,10 +1506,13 @@ if (!function_exists('VNSEEA_PushDeliverySourceIsActive')) {
             $payload = is_array($payload) ? $payload : array();
             $query = mysqli_query(
                 $sqlConnect,
-                "SELECT `id`,`to_id`,`seen`,`group_id`,`time` FROM " . T_MESSAGES . " WHERE `id`={$source_id} LIMIT 1"
+                "SELECT `id`,`to_id`,`seen`,`group_id`,`time`,`type_two`,`text` FROM " . T_MESSAGES . " WHERE `id`={$source_id} LIMIT 1"
             );
             $message = $query ? mysqli_fetch_assoc($query) : null;
             if (empty($message)) {
+                return false;
+            }
+            if (!VNSEEA_ShouldDeliverMessagePush($message)) {
                 return false;
             }
             $recipient_id = (int)$delivery['recipient_user_id'];
@@ -1591,7 +1603,9 @@ if (!function_exists('VNSEEA_MarkPushSourceAccepted')) {
             mysqli_query(
                 $sqlConnect,
                 "UPDATE " . T_MESSAGES .
-                " SET `sent_push`=1,`notification_id`='{$provider_id_sql}' WHERE `id`={$source_id}"
+                " SET `sent_push`=1,`notification_id`=CASE" .
+                " WHEN `type_two` IN ('audio_call','video_call') THEN `notification_id`" .
+                " ELSE '{$provider_id_sql}' END WHERE `id`={$source_id}"
             );
         } elseif ($delivery['source_type'] === 'notification') {
             mysqli_query(

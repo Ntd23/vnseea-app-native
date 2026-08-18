@@ -247,6 +247,7 @@ export const InlineLiveStreamPlayer = React.memo(
             <Image
               source={{ uri: item.thumbnailUrl }}
               resizeMode="cover"
+              resizeMethod="resize"
               style={styles.posterImage}
             />
           ) : (

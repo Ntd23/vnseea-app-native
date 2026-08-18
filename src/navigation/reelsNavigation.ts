@@ -1,4 +1,4 @@
-import { Platform, StatusBar } from 'react-native';
+import { Platform } from 'react-native';
 import { ROUTES } from './constants/routes';
 import type { MainTabParamList } from './types';
 
@@ -10,8 +10,9 @@ export type ReelsNavigationParams = NonNullable<
  * Target for opening a specific Reels item from another screen.
  *
  * The bottom-tab Video screen still owns the normal tab experience. Tapping a
- * concrete video/post should open the root-stack Reels route instead so the
- * custom left-edge swipe can reveal the screen the user will return to.
+ * Home owns a persistent Reels tab, including when a concrete Feed video is
+ * tapped. Other entry surfaces still use the root-stack route so their local
+ * navigation history is preserved.
  */
 type ReelsNavigationTarget = {
   name: typeof ROUTES.REELS;
@@ -38,11 +39,7 @@ function getRootNavigator(navigation: ReelsNavigatorLike) {
 }
 
 export function shouldOpenReelsInMainTab(params: ReelsNavigationParams) {
-  return (
-    params.source === 'home' &&
-    !params.initialVideoId &&
-    !params.post
-  );
+  return params.source === 'home';
 }
 
 /**
@@ -74,17 +71,9 @@ export function navigateToReels(
   const target = createReelsNavigationTarget(platform, params);
   const rootNavigator = getRootNavigator(navigation);
 
-  if (Platform.OS === 'android') {
-    // Apply the fullscreen chrome before the navigation commit so the first
-    // visible Reel frame already has the correct viewport/status-bar layout.
-    StatusBar.setBarStyle('light-content', false);
-    StatusBar.setBackgroundColor('transparent', false);
-    StatusBar.setTranslucent(true);
-  }
-
-  // Opening the generic Video surface from Home should switch to the
-  // persistent Reels tab. Reusing that mounted screen keeps both Home and
-  // the video player tree warm, so moving back and forth is immediate.
+  // Every Home entry switches to the persistent Reels tab. Reusing that
+  // mounted screen avoids constructing and tearing down a second full Reels
+  // tree whenever a concrete Feed video is opened.
   if (shouldOpenReelsInMainTab(params)) {
     if (navigation.getState?.().type === 'tab') {
       navigation.navigate(ROUTES.REELS, target.params);

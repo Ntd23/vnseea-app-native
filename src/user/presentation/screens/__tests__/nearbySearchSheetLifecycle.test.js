@@ -88,6 +88,9 @@ describe('Nearby search/detail sheet lifecycle', () => {
 
   it('removes the sheet close action while keeping query reset cleanup', () => {
     const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+    const viewModelSource = read(
+      'src/user/application/view-models/useUserViewModel.ts',
+    );
     const searchPanel = sliceBetween(
       source,
       '      {/* Submitted searches return',
@@ -104,7 +107,9 @@ describe('Nearby search/detail sheet lifecycle', () => {
     expect(queryReset).toContain("setQuery('');");
     expect(queryReset).toContain('setIsSearchResultsVisible(false);');
     expect(source).toContain('setSearchResults([]);');
-    expect(source).toContain('clearPlacePredictions();');
+    expect(source).toContain('clearMapSearchResults();');
+    expect(viewModelSource).toContain('const clearMapSearchResults');
+    expect(viewModelSource).toContain('setNearbyPlaces([]);');
   });
 
   it('hides suggestions during directions/navigation and allows them to return', () => {
@@ -159,8 +164,8 @@ describe('Nearby search/detail sheet lifecycle', () => {
       'useEffect(',
     );
 
-    expect(clearSelectedPoint).not.toContain('setQuery(\'\');');
+    expect(clearSelectedPoint).not.toContain("setQuery('');");
     expect(clearSelectedPoint).not.toContain('setSearchResults([]);');
-    expect(clearSelectedPoint).not.toContain('clearPlacePredictions();');
+    expect(clearSelectedPoint).not.toContain('clearMapSearchResults();');
   });
 });

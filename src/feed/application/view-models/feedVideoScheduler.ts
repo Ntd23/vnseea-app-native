@@ -33,15 +33,32 @@ export type MergeFeedContentOptions = Partial<FeedVideoMixConfig> & {
 };
 
 export const DEFAULT_FEED_VIDEO_MIX_CONFIG: FeedVideoMixConfig = {
-  targetVideoShare: 0.08,
-  minVideoShare: 0.04,
+  targetVideoShare: 0.1,
+  minVideoShare: 0.06,
   maxVideoShare: 0.18,
   minNonVideoItemsBetweenVideos: 4,
-  maxNonVideoItemsBetweenVideos: 12,
-  firstVideoAfterItems: 5,
+  maxNonVideoItemsBetweenVideos: 9,
+  firstVideoAfterItems: 4,
 };
 
 const MAX_VIDEO_ONLY_FEED_ITEMS = 2;
+const INITIAL_FEED_VIDEO_WINDOW_ITEMS = 10;
+
+export function shouldPreserveRenderedFeedForVideoCommit({
+  renderedPosts,
+  forceNewest,
+  hasFeedScrolledSinceLoad,
+}: {
+  renderedPosts: readonly FeedPost[];
+  forceNewest: boolean;
+  hasFeedScrolledSinceLoad: boolean;
+}) {
+  if (!forceNewest || hasFeedScrolledSinceLoad) return true;
+
+  return renderedPosts
+    .slice(0, INITIAL_FEED_VIDEO_WINDOW_ITEMS)
+    .some(post => post.kind === 'video');
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -84,6 +101,21 @@ function uniqueById<T extends { id: string }>(items: readonly T[]): T[] {
     map.set(item.id, item);
   }
   return Array.from(map.values());
+}
+
+export function getUnusedFeedVideoCount(
+  videoPosts: readonly FeedVideoPost[],
+  renderedPosts: readonly FeedPost[],
+) {
+  const renderedVideoIds = new Set(
+    renderedPosts
+      .filter(post => post.kind === 'video')
+      .map(post => post.id),
+  );
+
+  return uniqueById(videoPosts).filter(
+    video => !renderedVideoIds.has(video.id),
+  ).length;
 }
 
 function calculateTargetVideoCount(
@@ -247,4 +279,16 @@ export function mergeFeedContentWithVideos(
   }
 
   return scheduleVideosIntoLightPosts(lightPosts, usableVideos, config);
+}
+
+export function appendFeedContentWithVideos(
+  lightPosts: readonly FeedPost[],
+  videoPosts: readonly FeedVideoPost[],
+  existingPosts: readonly FeedPost[],
+  options: Omit<MergeFeedContentOptions, 'preserveExistingPosts'> = {},
+) {
+  return mergeFeedContentWithVideos(lightPosts, videoPosts, {
+    ...options,
+    preserveExistingPosts: existingPosts,
+  });
 }
