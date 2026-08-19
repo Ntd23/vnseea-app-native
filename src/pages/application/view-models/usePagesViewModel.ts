@@ -57,14 +57,14 @@ function validateUpdatePageDraft(
   draft: CreatePageDraft,
   section: UpdatePageSection,
 ): string | null {
-  if (section === 'profile') {
+  if (section === 'profile' || section === 'core') {
     if (
       draft.website &&
       !/^https?:\/\/.+\..+/i.test(draft.website.trim())
     ) {
       return 'Website không hợp lệ.';
     }
-    return null;
+    if (section === 'profile') return null;
   }
 
   if (section === 'social' || section === 'design') {
@@ -88,6 +88,24 @@ function validateUpdatePageDraft(
 
   if (!draft.pageCategory) {
     return 'Vui lòng chọn danh mục cho trang.';
+  }
+
+  if (section === 'core') {
+    const description = draft.pageDescription.trim();
+    if (description.length < 10 || description.length > 200) {
+      return 'Mô tả trang phải từ 10 đến 200 ký tự.';
+    }
+    if (!draft.pageAddress.trim()) {
+      return 'Vui lòng chọn địa điểm của trang.';
+    }
+    if (
+      draft.lat === undefined ||
+      draft.lng === undefined ||
+      !Number.isFinite(draft.lat) ||
+      !Number.isFinite(draft.lng)
+    ) {
+      return 'Vui lòng ghim đúng vị trí của trang trên bản đồ.';
+    }
   }
 
   if (
@@ -190,6 +208,10 @@ export function usePagesViewModel() {
     [],
   );
 
+  const getPageDetail = useCallback(async (pageId: string) => {
+    return repository.getPageDetail({ pageId });
+  }, []);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -290,6 +312,7 @@ export function usePagesViewModel() {
     createdPage,
     pageAdmins,
     createPage,
+    getPageDetail,
     updatePage,
     deletePage,
     updatePageMedia,

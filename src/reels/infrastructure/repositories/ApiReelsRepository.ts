@@ -164,14 +164,23 @@ function mapPublisher(
     string,
     unknown
   >;
-  const userId = readString(safe, 'user_id', 'id');
-  const username = readString(safe, 'username', 'user_name');
+  const pageId = readString(safe, 'page_id');
+  const isPage = Boolean(
+    pageId &&
+      (readString(safe, 'page_name', 'page_title') ||
+        readString(safe, 'type').toLowerCase() === 'page'),
+  );
+  const userId = readString(safe, 'user_id', 'owner_id', 'id');
+  const username = isPage
+    ? readString(safe, 'page_name', 'username')
+    : readString(safe, 'username', 'user_name');
   const firstName = readString(safe, 'first_name');
   const lastName = readString(safe, 'last_name');
-  const fullName =
-    [firstName, lastName].filter(Boolean).join(' ').trim() ||
-    readString(safe, 'name', 'full_name') ||
-    username;
+  const fullName = isPage
+    ? readString(safe, 'page_title', 'name') || username
+    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
+      readString(safe, 'name', 'full_name') ||
+      username;
 
   const isAdmin =
     readBool(safe, 'is_admin') ||
@@ -187,6 +196,8 @@ function mapPublisher(
     avatarUrl:
       normalizeMediaUrl(readString(safe, 'avatar', 'profile_picture')) ||
       undefined,
+    entityType: isPage ? 'page' : 'user',
+    pageId: isPage ? pageId : undefined,
     isVerified: readBool(safe, 'verified'),
     isFollowing: readBool(safe, 'is_following', 'following') || undefined,
     isAdmin,
@@ -992,7 +1003,10 @@ export function createReelsRepository(): ReelsRepository {
       return (response.data ?? []).map(mapComment);
     },
 
-    async addComment(postId, text, image, audio) {
+    async addComment(postId, text, image, audio, authorContext) {
+      const pageIdentityPayload = authorContext?.pageId
+        ? { page_id: authorContext.pageId }
+        : {};
       // ── Image branch ──────────────────────────────────────────────────
       // When the user attached an image, switch from JSON POST to
       // multipart/form-data so the backend sees the file under
@@ -1007,6 +1021,7 @@ export function createReelsRepository(): ReelsRepository {
         }>(apiRoutes.feed.comments, {
           type: 'create',
           post_id: postId,
+          ...pageIdentityPayload,
           // Send text only when non-empty so the PHP `!empty($_POST['text'])`
           // check doesn't false-positive on an empty string.
           ...(text ? { text } : {}),
@@ -1042,6 +1057,7 @@ export function createReelsRepository(): ReelsRepository {
         type: 'create',
         post_id: postId,
         text,
+        ...pageIdentityPayload,
       });
       const raw = response.data ?? {};
       return mapComment(raw);
@@ -1067,7 +1083,7 @@ export function createReelsRepository(): ReelsRepository {
       return { isLiked };
     },
 
-    async setCommentReaction(commentId, reaction) {
+    async setCommentReaction(commentId, reaction, authorContext) {
       // ── WoWonder reaction_comment contract ────────────────────────────
       //
       //   POST { type: 'reaction_comment', comment_id, reaction: '<1-6>' }
@@ -1083,6 +1099,7 @@ export function createReelsRepository(): ReelsRepository {
       const payload: Record<string, unknown> = {
         type: 'reaction_comment',
         comment_id: commentId,
+        ...(authorContext?.pageId ? { page_id: authorContext.pageId } : {}),
       };
       if (reaction !== null) {
         payload.reaction = REACTION_TO_WIRE[reaction];
@@ -1105,13 +1122,12 @@ export function createReelsRepository(): ReelsRepository {
       return { reaction };
     },
 
-    async deleteComment(commentId) {
-      // Server is permissive: it deletes whatever id you give it as long
-      // as you have access. We don't verify ownership client-side beyond
-      // hiding the button — the server will reject silently if you don't.
+    async deleteComment(commentId, target = 'comment') {
       await backendApi.post(apiRoutes.feed.comments, {
-        type: 'delete',
-        comment_id: commentId,
+        type: target === 'reply' ? 'delete_reply' : 'delete',
+        ...(target === 'reply'
+          ? { reply_id: commentId }
+          : { comment_id: commentId }),
       });
     },
 
@@ -1141,7 +1157,10 @@ export function createReelsRepository(): ReelsRepository {
       return (response.data ?? []).map(mapComment);
     },
 
-    async addReply(commentId, text, image) {
+    async addReply(commentId, text, image, authorContext) {
+      const pageIdentityPayload = authorContext?.pageId
+        ? { page_id: authorContext.pageId }
+        : {};
       // Same dual-branch pattern as `addComment` above — multipart when
       // there's an image to upload, JSON post otherwise.
       if (image) {
@@ -1151,6 +1170,7 @@ export function createReelsRepository(): ReelsRepository {
         }>(apiRoutes.feed.comments, {
           type: 'create_reply',
           comment_id: commentId,
+          ...pageIdentityPayload,
           ...(text ? { text } : {}),
           image: {
             uri: image.uri,
@@ -1169,6 +1189,7 @@ export function createReelsRepository(): ReelsRepository {
         type: 'create_reply',
         comment_id: commentId,
         text,
+        ...pageIdentityPayload,
       });
       const raw = response.data ?? {};
       return mapComment(raw);

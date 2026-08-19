@@ -32,6 +32,12 @@ if (empty($error_code)) {
         $request = false;
         if ($_POST['request_action'] == 'accept') {
             $request = Wo_AcceptFollowRequest($recipient_id, $wo['user']['user_id']);
+            if ($request) {
+                VNSEEA_RegisterFollowMessageEvent(
+                    $recipient_id,
+                    $wo['user']['user_id']
+                );
+            }
         }
         if ($_POST['request_action'] == 'decline') {
             $request = Wo_DeleteFollowRequest($recipient_id, $wo['user']['user_id']);

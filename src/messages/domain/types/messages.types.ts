@@ -190,10 +190,11 @@ export interface SendMessageOptions {
 }
 
 export interface MessageSystemEvent {
-  type: 'message_pinned';
+  type: 'message_pinned' | 'user_followed';
   actorId: string;
   actorName: string;
-  targetMessageId: string;
+  targetMessageId?: string;
+  targetUserId?: string;
 }
 
 export interface MessageItem {

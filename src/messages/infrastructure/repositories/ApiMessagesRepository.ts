@@ -396,7 +396,11 @@ function mapMessageSystemEvent(
     asRecord(raw.messageUser ?? raw.user_data ?? raw.userData) ?? {};
   const eventType = readString(payload ?? raw, 'type', 'event_type');
   const rawType = readString(raw, 'type_two');
-  if (eventType !== 'message_pinned' && rawType !== 'message_pin_event') {
+  const isPinnedEvent =
+    eventType === 'message_pinned' || rawType === 'message_pin_event';
+  const isFollowEvent =
+    eventType === 'user_followed' || rawType === 'follow_event';
+  if (!isPinnedEvent && !isFollowEvent) {
     return undefined;
   }
   const actorId = readString(payload ?? raw, 'actor_id', 'actorId', 'from_id');
@@ -406,14 +410,21 @@ function mapMessageSystemEvent(
     'targetMessageId',
     'reply_id',
   );
-  if (!actorId || !targetMessageId) return undefined;
+  const targetUserId = readString(
+    payload ?? raw,
+    'target_user_id',
+    'targetUserId',
+    'to_id',
+  );
+  if (!actorId || (isPinnedEvent && !targetMessageId)) return undefined;
   return {
-    type: 'message_pinned',
+    type: isFollowEvent ? 'user_followed' : 'message_pinned',
     actorId,
     actorName:
       readString(payload ?? raw, 'actor_name', 'actorName') ||
       getRawUserName(actor),
-    targetMessageId,
+    ...(targetMessageId ? { targetMessageId } : {}),
+    ...(targetUserId ? { targetUserId } : {}),
   };
 }
 
@@ -727,6 +738,15 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
   const message = mapMessage(raw);
   if (message.systemEvent) {
     const sessionUserId = sessionStorage.getSession()?.userId ?? '';
+    if (message.systemEvent.type === 'user_followed') {
+      return {
+        text:
+          message.systemEvent.actorId === sessionUserId
+            ? 'Bạn đã theo dõi người này'
+            : `${message.systemEvent.actorName} đã theo dõi bạn`,
+        kind: 'text',
+      };
+    }
     return {
       text:
         message.systemEvent.actorId === sessionUserId

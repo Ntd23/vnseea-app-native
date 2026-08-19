@@ -89,20 +89,19 @@ describe('page location picker contract', () => {
     expect(source).toContain('disabled={!canConfirm}');
   });
 
-  it('wires the picker into Create Page and passes the existing coordinate as address bias', () => {
+  it('opens the exact map picker directly from the Create Page location field', () => {
     const screen = fs.readFileSync(
       path.resolve(__dirname, '../../screens/CreatePageScreen.tsx'),
       'utf8',
     );
 
-    expect(screen).not.toContain('preferAddressSearch');
-    expect(screen).toContain('locationBias=');
+    expect(screen).not.toContain('AddressAutocomplete');
     expect(screen).toContain('PageLocationPickerModal');
     expect(screen).toContain('Chọn vị trí chính xác trên bản đồ');
     expect(screen).toContain('onConfirm={handleLocationConfirm}');
-    expect(screen).toContain('onSelectPlace={handlePlaceSelected}');
-    expect(screen).toContain('setIsLocationPickerVisible(true)');
-    expect(screen).toContain('parseMapCoordinate(place.lat, place.lng)');
+    expect(screen).toContain('const openLocationPicker = useCallback');
+    expect(screen).toContain('onPress={openLocationPicker}');
+    expect(screen).toContain('Keyboard.dismiss()');
     expect(screen).toContain('parseMapCoordinate(draft.lat, draft.lng)');
   });
 

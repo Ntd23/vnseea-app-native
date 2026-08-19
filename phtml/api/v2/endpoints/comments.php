@@ -452,7 +452,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 $reactions_types = array_keys($wo['reactions_types']);
                 if (!empty($_POST['reaction']) && in_array($_POST['reaction'], $reactions_types)) {
                     $reaction = Wo_Secure($_POST['reaction']);
-                    Wo_AddCommentReactions($comment_id, $reaction);
+                    $actor_page_id = !empty($_POST['page_id']) ? Wo_Secure($_POST['page_id']) : 0;
+                    Wo_AddCommentReactions($comment_id, $reaction, $actor_page_id);
 
                     Wo_CanSenEmails();
                     $response_data = array(
@@ -494,7 +495,8 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 $reactions_types = array_keys($wo['reactions_types']);
                 if (!empty($_POST['reaction']) && in_array($_POST['reaction'], $reactions_types)) {
                     $reaction = Wo_Secure($_POST['reaction']);
-                    Wo_AddReplayReactions($wo['user']['id'],$reply_id, $reaction);
+                    $actor_page_id = !empty($_POST['page_id']) ? Wo_Secure($_POST['page_id']) : 0;
+                    Wo_AddReplayReactions($wo['user']['id'],$reply_id, $reaction, $actor_page_id);
 
                     Wo_CanSenEmails();
                     $response_data = array(

@@ -121,6 +121,10 @@ type CreatePostRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_POST>;
 const COMPOSER_PHOTO_LIMIT = 9;
 const CAPTION_LINE_HEIGHT = 24;
 const CAPTION_MAX_LINES = 12;
+const CAPTION_VERTICAL_PADDING = 4;
+const CAPTION_MIN_HEIGHT = CAPTION_LINE_HEIGHT + CAPTION_VERTICAL_PADDING;
+const CAPTION_MAX_HEIGHT =
+  CAPTION_LINE_HEIGHT * CAPTION_MAX_LINES + CAPTION_VERTICAL_PADDING;
 const PHOTO_GRID_GAP = 2;
 const MAX_TAGGED_USERS = 20;
 // react-native-image-picker owns a single mutable native callback. Keep this
@@ -367,34 +371,8 @@ function assetToVideoAttachment(asset: Asset): PostVideoAttachment | null {
 
 // ── Sub-components ────────────────────────────────────────────────────
 const TOKEN_BRAND = APP_BRAND_COLOR;
-const COMPOSER_TOKEN_PATTERN = /([@#][^\s@#.,!?;:()[\]{}"']+)/g;
 
-function renderHighlightedText(value: string) {
-  const nodes: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  COMPOSER_TOKEN_PATTERN.lastIndex = 0;
-  while ((match = COMPOSER_TOKEN_PATTERN.exec(value)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(value.slice(lastIndex, match.index));
-    }
-    nodes.push(
-      <Text key={`${match[0]}-${match.index}`} style={{ color: TOKEN_BRAND }}>
-        {match[0]}
-      </Text>,
-    );
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < value.length) {
-    nodes.push(value.slice(lastIndex));
-  }
-
-  return nodes.length > 0 ? nodes : value;
-}
-
-function HighlightedComposerInput({
+function AutoGrowingComposerInput({
   inputRef,
   value,
   onChangeText,
@@ -409,11 +387,13 @@ function HighlightedComposerInput({
   onFocus: () => void;
   onBlur: () => void;
 }) {
-  const hasValue = value.length > 0;
+  const [inputHeight, setInputHeight] = useState(CAPTION_MIN_HEIGHT);
+  const [isOverflowing, setIsOverflowing] = useState(false);
   const textStyle = {
     fontSize: 16,
     lineHeight: 22,
-    padding: 0,
+    paddingHorizontal: 0,
+    paddingVertical: CAPTION_VERTICAL_PADDING / 2,
   };
 
   return (
@@ -422,27 +402,11 @@ function HighlightedComposerInput({
         flex: 1,
         marginLeft: 12,
         marginRight: 8,
-        minHeight: 42,
-        maxHeight: 120,
+        minWidth: 0,
+        minHeight: CAPTION_MIN_HEIGHT,
+        maxHeight: CAPTION_MAX_HEIGHT,
       }}
     >
-      {hasValue ? (
-        <Text
-          pointerEvents="none"
-          style={{
-            ...textStyle,
-            color: '#0f172a',
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: 0,
-            zIndex: 2,
-            elevation: 2,
-          }}
-        >
-          {renderHighlightedText(value)}
-        </Text>
-      ) : null}
       <TextInput
         ref={inputRef}
         value={value}
@@ -450,19 +414,33 @@ function HighlightedComposerInput({
         placeholder={placeholder}
         placeholderTextColor="#94a3b8"
         multiline
-        scrollEnabled
+        scrollEnabled={isOverflowing}
+        maxLength={5000}
         cursorColor={TOKEN_BRAND}
         selectionColor={TOKEN_BRAND}
         onFocus={onFocus}
         onBlur={onBlur}
+        onContentSizeChange={event => {
+          const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
+          const measuredHeight = contentHeight + CAPTION_VERTICAL_PADDING;
+          setIsOverflowing(measuredHeight > CAPTION_MAX_HEIGHT);
+          setInputHeight(
+            Math.max(
+              CAPTION_MIN_HEIGHT,
+              Math.min(CAPTION_MAX_HEIGHT, measuredHeight),
+            ),
+          );
+        }}
         style={{
           ...textStyle,
           backgroundColor: 'transparent',
-          color: hasValue ? 'transparent' : '#0f172a',
-          minHeight: 42,
-          maxHeight: 120,
+          color: '#0f172a',
+          width: '100%',
+          height: inputHeight,
+          minHeight: CAPTION_MIN_HEIGHT,
+          maxHeight: CAPTION_MAX_HEIGHT,
           textAlignVertical: 'top',
-          zIndex: 1,
+          includeFontPadding: false,
         }}
       />
     </View>
@@ -1415,9 +1393,8 @@ const CaptionComposer = React.memo(({
   showPrimaryActions = true,
   embedded = false,
 }: CaptionComposerProps) => {
-  const [inputHeight, setInputHeight] = useState(CAPTION_LINE_HEIGHT);
+  const [inputHeight, setInputHeight] = useState(CAPTION_MIN_HEIGHT);
   const [isCaptionOverflowing, setIsCaptionOverflowing] = useState(false);
-  const maxInputHeight = CAPTION_LINE_HEIGHT * CAPTION_MAX_LINES;
   const isVi = copy.photo === 'Ảnh';
   const photoLabel = isVi ? 'Đăng tải hình ảnh' : 'Upload photos';
   const videoLabel = isVi ? 'Tải đoạn phim lên' : 'Upload video';
@@ -1453,16 +1430,18 @@ const CaptionComposer = React.memo(({
         placeholderTextColor="#94A3B8"
         multiline
         autoFocus
+        maxLength={5000}
         scrollEnabled={isCaptionOverflowing}
         textAlignVertical="top"
         onContentSizeChange={event => {
           const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
-          setIsCaptionOverflowing(contentHeight > maxInputHeight);
+          const measuredHeight = contentHeight + CAPTION_VERTICAL_PADDING;
+          setIsCaptionOverflowing(measuredHeight > CAPTION_MAX_HEIGHT);
           const nextHeight = Math.max(
-            CAPTION_LINE_HEIGHT,
+            CAPTION_MIN_HEIGHT,
             Math.min(
-              maxInputHeight,
-              contentHeight,
+              CAPTION_MAX_HEIGHT,
+              measuredHeight,
             ),
           );
           setInputHeight(nextHeight);
@@ -1471,10 +1450,13 @@ const CaptionComposer = React.memo(({
           fontSize: 17,
           lineHeight: CAPTION_LINE_HEIGHT,
           color: '#1e293b',
-          padding: 0,
+          width: '100%',
+          paddingHorizontal: 0,
+          paddingVertical: CAPTION_VERTICAL_PADDING / 2,
           height: inputHeight,
-          minHeight: CAPTION_LINE_HEIGHT,
-          maxHeight: maxInputHeight,
+          minHeight: CAPTION_MIN_HEIGHT,
+          maxHeight: CAPTION_MAX_HEIGHT,
+          includeFontPadding: false,
         }}
       />
 
@@ -3158,7 +3140,7 @@ export function CreatePostModal({
               {/* Row 1: Avatar, highlighted text input, hashtag/mention shortcuts */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                 <Image source={{ uri: avatarUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw' }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
-                <HighlightedComposerInput
+                <AutoGrowingComposerInput
                   inputRef={textInputRef}
                   value={vm.draft.text}
                   onChangeText={stableSetText}

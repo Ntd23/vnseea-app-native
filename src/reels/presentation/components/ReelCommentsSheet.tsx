@@ -95,6 +95,7 @@ import type {
   ReactionType,
   ReelCaptionSuggestion,
   ReelComment,
+  ReelPublisher,
 } from '../../domain/types/reels.types';
 import {
   formatAudioDuration,
@@ -121,6 +122,7 @@ import {
   FEED_REACTION_TYPES,
 } from '../../../feed/presentation/components/FeedReactionAssets';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { navigateToFeedPublisherPage } from '../../../feed/presentation/navigation/feedPublisherNavigation';
 import { ReelCommentComposerModal } from './ReelCommentComposerModal';
 import { CommentMentionSuggestions } from './CommentMentionSuggestions';
 import { CommentMentionText } from './CommentMentionText';
@@ -644,8 +646,22 @@ function ReelCommentsSheetBase({
   );
 
   const handlePressProfile = useCallback(
-    (userId: string) => {
-      navigateToUserProfile(navigation, userId);
+    (target: string | ReelPublisher) => {
+      if (typeof target !== 'string') {
+        const openedPage = navigateToFeedPublisherPage(navigation, {
+          id: target.pageId || target.userId,
+          ownerId: target.userId,
+          username: target.username,
+          name: target.name,
+          avatarUrl: target.avatarUrl,
+          entityType: target.entityType,
+          pageId: target.pageId,
+        });
+        if (openedPage) return;
+        navigateToUserProfile(navigation, target.userId);
+        return;
+      }
+      navigateToUserProfile(navigation, target);
     },
     [navigation],
   );
@@ -1890,15 +1906,24 @@ function ReelCommentsSheetBase({
 
   const actionMenuIsFailed = Boolean(actionMenuComment?.isFailed);
   const actionMenuIsOwner = Boolean(actionMenuComment?.owner);
+  const actionMenuCanModerate = Boolean(
+    actionMenuComment?.owner || actionMenuComment?.postOwner,
+  );
   const actionMenuCanEdit = actionMenuIsOwner && !actionMenuIsFailed;
-  const actionMenuCanDelete = actionMenuIsOwner || actionMenuIsFailed;
+  const actionMenuCanDelete = actionMenuCanModerate || actionMenuIsFailed;
   const actionMenuCanReport =
-    Boolean(actionMenuComment) && !actionMenuIsOwner && !actionMenuIsFailed;
+    Boolean(actionMenuComment) &&
+    !actionMenuCanModerate &&
+    !actionMenuIsFailed;
 
   const actionMenuTitle = actionMenuIsFailed
     ? copy.failedCommentTitle
     : actionMenuIsOwner
     ? copy.yourCommentTitle
+    : actionMenuComment?.postOwner
+    ? language === 'en'
+      ? 'Manage comment'
+      : 'Quản lý bình luận'
     : getReportCommentLabel(language);
 
   const actionMenuMessage = actionMenuIsFailed
@@ -3448,7 +3473,7 @@ interface ThreadProps {
   /** Threaded through to each row so taps on comment images open the viewer. */
   onOpenImage: (uri: string) => void;
   replyingToCommentId?: string | null;
-  onPressProfile: (userId: string) => void;
+  onPressProfile: (target: string | ReelPublisher) => void;
   onPressUnresolvedMention: (label: string) => void;
   inlineDeleteCommentId: string | null;
   deletingCommentIds: Set<string>;
@@ -3607,7 +3632,7 @@ interface RowProps {
   /** Called when the user taps the comment's image — opens the viewer. */
   onOpenImage: (uri: string) => void;
   isReplyingToThis?: boolean;
-  onPressProfile: (userId: string) => void;
+  onPressProfile: (target: string | ReelPublisher) => void;
   onPressUnresolvedMention: (label: string) => void;
   showInlineDelete: boolean;
   isDeleting: boolean;
@@ -3719,9 +3744,9 @@ function CommentRow({
 
   const handleProfilePress = useCallback(() => {
     if (comment.publisher.userId) {
-      onPressProfile(comment.publisher.userId);
+      onPressProfile(comment.publisher);
     }
-  }, [comment.publisher.userId, onPressProfile]);
+  }, [comment.publisher, onPressProfile]);
 
   const handleReplyMentionProfilePress = useCallback(() => {
     if (comment.replyMentionUserId) {
@@ -3845,7 +3870,10 @@ function CommentRow({
           delayLongPress={350}
           style={({ pressed }) => [
             styles.bubbleWrap,
-            pressed && comment.owner && !isSending && !isFailed
+            pressed &&
+            (comment.owner || comment.postOwner) &&
+            !isSending &&
+            !isFailed
               ? styles.bubbleWrapPressed
               : null,
             (isSending || isFailed) && { opacity: 0.6 },
@@ -4023,7 +4051,10 @@ function CommentRow({
             ) : null}
           </View>
         )}
-        {showInlineDelete && comment.owner && !isSending && !isFailed ? (
+        {showInlineDelete &&
+        (comment.owner || comment.postOwner) &&
+        !isSending &&
+        !isFailed ? (
           <Animated.View style={[styles.inlineDeleteRow, inlineDeleteStyle]}>
             <Pressable
               onPress={handleInlineDeletePress}

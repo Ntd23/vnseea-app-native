@@ -12,6 +12,10 @@ import type {
   ReelsPage,
 } from '../types/reels.types';
 
+export interface CommentAuthorContext {
+  pageId?: string;
+}
+
 export interface FetchReelsOptions {
   /** Page size — default 10 on the backend */
   limit?: number;
@@ -84,6 +88,7 @@ export interface ReelsRepository {
     text: string,
     image?: CommentImageAttachment,
     audio?: CommentAudioAttachment,
+    authorContext?: CommentAuthorContext,
   ): Promise<ReelComment>;
 
   /**
@@ -106,10 +111,14 @@ export interface ReelsRepository {
   setCommentReaction(
     commentId: string,
     reaction: ReactionType | null,
+    authorContext?: CommentAuthorContext,
   ): Promise<{ reaction: ReactionType | null }>;
 
   /** Delete a comment (must be owner or post owner — server enforces). */
-  deleteComment(commentId: string): Promise<void>;
+  deleteComment(
+    commentId: string,
+    target?: 'comment' | 'reply',
+  ): Promise<void>;
 
   /** Edit the text of a comment the viewer owns. */
   editComment(commentId: string, text: string): Promise<void>;
@@ -133,6 +142,7 @@ export interface ReelsRepository {
     commentId: string,
     text: string,
     image?: CommentImageAttachment,
+    authorContext?: CommentAuthorContext,
   ): Promise<ReelComment>;
 
   /** Search mention or hashtag suggestions while composing a reel caption */

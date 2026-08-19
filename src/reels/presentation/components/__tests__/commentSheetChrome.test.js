@@ -53,6 +53,12 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toContain('onStartReply');
     expect(source).toContain('onLoadReplies');
     expect(source).toContain('onDelete');
+    expect(source).toContain('navigateToFeedPublisherPage');
+    expect(source).toContain('onPressProfile(comment.publisher)');
+    expect(source).toContain(
+      'actionMenuComment?.owner || actionMenuComment?.postOwner',
+    );
+    expect(source).toContain('comment.owner || comment.postOwner');
   });
 
   it('supports Facebook-style @mentions in every shared comment composer', () => {

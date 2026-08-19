@@ -34,7 +34,11 @@ if (empty($error_code)) {
                 }
                 else{
                     $follow_message = 'followed';
-                } 
+                    VNSEEA_RegisterFollowMessageEvent(
+                        $wo['user']['user_id'],
+                        $recipient_id
+                    );
+                }
             }
         }
         $response_data = array(

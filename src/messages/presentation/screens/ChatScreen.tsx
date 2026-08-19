@@ -57,6 +57,7 @@ import {
   CornerUpRight,
   Copy,
   Pin,
+  UserPlus,
 } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
@@ -775,7 +776,7 @@ function formatDateSeparator(
   });
 }
 
-function PinnedMessageSystemRow({
+function MessageSystemEventRow({
   event,
   isMine,
   language,
@@ -786,19 +787,38 @@ function PinnedMessageSystemRow({
   language: AppLanguage;
   onOpenMessage: (messageId: string) => void;
 }) {
+  const isFollowEvent = event.type === 'user_followed';
   const label =
     language === 'vi'
-      ? `${isMine ? 'Bạn' : event.actorName} đã ghim một tin nhắn`
-      : `${isMine ? 'You' : event.actorName} pinned a message`;
+      ? isFollowEvent
+        ? isMine
+          ? 'Bạn đã theo dõi người này'
+          : `${event.actorName} đã theo dõi bạn`
+        : `${isMine ? 'Bạn' : event.actorName} đã ghim một tin nhắn`
+      : isFollowEvent
+        ? isMine
+          ? 'You followed this person'
+          : `${event.actorName} started following you`
+        : `${isMine ? 'You' : event.actorName} pinned a message`;
+  const handlePress = () => {
+    if (event.type === 'message_pinned' && event.targetMessageId) {
+      onOpenMessage(event.targetMessageId);
+    }
+  };
   return (
     <TouchableOpacity
       className="mx-8 my-2 min-h-8 flex-row items-center justify-center"
       activeOpacity={0.7}
-      onPress={() => onOpenMessage(event.targetMessageId)}
-      accessibilityRole="button"
+      onPress={handlePress}
+      disabled={isFollowEvent}
+      accessibilityRole={isFollowEvent ? 'text' : 'button'}
       accessibilityLabel={label}
     >
-      <Pin size={13} color="#64748B" fill="#64748B" />
+      {isFollowEvent ? (
+        <UserPlus size={13} color="#64748B" />
+      ) : (
+        <Pin size={13} color="#64748B" fill="#64748B" />
+      )}
       <Text className="ml-1.5 text-center text-xs font-medium text-slate-500">
         {label}
       </Text>
@@ -811,7 +831,7 @@ function getChatListItemType(item: ChatMessageListItem) {
 
   const { message } = item;
   if (message.systemEvent) {
-    return 'system-message-pinned';
+    return `system-${message.systemEvent.type}`;
   }
   if (message.replyTo) {
     return `reply-${message.replyTo.contentKind}`;
@@ -3679,7 +3699,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
 
       if (item.message.systemEvent) {
         return (
-          <PinnedMessageSystemRow
+          <MessageSystemEventRow
             event={item.message.systemEvent}
             isMine={item.message.isSentByMe}
             language={language}

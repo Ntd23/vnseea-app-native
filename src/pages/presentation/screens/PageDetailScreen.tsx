@@ -1834,8 +1834,48 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const gestureStartX = useSharedValue(0);
   const gestureStartY = useSharedValue(0);
   const hasDragged = useSharedValue(false);
+  const currentUserId = sessionStorage.getSession()?.userId;
+  const adminInfo =
+    vm.page.adminInfo && typeof vm.page.adminInfo === 'object'
+      ? (vm.page.adminInfo as Record<string, unknown>)
+      : null;
+  const isPageOwner = Boolean(
+    currentUserId &&
+      vm.page.ownerId &&
+      String(currentUserId) === String(vm.page.ownerId),
+  );
+  const canManagePage =
+    isPageOwner || Boolean(adminInfo && Object.keys(adminInfo).length > 0);
+  const commentAsPage = useMemo(
+    () =>
+      isPageOwner && vm.page.pageId
+        ? {
+            pageId: String(vm.page.pageId),
+            publisher: {
+              userId: String(vm.page.ownerId || currentUserId || '0'),
+              username: vm.page.pageName || '',
+              name: vm.page.pageTitle || vm.page.pageName || '',
+              avatarUrl: vm.page.avatar || undefined,
+              entityType: 'page' as const,
+              pageId: String(vm.page.pageId),
+              isVerified: Boolean(vm.page.verified),
+            },
+          }
+        : undefined,
+    [
+      currentUserId,
+      isPageOwner,
+      vm.page.avatar,
+      vm.page.ownerId,
+      vm.page.pageId,
+      vm.page.pageName,
+      vm.page.pageTitle,
+      vm.page.verified,
+    ],
+  );
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: vm.updatePostCommentCount,
+    commentAsPage,
   });
   const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
   const [reactionsSheetPostId, setReactionsSheetPostId] = useState<
@@ -1883,19 +1923,6 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     itemVisiblePercentThreshold: 60,
     minimumViewTime: 160,
   }).current;
-  const currentUserId = sessionStorage.getSession()?.userId;
-  const adminInfo =
-    vm.page.adminInfo && typeof vm.page.adminInfo === 'object'
-      ? (vm.page.adminInfo as Record<string, unknown>)
-      : null;
-  const isPageOwner = Boolean(
-    currentUserId &&
-      vm.page.ownerId &&
-      String(currentUserId) === String(vm.page.ownerId),
-  );
-  const canManagePage =
-    isPageOwner || Boolean(adminInfo && Object.keys(adminInfo).length > 0);
-
   const language = useAppLanguage();
   const copy = PAGE_DETAIL_UI_COPY[language] || PAGE_DETAIL_UI_COPY.vi;
   const postCardCopy = POST_CARD_COPY[language];

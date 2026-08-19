@@ -661,6 +661,9 @@ if (!function_exists('VNSEEA_MessagePushDescriptor')) {
         if ($type_two === 'message_unpin_event') {
             return array('type' => 'unpin', 'text' => $is_vi ? 'Đã bỏ ghim một tin nhắn' : 'Unpinned a message');
         }
+        if ($type_two === 'follow_event') {
+            return array('type' => 'follow', 'text' => $is_vi ? 'Đã theo dõi bạn' : 'Started following you');
+        }
         if ($type_two === 'story_reply' || !empty($message['story_id'])) {
             return array('type' => 'story', 'text' => $is_vi ? 'Đã trả lời tin của bạn' : 'Replied to your story');
         }
@@ -1274,14 +1277,21 @@ if (!function_exists('VNSEEA_EnqueueNotificationPush')) {
         }
         $recipient_id = (int)$notification['recipient_id'];
         $recipient = Wo_UserData($recipient_id);
-        $notifier = Wo_UserData((int)$notification['notifier_id']);
+        if (empty($notification['notifier_id']) && !empty($notification['page_id'])) {
+            $notifier = Wo_PageData((int)$notification['page_id']);
+        } else {
+            $notifier = Wo_UserData((int)$notification['notifier_id']);
+        }
+        $notifier_name = !empty($notifier['name'])
+            ? $notifier['name']
+            : (!empty($notifier['page_title']) ? $notifier['page_title'] : 'VNSEEA');
         $payload = array_merge(
             VNSEEA_NotificationPushRoutingData($notification),
             array(
             'notification_id' => (string)$notification_id,
             'recipient_id' => (string)$recipient_id,
-            'title' => !empty($notifier['name']) ? $notifier['name'] : 'VNSEEA',
-            'name' => !empty($notifier['name']) ? $notifier['name'] : 'VNSEEA',
+            'title' => $notifier_name,
+            'name' => $notifier_name,
             'avatar' => !empty($notifier['avatar']) ? $notifier['avatar'] : '',
             'body' => VNSEEA_NotificationPushText(
                 $notification,

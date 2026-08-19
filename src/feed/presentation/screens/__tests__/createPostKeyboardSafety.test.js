@@ -73,7 +73,9 @@ describe('CreatePostModal keyboard safety', () => {
     );
     expect(source).toContain('scrollEnabled={isCaptionOverflowing}');
     expect(source).toContain(
-      'setIsCaptionOverflowing(contentHeight > maxInputHeight);',
+      'setIsCaptionOverflowing(measuredHeight > CAPTION_MAX_HEIGHT);',
     );
+    expect(source).toContain('function AutoGrowingComposerInput');
+    expect(source).not.toContain("color: hasValue ? 'transparent'");
   });
 });

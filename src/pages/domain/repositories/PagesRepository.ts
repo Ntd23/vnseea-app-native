@@ -15,7 +15,12 @@ export interface CreatePageResult {
   message?: string;
 }
 
-export type UpdatePageSection = 'general' | 'profile' | 'social' | 'design';
+export type UpdatePageSection =
+  | 'core'
+  | 'general'
+  | 'profile'
+  | 'social'
+  | 'design';
 
 export interface PagesRepository {
   getMyPages(options?: PagesListOptions): Promise<PagesListPage>;
