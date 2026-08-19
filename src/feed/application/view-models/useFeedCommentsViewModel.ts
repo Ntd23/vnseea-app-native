@@ -61,10 +61,15 @@ function getReplyMentionName(
 
 interface UseFeedCommentsViewModelOptions {
   onCommentCountChange?: (postId: string, delta: number) => void;
+  commentAsPage?: {
+    pageId: string;
+    publisher: ReelPublisher;
+  };
 }
 
 export function useFeedCommentsViewModel({
   onCommentCountChange,
+  commentAsPage,
 }: UseFeedCommentsViewModelOptions = {}) {
   const [selectedCommentPostId, setSelectedCommentPostId] = useState<
     string | null
@@ -140,6 +145,7 @@ export function useFeedCommentsViewModel({
   }, []);
 
   const getFallbackPublisher = useCallback((): ReelPublisher => {
+    if (commentAsPage) return commentAsPage.publisher;
     if (currentUser) return currentUser;
 
     const sessionUserId = sessionStorage.getSession()?.userId;
@@ -156,7 +162,7 @@ export function useFeedCommentsViewModel({
       avatarUrl: 'https://demo.vnseea.vn/upload/photos/d-avatar.jpg',
       isVerified: false,
     };
-  }, [comments, currentUser]);
+  }, [commentAsPage, comments, currentUser]);
 
   // Reply state
   const [repliesById, setRepliesById] = useState<Record<string, ReelComment[]>>(
@@ -370,6 +376,7 @@ export function useFeedCommentsViewModel({
           trimmed,
           image,
           audio,
+          commentAsPage ? { pageId: commentAsPage.pageId } : undefined,
         );
         const resolvedComment: ReelComment = {
           ...createdComment,
@@ -409,7 +416,12 @@ export function useFeedCommentsViewModel({
         return null;
       }
     },
-    [selectedCommentPostId, getFallbackPublisher, onCommentCountChange],
+    [
+      selectedCommentPostId,
+      getFallbackPublisher,
+      onCommentCountChange,
+      commentAsPage,
+    ],
   );
 
   const applyToComment = useCallback(
@@ -506,7 +518,11 @@ export function useFeedCommentsViewModel({
       });
 
       try {
-        await repository.setCommentReaction(commentId, targetReaction);
+        await repository.setCommentReaction(
+          commentId,
+          targetReaction,
+          commentAsPage ? { pageId: commentAsPage.pageId } : undefined,
+        );
       } catch {
         if (snapshot) {
           const original = snapshot;
@@ -514,7 +530,7 @@ export function useFeedCommentsViewModel({
         }
       }
     },
-    [applyToComment],
+    [applyToComment, commentAsPage],
   );
 
   const deleteComment = useCallback(
@@ -563,7 +579,10 @@ export function useFeedCommentsViewModel({
       }
 
       try {
-        await repository.deleteComment(commentId);
+        await repository.deleteComment(
+          commentId,
+          wasTopLevel ? 'comment' : 'reply',
+        );
       } catch {
         const restored = snapshot;
         if (wasTopLevel) {
@@ -749,7 +768,12 @@ export function useFeedCommentsViewModel({
       setReplyingTo(null);
 
       try {
-        const created = await repository.addReply(commentId, trimmed, image);
+        const created = await repository.addReply(
+          commentId,
+          trimmed,
+          image,
+          commentAsPage ? { pageId: commentAsPage.pageId } : undefined,
+        );
         const resolvedReply: ReelComment = {
           ...created,
           text: hydrateCommentMentionText(created.text || trimmed, mentions),
@@ -802,7 +826,7 @@ export function useFeedCommentsViewModel({
         return null;
       }
     },
-    [getFallbackPublisher, replyingTo],
+    [commentAsPage, getFallbackPublisher, replyingTo],
   );
 
   const retryFailedComment = useCallback(

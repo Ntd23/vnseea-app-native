@@ -67,6 +67,7 @@ $get_config = openssl_encrypt($get_config, "AES-128-ECB", $siteEncryptKey);
 $response_data      = array(
     'api_status' => 200,
     'config' => $get_config,
+    'page_categories' => $wo['page_categories'],
     'group_categories' => $wo['group_categories'],
     'group_sub_categories' => $wo['group_sub_categories'],
     'movie_categories' => $wo['film-genres'],

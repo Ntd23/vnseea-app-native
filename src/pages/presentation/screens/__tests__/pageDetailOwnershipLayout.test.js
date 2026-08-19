@@ -19,6 +19,12 @@ describe('PageDetailScreen ownership layout', () => {
     );
   });
 
+  it('comments and replies as the Page identity for the Page owner', () => {
+    expect(source).toContain('const commentAsPage = useMemo');
+    expect(source).toContain('isPageOwner && vm.page.pageId');
+    expect(source).toContain('commentAsPage,');
+  });
+
   it('shows avatar and cover editing controls only on manageable Pages', () => {
     expect(source).toMatch(/\{canManagePage && onChangeCover \? \(/);
     expect(source).toMatch(/\{canManagePage && onChangeAvatar \? \(/);

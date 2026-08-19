@@ -1192,7 +1192,10 @@ export function useReelsViewModel(initialVideo?: {
       }
 
       try {
-        await repository.deleteComment(commentId);
+        await repository.deleteComment(
+          commentId,
+          wasTopLevel ? 'comment' : 'reply',
+        );
       } catch {
         // Restore the snapshot — easier to re-insert at the end than to
         // remember the original position; users rarely notice the order

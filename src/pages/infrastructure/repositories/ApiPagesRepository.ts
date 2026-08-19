@@ -132,7 +132,35 @@ function readBoolean(
 }
 
 function readMapPinStatus(raw: RawPage | undefined) {
-  return readString(raw, 'map_pin_status') || readString(raw, 'mapPinStatus');
+  const rawStatus =
+    readString(raw, 'map_pin_status') || readString(raw, 'mapPinStatus');
+  const normalizedStatus = rawStatus.trim().toLowerCase();
+
+  if (
+    normalizedStatus === 'none' ||
+    normalizedStatus === 'pending' ||
+    normalizedStatus === 'approved' ||
+    normalizedStatus === 'rejected'
+  ) {
+    return normalizedStatus;
+  }
+
+  if (readBoolean(raw, 'map_pin_approved', 'mapPinApproved', 'pinned')) {
+    return 'approved';
+  }
+
+  if (
+    readBoolean(
+      raw,
+      'map_pin_requested',
+      'mapPinRequested',
+      'request_map_pin',
+    )
+  ) {
+    return 'pending';
+  }
+
+  return 'none';
 }
 
 function readBackgroundImageStatus(raw: RawPage | undefined) {
@@ -211,6 +239,14 @@ function mapPageGeneralUpdatePayload(pageId: string, draft: CreatePageDraft) {
   };
 }
 
+function mapPageCoreUpdatePayload(pageId: string, draft: CreatePageDraft) {
+  return {
+    ...mapPageGeneralUpdatePayload(pageId, draft),
+    ...mapPageProfileUpdatePayload(pageId, draft),
+    ...mapPinRequestPayload(draft),
+  };
+}
+
 function mapPageProfileUpdatePayload(pageId: string, draft: CreatePageDraft) {
   return {
     page_id: pageId,
@@ -222,7 +258,6 @@ function mapPageProfileUpdatePayload(pageId: string, draft: CreatePageDraft) {
     page_place_id: draft.placeId,
     page_lat: draft.lat,
     page_lng: draft.lng,
-    map_pin_requested: draft.mapPinRequested ? 1 : 0,
   };
 }
 
@@ -271,9 +306,12 @@ function mapPage(raw: RawPage | undefined): PagesItem {
     phone: readString(raw, 'phone', 'phone_number'),
     website: readString(raw, 'website', 'web_site'),
     address: readString(raw, 'address'),
-    placeId: readString(raw, 'place_id') || readString(raw, 'placeId'),
-    lat: readNumber(raw, 'lat'),
-    lng: readNumber(raw, 'lng'),
+    placeId:
+      readString(raw, 'place_id') ||
+      readString(raw, 'placeId') ||
+      readString(raw, 'page_place_id'),
+    lat: readNumber(raw, 'lat', 'page_lat'),
+    lng: readNumber(raw, 'lng', 'page_lng'),
     mapPinStatus,
     mapPinRequested: mapPinStatus === 'pending' || mapPinStatus === 'approved',
     mapPinApproved: mapPinStatus === 'approved',
@@ -817,7 +855,9 @@ export function createPagesRepository(): PagesRepository {
     async updatePage(pageId, draft, section = 'general') {
       let response: UpdatePageResponse;
       const payload =
-        section === 'profile'
+        section === 'core'
+          ? mapPageCoreUpdatePayload(pageId, draft)
+          : section === 'profile'
           ? mapPageProfileUpdatePayload(pageId, draft)
           : section === 'social'
             ? mapPageSocialUpdatePayload(pageId, draft)

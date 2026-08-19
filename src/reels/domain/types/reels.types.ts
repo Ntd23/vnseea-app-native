@@ -16,6 +16,10 @@ export interface ReelPublisher {
   username: string;
   name: string;
   avatarUrl?: string;
+  /** Public identity represented by this publisher. */
+  entityType?: 'user' | 'page';
+  /** Canonical Page id when the comment/reply was posted as a Page. */
+  pageId?: string;
   isVerified: boolean;
   isFollowing?: boolean;
   isAdmin?: boolean;

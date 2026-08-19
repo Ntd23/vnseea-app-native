@@ -10163,7 +10163,7 @@ function Wo_AddReactions($post_id, $reaction)
     }
 }
 
-function Wo_AddReplayReactions($user_id, $reply_id, $reaction)
+function Wo_AddReplayReactions($user_id, $reply_id, $reaction, $actor_page_id = 0)
 {
     global $wo, $sqlConnect;
     if ($wo['loggedin'] == false) {
@@ -10174,6 +10174,9 @@ function Wo_AddReplayReactions($user_id, $reply_id, $reaction)
     }
     $reply_id = Wo_Secure($reply_id);
     $page_id = 0;
+    if (!empty($actor_page_id) && is_numeric($actor_page_id) && Wo_IsPageOnwer($actor_page_id) !== false) {
+        $page_id = (int) Wo_Secure($actor_page_id);
+    }
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $comment = Wo_GetCommentIdFromReplyId($reply_id);
     $post_id = Wo_GetPostIdFromCommentId($comment);
@@ -10210,6 +10213,7 @@ function Wo_AddReplayReactions($user_id, $reply_id, $reaction)
         // $add_activity  = Wo_RegisterActivity($activity_data);
         $notification_data_array = array(
             'recipient_id' => $user_id,
+            'page_id' => $page_id,
             'reply_id' => $reply_id,
             'type' => 'reaction',
             'text' => $text,
@@ -10223,7 +10227,7 @@ function Wo_AddReplayReactions($user_id, $reply_id, $reaction)
     }
 }
 
-function Wo_AddCommentReactions($comment_id, $reaction)
+function Wo_AddCommentReactions($comment_id, $reaction, $actor_page_id = 0)
 {
     global $wo, $sqlConnect;
     if ($wo['loggedin'] == false) {
@@ -10235,6 +10239,9 @@ function Wo_AddCommentReactions($comment_id, $reaction)
     $comment_id = Wo_Secure($comment_id);
     $user_id = Wo_GetUserIdFromCommentId($comment_id);
     $page_id = 0;
+    if (!empty($actor_page_id) && is_numeric($actor_page_id) && Wo_IsPageOnwer($actor_page_id) !== false) {
+        $page_id = (int) Wo_Secure($actor_page_id);
+    }
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $post_id = Wo_GetPostIdFromCommentId($comment_id);
     if (!VNSEEA_CanMutatePost($post_id)) {
@@ -10270,6 +10277,7 @@ function Wo_AddCommentReactions($comment_id, $reaction)
         //$add_activity  = Wo_RegisterActivity($activity_data);
         $notification_data_array = array(
             'recipient_id' => $user_id,
+            'page_id' => $page_id,
             'comment_id' => $comment_id,
             'type' => 'reaction',
             'text' => $text,
@@ -11297,10 +11305,9 @@ function Wo_RegisterPostComment($data = array())
     $post = Wo_PostData($data['post_id']);
     $text = '';
     $type2 = '';
-    $page_id = 0;
-    if (!empty($post['page_id']) && $post['page_id'] > 0) {
-        $page_id = $post['page_id'];
-    }
+    // This is the Page acting through the current account, not necessarily
+    // the Page that owns the post.
+    $page_id = !empty($data['page_id']) ? (int) $data['page_id'] : 0;
     if (isset($post['postText']) && !empty($post['postText'])) {
         $text = substr($post['postText'], 0, 10) . '..';
     }
@@ -11366,6 +11373,7 @@ function Wo_RegisterPostComment($data = array())
         $add_activity = Wo_RegisterActivity($activity_data);
         $notification_data_array = array(
             'recipient_id' => $user_id,
+            'page_id' => $page_id,
             'post_id' => $data['post_id'],
             'type' => 'comment',
             'text' => $text,
@@ -11807,15 +11815,17 @@ function Wo_DeletePostComment($comment_id = '')
     }
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $post_id = Wo_GetPostIdFromCommentId($comment_id);
-    $query_one = mysqli_query($sqlConnect, "SELECT `id`, `user_id`, `c_file` FROM " . T_COMMENTS . " WHERE `id` = {$comment_id} AND `user_id` = {$logged_user_id}");
-    if (mysqli_num_rows($query_one) > 0 || Wo_IsPostOnwer($post_id, $logged_user_id) === true || Wo_IsAdmin()) {
-        if ($query_one) {
-            $query_img = mysqli_fetch_assoc($query_one);
-            if (!empty($query_img['c_file'])) {
-                @unlink($query_img['c_file']);
-            }
+    $query_one = mysqli_query($sqlConnect, "SELECT `id`, `user_id`, `c_file` FROM " . T_COMMENTS . " WHERE `id` = {$comment_id} LIMIT 1");
+    $comment = ($query_one && mysqli_num_rows($query_one) > 0) ? mysqli_fetch_assoc($query_one) : array();
+    if (empty($comment)) {
+        return false;
+    }
+    $is_comment_owner = (int) $comment['user_id'] === (int) $logged_user_id;
+    if ($is_comment_owner || Wo_IsPostOnwer($post_id, $logged_user_id) === true || Wo_IsAdmin()) {
+        if (!empty($comment['c_file'])) {
+            @unlink($comment['c_file']);
         }
-        if (mysqli_num_rows($query_one) > 0) {
+        if ($is_comment_owner) {
             Wo_RegisterPoint($post_id, "comments", "-");
         }
         $query_delete = mysqli_query($sqlConnect, "DELETE FROM " . T_COMMENTS . " WHERE `id` = {$comment_id}");
@@ -11848,13 +11858,16 @@ function Wo_DeletePostReplyComment($comment_id = '')
         return false;
     }
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
-    $query_one = mysqli_query($sqlConnect, "SELECT `id`, `user_id`,`c_file` FROM " . T_COMMENTS_REPLIES . " WHERE `id` = {$comment_id} AND `user_id` = {$logged_user_id}");
-    if (mysqli_num_rows($query_one) > 0 || Wo_IsAdmin()) {
-        if ($query_one) {
-            $query_img = mysqli_fetch_assoc($query_one);
-            if (!empty($query_img['c_file'])) {
-                @unlink($query_img['c_file']);
-            }
+    $query_one = mysqli_query($sqlConnect, "SELECT `id`, `user_id`, `c_file`, `comment_id` FROM " . T_COMMENTS_REPLIES . " WHERE `id` = {$comment_id} LIMIT 1");
+    $reply = ($query_one && mysqli_num_rows($query_one) > 0) ? mysqli_fetch_assoc($query_one) : array();
+    if (empty($reply)) {
+        return false;
+    }
+    $post_id = Wo_GetPostIdFromCommentId($reply['comment_id']);
+    $is_reply_owner = (int) $reply['user_id'] === (int) $logged_user_id;
+    if ($is_reply_owner || Wo_IsPostOnwer($post_id, $logged_user_id) === true || Wo_IsAdmin()) {
+        if (!empty($reply['c_file'])) {
+            @unlink($reply['c_file']);
         }
         $query_delete = mysqli_query($sqlConnect, "DELETE FROM " . T_COMMENTS_REPLIES . " WHERE `id` = {$comment_id}");
         $query_delete .= mysqli_query($sqlConnect, "DELETE FROM " . T_REACTIONS . " WHERE `replay_id` = '{$comment_id}'");

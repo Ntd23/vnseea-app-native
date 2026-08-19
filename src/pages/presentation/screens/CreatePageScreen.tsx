@@ -60,7 +60,8 @@ import {
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
-import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { parseMapCoordinate } from '../../../shared-kernel/application/utils/mapCoordinate';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { usePagesViewModel } from '../../application/view-models/usePagesViewModel';
@@ -97,6 +98,11 @@ type PageCategory = {
   label: string;
 };
 
+type SiteSettingsResponse = {
+  api_status?: number | string;
+  page_categories?: Record<string, string> | Array<Record<string, unknown>>;
+};
+
 const PAGE_CATEGORIES: PageCategory[] = [
   { id: '1', label: 'Ô tô và Xe cộ' },
   { id: '2', label: 'Hài hước' },
@@ -110,6 +116,35 @@ const PAGE_CATEGORIES: PageCategory[] = [
   { id: '10', label: 'Thời trang' },
   { id: '11', label: 'Thể thao' },
 ];
+
+function normalizePageCategories(
+  input: SiteSettingsResponse['page_categories'],
+): PageCategory[] {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input
+      .map(item => {
+        const id = item.id ?? item.category_id ?? item.key ?? item.value;
+        const label =
+          item.lang ??
+          item.label ??
+          item.name ??
+          item.category_name ??
+          item.title;
+
+        return {
+          id: id === undefined || id === null ? '' : String(id),
+          label: label === undefined || label === null ? '' : String(label),
+        };
+      })
+      .filter(category => category.id && category.label);
+  }
+
+  return Object.entries(input)
+    .map(([id, label]) => ({ id: String(id), label: String(label) }))
+    .filter(category => category.id && category.label);
+}
 
 const CATEGORY_ICONS: Record<string, React.ComponentType<any>> = {
   '1': Car,
@@ -148,6 +183,40 @@ const INITIAL_DRAFT: CreatePageDraft = {
   youtube: '',
   backgroundImageStatus: 'defualt',
 };
+
+function mapPageToDraft(page: PagesItem): CreatePageDraft {
+  const mapPinStatus = page.mapPinStatus || 'none';
+
+  return {
+    pageTitle: page.pageTitle || '',
+    pageName: page.pageName || '',
+    pageDescription: page.pageDescription || '',
+    pageAddress: page.address || '',
+    pageCategory: page.pageCategory || PAGE_CATEGORIES[0].id,
+    company: page.company || '',
+    phone: page.phone || '',
+    website: page.website || '',
+    placeId: page.placeId,
+    lat: page.lat,
+    lng: page.lng,
+    mapPinStatus,
+    mapPinRequested:
+      Boolean(page.mapPinRequested) ||
+      mapPinStatus === 'pending' ||
+      mapPinStatus === 'approved',
+    callActionType: page.callActionType || 'read_more',
+    callActionUrl: page.callActionUrl || '',
+    allowPost: Boolean(page.allowPost),
+    verified: Boolean(page.verified),
+    facebook: page.facebook || '',
+    twitter: page.twitter || '',
+    instgram: page.instgram || '',
+    vk: page.vk || '',
+    linkedin: page.linkedin || '',
+    youtube: page.youtube || '',
+    backgroundImageStatus: page.backgroundImageStatus || 'defualt',
+  };
+}
 
 const PAGE_URL_PREFIX = `${apiConfig.webBaseUrl.replace(/\/$/, '')}/`;
 
@@ -594,40 +663,14 @@ function CreatePageScreen() {
   const copy = CREATE_PAGE_COPY[language];
   
   const [draft, setDraft] = useState<CreatePageDraft>(() =>
-    editingPage
-      ? {
-          pageTitle: editingPage.pageTitle || '',
-          pageName: editingPage.pageName || '',
-          pageDescription: editingPage.pageDescription || '',
-          pageAddress: editingPage.address || '',
-          pageCategory: editingPage.pageCategory || PAGE_CATEGORIES[0].id,
-          company: editingPage.company || '',
-          phone: editingPage.phone || '',
-          website: editingPage.website || '',
-          placeId: editingPage.placeId,
-          lat: editingPage.lat,
-          lng: editingPage.lng,
-          mapPinStatus: editingPage.mapPinStatus || 'none',
-          mapPinRequested:
-            editingPage.mapPinRequested ||
-            editingPage.mapPinStatus === 'pending' ||
-            editingPage.mapPinStatus === 'approved',
-          callActionType: editingPage.callActionType || 'read_more',
-          callActionUrl: editingPage.callActionUrl || '',
-          allowPost: Boolean(editingPage.allowPost),
-          verified: Boolean(editingPage.verified),
-          facebook: editingPage.facebook || '',
-          twitter: editingPage.twitter || '',
-          instgram: editingPage.instgram || '',
-          vk: editingPage.vk || '',
-          linkedin: editingPage.linkedin || '',
-          youtube: editingPage.youtube || '',
-          backgroundImageStatus: editingPage.backgroundImageStatus || 'defualt',
-        }
-      : INITIAL_DRAFT,
+    editingPage ? mapPageToDraft(editingPage) : INITIAL_DRAFT,
   );
+  const editDraftDirtyRef = useRef(false);
+  const hydratedEditPageIdRef = useRef<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isPageNameDirty, setIsPageNameDirty] = useState(false);
+  const [pageCategories, setPageCategories] =
+    useState<PageCategory[]>(PAGE_CATEGORIES);
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [isCallActionOpen, setIsCallActionOpen] = useState(false);
   const [activeEditTab, setActiveEditTab] = useState<PageEditTab>('general');
@@ -647,6 +690,58 @@ function CreatePageScreen() {
 
   const currentError = localError || pagesVm.error;
   const isPageNameValid = draft.pageName.trim().length >= 5 && /^[a-z0-9_-]+$/.test(draft.pageName.trim());
+
+  useEffect(() => {
+    const pageId = editingPage?.pageId;
+    if (!pageId || hydratedEditPageIdRef.current === pageId) return;
+
+    hydratedEditPageIdRef.current = pageId;
+    let active = true;
+
+    pagesVm
+      .getPageDetail(pageId)
+      .then(latestPage => {
+        if (!active || editDraftDirtyRef.current) return;
+        setDraft(mapPageToDraft(latestPage));
+      })
+      .catch(() => {
+        // Keep the navigation snapshot when the canonical refresh is unavailable.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [editingPage?.pageId, pagesVm.getPageDetail]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    apiBridge
+      .post<SiteSettingsResponse>(apiRoutes.auth.siteSettings, {})
+      .then(response => {
+        if (!mounted) return;
+        const categories = normalizePageCategories(response.page_categories);
+        if (categories.length === 0) return;
+
+        setPageCategories(categories);
+        setDraft(current => {
+          const selectedCategoryExists = categories.some(
+            category => category.id === current.pageCategory,
+          );
+          return selectedCategoryExists ||
+            (Boolean(editingPage?.pageId) && Boolean(current.pageCategory))
+            ? current
+            : { ...current, pageCategory: categories[0].id };
+        });
+      })
+      .catch(() => {
+        // Keep the local fallback when site settings cannot be loaded.
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [editingPage?.pageId]);
 
   const revealFocusedInput = useCallback((delay = 100) => {
     const target = focusedInputTargetRef.current;
@@ -691,15 +786,21 @@ function CreatePageScreen() {
       key: TKey,
       value: CreatePageDraft[TKey],
     ) => {
+      if (isEditing) {
+        editDraftDirtyRef.current = true;
+      }
       setDraft(prev => ({ ...prev, [key]: value }));
       setLocalError(null);
       pagesVm.clearError();
     },
-    [pagesVm],
+    [isEditing, pagesVm],
   );
 
   const handleTitleChange = useCallback(
     (value: string) => {
+      if (isEditing) {
+        editDraftDirtyRef.current = true;
+      }
       setDraft(prev => ({
         ...prev,
         pageTitle: value,
@@ -708,7 +809,7 @@ function CreatePageScreen() {
       setLocalError(null);
       pagesVm.clearError();
     },
-    [isPageNameDirty, pagesVm],
+    [isEditing, isPageNameDirty, pagesVm],
   );
 
   const handlePageNameChange = useCallback(
@@ -719,46 +820,16 @@ function CreatePageScreen() {
     [updateDraft],
   );
 
-  const handleAddressChange = useCallback(
-    (value: string) => {
-      setDraft(prev => ({
-        ...prev,
-        pageAddress: value,
-        placeId: undefined,
-        lat: undefined,
-        lng: undefined,
-      }));
-      setLocalError(null);
-      pagesVm.clearError();
-    },
-    [pagesVm],
-  );
-
-  const handlePlaceSelected = useCallback(
-    (place: {
-      description: string;
-      placeId: string;
-      lat?: number;
-      lng?: number;
-    }) => {
-      const coordinate = parseMapCoordinate(place.lat, place.lng);
-      setDraft(prev => ({
-        ...prev,
-        pageAddress: place.description,
-        placeId: place.placeId,
-        lat: coordinate?.latitude,
-        lng: coordinate?.longitude,
-      }));
-      setLocalError(null);
-      pagesVm.clearError();
-      // Selecting a suggestion should immediately continue to exact pin placement.
-      setIsLocationPickerVisible(true);
-    },
-    [pagesVm],
-  );
+  const openLocationPicker = useCallback(() => {
+    Keyboard.dismiss();
+    setIsLocationPickerVisible(true);
+  }, []);
 
   const handleLocationConfirm = useCallback(
     (selection: PageLocationSelection) => {
+      if (isEditing) {
+        editDraftDirtyRef.current = true;
+      }
       setDraft(prev => ({
         ...prev,
         pageAddress: selection.address,
@@ -770,7 +841,7 @@ function CreatePageScreen() {
       pagesVm.clearError();
       setIsLocationPickerVisible(false);
     },
-    [pagesVm],
+    [isEditing, pagesVm],
   );
 
   const validateForm = useCallback(() => {
@@ -797,7 +868,7 @@ function CreatePageScreen() {
       return copy.step2ErrorChars;
     }
 
-    if (!isEditing) {
+    if (!isEditing || activeEditTab === 'general') {
       const descriptionLength = draft.pageDescription.trim().length;
       if (descriptionLength < 10 || descriptionLength > 200) {
         return copy.step3ErrorDescLength;
@@ -925,7 +996,9 @@ function CreatePageScreen() {
           ? await pagesVm.updatePage(
               editingPage.pageId,
               draft,
-              activeEditTab === 'flag'
+              activeEditTab === 'general'
+                ? 'core'
+                : activeEditTab === 'flag'
                 ? 'profile'
                 : activeEditTab === 'social'
                   ? 'social'
@@ -981,6 +1054,21 @@ function CreatePageScreen() {
   const selectedCallAction =
     CALL_ACTION_OPTIONS.find(option => option.id === draft.callActionType) ||
     CALL_ACTION_OPTIONS[0];
+  const selectedPageCategory =
+    pageCategories.find(category => category.id === draft.pageCategory) ??
+    (draft.pageCategory
+      ? { id: draft.pageCategory, label: draft.pageCategory }
+      : pageCategories[0]) ??
+    PAGE_CATEGORIES[0];
+  const selectedPageCategoryLabel =
+    (copy.categories as Record<string, string>)[selectedPageCategory.id] ||
+    selectedPageCategory.label;
+  const mapPinStatusText =
+    draft.mapPinStatus === 'approved'
+      ? copy.step3PinStatusApproved
+      : draft.mapPinStatus === 'pending'
+        ? copy.step3PinStatusPending
+        : copy.step3PinStatusNone;
   const pageLocationCoordinate = useMemo(
     () => parseMapCoordinate(draft.lat, draft.lng) || undefined,
     [draft.lat, draft.lng],
@@ -1109,21 +1197,48 @@ function CreatePageScreen() {
           />
         </View>
 
+        <View style={{ marginBottom: 18 }}>
+          <EditFieldLabel>Trang URL</EditFieldLabel>
+          <View style={{ alignSelf: 'flex-start', backgroundColor: '#F1F5F9', borderRadius: 4, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 8 }}>
+            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }}>
+              {PAGE_URL_PREFIX}
+            </Text>
+          </View>
+          <TextInput
+            style={{ minHeight: 48, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, color: '#111827', fontSize: 15 }}
+            placeholder={copy.step2InputPlaceholder}
+            placeholderTextColor="#94a3b8"
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
+            value={draft.pageName}
+            onChangeText={handlePageNameChange}
+            onFocus={event => handleInputFocus(event.target)}
+          />
+          <Text style={{ fontSize: 12, fontWeight: '500', color: '#94A3B8', marginTop: 6 }}>
+            Link trang: {PAGE_URL_PREFIX}{draft.pageName || copy.step2InputPlaceholder}
+          </Text>
+        </View>
+
         <View style={{ marginBottom: 18, zIndex: 120 }}>
-          <EditFieldLabel>Loại</EditFieldLabel>
+          <EditFieldLabel>Danh mục trang</EditFieldLabel>
           <TouchableOpacity
             activeOpacity={0.84}
             onPress={() => setIsCategoryOpen(current => !current)}
             style={{ minHeight: 48, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
-            <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '500' }}>
-              {(copy.categories as Record<string, string>)[draft.pageCategory] || draft.pageCategory}
+            <Text style={{ color: '#111827', fontSize: 15, fontWeight: '500' }}>
+              {selectedPageCategoryLabel}
             </Text>
             <ChevronDown size={19} color="#94A3B8" />
           </TouchableOpacity>
           {isCategoryOpen ? (
-            <View style={{ marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF', overflow: 'hidden' }}>
-              {PAGE_CATEGORIES.map(category => {
+            <ScrollView
+              nestedScrollEnabled
+              style={{ maxHeight: 280, marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {pageCategories.map(category => {
                 const active = draft.pageCategory === category.id;
                 const translatedLabel = (copy.categories as Record<string, string>)[category.id] || category.label;
                 return (
@@ -1143,30 +1258,42 @@ function CreatePageScreen() {
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
           ) : null}
         </View>
 
         <View style={{ marginBottom: 18 }}>
-          <EditFieldLabel>Trang URL</EditFieldLabel>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ height: 38, justifyContent: 'center', borderTopLeftRadius: 7, borderBottomLeftRadius: 7, backgroundColor: '#e5e7eb', paddingHorizontal: 10 }}>
-              <Text style={{ color: '#64748b', fontSize: 13, fontWeight: '600' }}>
-                {PAGE_URL_PREFIX}
-              </Text>
-            </View>
-            <TextInput
-              style={{ flex: 1, minHeight: 38, borderTopRightRadius: 7, borderBottomRightRadius: 7, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 10, color: '#111827', fontSize: 14 }}
-              placeholder="ten_trang"
-              placeholderTextColor="#94a3b8"
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="next"
-              value={draft.pageName}
-              onChangeText={handlePageNameChange}
-              onFocus={event => handleInputFocus(event.target)}
-            />
-          </View>
+          <EditFieldLabel>Mô tả trang</EditFieldLabel>
+          <TextInput
+            style={{ minHeight: 100, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, paddingTop: 10, color: '#111827', fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }}
+            placeholder={copy.step3DescPlaceholder}
+            placeholderTextColor="#94a3b8"
+            multiline
+            maxLength={200}
+            value={draft.pageDescription}
+            onChangeText={value => updateDraft('pageDescription', value)}
+            onFocus={event => handleInputFocus(event.target)}
+          />
+        </View>
+
+        <View style={{ marginBottom: 18 }}>
+          <EditFieldLabel>Địa điểm</EditFieldLabel>
+          <TouchableOpacity
+            activeOpacity={0.84}
+            onPress={openLocationPicker}
+            accessibilityRole="button"
+            accessibilityLabel="Chọn vị trí chính xác trên bản đồ"
+            style={{ minHeight: 48, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' }}
+          >
+            <MapPin size={18} color={BRAND} />
+            <Text
+              numberOfLines={2}
+              style={{ flex: 1, marginLeft: 9, color: draft.pageAddress ? '#111827' : '#94a3b8', fontSize: 15, fontWeight: '500' }}
+            >
+              {draft.pageAddress || 'Chọn vị trí chính xác trên bản đồ'}
+            </Text>
+            <ChevronDown size={19} color="#94A3B8" />
+          </TouchableOpacity>
         </View>
 
         <View style={{ marginBottom: 18, zIndex: 80 }}>
@@ -1225,7 +1352,7 @@ function CreatePageScreen() {
           <EditFieldLabel>Xuất hiện trên bản đồ</EditFieldLabel>
           <EditCheckbox
             checked={Boolean(draft.mapPinRequested)}
-            label="Hiển thị page này trên bản đồ."
+            label={copy.step3PinLabel}
             onPress={() => {
               const value = !draft.mapPinRequested;
               updateDraft('mapPinRequested', value);
@@ -1239,6 +1366,9 @@ function CreatePageScreen() {
               );
             }}
           />
+          <Text style={{ color: '#64748b', fontSize: 12, lineHeight: 18 }}>
+            {mapPinStatusText}. {copy.step3PinDesc}
+          </Text>
         </View>
 
         <View style={{ marginBottom: 18 }}>
@@ -1304,18 +1434,6 @@ function CreatePageScreen() {
       </View>
 
       <View style={{ marginBottom: 18 }}>
-        <EditFieldLabel>Địa điểm</EditFieldLabel>
-        <TextInput
-          style={{ minHeight: 48, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, color: '#111827', fontSize: 15 }}
-          placeholder="Địa điểm"
-          placeholderTextColor="#94a3b8"
-          value={draft.pageAddress}
-          onChangeText={handleAddressChange}
-          onFocus={event => handleInputFocus(event.target)}
-        />
-      </View>
-
-      <View style={{ marginBottom: 18 }}>
         <EditFieldLabel>Trang mạng</EditFieldLabel>
         <TextInput
           style={{ minHeight: 48, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, color: '#111827', fontSize: 15 }}
@@ -1333,18 +1451,6 @@ function CreatePageScreen() {
         </Text>
       </View>
 
-      <View style={{ marginBottom: 18 }}>
-        <EditFieldLabel>Về</EditFieldLabel>
-        <TextInput
-          style={{ minHeight: 132, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, paddingTop: 12, color: '#111827', fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }}
-          placeholder=""
-          placeholderTextColor="#94a3b8"
-          multiline
-          value={draft.pageDescription}
-          onChangeText={value => updateDraft('pageDescription', value)}
-          onFocus={event => handleInputFocus(event.target)}
-        />
-      </View>
     </>
   );
 
@@ -1826,13 +1932,17 @@ function CreatePageScreen() {
               style={{ minHeight: 48, borderRadius: 9, borderWidth: 1, borderColor: '#D8DEE8', backgroundColor: '#FFFFFF', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
               <Text style={{ color: '#111827', fontSize: 15, fontWeight: '500' }}>
-                {(copy.categories as Record<string, string>)[draft.pageCategory] || draft.pageCategory}
+                {selectedPageCategoryLabel}
               </Text>
               <ChevronDown size={19} color="#94A3B8" />
             </TouchableOpacity>
             {isCategoryOpen ? (
-              <View style={{ marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF', overflow: 'hidden' }}>
-                {PAGE_CATEGORIES.map(category => {
+              <ScrollView
+                nestedScrollEnabled
+                style={{ maxHeight: 280, marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {pageCategories.map(category => {
                   const active = draft.pageCategory === category.id;
                   const translatedLabel = (copy.categories as Record<string, string>)[category.id] || category.label;
                   return (
@@ -1852,7 +1962,7 @@ function CreatePageScreen() {
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+              </ScrollView>
             ) : null}
           </View>
 
@@ -1881,33 +1991,30 @@ function CreatePageScreen() {
             <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A', marginBottom: 8 }}>
               Địa điểm
             </Text>
-            <AddressAutocomplete
-              value={draft.pageAddress}
-              placeholder="Địa điểm"
-              locationBias={pageLocationCoordinate}
-              onChangeText={handleAddressChange}
-              onSelectPlace={handlePlaceSelected}
-            />
             <TouchableOpacity
               activeOpacity={0.84}
-              onPress={() => setIsLocationPickerVisible(true)}
+              onPress={openLocationPicker}
+              accessibilityRole="button"
+              accessibilityLabel="Chọn vị trí chính xác trên bản đồ"
               style={{
                 minHeight: 48,
-                marginTop: 10,
-                borderRadius: 10,
+                borderRadius: 9,
                 borderWidth: 1,
-                borderColor: APP_COLORS.brand.border,
-                backgroundColor: APP_COLORS.brand.soft,
+                borderColor: '#D8DEE8',
+                backgroundColor: '#FFFFFF',
                 flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
-                paddingHorizontal: 14,
+                paddingHorizontal: 12,
               }}
             >
               <MapPin size={18} color={BRAND} />
-              <Text style={{ marginLeft: 8, color: BRAND, fontSize: 14, fontWeight: '800' }}>
-                Chọn vị trí chính xác trên bản đồ
+              <Text
+                numberOfLines={2}
+                style={{ flex: 1, marginLeft: 9, color: draft.pageAddress ? '#111827' : '#94a3b8', fontSize: 15, fontWeight: '500' }}
+              >
+                {draft.pageAddress || 'Chọn vị trí chính xác trên bản đồ'}
               </Text>
+              <ChevronDown size={19} color="#94A3B8" />
             </TouchableOpacity>
             {pageLocationCoordinate ? (
               <Text style={{ marginTop: 7, color: '#64748b', fontSize: 12, fontWeight: '600' }}>
@@ -1955,9 +2062,12 @@ function CreatePageScreen() {
                 )}
               </View>
               <Text style={{ fontSize: 13, color: '#334155', fontWeight: '500' }}>
-                Hiển thị page này trên bản đồ.
+                {copy.step3PinLabel}
               </Text>
             </TouchableOpacity>
+            <Text style={{ marginTop: 7, color: '#64748b', fontSize: 12, lineHeight: 18 }}>
+              {mapPinStatusText}. {copy.step3PinDesc}
+            </Text>
           </View>
             </>
           )}

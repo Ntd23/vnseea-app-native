@@ -769,8 +769,34 @@ function PostDetailScreen() {
     (_changedPostId: string, delta: number) => adjustCommentCount(delta),
     [adjustCommentCount],
   );
+  const currentUserId = sessionStorage.getSession()?.userId;
+  const commentAsPage = useMemo(() => {
+    const publisher = post?.publisher;
+    if (
+      !publisher ||
+      publisher.entityType !== 'page' ||
+      !publisher.pageId ||
+      !publisher.ownerId ||
+      !currentUserId ||
+      String(publisher.ownerId) !== String(currentUserId)
+    ) {
+      return undefined;
+    }
+
+    return {
+      pageId: publisher.pageId,
+      publisher: {
+        userId: publisher.ownerId,
+        username: publisher.username,
+        name: publisher.name,
+        avatarUrl: publisher.avatarUrl,
+        isVerified: false,
+      },
+    };
+  }, [currentUserId, post?.publisher]);
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: handleCommentCountChange,
+    commentAsPage,
   });
   const openCommentsRef = useRef(commentVm.openComments);
   const closeCommentsRef = useRef(commentVm.closeComments);
