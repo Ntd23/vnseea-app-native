@@ -93,6 +93,25 @@ describe('Nearby map search interaction', () => {
     expect(viewModelSource).toContain('publishPartialResults();');
   });
 
+  it('resolves Google predictions without coordinates before route actions', () => {
+    const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+
+    expect(source).toContain('function selectedPointFromGooglePrediction(');
+    expect(source).toContain('const resolveGooglePredictionPoint = useCallback');
+    expect(source).toContain(
+      'const details = await getPlaceDetails(prediction.placeId);',
+    );
+    expect(source).toContain(
+      'const handleGoogleSearchResultRouteAction = useCallback',
+    );
+    expect(source).toContain(
+      'handleGoogleSearchResultRouteAction(\n                        item.prediction,',
+    );
+    expect(source).not.toContain(
+      "disabled={!coordinate && item.kind !== 'page'}",
+    );
+  });
+
   it('does not let background nearby discovery overwrite an active search', () => {
     const screenSource = read(
       'src/user/presentation/screens/NearbyUsersScreen.tsx',

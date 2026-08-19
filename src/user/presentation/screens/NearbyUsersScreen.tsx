@@ -199,7 +199,6 @@ const OFF_ROUTE_DISTANCE_METERS = 24;
 const OFF_ROUTE_CONFIRM_MS = 0;
 const REROUTE_COOLDOWN_MS = 1500;
 const NAVIGATION_ARRIVAL_DISTANCE_METERS = 24;
-const LOCATION_RECENTER_DISTANCE_METERS = 50000;
 const DISCOVERY_RADIUS_METERS = 3000;
 const SEARCH_MAP_FIT_CLUSTER_METERS = 50000;
 const NEARBY_RESULT_DISTANCE_METERS = 3000;
@@ -801,6 +800,56 @@ function selectedPointFromNearbyPage(page: NearbyPlace): SelectedPoint | null {
     ratingsTotal: page.ratingsTotal,
     openNow: page.openNow,
     photoUrls: [page.coverUrl, page.avatarUrl].filter(Boolean) as string[],
+  };
+}
+
+function selectedPointFromGooglePrediction(
+  prediction: MapPlacePrediction,
+  details?: NearbyPlace | null,
+): SelectedPoint | null {
+  const predictionCoordinate = {
+    latitude: Number(prediction.lat),
+    longitude: Number(prediction.lng),
+  };
+  const coordinate = isValidMapCoordinate(details?.coordinate)
+    ? details.coordinate
+    : isValidMapCoordinate(predictionCoordinate)
+    ? predictionCoordinate
+    : null;
+  if (!coordinate) return null;
+
+  return {
+    id: details?.id || prediction.placeId,
+    source: 'google',
+    placeId: details?.placeId || prediction.placeId,
+    title: details?.name || prediction.mainText,
+    subtitle:
+      details?.location ||
+      prediction.secondaryText ||
+      prediction.description,
+    address:
+      details?.location ||
+      prediction.secondaryText ||
+      prediction.description,
+    coordinate,
+    types: details?.types?.length ? details.types : prediction.types,
+    icon: details?.icon || prediction.icon,
+    iconBackgroundColor:
+      details?.iconBackgroundColor || prediction.iconBackgroundColor,
+    distanceMeters: prediction.distanceMeters,
+    rating: details?.rating ?? prediction.rating,
+    ratingsTotal: details?.ratingsTotal ?? prediction.ratingsTotal,
+    openNow: details?.openNow ?? prediction.openNow,
+    photoUrls: details?.photoUrls?.length
+      ? details.photoUrls
+      : prediction.photoUrls,
+    reviews: details?.reviews,
+    editorialSummary: details?.editorialSummary,
+    phoneNumber: details?.phoneNumber,
+    website: details?.website,
+    weekdayText: details?.weekdayText,
+    businessStatus: details?.businessStatus,
+    priceLevel: details?.priceLevel,
   };
 }
 
@@ -2302,6 +2351,10 @@ export default function NearbyUsersScreen() {
     vnseeaLogoErrorCount === 0 ? vnseeaLogoUrl : null;
   const messagesVm = useMessagesViewModel();
   const mapRef = useRef<MapView>(null);
+  const isMapReadyRef = useRef(false);
+  const pendingInitialUserCenterRef = useRef<LatLng | null>(null);
+  const hasAppliedInitialUserCenterRef = useRef(false);
+  const hasUserMovedMapRef = useRef(false);
   const currentLocationRef = useRef<LatLng | null>(persistedCoordinate);
   const hasLoadedNearbyPagesRef = useRef(false);
   const nearbyPagesOriginRef = useRef<LatLng | null>(null);
@@ -2430,6 +2483,7 @@ export default function NearbyUsersScreen() {
   );
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState('');
+  const [routeRenderRevision, setRouteRenderRevision] = useState(0);
   const [isNavigating, setIsNavigating] = useState(false);
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(false);
@@ -2439,9 +2493,6 @@ export default function NearbyUsersScreen() {
   const [isMapShareSheetOpen, setIsMapShareSheetOpen] = useState(false);
   const [isPostingMapShare, setIsPostingMapShare] = useState(false);
   const [routeHeading, setRouteHeading] = useState<number | null>(null);
-  const [hasCenteredOnUser, setHasCenteredOnUser] = useState(
-    Boolean(persistedCoordinate),
-  );
   const [searchMessage, setSearchMessage] = useState('');
   const setNavigationAutoCentering = useCallback((enabled: boolean) => {
     isAutoCenteringRef.current = enabled;
@@ -3580,6 +3631,7 @@ export default function NearbyUsersScreen() {
 
   const resetRouteState = useCallback(() => {
     routeRequestIdRef.current += 1;
+    setRouteRenderRevision(current => current + 1);
     activeDestinationRef.current = null;
     isNavigatingRef.current = false;
     activeRoutePathRef.current = [];
@@ -3763,6 +3815,38 @@ export default function NearbyUsersScreen() {
     }, MAP_DISCOVERY_VIEWPORT_DEBOUNCE_MS);
   }, []);
 
+  const applyInitialUserCenter = useCallback((location: LatLng) => {
+    if (
+      hasAppliedInitialUserCenterRef.current ||
+      hasUserMovedMapRef.current
+    ) {
+      return;
+    }
+
+    pendingInitialUserCenterRef.current = location;
+    if (!isMapReadyRef.current) return;
+
+    pendingInitialUserCenterRef.current = null;
+    hasAppliedInitialUserCenterRef.current = true;
+    mapRef.current?.animateToRegion(
+      {
+        ...location,
+        latitudeDelta: 0.03,
+        longitudeDelta: 0.03,
+      },
+      320,
+    );
+  }, []);
+
+  const handleMapReady = useCallback(() => {
+    isMapReadyRef.current = true;
+    const pendingLocation =
+      pendingInitialUserCenterRef.current ?? deviceLocationRef.current;
+    if (pendingLocation) {
+      applyInitialUserCenter(pendingLocation);
+    }
+  }, [applyInitialUserCenter]);
+
   const centerOnUser = useCallback(() => {
     const location = currentLocationRef.current;
     if (!location) {
@@ -3774,6 +3858,9 @@ export default function NearbyUsersScreen() {
       return;
     }
 
+    pendingInitialUserCenterRef.current = null;
+    hasAppliedInitialUserCenterRef.current = true;
+    hasUserMovedMapRef.current = false;
     isViewportDiscoveryRef.current = false;
     if (viewportPageLoadTimerRef.current) {
       clearTimeout(viewportPageLoadTimerRef.current);
@@ -3849,6 +3936,13 @@ export default function NearbyUsersScreen() {
     userSpeed,
   ]);
 
+  const handleCloseSelectedPlace = useCallback(() => {
+    clearSelectedPoint();
+    requestAnimationFrame(() => {
+      centerOnUser();
+    });
+  }, [centerOnUser, clearSelectedPoint]);
+
   const disableNavigationAutoCentering = useCallback(() => {
     if (isNavigatingRef.current && isAutoCenteringRef.current) {
       setNavigationAutoCentering(false);
@@ -3858,6 +3952,7 @@ export default function NearbyUsersScreen() {
   const handleRegionChangeStart = useCallback(
     (_region: Region, details: Details) => {
       if (details?.isGesture) {
+        hasUserMovedMapRef.current = true;
         disableNavigationAutoCentering();
       }
     },
@@ -4856,6 +4951,17 @@ export default function NearbyUsersScreen() {
     ],
   );
 
+  const resolveGooglePredictionPoint = useCallback(
+    async (prediction: MapPlacePrediction) => {
+      const immediatePoint = selectedPointFromGooglePrediction(prediction);
+      if (immediatePoint) return immediatePoint;
+
+      const details = await getPlaceDetails(prediction.placeId);
+      return selectedPointFromGooglePrediction(prediction, details);
+    },
+    [getPlaceDetails],
+  );
+
   const handleSelectSearchResult = useCallback(
     async (
       item: SuggestionItem,
@@ -4904,82 +5010,26 @@ export default function NearbyUsersScreen() {
           showPlaceResolutionError();
         }
       } else {
-        if (
-          typeof item.prediction.lat === 'number' &&
-          typeof item.prediction.lng === 'number' &&
-          isValidMapCoordinate({
-            latitude: item.prediction.lat,
-            longitude: item.prediction.lng,
-          })
-        ) {
-          selectPoint({
-            id: item.prediction.placeId,
-            source: 'google',
-            placeId: item.prediction.placeId,
-            title: item.prediction.mainText,
-            subtitle:
-              item.prediction.secondaryText || item.prediction.description,
-            address:
-              item.prediction.secondaryText || item.prediction.description,
-            coordinate: {
-              latitude: item.prediction.lat,
-              longitude: item.prediction.lng,
-            },
-            types: item.prediction.types,
-            icon: item.prediction.icon,
-            iconBackgroundColor: item.prediction.iconBackgroundColor,
-            distanceMeters: item.prediction.distanceMeters,
-            rating: item.prediction.rating,
-            ratingsTotal: item.prediction.ratingsTotal,
-            openNow: item.prediction.openNow,
-            photoUrls: item.prediction.photoUrls,
-          });
-        } else {
-          try {
-            setIsLoadingRoutes(true);
-            const details = await getPlaceDetails(item.prediction.placeId);
-            if (details && details.coordinate) {
-              selectPoint({
-                id: details.id,
-                source: 'google',
-                placeId: details.placeId || item.prediction.placeId,
-                title: details.name,
-                subtitle: details.location || item.prediction.description,
-                address: details.location || item.prediction.description,
-                coordinate: details.coordinate,
-                types: item.prediction.types,
-                icon: details.icon,
-                iconBackgroundColor: details.iconBackgroundColor,
-                distanceMeters: item.prediction.distanceMeters,
-                rating: details.rating ?? item.prediction.rating,
-                ratingsTotal:
-                  details.ratingsTotal ?? item.prediction.ratingsTotal,
-                openNow: details.openNow ?? item.prediction.openNow,
-                photoUrls: details.photoUrls ?? [],
-                reviews: details.reviews ?? [],
-                editorialSummary: details.editorialSummary,
-                phoneNumber: details.phoneNumber,
-                website: details.website,
-                weekdayText: details.weekdayText ?? [],
-                businessStatus: details.businessStatus,
-                priceLevel: details.priceLevel,
-              });
-            } else {
-              showPlaceResolutionError();
-            }
-          } catch {
+        try {
+          setIsLoadingRoutes(true);
+          const point = await resolveGooglePredictionPoint(item.prediction);
+          if (point) {
+            selectPoint(point);
+          } else {
             showPlaceResolutionError();
-          } finally {
-            setIsLoadingRoutes(false);
           }
+        } catch {
+          showPlaceResolutionError();
+        } finally {
+          setIsLoadingRoutes(false);
         }
       }
     },
     [
-      getPlaceDetails,
       isSearchFocused,
       openSearchResultsSheet,
       query,
+      resolveGooglePredictionPoint,
       selectPage,
       selectPoint,
       typeaheadResults,
@@ -4997,6 +5047,36 @@ export default function NearbyUsersScreen() {
       );
     },
     [handleSelectSearchResult, selectedPlaceSuggestionItems],
+  );
+
+  const handleGoogleSearchResultRouteAction = useCallback(
+    async (prediction: MapPlacePrediction, navigating: boolean) => {
+      setIsLoadingRoutes(true);
+      let point: SelectedPoint | null = null;
+      try {
+        point = await resolveGooglePredictionPoint(prediction);
+      } catch {
+        point = null;
+      }
+      setIsLoadingRoutes(false);
+
+      if (!point) {
+        Alert.alert(
+          'Chưa xác định được vị trí',
+          'VNSEEA chưa lấy được tọa độ chính xác của địa điểm này. Bạn hãy thử lại hoặc chọn một kết quả khác.',
+        );
+        return;
+      }
+
+      if (navigating) {
+        selectPoint(point);
+        await loadRouteOptions(point.coordinate, true, point.title);
+        return;
+      }
+
+      selectPoint(point, true);
+    },
+    [loadRouteOptions, resolveGooglePredictionPoint, selectPoint],
   );
 
   const handleExitSearchMode = useCallback(() => {
@@ -5061,12 +5141,6 @@ export default function NearbyUsersScreen() {
         return;
       }
 
-      const previousLocation = currentLocationRef.current;
-      const wasUsingProfileLocation = locationSource === 'profile';
-      const movedVeryFar =
-        previousLocation !== null &&
-        distanceMeters(previousLocation, location) >
-          LOCATION_RECENTER_DISTANCE_METERS;
       currentLocationRef.current = location;
       deviceLocationRef.current = location;
       const now = Date.now();
@@ -5129,17 +5203,7 @@ export default function NearbyUsersScreen() {
         }
       }
 
-      if (!hasCenteredOnUser || wasUsingProfileLocation || movedVeryFar) {
-        setHasCenteredOnUser(true);
-        mapRef.current?.animateToRegion(
-          {
-            ...location,
-            latitudeDelta: 0.03,
-            longitudeDelta: 0.03,
-          },
-          500,
-        );
-      }
+      applyInitialUserCenter(location);
 
       if (!isViewportDiscoveryRef.current) {
         loadPagesAroundUser(location, {
@@ -5187,7 +5251,12 @@ export default function NearbyUsersScreen() {
         ).catch(() => undefined);
       }
     },
-    [hasCenteredOnUser, loadPagesAroundUser, loadRouteOptions, locationSource],
+    [
+      applyInitialUserCenter,
+      loadPagesAroundUser,
+      loadRouteOptions,
+      locationSource,
+    ],
   );
 
   const handleShare = useCallback(() => {
@@ -5562,15 +5631,7 @@ export default function NearbyUsersScreen() {
         setCurrentLocation(coordinate);
         setLocationAccessError(null);
         setLocationSource('gps');
-        setHasCenteredOnUser(true);
-        mapRef.current?.animateToRegion(
-          {
-            ...coordinate,
-            latitudeDelta: 0.03,
-            longitudeDelta: 0.03,
-          },
-          320,
-        );
+        applyInitialUserCenter(coordinate);
 
         if (!isViewportDiscoveryRef.current) {
           loadPagesAroundUser(coordinate, {
@@ -5602,6 +5663,7 @@ export default function NearbyUsersScreen() {
       cancelled = true;
     };
   }, [
+    applyInitialUserCenter,
     loadPagesAroundUser,
     locationAllowed,
     locationRequestVersion,
@@ -5710,7 +5772,6 @@ export default function NearbyUsersScreen() {
           currentLocationRef.current = storedLocation;
           setCurrentLocation(storedLocation);
           setLocationSource('profile');
-          setHasCenteredOnUser(true);
           mapRef.current?.animateToRegion(
             {
               ...storedLocation,
@@ -5765,6 +5826,7 @@ export default function NearbyUsersScreen() {
         toolbarEnabled={false}
         userInterfaceStyle="light"
         customMapStyle={CLEAN_GOOGLE_MAP_STYLE}
+        onMapReady={handleMapReady}
         onPoiClick={HIDE_GOOGLE_DISCOVERY_PLACES ? undefined : handlePoiPress}
         onPress={handleMapPress}
         onUserLocationChange={handleUserLocationChange}
@@ -5990,7 +6052,9 @@ export default function NearbyUsersScreen() {
 
         {/* Main Route & Connector Polylines (Always mounted to prevent react-native-maps unmount render bugs on Android) */}
         {routePreviewAlternativeSlots.map((route, index) => (
-          <React.Fragment key={`alt-route-slot:${index}`}>
+          <React.Fragment
+            key={['alt-route-slot', routeRenderRevision, index].join(':')}
+          >
             <Polyline
               coordinates={route ? route.path : []}
               lineCap="round"
@@ -6026,8 +6090,9 @@ export default function NearbyUsersScreen() {
           </React.Fragment>
         ))}
 
-        <Polyline
-          coordinates={
+       <Polyline
+          key={['route-connector-border', routeRenderRevision].join(':')}
+         coordinates={
             shouldShowRoute && activeRouteConnector.length > 1
               ? activeRouteConnector
               : []
@@ -6038,8 +6103,9 @@ export default function NearbyUsersScreen() {
           strokeWidth={8}
           zIndex={15}
         />
-        <Polyline
-          coordinates={
+       <Polyline
+          key={['route-connector', routeRenderRevision].join(':')}
+         coordinates={
             shouldShowRoute && activeRouteConnector.length > 1
               ? activeRouteConnector
               : []
@@ -6051,16 +6117,18 @@ export default function NearbyUsersScreen() {
           zIndex={16}
         />
 
-        <Polyline
-          coordinates={shouldShowRoute ? activeRoute : []}
+       <Polyline
+          key={['route-main-border', routeRenderRevision].join(':')}
+         coordinates={shouldShowRoute ? activeRoute : []}
           lineCap="round"
           lineJoin="round"
           strokeColor="rgba(255, 255, 255, 0.92)"
           strokeWidth={11}
           zIndex={16}
         />
-        <Polyline
-          coordinates={shouldShowRoute ? activeRoute : []}
+       <Polyline
+          key={['route-main', routeRenderRevision].join(':')}
+         coordinates={shouldShowRoute ? activeRoute : []}
           lineCap="round"
           lineJoin="round"
           strokeColor={isRoutePreview ? '#2D00D7' : '#1A73E8'}
@@ -7097,7 +7165,7 @@ export default function NearbyUsersScreen() {
           }}
           isDirectionsLoading={isLoadingRoutes}
           directionsDisabled={selectedPoint.source === 'self'}
-          onClose={clearSelectedPoint}
+          onClose={handleCloseSelectedPlace}
           onShare={handleShare}
           onDirections={handleGetDirections}
           onStart={handleStartNavigation}
@@ -7596,6 +7664,13 @@ export default function NearbyUsersScreen() {
                   };
 
                   const onGetDirections = () => {
+                    if (item.kind === 'google') {
+                      handleGoogleSearchResultRouteAction(
+                        item.prediction,
+                        false,
+                      ).catch(() => undefined);
+                      return;
+                    }
                     if (routePoint) {
                       selectPoint(routePoint, true);
                       return;
@@ -7608,6 +7683,13 @@ export default function NearbyUsersScreen() {
                   };
 
                   const onStartNavigation = () => {
+                    if (item.kind === 'google') {
+                      handleGoogleSearchResultRouteAction(
+                        item.prediction,
+                        true,
+                      ).catch(() => undefined);
+                      return;
+                    }
                     if (routePoint) {
                       selectPoint(routePoint);
                       loadRouteOptions(
@@ -7811,7 +7893,6 @@ export default function NearbyUsersScreen() {
                             styles.resultCardBtnSolid,
                           ]}
                           onPress={onGetDirections}
-                          disabled={!coordinate && item.kind !== 'page'}
                         >
                           <Text style={styles.resultCardBtnSolidText}>
                             Đường đi
@@ -7825,7 +7906,6 @@ export default function NearbyUsersScreen() {
                             styles.resultCardBtnSecondary,
                           ]}
                           onPress={onStartNavigation}
-                          disabled={!coordinate && item.kind !== 'page'}
                         >
                           <Text style={styles.resultCardBtnSecondaryText}>
                             Bắt đầu
