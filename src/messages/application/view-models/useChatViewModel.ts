@@ -116,6 +116,7 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.systemEvent?.actorName === right.systemEvent?.actorName &&
     left.systemEvent?.targetMessageId ===
       right.systemEvent?.targetMessageId &&
+    left.systemEvent?.targetUserId === right.systemEvent?.targetUserId &&
     areMessageReactionSummariesEqual(left.reactions, right.reactions) &&
     areCallEventsEqual(left.callEvent, right.callEvent)
   );

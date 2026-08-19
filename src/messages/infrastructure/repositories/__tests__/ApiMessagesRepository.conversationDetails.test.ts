@@ -144,6 +144,52 @@ describe('ApiMessagesRepository conversation details', () => {
     expect(chat.lastMessage).not.toContain('message_pinned');
   });
 
+  it('maps a follow into a centered system event and a readable conversation preview', async () => {
+    const followMessage = rawMessage('10', {
+      type_two: 'follow_event',
+      or_text: 'user_followed',
+      messageUser: { user_id: '2', name: 'Partner' },
+      system_event: {
+        type: 'user_followed',
+        actor_id: '2',
+        actor_name: 'Partner',
+        target_user_id: '1',
+      },
+    });
+    post
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [
+          {
+            chat_type: 'user',
+            chat_id: '78',
+            user_data: { user_id: '2', username: 'partner', name: 'Partner' },
+            last_message: followMessage,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        messages: [followMessage],
+      });
+
+    const [chat] = await createMessagesRepository().getChats({
+      includeDiscovery: false,
+      latestOnly: true,
+    });
+    const [message] = await createMessagesRepository().getMessages('2');
+
+    expect(chat.lastMessage).toBe('Partner đã theo dõi bạn');
+    expect(chat.lastMessage).not.toContain('user_followed');
+    expect(message.message).toBe('');
+    expect(message.systemEvent).toEqual({
+      type: 'user_followed',
+      actorId: '2',
+      actorName: 'Partner',
+      targetUserId: '1',
+    });
+  });
+
   it('classifies shared posts, locations and links and records the last sender', async () => {
     post.mockResolvedValueOnce({
       api_status: 200,

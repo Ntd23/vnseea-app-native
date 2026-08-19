@@ -52,11 +52,11 @@ describe('Chat pinned messages', () => {
     );
     const chat = read('src/messages/presentation/screens/ChatScreen.tsx');
 
-    expect(types).toContain("type: 'message_pinned'");
+    expect(types).toContain("type: 'message_pinned' | 'user_followed'");
     expect(types).toContain('systemEvent?: MessageSystemEvent');
     expect(repository).toContain('mapMessageSystemEvent');
-    expect(chat).toContain("return 'system-message-pinned'");
-    expect(chat).toContain('<PinnedMessageSystemRow');
+    expect(chat).toContain('`system-${message.systemEvent.type}`');
+    expect(chat).toContain('<MessageSystemEventRow');
     expect(chat).toContain('targetMessageId');
   });
 });

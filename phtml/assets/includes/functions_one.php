@@ -4540,12 +4540,39 @@ function VNSEEA_GetMessagePinFlag($message_id)
     return (int)$db->where('message_id', (int)$message_id)->getValue(T_MESSAGE_PINS, 'COUNT(*)') > 0 ? 'yes' : 'no';
 }
 
+function VNSEEA_RegisterFollowMessageEvent($follower_id, $following_id, $event_time = 0)
+{
+    global $db;
+
+    $follower_id = (int)$follower_id;
+    $following_id = (int)$following_id;
+    if ($follower_id < 1 || $following_id < 1 || $follower_id === $following_id) {
+        return false;
+    }
+
+    $message_id = $db->insert(T_MESSAGES, array(
+        'from_id' => $follower_id,
+        'to_id' => $following_id,
+        'text' => 'user_followed',
+        'time' => $event_time > 0 ? (int)$event_time : time(),
+        'type_two' => 'follow_event',
+        'seen' => 0
+    ));
+    if (empty($message_id)) {
+        return false;
+    }
+
+    Wo_CreateUserChat($following_id, $follower_id);
+    VNSEEA_PublishRealtimeMessageChange($message_id);
+    return $message_id;
+}
+
 function VNSEEA_AttachMessageSystemEvent($message)
 {
     if (
         empty($message) ||
         empty($message['type_two']) ||
-        !in_array($message['type_two'], array('message_pin_event', 'message_unpin_event'), true)
+        !in_array($message['type_two'], array('message_pin_event', 'message_unpin_event', 'follow_event'), true)
     ) {
         return $message;
     }
@@ -4553,11 +4580,15 @@ function VNSEEA_AttachMessageSystemEvent($message)
     $actor = function_exists('VNSEEA_GetMessageContextUser')
         ? VNSEEA_GetMessageContextUser($actor_id)
         : Wo_UserData($actor_id);
+    $event_type = $message['type_two'] === 'follow_event'
+        ? 'user_followed'
+        : ($message['type_two'] === 'message_unpin_event' ? 'message_unpinned' : 'message_pinned');
     $message['system_event'] = array(
-        'type' => $message['type_two'] === 'message_unpin_event' ? 'message_unpinned' : 'message_pinned',
+        'type' => $event_type,
         'actor_id' => (string)$message['from_id'],
         'actor_name' => !empty($actor['name']) ? $actor['name'] : (!empty($actor['username']) ? $actor['username'] : 'Người dùng'),
-        'target_message_id' => (string)$message['reply_id']
+        'target_message_id' => $event_type === 'message_pinned' ? (string)$message['reply_id'] : '',
+        'target_user_id' => $event_type === 'user_followed' ? (string)$message['to_id'] : ''
     );
     return $message;
 }

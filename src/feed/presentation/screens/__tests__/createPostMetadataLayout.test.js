@@ -50,7 +50,11 @@ describe('Create Post metadata layout', () => {
     );
 
     expect(source).toContain('CAPTION_MAX_LINES = 12');
+    expect(source).toContain('CAPTION_MAX_HEIGHT');
     expect(source).toContain('onContentSizeChange');
+    expect(source).toContain('function AutoGrowingComposerInput');
+    expect(source).toContain('scrollEnabled={isOverflowing}');
+    expect(source).not.toContain("color: hasValue ? 'transparent'");
     expect(source).toContain('getPhotoGridItemLayout');
     expect(source).toContain('getPhotoGridItemGutterStyle');
     expect(source).toContain('getPhotoGridRows');
