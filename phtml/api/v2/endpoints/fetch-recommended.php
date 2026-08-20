@@ -18,6 +18,7 @@ $required_fields =  array(
                         'pages'
                     );
 $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0 && $_POST['limit'] <= 50 ? Wo_Secure($_POST['limit']) : 5);
+$offset = (!empty($_POST['offset']) && is_numeric($_POST['offset']) && $_POST['offset'] > 0 ? Wo_Secure($_POST['offset']) : 0);
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'users') {
     	$users = Wo_UserSug($limit);
@@ -44,7 +45,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                             );
     }
     elseif ($_POST['type'] == 'pages') {
-        $pages = Wo_PageSug($limit);
+        $pages = Wo_PageSug($limit, $offset, 'latest');
         foreach ($pages as $key => $page) {
             $pages[$key]['likes'] = Wo_CountPageLikes($page['page_id']);
             $pages[$key]['is_liked'] = Wo_IsPageLiked($page['page_id'], $wo['user']['id']);

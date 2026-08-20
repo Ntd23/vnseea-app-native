@@ -38,6 +38,7 @@ export const ROUTES = {
   SAVED_POSTS: 'SavedPosts',
   SEARCH_EMPTY: 'SearchEmpty',
   PAGES: 'Pages',
+  SUGGESTED_PAGES: 'SuggestedPages',
   PAGE_DETAIL: 'PageDetail',
   PAGE_SETTINGS: 'PageSettings',
   CREATE_PAGE: 'CreatePage',

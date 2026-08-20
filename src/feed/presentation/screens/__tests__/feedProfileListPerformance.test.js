@@ -79,12 +79,31 @@ describe('Feed and profile list performance contracts', () => {
     expect(profileSource).not.toContain('onEndReachedThreshold={0.35}');
   });
 
-  it('defers pagination work until momentum settles and limits each gesture', () => {
+  it('starts Home pagination during momentum but defers supplemental lanes', () => {
+    const loadMoreStart = feedSource.indexOf(
+      'const handleLoadMore = useCallback',
+    );
+    const loadMoreEnd = feedSource.indexOf(
+      'const flushPendingLoadMore = useCallback',
+      loadMoreStart,
+    );
+    const loadMoreSource = feedSource.slice(loadMoreStart, loadMoreEnd);
+
     expect(feedSource).toContain('feedLoadMoreDemandRef');
     expect(feedSource).toContain('loadMoreConsumedForGestureRef');
     expect(feedSource).toContain('flushPendingLoadMoreRef.current()');
     expect(feedSource).toContain('const LOAD_MORE_THROTTLE_MS = 1200');
     expect(feedViewModelSource).toContain('if (isScrollBusyRef.current) {');
+    expect(loadMoreSource).toContain('const isFeedScrollBusy =');
+    expect(loadMoreSource).not.toContain(
+      'if (isScrollingRef.current || isMomentumScrollingRef.current)',
+    );
+    expect(loadMoreSource).toContain(
+      'const canRequestSupplemental =\n      !isFeedScrollBusy &&',
+    );
+    expect(loadMoreSource).toContain(
+      'const canRequestJobs =\n      !isFeedScrollBusy &&',
+    );
     expect(feedSource).toContain(
       'feedLoadMoreDemand.latch(isFeedAllLoaded);',
     );

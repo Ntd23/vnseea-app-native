@@ -212,6 +212,7 @@ import { interleaveSupplementalPosts } from './feedSupplementalMixer';
 import { shouldRunFeedStartupBackgroundWork } from './feedStartupBackgroundWork';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import {
+  canGenerateLocalVideoPoster,
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
@@ -3107,7 +3108,13 @@ function FeedScreen() {
 
           nextPosts.forEach(post => {
             const videoUrl = post.videoUrl?.trim();
-            if (!videoUrl || post.thumbnailUrl?.trim()) return;
+            if (
+              !videoUrl ||
+              post.thumbnailUrl?.trim() ||
+              !canGenerateLocalVideoPoster(videoUrl)
+            ) {
+              return;
+            }
             const optimizationEnabled = isClientUiOptimizationEnabled();
 
             const cacheKey = getFeedVideoPosterCacheKeyForPost(
@@ -3165,7 +3172,13 @@ function FeedScreen() {
       const requestedKeys = posts
         .map(post => {
           const videoUrl = post.videoUrl?.trim();
-          if (!videoUrl || post.thumbnailUrl?.trim()) return null;
+          if (
+            !videoUrl ||
+            post.thumbnailUrl?.trim() ||
+            !canGenerateLocalVideoPoster(videoUrl)
+          ) {
+            return null;
+          }
           return getFeedVideoPosterCacheKeyForPost(post.id, videoUrl);
         })
         .filter((cacheKey): cacheKey is string => cacheKey !== null);
@@ -3200,7 +3213,13 @@ function FeedScreen() {
       let queuedAny = false;
       for (const post of posts) {
         const videoUrl = post.videoUrl?.trim();
-        if (!videoUrl || post.thumbnailUrl?.trim()) continue;
+        if (
+          !videoUrl ||
+          post.thumbnailUrl?.trim() ||
+          !canGenerateLocalVideoPoster(videoUrl)
+        ) {
+          continue;
+        }
 
         const cacheKey = getFeedVideoPosterCacheKeyForPost(post.id, videoUrl);
         if (prefetchedVideoPosterKeysRef.current.has(cacheKey)) continue;
@@ -3959,9 +3978,8 @@ function FeedScreen() {
     if (!feedLoadMoreDemand) return;
     feedLoadMoreDemand.latch(isFeedAllLoaded);
 
-    if (isScrollingRef.current || isMomentumScrollingRef.current) {
-      return;
-    }
+    const isFeedScrollBusy =
+      isScrollingRef.current || isMomentumScrollingRef.current;
 
     const now = Date.now();
     const feedThrottleRemainingMs = Math.max(
@@ -3977,6 +3995,7 @@ function FeedScreen() {
       !isFeedAllLoaded &&
       feedThrottleRemainingMs === 0;
     const canRequestSupplemental =
+      !isFeedScrollBusy &&
       !loadMoreConsumedForGestureRef.current &&
       now - lastSupplementalLoadMoreRequestAtRef.current >
         SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS &&
@@ -3984,6 +4003,7 @@ function FeedScreen() {
       !isProductsLoadingMore &&
       !isProductsAllLoaded;
     const canRequestJobs =
+      !isFeedScrollBusy &&
       !loadMoreConsumedForGestureRef.current &&
       now - lastSupplementalLoadMoreRequestAtRef.current >
         SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS &&

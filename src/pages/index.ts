@@ -10,3 +10,4 @@ export { default as CreatePageScreen } from './presentation/screens/CreatePageSc
 export { default as PageDetailScreen } from './presentation/screens/PageDetailScreen';
 export { default as PageSettingsScreen } from './presentation/screens/PageSettingsScreen';
 export { default as PagesScreen } from './presentation/screens/PagesScreen';
+export { default as SuggestedPagesScreen } from './presentation/screens/SuggestedPagesScreen';
