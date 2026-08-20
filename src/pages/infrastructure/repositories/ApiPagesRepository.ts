@@ -551,6 +551,7 @@ export function createPagesRepository(): PagesRepository {
 
     async getSuggestedPages(options = {}) {
       const limit = options.limit ?? 20;
+      const offset = options.offset ? String(options.offset) : undefined;
 
       try {
         const response = await apiBridge.post<PagesListResponse>(
@@ -558,10 +559,11 @@ export function createPagesRepository(): PagesRepository {
           {
             type: 'pages',
             limit,
+            ...(offset ? { offset } : {}),
           },
         );
 
-        return toListPage(response, limit, false);
+        return toListPage(response, limit);
       } catch (error) {
         console.warn('[ApiPagesRepository] get suggested pages failed', error);
         throw new Error(mapPagesListError(error));

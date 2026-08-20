@@ -8,7 +8,7 @@ const repository = createPagesRepository();
 
 async function fetchPages(filter: PagesFilter, offset?: string | null) {
   if (filter === 'suggested') {
-    return repository.getSuggestedPages({ limit: PAGE_LIMIT });
+    return repository.getSuggestedPages({ limit: PAGE_LIMIT, offset });
   }
 
   if (filter === 'liked') {
@@ -29,8 +29,11 @@ async function fetchPages(filter: PagesFilter, offset?: string | null) {
   });
 }
 
-export function useMyPagesViewModel() {
-  const [activeFilter, setActiveFilterState] = useState<PagesFilter>('mine');
+export function useMyPagesViewModel(
+  initialFilter: PagesFilter = 'mine',
+) {
+  const [activeFilter, setActiveFilterState] =
+    useState<PagesFilter>(initialFilter);
   const [pages, setPages] = useState<PagesItem[]>([]);
   const [nextOffset, setNextOffset] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -126,7 +129,7 @@ export function useMyPagesViewModel() {
   ]);
 
   const retry = useCallback(() => {
-    void loadFirstPage(false);
+    loadFirstPage(false).catch(() => undefined);
   }, [loadFirstPage]);
 
   const toggleLikePage = useCallback(

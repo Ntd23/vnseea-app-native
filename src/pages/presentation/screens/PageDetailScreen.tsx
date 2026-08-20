@@ -541,6 +541,7 @@ function PageHero({
             accessibilityLabel={copy.viewCoverBtn}
             activeOpacity={0.96}
             className="absolute inset-0"
+            style={{ zIndex: 0 }}
             disabled={!onViewCover}
             onPress={onViewCover}
           >
@@ -607,6 +608,7 @@ function PageHero({
             activeOpacity={0.85}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             className="absolute bottom-3 right-4 min-h-10 max-w-[58%] flex-row items-center justify-center rounded-full bg-[#E4E6EB] px-3.5 py-2"
+            style={{ zIndex: 30, elevation: 8 }}
             disabled={isUploadingCover}
             onPress={onChangeCover}
           >

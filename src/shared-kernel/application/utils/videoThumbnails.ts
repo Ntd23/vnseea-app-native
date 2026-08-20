@@ -123,6 +123,19 @@ function getVideoPosterCacheKey(videoUri: string, cacheKey?: string) {
   return `${cacheKey || 'video'}:${videoUri}`;
 }
 
+export function canGenerateLocalVideoPoster(videoUri: string) {
+  const normalizedUri = videoUri.trim().toLowerCase();
+  if (!normalizedUri) return false;
+
+  return (
+    normalizedUri.startsWith('file://') ||
+    normalizedUri.startsWith('content://') ||
+    normalizedUri.startsWith('ph://') ||
+    normalizedUri.startsWith('assets-library://') ||
+    normalizedUri.startsWith('/')
+  );
+}
+
 function getStableVideoPosterCacheName(cacheKey: string) {
   return `vnseea_video_poster_${stableHash(cacheKey)}`;
 }
@@ -266,7 +279,7 @@ export async function createCachedVideoPosterThumbnail(
   videoUri: string,
   cacheKey?: string,
 ): Promise<GeneratedVideoThumbnail | undefined> {
-  if (!videoUri) return undefined;
+  if (!canGenerateLocalVideoPoster(videoUri)) return undefined;
 
   const resolvedCacheKey = getVideoPosterCacheKey(videoUri, cacheKey);
   const cachedThumbnail = videoPosterMemoryCache.get(resolvedCacheKey);

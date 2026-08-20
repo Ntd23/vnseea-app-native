@@ -2446,7 +2446,9 @@ function Wo_PageSug($limit = 1, $page_id = 0, $type = "next") {
     if (!is_numeric($page_id) || empty($page_id) || $page_id < 1) {
         $query_not = "";
     }
-    if ($type == "previous") {
+    if ($type == "latest") {
+        $query_not = !empty($page_id) ? "AND `page_id` < $page_id" : "";
+    } else if ($type == "previous") {
         $query_not = "AND `page_id` < $page_id";
     } else {
         $query_not = "AND `page_id` > $page_id";
@@ -2454,6 +2456,9 @@ function Wo_PageSug($limit = 1, $page_id = 0, $type = "next") {
     $data      = array();
     $user_id   = Wo_Secure($wo["user"]["user_id"]);
     $query_one = " SELECT `page_id` FROM " . T_PAGES . " WHERE `active` = '1' {$query_not} AND `page_id` NOT IN (SELECT `page_id` FROM " . T_PAGES_LIKES . " WHERE `user_id` = {$user_id} AND `active` = '1') AND `user_id` <> {$user_id}";
+    if ($type == "latest") {
+        $query_one .= " ORDER BY `page_id` DESC";
+    }
     if (isset($limit)) {
         $query_one .= " LIMIT {$limit}";
     }
@@ -7305,7 +7310,7 @@ function Wo_GetCallLogNotificationId($call_id = 0, $call_type = 'audio', $provid
     }
     return $notification_id;
 }
-function Wo_GetCallLogPayload($call_id = 0, $call_type = 'audio', $provider = 'twilio', $from_id = 0, $to_id = 0) {
+function Wo_FindCallLogMessage($call_id = 0, $call_type = 'audio', $provider = 'twilio', $from_id = 0, $to_id = 0) {
     global $sqlConnect;
     $call_id   = intval($call_id);
     $call_type = ($call_type == 'video') ? 'video' : 'audio';
@@ -7315,18 +7320,50 @@ function Wo_GetCallLogPayload($call_id = 0, $call_type = 'audio', $provider = 't
     if ($call_id <= 0) {
         return false;
     }
-    $notification_id = Wo_GetCallLogNotificationId($call_id, $call_type, $provider, $from_id, $to_id);
+
+    $notification_id        = Wo_GetCallLogNotificationId($call_id, $call_type, $provider, $from_id, $to_id);
     $legacy_notification_id = Wo_GetCallLogNotificationId($call_id, $call_type, $provider);
-    $query_sql = "SELECT `text` FROM " . T_MESSAGES . " WHERE (`notification_id` = '" . Wo_Secure($notification_id) . "' OR `notification_id` = '" . Wo_Secure($legacy_notification_id) . "')";
+    $query_sql = "SELECT `id`, `text`, `from_id`, `to_id`, `notification_id`, `type_two` FROM " . T_MESSAGES .
+        " WHERE (`notification_id` = '" . Wo_Secure($notification_id) . "' OR `notification_id` = '" . Wo_Secure($legacy_notification_id) . "')";
     if ($from_id > 0 && $to_id > 0) {
         $query_sql .= " AND `from_id` = '{$from_id}' AND `to_id` = '{$to_id}'";
     }
     $query_sql .= " ORDER BY `id` DESC LIMIT 1";
     $query = mysqli_query($sqlConnect, $query_sql);
-    if (empty($query) || mysqli_num_rows($query) == 0) {
+    if ($query && mysqli_num_rows($query) > 0) {
+        return mysqli_fetch_assoc($query);
+    }
+
+    // Older workers could replace notification_id with a provider UUID. The
+    // payload remains the canonical identity, so use it as a bounded fallback.
+    $message_type = Wo_GetCallLogType($call_type);
+    $fallback_sql = "SELECT `id`, `text`, `from_id`, `to_id`, `notification_id`, `type_two` FROM " . T_MESSAGES .
+        " WHERE `type_two` = '" . Wo_Secure($message_type) . "'";
+    if ($from_id > 0 && $to_id > 0) {
+        $fallback_sql .= " AND `from_id` = '{$from_id}' AND `to_id` = '{$to_id}'";
+    }
+    $fallback_sql .= " ORDER BY `id` DESC LIMIT 50";
+    $fallback_query = mysqli_query($sqlConnect, $fallback_sql);
+    if (!$fallback_query) {
         return false;
     }
-    $message = mysqli_fetch_assoc($query);
+    while ($candidate = mysqli_fetch_assoc($fallback_query)) {
+        if (VNSEEA_CallMessageMatches($candidate, $call_id, $call_type, $provider, $from_id, $to_id)) {
+            return $candidate;
+        }
+    }
+    return false;
+}
+function Wo_GetCallLogPayload($call_id = 0, $call_type = 'audio', $provider = 'twilio', $from_id = 0, $to_id = 0) {
+    $call_id   = intval($call_id);
+    $call_type = ($call_type == 'video') ? 'video' : 'audio';
+    $provider  = Wo_NormalizeCallProvider($provider, $call_type);
+    $from_id   = intval($from_id);
+    $to_id     = intval($to_id);
+    if ($call_id <= 0) {
+        return false;
+    }
+    $message = Wo_FindCallLogMessage($call_id, $call_type, $provider, $from_id, $to_id);
     if (empty($message) || empty($message['text'])) {
         return false;
     }
@@ -7456,7 +7493,7 @@ function Wo_RegisterCallLog($call_data = array()) {
         return false;
     }
     $call_type = (!empty($call_data['call_type']) && $call_data['call_type'] == 'video') ? 'video' : 'audio';
-    $provider  = !empty($call_data['provider']) ? $call_data['provider'] : 'twilio';
+    $provider  = Wo_NormalizeCallProvider(!empty($call_data['provider']) ? $call_data['provider'] : 'twilio', $call_type);
     $status    = !empty($call_data['status']) ? $call_data['status'] : 'calling';
     $payload   = array(
         'call_id' => intval($call_data['call_id']),
@@ -7472,12 +7509,19 @@ function Wo_RegisterCallLog($call_data = array()) {
     );
     $notification_id = Wo_GetCallLogNotificationId($payload['call_id'], $call_type, $provider, $call_data['from_id'], $call_data['to_id']);
     
-    // Check for duplicates within last 3 seconds
-    $check_time = time() - 3;
-    $check_query = mysqli_query($sqlConnect, "SELECT `id` FROM " . T_MESSAGES . " WHERE `notification_id` = '" . Wo_Secure($notification_id) . "' AND `from_id` = '" . Wo_Secure($call_data['from_id']) . "' AND `time` > " . $check_time . " LIMIT 1");
-    if (mysqli_num_rows($check_query) > 0) {
-        $existing_msg = mysqli_fetch_assoc($check_query);
-        return $existing_msg['id'];
+    if ($payload['call_id'] > 0) {
+        $existing_message = Wo_FindCallLogMessage($payload['call_id'], $call_type, $provider, $call_data['from_id'], $call_data['to_id']);
+        if (!empty($existing_message['id'])) {
+            return intval($existing_message['id']);
+        }
+    }
+    else {
+        $check_time = time() - 3;
+        $check_query = mysqli_query($sqlConnect, "SELECT `id` FROM " . T_MESSAGES . " WHERE `notification_id` = '" . Wo_Secure($notification_id) . "' AND `from_id` = '" . Wo_Secure($call_data['from_id']) . "' AND `time` > " . $check_time . " LIMIT 1");
+        if ($check_query && mysqli_num_rows($check_query) > 0) {
+            $existing_msg = mysqli_fetch_assoc($check_query);
+            return intval($existing_msg['id']);
+        }
     }
     $message_id      = Wo_RegisterMessage(array(
         'from_id' => Wo_Secure($call_data['from_id']),
@@ -7531,7 +7575,7 @@ function Wo_UpdateCallLog($call_id = 0, $call_type = 'audio', $status = 'ended',
     if ($call_id <= 0) {
         return false;
     }
-    $provider         = !empty($options['provider']) ? $options['provider'] : 'twilio';
+    $provider         = Wo_NormalizeCallProvider(!empty($options['provider']) ? $options['provider'] : 'twilio', $call_type);
     $source_data      = Wo_GetCallLogSourceData($call_id, $call_type, $provider);
     if (!empty($source_data)) {
         if (empty($options['from_id'])) {
@@ -7541,15 +7585,11 @@ function Wo_UpdateCallLog($call_id = 0, $call_type = 'audio', $status = 'ended',
             $options['to_id'] = $source_data['to_id'];
         }
     }
-    $notification_id        = Wo_GetCallLogNotificationId($call_id, $call_type, $provider, (!empty($options['from_id']) ? $options['from_id'] : 0), (!empty($options['to_id']) ? $options['to_id'] : 0));
-    $legacy_notification_id = Wo_GetCallLogNotificationId($call_id, $call_type, $provider);
-    $query_sql              = "SELECT `id`, `text`, `from_id`, `to_id` FROM " . T_MESSAGES . " WHERE (`notification_id` = '" . Wo_Secure($notification_id) . "' OR `notification_id` = '" . Wo_Secure($legacy_notification_id) . "')";
-    if (!empty($options['from_id']) && !empty($options['to_id'])) {
-        $query_sql .= " AND `from_id` = '" . intval($options['from_id']) . "' AND `to_id` = '" . intval($options['to_id']) . "'";
-    }
-    $query_sql .= " ORDER BY `id` DESC LIMIT 1";
-    $query = mysqli_query($sqlConnect, $query_sql);
-    if (mysqli_num_rows($query) == 0) {
+    $from_id = !empty($options['from_id']) ? intval($options['from_id']) : 0;
+    $to_id = !empty($options['to_id']) ? intval($options['to_id']) : 0;
+    $notification_id = Wo_GetCallLogNotificationId($call_id, $call_type, $provider, $from_id, $to_id);
+    $message = Wo_FindCallLogMessage($call_id, $call_type, $provider, $from_id, $to_id);
+    if (empty($message)) {
         if (!empty($options['from_id']) && !empty($options['to_id'])) {
             $options['call_id'] = $call_id;
             $options['call_type'] = $call_type;
@@ -7559,7 +7599,6 @@ function Wo_UpdateCallLog($call_id = 0, $call_type = 'audio', $status = 'ended',
         }
         return false;
     }
-    $message = mysqli_fetch_assoc($query);
     $payload = json_decode(htmlspecialchars_decode($message['text']), true);
     if (empty($payload) || !is_array($payload)) {
         $payload = array(
@@ -7629,7 +7668,7 @@ function Wo_SetCallLogDisplayType($call_id = 0, $source_call_type = 'audio', $di
     if ($call_id <= 0) {
         return false;
     }
-    $provider = !empty($options['provider']) ? $options['provider'] : 'twilio';
+    $provider = Wo_NormalizeCallProvider(!empty($options['provider']) ? $options['provider'] : 'twilio', $source_call_type);
     $source_data = Wo_GetCallLogSourceData($call_id, $source_call_type, $provider);
     if (!empty($source_data)) {
         if (empty($options['from_id'])) {
@@ -7639,15 +7678,11 @@ function Wo_SetCallLogDisplayType($call_id = 0, $source_call_type = 'audio', $di
             $options['to_id'] = $source_data['to_id'];
         }
     }
-    $notification_id = Wo_GetCallLogNotificationId($call_id, $source_call_type, $provider, (!empty($options['from_id']) ? $options['from_id'] : 0), (!empty($options['to_id']) ? $options['to_id'] : 0));
-    $legacy_notification_id = Wo_GetCallLogNotificationId($call_id, $source_call_type, $provider);
-    $query_sql = "SELECT `id`, `text`, `from_id`, `to_id` FROM " . T_MESSAGES . " WHERE (`notification_id` = '" . Wo_Secure($notification_id) . "' OR `notification_id` = '" . Wo_Secure($legacy_notification_id) . "')";
-    if (!empty($options['from_id']) && !empty($options['to_id'])) {
-        $query_sql .= " AND `from_id` = '" . intval($options['from_id']) . "' AND `to_id` = '" . intval($options['to_id']) . "'";
-    }
-    $query_sql .= " ORDER BY `id` DESC LIMIT 1";
-    $query = mysqli_query($sqlConnect, $query_sql);
-    if (mysqli_num_rows($query) == 0) {
+    $from_id = !empty($options['from_id']) ? intval($options['from_id']) : 0;
+    $to_id = !empty($options['to_id']) ? intval($options['to_id']) : 0;
+    $notification_id = Wo_GetCallLogNotificationId($call_id, $source_call_type, $provider, $from_id, $to_id);
+    $message = Wo_FindCallLogMessage($call_id, $source_call_type, $provider, $from_id, $to_id);
+    if (empty($message)) {
         if (!empty($options['from_id']) && !empty($options['to_id'])) {
             return Wo_RegisterCallLog(array(
                 'from_id' => intval($options['from_id']),
@@ -7663,7 +7698,6 @@ function Wo_SetCallLogDisplayType($call_id = 0, $source_call_type = 'audio', $di
         }
         return false;
     }
-    $message = mysqli_fetch_assoc($query);
     $payload = json_decode(htmlspecialchars_decode($message['text']), true);
     if (empty($payload) || !is_array($payload)) {
         $payload = array(

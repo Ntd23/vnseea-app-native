@@ -196,6 +196,7 @@ export type RootStackParamList = {
   [ROUTES.SAVED_POSTS]: undefined;
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
+  [ROUTES.SUGGESTED_PAGES]: undefined;
   [ROUTES.PAGE_DETAIL]: { page: PagesItem };
   [ROUTES.PAGE_SETTINGS]: { pageId: string; page?: PagesItem };
   [ROUTES.CREATE_PAGE]: undefined;

@@ -48,7 +48,13 @@ import {
   MyArticlesScreen,
 } from '../blogs';
 import { BoostedScreen } from '../boosted';
-import { CreatePageScreen, PageDetailScreen, PageSettingsScreen, PagesScreen } from '../pages';
+import {
+  CreatePageScreen,
+  PageDetailScreen,
+  PageSettingsScreen,
+  PagesScreen,
+  SuggestedPagesScreen,
+} from '../pages';
 import {
   CreateProductScreen,
   MarketplaceScreen,
@@ -247,6 +253,7 @@ export function createStackRoutes(
     { name: ROUTES.SAVED_POSTS, component: ActivityCenterScreen },
     { name: ROUTES.SEARCH_EMPTY, component: SearchEmptyScreen },
     { name: ROUTES.PAGES, component: PagesScreen },
+    { name: ROUTES.SUGGESTED_PAGES, component: SuggestedPagesScreen },
     { name: ROUTES.PAGE_DETAIL, component: PageDetailScreen },
     { name: ROUTES.PAGE_SETTINGS, component: PageSettingsScreen },
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },

@@ -66,6 +66,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import {
+  canGenerateLocalVideoPoster,
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
@@ -1384,6 +1385,7 @@ function useGeneratedVideoPoster({
     if (
       serverThumbnailUrl ||
       !videoUrl ||
+      !canGenerateLocalVideoPoster(videoUrl) ||
       generatedPosterUrl ||
       !enabled ||
       isScrollBusy
@@ -2362,13 +2364,18 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     shouldKeepPreparedVideoMounted,
     wasPlayerSurfaceMounted: wasPlayerSurfaceMountedRef.current,
   });
+  // A remote video without a server poster must not be opened early merely to
+  // extract its first frame. Long MP4 files can otherwise compete with Feed
+  // pagination for bandwidth. It still mounts normally once it is active.
+  const canWarmVideoWithStablePoster =
+    canMountWarmVideo && Boolean(resolvedThumbnailUrl);
   const shouldMountFocusedVideo =
     !isOpeningReels &&
     isPlaybackSurfaceFocused &&
     mediaVisible &&
     canAttemptVideo &&
     (isActive ||
-      (canMountWarmVideo && isWarm) ||
+      (canWarmVideoWithStablePoster && isWarm) ||
       shouldKeepPreparedVideoMounted);
   const isTransitionSurfaceGraceActive =
     !isOpeningReels &&
