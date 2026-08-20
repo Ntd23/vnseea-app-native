@@ -37,4 +37,18 @@ describe('Page avatar and cover viewer flow', () => {
     expect(viewer).toContain('{canEdit && onChange ? (');
     expect(viewer).toContain('onPress={onChange}');
   });
+
+  it('keeps the native image source stable while loading the viewer', () => {
+    const viewer = read(
+      'src/pages/presentation/components/PageMediaViewerModal.tsx',
+    );
+
+    expect(viewer).toContain(
+      "const imageSource = useMemo(() => (uri ? { uri } : undefined), [uri]);",
+    );
+    expect(viewer).toContain('source={imageSource}');
+    expect(viewer).toContain('onLoad={() => {');
+    expect(viewer).not.toContain('source={{ uri }}');
+    expect(viewer).not.toContain('onLoadStart={() => {');
+  });
 });

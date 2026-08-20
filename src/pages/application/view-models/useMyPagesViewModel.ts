@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createPagesRepository } from '../../infrastructure/repositories/ApiPagesRepository';
 import type { PagesFilter, PagesItem } from '../../domain/types/pages.types';
@@ -6,8 +6,18 @@ import type { PagesFilter, PagesItem } from '../../domain/types/pages.types';
 const PAGE_LIMIT = 20;
 const repository = createPagesRepository();
 
-async function fetchPages(filter: PagesFilter, offset?: string | null) {
+async function fetchPages(
+  filter: PagesFilter,
+  offset?: string | null,
+  searchQuery = '',
+) {
   if (filter === 'suggested') {
+    if (searchQuery) {
+      return repository.searchPages(searchQuery, {
+        limit: 10,
+        offset,
+      });
+    }
     return repository.getSuggestedPages({ limit: PAGE_LIMIT, offset });
   }
 
@@ -42,9 +52,13 @@ export function useMyPagesViewModel(
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQueryState] = useState('');
+  const searchQueryRef = useRef('');
+  const requestGenerationRef = useRef(0);
 
   const loadFirstPage = useCallback(
     async (refreshing = false) => {
+      const generation = ++requestGenerationRef.current;
       if (refreshing) {
         setIsRefreshing(true);
       } else {
@@ -53,11 +67,13 @@ export function useMyPagesViewModel(
       setError(null);
 
       try {
-        const result = await fetchPages(activeFilter);
+        const result = await fetchPages(activeFilter, null, searchQuery);
+        if (generation !== requestGenerationRef.current) return;
         setPages(result.items);
         setNextOffset(result.nextOffset);
         setHasMore(result.hasMore);
       } catch (err) {
+        if (generation !== requestGenerationRef.current) return;
         const message =
           err instanceof Error
             ? err.message
@@ -67,11 +83,13 @@ export function useMyPagesViewModel(
         setNextOffset(null);
         setHasMore(false);
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        if (generation === requestGenerationRef.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
-    [activeFilter],
+    [activeFilter, searchQuery],
   );
 
   const setActiveFilter = useCallback(
@@ -81,6 +99,10 @@ export function useMyPagesViewModel(
       }
 
       setActiveFilterState(filter);
+      requestGenerationRef.current += 1;
+      setIsLoading(false);
+      setIsRefreshing(false);
+      setIsLoadingMore(false);
       setPages([]);
       setNextOffset(null);
       setHasMore(true);
@@ -91,15 +113,33 @@ export function useMyPagesViewModel(
 
   const refresh = useCallback(() => loadFirstPage(true), [loadFirstPage]);
 
+  const setSearchQuery = useCallback((query: string) => {
+    const normalizedQuery = query.trim();
+    if (searchQueryRef.current === normalizedQuery) return;
+
+    searchQueryRef.current = normalizedQuery;
+    requestGenerationRef.current += 1;
+    setIsLoading(false);
+    setIsRefreshing(false);
+    setIsLoadingMore(false);
+    setPages([]);
+    setNextOffset(null);
+    setHasMore(true);
+    setError(null);
+    setSearchQueryState(normalizedQuery);
+  }, []);
+
   const loadMore = useCallback(async () => {
     if (!hasMore || !nextOffset || isLoading || isRefreshing || isLoadingMore) {
       return;
     }
 
     setIsLoadingMore(true);
+    const generation = requestGenerationRef.current;
 
     try {
-      const result = await fetchPages(activeFilter, nextOffset);
+      const result = await fetchPages(activeFilter, nextOffset, searchQuery);
+      if (generation !== requestGenerationRef.current) return;
 
       setPages(current => {
         const existingIds = new Set(current.map(page => String(page.id)));
@@ -111,13 +151,16 @@ export function useMyPagesViewModel(
       setNextOffset(result.nextOffset);
       setHasMore(result.hasMore);
     } catch (err) {
+      if (generation !== requestGenerationRef.current) return;
       const message =
         err instanceof Error
           ? err.message
           : 'Không thể tải thêm trang. Vui lòng thử lại.';
       setError(message);
     } finally {
-      setIsLoadingMore(false);
+      if (generation === requestGenerationRef.current) {
+        setIsLoadingMore(false);
+      }
     }
   }, [
     activeFilter,
@@ -126,6 +169,7 @@ export function useMyPagesViewModel(
     isLoadingMore,
     isRefreshing,
     nextOffset,
+    searchQuery,
   ]);
 
   const retry = useCallback(() => {
@@ -262,7 +306,9 @@ export function useMyPagesViewModel(
     isActionLoading,
     error,
     hasMore,
+    searchQuery,
     setActiveFilter,
+    setSearchQuery,
     loadFirstPage,
     refresh,
     loadMore,

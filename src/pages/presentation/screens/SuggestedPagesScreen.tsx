@@ -1,17 +1,18 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   type ListRenderItemInfo,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, Flag, RotateCw } from 'lucide-react-native';
+import { ArrowLeft, Flag, RotateCw, Search, X } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -42,6 +43,9 @@ const COPY = {
     follow: 'Theo dõi',
     following: 'Đang theo dõi',
     likesSuffix: 'lượt thích',
+    searchPlaceholder: 'Tìm kiếm trang',
+    clearSearch: 'Xóa nội dung tìm kiếm',
+    noSearchResult: 'Không tìm thấy trang phù hợp.',
   },
   en: {
     title: 'Suggested Pages',
@@ -57,6 +61,9 @@ const COPY = {
     follow: 'Follow',
     following: 'Following',
     likesSuffix: 'likes',
+    searchPlaceholder: 'Search Pages',
+    clearSearch: 'Clear search',
+    noSearchResult: 'No matching Pages were found.',
   },
 } as const;
 
@@ -72,13 +79,23 @@ export default function SuggestedPagesScreen() {
     isLoadingMore,
     isActionLoading,
     error,
+    searchQuery,
     loadFirstPage,
     refresh,
     loadMore,
     retry,
+    setSearchQuery,
     toggleLikePage,
     toggleFollowPage,
   } = useMyPagesViewModel('suggested');
+  const [searchText, setSearchText] = useState('');
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setSearchQuery(searchText);
+    }, searchText.trim() ? 320 : 0);
+    return () => clearTimeout(timeout);
+  }, [searchText, setSearchQuery]);
 
   useEffect(() => {
     loadFirstPage(false).catch(() => undefined);
@@ -156,6 +173,36 @@ export default function SuggestedPagesScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
+      <View style={styles.searchSection}>
+        <View style={styles.searchInputShell}>
+          <Search size={19} color="#64748B" />
+          <TextInput
+            accessibilityLabel={copy.searchPlaceholder}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="never"
+            onChangeText={setSearchText}
+            placeholder={copy.searchPlaceholder}
+            placeholderTextColor="#94A3B8"
+            returnKeyType="search"
+            style={styles.searchInput}
+            value={searchText}
+          />
+          {searchText ? (
+            <TouchableOpacity
+              accessibilityLabel={copy.clearSearch}
+              accessibilityRole="button"
+              activeOpacity={0.75}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => setSearchText('')}
+              style={styles.clearSearchButton}
+            >
+              <X size={18} color="#64748B" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+
       <FlatList
         data={pages}
         keyExtractor={item => String(item.pageId || item.id)}
@@ -165,6 +212,8 @@ export default function SuggestedPagesScreen() {
           { paddingBottom: Math.max(insets.bottom, 16) + 24 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         onEndReached={loadMore}
         onEndReachedThreshold={0.45}
         refreshControl={
@@ -190,7 +239,9 @@ export default function SuggestedPagesScreen() {
               <Text style={styles.emptyTitle}>
                 {error || copy.emptyTitle}
               </Text>
-              <Text style={styles.emptySubtitle}>{copy.emptySubtitle}</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery ? copy.noSearchResult : copy.emptySubtitle}
+              </Text>
               {error ? (
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -260,7 +311,38 @@ const styles = StyleSheet.create({
   listContent: {
     flexGrow: 1,
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
+  },
+  searchSection: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: '#F6F8FC',
+  },
+  searchInputShell: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#D9E0EA',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  searchInput: {
+    minWidth: 0,
+    flex: 1,
+    marginLeft: 10,
+    paddingVertical: 0,
+    color: '#0F172A',
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  clearSearchButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
   },
   centerState: {
     flex: 1,

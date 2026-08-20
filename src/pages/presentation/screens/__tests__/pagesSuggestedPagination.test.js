@@ -25,6 +25,24 @@ describe('Pages suggested pagination', () => {
     expect(source).toContain('onEndReached={loadMore}');
     expect(source).toContain('onEndReachedThreshold={0.45}');
     expect(source).toContain("navigation.navigate(ROUTES.PAGE_DETAIL, { page })");
+    expect(source).toContain('placeholder={copy.searchPlaceholder}');
+    expect(source).toContain('setSearchQuery(searchText)');
+    expect(source).toContain('keyboardShouldPersistTaps="handled"');
+  });
+
+  it('searches Pages through the existing paginated API instead of filtering loaded cards', () => {
+    const repository = read(
+      'src/pages/infrastructure/repositories/ApiPagesRepository.ts',
+    );
+    const viewModel = read(
+      'src/pages/application/view-models/useMyPagesViewModel.ts',
+    );
+
+    expect(repository).toContain('async searchPages(query, options = {})');
+    expect(repository).toContain('apiRoutes.search.all');
+    expect(repository).toContain('page_offset: Number.isFinite(offset) ? offset : 0');
+    expect(viewModel).toContain('repository.searchPages(searchQuery');
+    expect(viewModel).toContain('requestGenerationRef.current');
   });
 
   it('forwards the page cursor through the repository and mirror endpoint', () => {
