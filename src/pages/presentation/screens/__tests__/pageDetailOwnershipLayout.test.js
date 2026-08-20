@@ -33,4 +33,16 @@ describe('PageDetailScreen ownership layout', () => {
     expect(source).toContain('disabled={isUploadingCover}');
     expect(source).toContain('disabled={isUploadingAvatar}');
   });
+
+  it('does not let the overlapping identity row block the cover action', () => {
+    expect(source).toMatch(
+      /className="relative overflow-visible border-y[\s\S]*?pointerEvents="box-none"/,
+    );
+    expect(source).toMatch(
+      /style=\{PAGE_HERO_AVATAR_ROW_STYLE\}[\s\S]*?pointerEvents="box-none"/,
+    );
+    expect(source).toMatch(
+      /style=\{PAGE_HERO_IDENTITY_STYLE\}[\s\S]*?pointerEvents="box-none"/,
+    );
+  });
 });

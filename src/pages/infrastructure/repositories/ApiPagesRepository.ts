@@ -43,6 +43,16 @@ type PagesListResponse = {
   };
 };
 
+type PagesSearchResponse = {
+  api_status: number | string;
+  pages?: RawPage[];
+  message?: string;
+  errors?: {
+    error_id?: number | string;
+    error_text?: string;
+  };
+};
+
 type PageDetailResponse = {
   api_status: number | string;
   page_data?: RawPage;
@@ -124,8 +134,22 @@ function readBoolean(
     if (typeof value === 'number') return value === 1;
     if (typeof value === 'string') {
       const normalized = value.toLowerCase();
-      if (normalized === '1' || normalized === 'true') return true;
-      if (normalized === '0' || normalized === 'false') return false;
+      if (
+        normalized === '1' ||
+        normalized === 'true' ||
+        normalized === 'yes' ||
+        normalized === 'on'
+      ) {
+        return true;
+      }
+      if (
+        normalized === '0' ||
+        normalized === 'false' ||
+        normalized === 'no' ||
+        normalized === 'off'
+      ) {
+        return false;
+      }
     }
   }
   return undefined;
@@ -551,6 +575,7 @@ export function createPagesRepository(): PagesRepository {
 
     async getSuggestedPages(options = {}) {
       const limit = options.limit ?? 20;
+      const offset = options.offset ? String(options.offset) : undefined;
 
       try {
         const response = await apiBridge.post<PagesListResponse>(
@@ -558,12 +583,57 @@ export function createPagesRepository(): PagesRepository {
           {
             type: 'pages',
             limit,
+            ...(offset ? { offset } : {}),
           },
         );
 
-        return toListPage(response, limit, false);
+        return toListPage(response, limit);
       } catch (error) {
         console.warn('[ApiPagesRepository] get suggested pages failed', error);
+        throw new Error(mapPagesListError(error));
+      }
+    },
+
+    async searchPages(query, options = {}) {
+      const normalizedQuery = query.trim();
+      if (!normalizedQuery) {
+        return { items: [], nextOffset: null, hasMore: false };
+      }
+
+      const limit = Math.min(options.limit ?? 10, 10);
+      const offset = options.offset ? Number(options.offset) : 0;
+
+      try {
+        const response = await apiBridge.post<PagesSearchResponse>(
+          apiRoutes.search.all,
+          {
+            search_key: normalizedQuery,
+            limit,
+            page_offset: Number.isFinite(offset) ? offset : 0,
+          },
+        );
+
+        if (!isSuccess(response.api_status)) {
+          throw new Error(
+            response.errors?.error_text ||
+              response.message ||
+              'Không thể tìm kiếm trang. Vui lòng thử lại.',
+          );
+        }
+
+        const rawPages = Array.isArray(response.pages) ? response.pages : [];
+        const items = rawPages
+          .map(mapPage)
+          .filter(page => page.pageId || page.pageName);
+        const lastPage = items[items.length - 1];
+
+        return {
+          items,
+          nextOffset: lastPage?.pageId || null,
+          hasMore: rawPages.length >= limit && Boolean(lastPage?.pageId),
+        };
+      } catch (error) {
+        console.warn('[ApiPagesRepository] search pages failed', error);
         throw new Error(mapPagesListError(error));
       }
     },

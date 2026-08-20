@@ -3890,15 +3890,15 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       >
         {/* Header */}
         <View className="flex-row items-center border-b border-gray-200 px-3 py-2">
-          {Platform.OS !== 'ios' && (
-            <TouchableOpacity
-              className="h-10 w-10 items-center justify-center rounded-full"
-              activeOpacity={0.7}
-              onPress={() => navigation.goBack()}
-            >
-              <ArrowLeft size={22} color="#050505" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={language === 'vi' ? 'Quay lại' : 'Go back'}
+            className="h-10 w-10 items-center justify-center rounded-full"
+            activeOpacity={0.7}
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={22} color="#050505" />
+          </TouchableOpacity>
           <TouchableOpacity
             className="flex-1 flex-row items-center"
             activeOpacity={0.7}

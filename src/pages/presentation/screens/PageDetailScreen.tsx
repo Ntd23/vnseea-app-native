@@ -541,6 +541,7 @@ function PageHero({
             accessibilityLabel={copy.viewCoverBtn}
             activeOpacity={0.96}
             className="absolute inset-0"
+            style={{ zIndex: 0 }}
             disabled={!onViewCover}
             onPress={onViewCover}
           >
@@ -607,6 +608,7 @@ function PageHero({
             activeOpacity={0.85}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             className="absolute bottom-3 right-4 min-h-10 max-w-[58%] flex-row items-center justify-center rounded-full bg-[#E4E6EB] px-3.5 py-2"
+            style={{ zIndex: 30, elevation: 8 }}
             disabled={isUploadingCover}
             onPress={onChangeCover}
           >
@@ -631,10 +633,12 @@ function PageHero({
         entering={FadeInDown.delay(40).duration(400)}
         className="relative overflow-visible border-y border-[#dddfe2] bg-white px-4 pb-5"
         style={{ zIndex: 10, elevation: 2 }}
+        pointerEvents="box-none"
       >
         <View
           className="relative flex-row items-start"
           style={PAGE_HERO_AVATAR_ROW_STYLE}
+          pointerEvents="box-none"
         >
           <View className="relative z-20">
             <TouchableOpacity
@@ -675,6 +679,7 @@ function PageHero({
             entering={FadeInDown.delay(50).duration(400)}
             className="ml-3.5 min-w-0 flex-1 pr-0.5"
             style={PAGE_HERO_IDENTITY_STYLE}
+            pointerEvents="box-none"
           >
             <View className="flex-row items-center">
               <Text

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -80,6 +80,7 @@ export function PageMediaViewerModal({
   const { width, height } = useWindowDimensions();
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const imageSource = useMemo(() => (uri ? { uri } : undefined), [uri]);
 
   const androidStatusBarHeight =
     Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
@@ -233,20 +234,20 @@ export function PageMediaViewerModal({
 
         <GestureDetector gesture={composedGesture}>
           <View style={styles.imageViewport}>
-            {uri && !hasError ? (
+            {imageSource && !hasError ? (
               <Animated.Image
-                source={{ uri }}
+                key={`${kind}:${uri}`}
+                source={imageSource}
                 style={[
                   styles.image,
                   { width, height },
                   animatedImageStyle,
                 ]}
                 resizeMode="contain"
-                onLoadStart={() => {
-                  setIsLoading(true);
+                onLoad={() => {
+                  setIsLoading(false);
                   setHasError(false);
                 }}
-                onLoadEnd={() => setIsLoading(false)}
                 onError={() => {
                   setIsLoading(false);
                   setHasError(true);

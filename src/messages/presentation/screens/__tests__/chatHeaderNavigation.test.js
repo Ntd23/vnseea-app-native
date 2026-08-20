@@ -16,7 +16,7 @@ function extractBlock(source, startNeedle, endNeedle) {
 }
 
 describe('ChatScreen header navigation', () => {
-  it('renders the header back button only outside iOS', () => {
+  it('renders the header back button for both direct and group chats on every platform', () => {
     const source = read('src/messages/presentation/screens/ChatScreen.tsx');
     const headerBlock = extractBlock(
       source,
@@ -24,9 +24,11 @@ describe('ChatScreen header navigation', () => {
       '{/* Messages */}',
     );
 
-    expect(headerBlock).toContain("Platform.OS !== 'ios'");
+    expect(headerBlock).not.toContain("Platform.OS !== 'ios'");
     expect(headerBlock).toContain('navigation.goBack()');
     expect(headerBlock).toContain('<ArrowLeft size={22} color="#050505" />');
+    expect(headerBlock).toContain('accessibilityRole="button"');
+    expect(headerBlock).toContain("language === 'vi' ? 'Quay lại' : 'Go back'");
   });
 
   it('uses one pressable header area for avatar and conversation text', () => {

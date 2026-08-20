@@ -25,6 +25,10 @@ export type UpdatePageSection =
 export interface PagesRepository {
   getMyPages(options?: PagesListOptions): Promise<PagesListPage>;
   getSuggestedPages(options?: PagesListOptions): Promise<PagesListPage>;
+  searchPages(
+    query: string,
+    options?: PagesListOptions,
+  ): Promise<PagesListPage>;
   getLikedPages(
     userId: string | number,
     options?: PagesListOptions,

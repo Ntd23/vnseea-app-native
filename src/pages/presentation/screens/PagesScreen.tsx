@@ -80,6 +80,7 @@ const COPY: Record<
     createNewPage: string;
     tryAgain: string;
     loadFailed: string;
+    viewAllSuggested: string;
   }
 > = {
   vi: {
@@ -111,6 +112,7 @@ const COPY: Record<
     createNewPage: 'Tạo trang mới',
     tryAgain: 'Thử lại',
     loadFailed: 'Không tải được trang',
+    viewAllSuggested: 'Xem tất cả trang đề xuất',
   },
   en: {
     headerTitle: 'Pages',
@@ -141,6 +143,7 @@ const COPY: Record<
     createNewPage: 'Create Page',
     tryAgain: 'Try Again',
     loadFailed: 'Failed to load pages',
+    viewAllSuggested: 'View all suggested pages',
   },
 };
 
@@ -359,7 +362,7 @@ const categoryMap: Record<string, string> = {
   '11': 'Thể thao',
 };
 
-function PageCard({
+export function PageCard({
   page,
   onEdit,
   onOpen,
@@ -397,7 +400,7 @@ function PageCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(80 + index * 60).duration(420)}
+      entering={FadeInDown.delay(80 + Math.min(index, 4) * 60).duration(420)}
       style={styles.pageCard}
     >
       <View style={styles.pageCardCover}>
@@ -559,6 +562,7 @@ function PagesScreen() {
     isLoadingMore,
     isActionLoading,
     error,
+    hasMore,
     loadFirstPage,
     setActiveFilter,
     refresh,
@@ -612,6 +616,10 @@ function PagesScreen() {
     },
     [navigation],
   );
+
+  const handleViewAllSuggested = useCallback(() => {
+    navigation.navigate(ROUTES.SUGGESTED_PAGES);
+  }, [navigation]);
 
   const renderPage = useCallback(
     ({ item, index }: ListRenderItemInfo<PagesItem> & { index: number }) => (
@@ -684,7 +692,7 @@ function PagesScreen() {
             colors={[BRAND]}
           />
         }
-        onEndReached={loadMore}
+        onEndReached={activeFilter === 'suggested' ? undefined : loadMore}
         onEndReachedThreshold={0.45}
         ListHeaderComponent={
           <View style={styles.sectionHeader}>
@@ -714,6 +722,18 @@ function PagesScreen() {
             <View style={styles.loaderFooter}>
               <ActivityIndicator color={BRAND} />
             </View>
+          ) : activeFilter === 'suggested' && pages.length > 0 && hasMore ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.84}
+              onPress={handleViewAllSuggested}
+              style={styles.viewAllSuggestedButton}
+            >
+              <Text style={styles.viewAllSuggestedText}>
+                {copy.viewAllSuggested}
+              </Text>
+              <ChevronRight size={19} color="#FFFFFF" />
+            </TouchableOpacity>
           ) : null
         }
       />
@@ -1465,6 +1485,22 @@ const styles = StyleSheet.create({
   loaderFooter: {
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  viewAllSuggestedButton: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 8,
+    paddingHorizontal: 18,
+    borderRadius: 16,
+    backgroundColor: BRAND,
+  },
+  viewAllSuggestedText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
   },
 });
 
