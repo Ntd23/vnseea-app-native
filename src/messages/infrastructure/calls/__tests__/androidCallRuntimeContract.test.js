@@ -8,6 +8,34 @@ function read(relativePath) {
 }
 
 describe('Android call runtime contract', () => {
+  it('uses the Android system default ringtone for incoming calls', () => {
+    const notifier = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt',
+    );
+    const incomingCallActivity = read(
+      'android/app/src/main/java/com/vnseea/android/call/IncomingCallActivity.kt',
+    );
+
+    expect(notifier).toContain(
+      'RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)',
+    );
+    expect(incomingCallActivity).toContain(
+      'RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)',
+    );
+    expect(notifier).toContain(
+      'CHANNEL_ID = "vnseea_calls_fullscreen_v6_system_ringtone"',
+    );
+    expect(notifier).not.toContain('INCOMING_CALL_RINGTONE_RES_NAME');
+    expect(incomingCallActivity).not.toContain(
+      'INCOMING_CALL_RINGTONE_RES_NAME',
+    );
+    expect(
+      fs.existsSync(
+        path.join(root, 'android/app/src/main/res/raw/incoming_call_ringtone.mp3'),
+      ),
+    ).toBe(false);
+  });
+
   it('uses permission-aware full-screen notifications without launching an activity from the background', () => {
     const notifier = read(
       'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt',

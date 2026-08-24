@@ -50,6 +50,14 @@ describe('feed video canonical timeline', () => {
     expect(prependSource).toContain('insertPostAtTop();');
     expect(prependSource).not.toContain('prepareFeedVideoForDisplay');
     expect(postCardsSource).toContain('<VideoPosterSkeleton />');
-    expect(postCardsSource).toContain('<FeedMediaFrame style={{ aspectRatio }}>');
+    expect(postCardsSource).toContain(
+      '<FeedMediaFrame style={{ aspectRatio: frameAspectRatio }}>',
+    );
+    expect(postCardsSource).toContain('isVideoHeightCapped ||');
+    expect(postCardsSource).toContain('<FeedVideoSideBlur');
+    expect(postCardsSource).toContain('sideFillFraction={videoSideFillFraction}');
+    expect(postCardsSource).toContain('videoPlayerInsetStyle');
+    expect(postCardsSource).toContain('left: videoSideFillPercent');
+    expect(postCardsSource).toContain('right: videoSideFillPercent');
   });
 });

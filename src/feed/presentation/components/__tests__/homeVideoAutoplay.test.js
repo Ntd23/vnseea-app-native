@@ -361,7 +361,7 @@ describe('Home feed video autoplay safety', () => {
     expect(momentumEndSource).toContain('flushPendingLoadMoreRef.current();');
   });
 
-  it('limits poster blur to the active idle surface and keeps an Android frame cover', () => {
+  it('keeps capped video side fill blurred and limits optional blur to the active idle surface', () => {
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',
     );
@@ -374,9 +374,10 @@ describe('Home feed video autoplay safety', () => {
       'blurRadius={blurred ? FEED_VIDEO_BACKDROP_BLUR_RADIUS : undefined}',
     );
     expect(postCardsSource).toContain('styles.feedVideoBlurredBackdropScrim');
-    expect(postCardsSource).toContain(
-      'isActive &&\n    isPlaybackSurfaceFocused &&\n    !isScrollBusy',
-    );
+    expect(postCardsSource).toContain('isVideoHeightCapped ||');
+    expect(postCardsSource).toContain('(isActive &&');
+    expect(postCardsSource).toContain('isPlaybackSurfaceFocused &&');
+    expect(postCardsSource).toContain('!isScrollBusy &&');
     expect(postCardsSource).toContain(
       "Platform.OS !== 'android' || performanceSurface === 'profile'",
     );

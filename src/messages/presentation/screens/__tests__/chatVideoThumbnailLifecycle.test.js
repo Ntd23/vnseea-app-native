@@ -14,8 +14,11 @@ describe('chat video thumbnail lifecycle contract', () => {
 
     expect(types).toContain('thumbnailUri?: string');
     expect(chat).toContain('createVideoUploadThumbnail');
+    expect(chat).toContain('createComposerMediaDrafts');
+    expect(chat).not.toContain('const selected = await Promise.all');
+    expect(chat).toContain("att.preparationState === 'preparing'");
     expect(repository).toContain('prepareVideoForUpload');
-    expect(chat).toContain('thumbnailUri: thumbnail?.uri');
+    expect(chat).toContain('applyComposerVideoThumbnail');
     expect(repository).toContain('video_thumb:');
   });
 
