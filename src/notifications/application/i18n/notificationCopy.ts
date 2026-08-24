@@ -275,6 +275,8 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     interested_event: '{name} quan tâm đến sự kiện của bạn',
     going_event: '{name} sẽ tham dự sự kiện của bạn',
     new_orders: '{name} đã gửi cho bạn một yêu cầu mua mới',
+    new_post: '{name} vừa đăng một bài viết mới',
+    new_story: '{name} vừa đăng một tin mới',
     default: '{name} có thông báo mới',
   },
   en: {
@@ -298,6 +300,8 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     interested_event: '{name} is interested in your event',
     going_event: '{name} is going to your event',
     new_orders: '{name} sent you a new purchase request',
+    new_post: '{name} posted a new post',
+    new_story: '{name} added a new story',
     default: '{name} has a new notification',
   },
 };

@@ -65,6 +65,10 @@ export const AUTH_COPY: Record<AppLanguage, Record<string, string>> = {
     forgotPasswordTitle: 'Quên mật khẩu',
     forgotPasswordDesc:
       'Vui lòng nhập địa chỉ email liên kết với tài khoản của bạn. Chúng tôi sẽ gửi một liên kết để đặt lại mật khẩu.',
+    forgotPasswordEmailLabel: 'Email',
+    forgotPasswordEmailPlaceholder: 'Nhập địa chỉ email',
+    forgotPasswordEmailRequired: 'Vui lòng nhập email.',
+    forgotPasswordEmailInvalid: 'Vui lòng nhập địa chỉ email hợp lệ.',
     sendLinkButton: 'Gửi liên kết',
     backToLogin: 'Quay lại đăng nhập',
     resetEmailSent: 'Email đặt lại mật khẩu đã được gửi.',
@@ -131,6 +135,10 @@ export const AUTH_COPY: Record<AppLanguage, Record<string, string>> = {
     forgotPasswordTitle: 'Forgot Password',
     forgotPasswordDesc:
       'Please enter the email address associated with your account. We will send a link to reset your password.',
+    forgotPasswordEmailLabel: 'Email',
+    forgotPasswordEmailPlaceholder: 'Enter your email address',
+    forgotPasswordEmailRequired: 'Enter your email address.',
+    forgotPasswordEmailInvalid: 'Enter a valid email address.',
     sendLinkButton: 'Send link',
     backToLogin: 'Back to login',
     resetEmailSent: 'Password reset email has been sent.',

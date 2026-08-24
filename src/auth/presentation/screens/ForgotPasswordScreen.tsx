@@ -40,6 +40,7 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAuthCopy } from '../../application/i18n/authCopy';
+import { parseRegistrationIdentity } from '../../domain/registrationIdentity';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type ForgotPasswordNav = NativeStackNavigationProp<RootStackParamList>;
@@ -47,9 +48,10 @@ type ForgotPasswordNav = NativeStackNavigationProp<RootStackParamList>;
 function ForgotPasswordScreen() {
   const navigation = useNavigation<ForgotPasswordNav>();
   const [email, setEmail] = useState('');
+  const [emailValidationError, setEmailValidationError] = useState('');
   const { error, forgotPassword, isLoading, passwordResetSent } =
     useAuthViewModel();
-  const { logoUrl, siteName, notifyImageError } = useAuthBranding();
+  const { logoUrl, notifyImageError } = useAuthBranding();
   const [language, setLanguage] = useState<AppLanguage>(() =>
     languageStorage.getLanguage(),
   );
@@ -116,8 +118,20 @@ function ForgotPasswordScreen() {
   }, []);
 
   async function handleSubmit() {
+    if (!email.trim()) {
+      setEmailValidationError(copy.forgotPasswordEmailRequired);
+      return;
+    }
+
+    const parsedIdentity = parseRegistrationIdentity(email);
+    if (parsedIdentity?.type !== 'email') {
+      setEmailValidationError(copy.forgotPasswordEmailInvalid);
+      return;
+    }
+
+    setEmailValidationError('');
     try {
-      await forgotPassword({ email });
+      await forgotPassword({ email: parsedIdentity.value });
     } catch {
       // The view model exposes the message for inline rendering.
     }
@@ -251,7 +265,7 @@ function ForgotPasswordScreen() {
 
             <View className="mt-6" onLayout={handleFieldLayout('email')}>
               <Text className="mb-1.5 px-0.5 text-[12px] font-semibold text-slate-500">
-                {copy.email}
+                {copy.forgotPasswordEmailLabel}
               </Text>
               <View
                 className="flex-row items-center rounded-xl bg-white px-3"
@@ -269,14 +283,21 @@ function ForgotPasswordScreen() {
                 <Mail size={18} color={APP_BRAND_COLOR} />
                 <TextInput
                   className="ml-2.5 flex-1 text-[14px] font-medium text-slate-900"
-                  placeholder={copy.emailPlaceholder}
+                  placeholder={copy.forgotPasswordEmailPlaceholder}
                   placeholderTextColor="#9AA0A6"
                   keyboardType="email-address"
+                  textContentType="emailAddress"
+                  autoComplete="email"
                   autoCapitalize="none"
                   autoCorrect={false}
                   returnKeyType="send"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={value => {
+                    setEmail(value);
+                    if (emailValidationError) {
+                      setEmailValidationError('');
+                    }
+                  }}
                   onFocus={() => {
                     setIsEmailFocused(true);
                     scrollToField('email');
@@ -314,9 +335,9 @@ function ForgotPasswordScreen() {
               )}
             </TouchableOpacity>
 
-            {error ? (
+            {emailValidationError || error ? (
               <Text className="mt-3 text-center text-[12px] font-semibold text-red-500">
-                {error}
+                {emailValidationError || error}
               </Text>
             ) : null}
 

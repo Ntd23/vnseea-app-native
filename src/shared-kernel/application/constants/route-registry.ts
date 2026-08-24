@@ -63,6 +63,7 @@ export const apiRoutes = {
   stories: {
     get: 'get-stories',
     getUserStories: 'get-user-stories',
+    getById: 'get_story_by_id',
     create: 'create-story',
     delete: 'delete-story',
     react: 'react_story',

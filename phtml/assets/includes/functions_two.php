@@ -5192,6 +5192,35 @@ function Wo_CanSenEmails() {
     }
     return true;
 }
+if (!function_exists('VNSEEA_PrepareEmailContent')) {
+    function VNSEEA_PrepareEmailContent($message_body) {
+        $message_html = trim((string) $message_body);
+        $plain_source = preg_replace_callback(
+            '~<a\b[^>]*\bhref\s*=\s*(["\'])(.*?)\1[^>]*>(.*?)</a>~is',
+            function ($matches) {
+                $label = trim(html_entity_decode(strip_tags($matches[3]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                $url = html_entity_decode($matches[2], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                return $label . ' (' . $url . ')';
+            },
+            $message_html
+        );
+        $plain_source = preg_replace('~<\s*br\s*/?\s*>~i', "\n", $plain_source);
+        $plain_source = preg_replace('~</\s*(p|div|li|h[1-6]|tr)\s*>~i', "\n", $plain_source);
+        $plain_text = html_entity_decode(strip_tags($plain_source), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $plain_text = preg_replace("/\r\n?|\n/", "\n", $plain_text);
+        $plain_text = preg_replace("/[ \t]+\n/", "\n", $plain_text);
+        $plain_text = trim(preg_replace("/\n{3,}/", "\n\n", $plain_text));
+
+        if (stripos($message_html, '<html') === false) {
+            $message_html = '<!doctype html><html><head><meta charset="UTF-8"></head><body>' . $message_html . '</body></html>';
+        }
+
+        return array(
+            'html' => $message_html,
+            'text' => $plain_text
+        );
+    }
+}
 function Wo_SendMessageFromDB() {
     global $wo, $sqlConnect,$siteEncryptKey;
     include_once "assets/libraries/PHPMailer-Master/vendor/autoload.php";
@@ -5222,9 +5251,9 @@ function Wo_SendMessageFromDB() {
         $mail->Port          = $wo["config"]["smtp_port"];
         $mail->SMTPOptions   = array(
             "ssl" => array(
-                "verify_peer" => false,
-                "verify_peer_name" => false,
-                "allow_self_signed" => true
+                "verify_peer" => true,
+                "verify_peer_name" => true,
+                "allow_self_signed" => false
             )
         );
     } else {
@@ -5237,7 +5266,9 @@ function Wo_SendMessageFromDB() {
         while ($fetched_data = mysqli_fetch_assoc($sql)) {
             $mail->addAddress($fetched_data["email_to"]);
             $mail->Subject = $fetched_data["subject"];
-            $mail->MsgHTML($fetched_data["message"]);
+            $prepared_content = VNSEEA_PrepareEmailContent($fetched_data["message"]);
+            $mail->Body = $prepared_content['html'];
+            $mail->AltBody = $prepared_content['text'];
             $mail->IsHTML(true);
             $send = $mail->send();
             $mail->ClearAddresses();
@@ -5308,9 +5339,9 @@ function Wo_SendMessage($data = array()) {
             $mail->Port        = $wo["config"]["smtp_port"];
             $mail->SMTPOptions = array(
                 "ssl" => array(
-                    "verify_peer" => false,
-                    "verify_peer_name" => false,
-                    "allow_self_signed" => true
+                    "verify_peer" => true,
+                    "verify_peer_name" => true,
+                    "allow_self_signed" => false
                 )
             );
         } else {
@@ -5322,8 +5353,9 @@ function Wo_SendMessage($data = array()) {
         $mail->Subject = $data["subject"];
         $mail->CharSet = "text/html; charset=UTF-8;";
         $mail->CharSet = $data["charSet"];
-        //$mail->MsgHTML($data["message_body"]);
-        $mail->Body = $data["message_body"];
+        $prepared_content = VNSEEA_PrepareEmailContent($data["message_body"]);
+        $mail->Body = $prepared_content['html'];
+        $mail->AltBody = !empty($data['alt_body']) ? trim((string) $data['alt_body']) : $prepared_content['text'];
         if (!empty($data["reply-to"])) {
             $mail->ClearReplyTos();
             $mail->AddReplyTo($data["reply-to"], $data["from_name"]);

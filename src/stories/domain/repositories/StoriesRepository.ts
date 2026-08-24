@@ -35,6 +35,9 @@ export interface StoriesRepository {
    */
   getUserStories(): Promise<StoryItem[]>;
 
+  /** Fetch one Story after the backend has rechecked visibility and expiry. */
+  getStoryById(storyId: string): Promise<StoryItem | null>;
+
   /**
    * Upload a new story. WoWonder's create endpoint requires a SINGLE
    * media file per call (image OR video) + an explicit `file_type`

@@ -2583,7 +2583,7 @@ function Wo_RegisterFollow($following_id = 0, $followers_id = 0)
             $active = 0;
         }
         $relationship_time = time();
-        $query = mysqli_query($sqlConnect, " INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`,`time`) VALUES ({$following_id},{$follower_id},'{$active}',{$relationship_time})");
+        $query = mysqli_query($sqlConnect, " INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`,`notify`,`time`) VALUES ({$following_id},{$follower_id},'{$active}','1',{$relationship_time})");
         if ($query) {
             cache($following_id, 'users', 'delete');
             cache($follower_id, 'users', 'delete');
@@ -2789,20 +2789,20 @@ function Wo_AcceptFollowRequest($following_id = 0, $follower_id = 0)
     if (!mysqli_begin_transaction($sqlConnect)) {
         return false;
     }
-    $query = mysqli_query($sqlConnect, "UPDATE " . T_FOLLOWERS . " SET `active` = '1', `time` = {$relationship_time} WHERE `following_id` = {$follower_id} AND `follower_id` = {$following_id} AND `active` = '0'");
+    $query = mysqli_query($sqlConnect, "UPDATE " . T_FOLLOWERS . " SET `active` = '1', `notify` = '1', `time` = {$relationship_time} WHERE `following_id` = {$follower_id} AND `follower_id` = {$following_id} AND `active` = '0'");
     $updated_request = $query && mysqli_affected_rows($sqlConnect) === 1;
     if (!$updated_request) {
         mysqli_rollback($sqlConnect);
         return false;
     }
     if ($wo['config']['connectivitySystem'] == 1) {
-        $query_two = mysqli_query($sqlConnect, "UPDATE " . T_FOLLOWERS . " SET `active` = '1', `time` = {$relationship_time} WHERE `following_id` = {$following_id} AND `follower_id` = {$follower_id}");
+        $query_two = mysqli_query($sqlConnect, "UPDATE " . T_FOLLOWERS . " SET `active` = '1', `notify` = '1', `time` = {$relationship_time} WHERE `following_id` = {$following_id} AND `follower_id` = {$follower_id}");
         if (!$query_two) {
             mysqli_rollback($sqlConnect);
             return false;
         }
         if (mysqli_affected_rows($sqlConnect) === 0 && !Wo_IsFollowing($following_id, $follower_id)) {
-            $query_two = mysqli_query($sqlConnect, "INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`,`time`) VALUES ({$following_id},{$follower_id},'1',{$relationship_time}) ");
+            $query_two = mysqli_query($sqlConnect, "INSERT INTO " . T_FOLLOWERS . " (`following_id`,`follower_id`,`active`,`notify`,`time`) VALUES ({$following_id},{$follower_id},'1','1',{$relationship_time}) ");
             if (!$query_two) {
                 mysqli_rollback($sqlConnect);
                 return false;
@@ -3750,7 +3750,7 @@ function Wo_RegisterNotification($data = array())
         $realtime_notification_id = ($sql_query_three ? mysqli_insert_id($sqlConnect) : 0);
         $post_data = array();
         $admin_ids = array();
-        if (!empty($data['post_id'])) {
+        if (!empty($data['post_id']) && empty($data['skip_post_hydration'])) {
             $post_data = Wo_PostData($data['post_id']);
         }
         $my_id = $wo['user']['user_id'];
@@ -3789,7 +3789,7 @@ function Wo_RegisterNotification($data = array())
         if ($sql_query_three) {
             $realtime_kind = ($data['type'] == 'friends_request') ? 'request' : 'notification';
             Wo_PublishRealtimeNotification($recipient['user_id'], $realtime_notification_id, $realtime_kind);
-            if ($wo['config']['emailNotification'] == 1 && $recipient['emailNotification'] == 1) {
+            if (empty($data['skip_email']) && $wo['config']['emailNotification'] == 1 && $recipient['emailNotification'] == 1) {
                 $send_mail = false;
                 if (($data['type'] == 'liked_post' || $data['type'] == 'reaction') && $recipient['e_liked'] == 1) {
                     $send_mail = true;

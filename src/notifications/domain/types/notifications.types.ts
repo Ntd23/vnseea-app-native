@@ -31,6 +31,8 @@ export type NotificationType =
   | 'going_event'
   | 'invited_event'
   | 'accepted_request'
+  | 'new_post'
+  | 'new_story'
   | 'accept_group_chat_request' // Người khác chấp nhận lời mời nhóm chat
   | 'declined_group_chat_request' // Người khác từ chối lời mời nhóm chat
   | typeof GROUP_CHAT_INVITE_NOTIFICATION

@@ -103,6 +103,7 @@ define('T_POINTS_TRANSFER_REQUESTS', 'Wo_Points_Transfer_Requests');
 define('T_PUSH_INSTALLATIONS', 'Wo_PushInstallations');
 define('T_PUSH_TOKENS', 'Wo_PushTokens');
 define('T_PUSH_DELIVERIES', 'Wo_PushDeliveries');
+define('T_CONTENT_NOTIFICATION_JOBS', 'Wo_ContentNotificationJobs');
 define('T_LIVEKIT_ENDPOINT_LEASES', 'Wo_LiveKitEndpointLeases');
 define('T_USERADS_DATA', 'Wo_UserAds_Data');
 define('T_POKES', 'Wo_Pokes');

@@ -802,6 +802,13 @@ if (empty($error_message)) {
         }
     }
 
+    if ($id && $post_active == 1 && function_exists('VNSEEA_EnqueueFollowerContentNotification')) {
+        VNSEEA_EnqueueFollowerContentNotification('post',
+            (int) $id,
+            (int) $wo['user']['user_id']
+        );
+    }
+
     if ($id) {
         $wo['story'] = Wo_PostData($id);
         $html .= Wo_LoadPage('story/content');

@@ -16,8 +16,8 @@
 //     `post_id`). The response shape is identical to posts though, so
 //     we can reuse the same `WIRE_TO_REACTION` table.
 //
-//   • There is NO endpoint to fetch a SINGLE story by id. The viewer
-//     must take the StoryItem it already has from `getStories()`.
+//   • Notification navigation may fetch one Story by id so targets outside
+//     the first Story rail page can still open directly.
 
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
@@ -463,6 +463,20 @@ export function createStoriesRepository(): StoriesRepository {
       }
 
       return filterActiveStories(Array.from(grouped.values()));
+    },
+
+    async getStoryById(storyId: string) {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        story?: Record<string, unknown>;
+      }>(apiRoutes.stories.getById, { id: storyId });
+
+      if (String(response.api_status) !== '200' || !response.story) {
+        return null;
+      }
+      const mapped = mapStory(response.story);
+      if (!mapped || mapped.media.length === 0) return null;
+      return filterActiveStories([mapped])[0] ?? null;
     },
 
     async createStory(draft: CreateStoryDraft): Promise<CreateStoryResult> {

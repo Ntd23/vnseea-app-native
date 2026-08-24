@@ -114,17 +114,19 @@ import {
   CREATE_POST_TRAY_ACTION_KEYS,
   type CreatePostTrayActionKey,
 } from './createPostActionConfig';
+import {
+  CAPTION_LINE_HEIGHT,
+  CAPTION_MAX_HEIGHT,
+  CAPTION_MEASURE_LINES,
+  CAPTION_MIN_HEIGHT,
+  CAPTION_VERTICAL_PADDING,
+  resolveCaptionInputLayout,
+} from './createPostCaptionLayout';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CreatePostRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_POST>;
 
 const COMPOSER_PHOTO_LIMIT = 9;
-const CAPTION_LINE_HEIGHT = 24;
-const CAPTION_MAX_LINES = 12;
-const CAPTION_VERTICAL_PADDING = 4;
-const CAPTION_MIN_HEIGHT = CAPTION_LINE_HEIGHT + CAPTION_VERTICAL_PADDING;
-const CAPTION_MAX_HEIGHT =
-  CAPTION_LINE_HEIGHT * CAPTION_MAX_LINES + CAPTION_VERTICAL_PADDING;
 const PHOTO_GRID_GAP = 2;
 const MAX_TAGGED_USERS = 20;
 // react-native-image-picker owns a single mutable native callback. Keep this
@@ -372,6 +374,78 @@ function assetToVideoAttachment(asset: Asset): PostVideoAttachment | null {
 // ── Sub-components ────────────────────────────────────────────────────
 const TOKEN_BRAND = APP_BRAND_COLOR;
 
+function useAutoGrowingCaptionLayout(value: string) {
+  const [layout, setLayout] = useState(() =>
+    resolveCaptionInputLayout(value, CAPTION_MIN_HEIGHT),
+  );
+
+  useEffect(() => {
+    if (value.length !== 0) return;
+    setLayout(resolveCaptionInputLayout('', CAPTION_MIN_HEIGHT));
+  }, [value]);
+
+  const updateContentHeight = useCallback(
+    (contentHeight: number) => {
+      const nextLayout = resolveCaptionInputLayout(value, contentHeight);
+      setLayout(current =>
+        current.height === nextLayout.height &&
+        current.scrollEnabled === nextLayout.scrollEnabled
+          ? current
+          : nextLayout,
+      );
+    },
+    [value],
+  );
+
+  return {
+    inputHeight: layout.height,
+    isOverflowing: layout.scrollEnabled,
+    updateContentHeight,
+  };
+}
+
+function CaptionHeightMeasurer({
+  value,
+  fontSize,
+  onHeightChange,
+}: {
+  value: string;
+  fontSize: number;
+  onHeightChange: (height: number) => void;
+}) {
+  if (Platform.OS !== 'ios') return null;
+
+  return (
+    <Text
+      testID="create-post-caption-measurer"
+      numberOfLines={CAPTION_MEASURE_LINES}
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      onLayout={event => {
+        onHeightChange(
+          event.nativeEvent.layout.height + CAPTION_VERTICAL_PADDING,
+        );
+      }}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: -1,
+        opacity: 0,
+        fontSize,
+        lineHeight: CAPTION_LINE_HEIGHT,
+        paddingHorizontal: 0,
+        paddingVertical: 0,
+        includeFontPadding: false,
+      }}
+    >
+      {value || ' '}
+    </Text>
+  );
+}
+
 function AutoGrowingComposerInput({
   inputRef,
   value,
@@ -387,11 +461,11 @@ function AutoGrowingComposerInput({
   onFocus: () => void;
   onBlur: () => void;
 }) {
-  const [inputHeight, setInputHeight] = useState(CAPTION_MIN_HEIGHT);
-  const [isOverflowing, setIsOverflowing] = useState(false);
+  const { inputHeight, isOverflowing, updateContentHeight } =
+    useAutoGrowingCaptionLayout(value);
   const textStyle = {
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: CAPTION_LINE_HEIGHT,
     paddingHorizontal: 0,
     paddingVertical: CAPTION_VERTICAL_PADDING / 2,
   };
@@ -407,6 +481,11 @@ function AutoGrowingComposerInput({
         maxHeight: CAPTION_MAX_HEIGHT,
       }}
     >
+      <CaptionHeightMeasurer
+        value={value}
+        fontSize={textStyle.fontSize}
+        onHeightChange={updateContentHeight}
+      />
       <TextInput
         ref={inputRef}
         value={value}
@@ -420,17 +499,11 @@ function AutoGrowingComposerInput({
         selectionColor={TOKEN_BRAND}
         onFocus={onFocus}
         onBlur={onBlur}
-        onContentSizeChange={event => {
-          const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
-          const measuredHeight = contentHeight + CAPTION_VERTICAL_PADDING;
-          setIsOverflowing(measuredHeight > CAPTION_MAX_HEIGHT);
-          setInputHeight(
-            Math.max(
-              CAPTION_MIN_HEIGHT,
-              Math.min(CAPTION_MAX_HEIGHT, measuredHeight),
-            ),
-          );
-        }}
+        onContentSizeChange={
+          Platform.OS === 'ios' ? undefined : event => {
+            updateContentHeight(event.nativeEvent.contentSize.height);
+          }
+        }
         style={{
           ...textStyle,
           backgroundColor: 'transparent',
@@ -1393,8 +1466,11 @@ const CaptionComposer = React.memo(({
   showPrimaryActions = true,
   embedded = false,
 }: CaptionComposerProps) => {
-  const [inputHeight, setInputHeight] = useState(CAPTION_MIN_HEIGHT);
-  const [isCaptionOverflowing, setIsCaptionOverflowing] = useState(false);
+  const {
+    inputHeight,
+    isOverflowing: isCaptionOverflowing,
+    updateContentHeight,
+  } = useAutoGrowingCaptionLayout(text);
   const isVi = copy.photo === 'Ảnh';
   const photoLabel = isVi ? 'Đăng tải hình ảnh' : 'Upload photos';
   const videoLabel = isVi ? 'Tải đoạn phim lên' : 'Upload video';
@@ -1420,45 +1496,44 @@ const CaptionComposer = React.memo(({
           : 'mx-4 mt-4 rounded-[20px] border border-slate-100 bg-white p-4'
       }
     >
-      <TextInput
-        ref={textInputRef}
-        value={text}
-        onChangeText={onChangeText}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        placeholder={placeholder}
-        placeholderTextColor="#94A3B8"
-        multiline
-        autoFocus
-        maxLength={5000}
-        scrollEnabled={isCaptionOverflowing}
-        textAlignVertical="top"
-        onContentSizeChange={event => {
-          const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
-          const measuredHeight = contentHeight + CAPTION_VERTICAL_PADDING;
-          setIsCaptionOverflowing(measuredHeight > CAPTION_MAX_HEIGHT);
-          const nextHeight = Math.max(
-            CAPTION_MIN_HEIGHT,
-            Math.min(
-              CAPTION_MAX_HEIGHT,
-              measuredHeight,
-            ),
-          );
-          setInputHeight(nextHeight);
-        }}
-        style={{
-          fontSize: 17,
-          lineHeight: CAPTION_LINE_HEIGHT,
-          color: '#1e293b',
-          width: '100%',
-          paddingHorizontal: 0,
-          paddingVertical: CAPTION_VERTICAL_PADDING / 2,
-          height: inputHeight,
-          minHeight: CAPTION_MIN_HEIGHT,
-          maxHeight: CAPTION_MAX_HEIGHT,
-          includeFontPadding: false,
-        }}
-      />
+      <View style={{ position: 'relative', width: '100%' }}>
+        <CaptionHeightMeasurer
+          value={text}
+          fontSize={17}
+          onHeightChange={updateContentHeight}
+        />
+        <TextInput
+          ref={textInputRef}
+          value={text}
+          onChangeText={onChangeText}
+          onFocus={onFocus}
+          onBlur={onBlur}
+          placeholder={placeholder}
+          placeholderTextColor="#94A3B8"
+          multiline
+          autoFocus
+          maxLength={5000}
+          scrollEnabled={isCaptionOverflowing}
+          textAlignVertical="top"
+          onContentSizeChange={
+            Platform.OS === 'ios' ? undefined : event => {
+              updateContentHeight(event.nativeEvent.contentSize.height);
+            }
+          }
+          style={{
+            fontSize: 17,
+            lineHeight: CAPTION_LINE_HEIGHT,
+            color: '#1e293b',
+            width: '100%',
+            paddingHorizontal: 0,
+            paddingVertical: CAPTION_VERTICAL_PADDING / 2,
+            height: inputHeight,
+            minHeight: CAPTION_MIN_HEIGHT,
+            maxHeight: CAPTION_MAX_HEIGHT,
+            includeFontPadding: false,
+          }}
+        />
+      </View>
 
       <View className="mt-2 flex-row items-center justify-end">
         <CharacterCounter length={text.length} />

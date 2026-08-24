@@ -61,6 +61,7 @@ $year_users = $db->where('lastseen',$year_end,'<=')->getValue(T_USERS,'COUNT(*)'
                         </div>
                         <label for="send_to">Gửi E-mail đến</label>
                         <select class="form-control show-tick" id="send_to" name="send_to">
+                            <option value="" selected>Chọn nhóm người nhận</option>
                             <option value="all">Tất cả người dùng</option>
                             <option value="active">Tất cả người dùng đang hoạt động</option>
                             <option value="inactive">Tất cả người dùng không hoạt động</option>
@@ -76,7 +77,8 @@ $year_users = $db->where('lastseen',$year_end,'<=')->getValue(T_USERS,'COUNT(*)'
                         <div class="form-group form-float selected_users_div" style="display:none;">
                             <div class="form-line">
                                 <label class="form-label" id="mailing-selected-users">Selected Users</label>
-                                <input value="" data-role="tagsinput sometext" id="selected_users" name="selected_emails" readonly>
+                                <input value="" data-role="tagsinput sometext" id="selected_users" readonly>
+                                <input type="hidden" name="selected_emails" id="selected_emails" value="">
                             </div>
                         </div>
                         <small class="admin-info">Chọn loại người dùng mà bạn muốn gửi tin nhắn đến.</small>
@@ -95,7 +97,7 @@ $year_users = $db->where('lastseen',$year_end,'<=')->getValue(T_USERS,'COUNT(*)'
 			            </div>
                         
                         <input type="hidden" name="hash_id" value="<?php echo Wo_CreateSession();?>">
-                        <!-- <input type="hidden" name="selected_emails" id="selected_emails"> -->
+                        <input type="hidden" name="bulk_mail_confirmed" id="bulk_mail_confirmed" value="0">
                         <button type="submit" class="btn btn-primary m-t-15 waves-effect">Gửi</button>
                     </form>
                 </div>
@@ -120,12 +122,30 @@ $(function () {
         });
         setTimeout(function () {
             mailing_users = items;
+            $("#selected_emails").val(mailing_users.join());
             $("#mailing-selected-users span").text(mailing_users.length);
         },100);
         
     });
    $('form.mailing-settings').ajaxForm({
       url: Wo_Ajax_Requests_File() + '?f=admin_setting&s=send_mail_to_mock_users',
+      beforeSubmit: function () {
+         if ($('#test_message').is(':checked') || mailing_users.length > 0) {
+            $('#bulk_mail_confirmed').val('0');
+            return true;
+         }
+         var audience = $('#send_to').val();
+         if (!audience) {
+            $('#alert').html('<div class="alert alert-danger">Vui lòng chọn người nhận hoặc nhóm người nhận.</div>');
+            return false;
+         }
+         var audienceLabel = $('#send_to option:selected').text();
+         if (!window.confirm('Bạn sắp gửi email đến "' + audienceLabel + '". Bạn có chắc chắn muốn tiếp tục?')) {
+            return false;
+         }
+         $('#bulk_mail_confirmed').val('1');
+         return true;
+      },
       beforeSend: function () {
          $('form.mailing-settings').find('.waves-effect').text('Vui lòng chờ...');
       },
