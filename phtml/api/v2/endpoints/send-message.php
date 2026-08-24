@@ -83,6 +83,8 @@ if (empty($error_code)) {
             $mediaFilename = '';
             $mediaName     = '';
             $is_audio_message = !empty($_POST['message_type']) && strtolower((string)$_POST['message_type']) === 'audio';
+            $is_video_message = !empty($_POST['message_type']) && strtolower((string)$_POST['message_type']) === 'video';
+            $mediaThumbFilename = '';
             if (isset($_FILES['file']['name'])) {
                 $fileInfo      = array(
                     'file' => $_FILES["file"]["tmp_name"],
@@ -113,6 +115,30 @@ if (empty($error_code)) {
                 } else {
                     $mediaFilename = $media['filename'];
                     $mediaName = $_FILES['file']['name'];
+                }
+            }
+            if (empty($error_message) && $is_video_message && isset($_FILES['video_thumb']['name'])) {
+                $thumb_extension = strtolower(pathinfo($_FILES['video_thumb']['name'], PATHINFO_EXTENSION));
+                $thumb_is_valid = !empty($_FILES['video_thumb']['tmp_name']) &&
+                    (int)$_FILES['video_thumb']['size'] > 0 &&
+                    (!isset($_FILES['video_thumb']['error']) || (int)$_FILES['video_thumb']['error'] === UPLOAD_ERR_OK) &&
+                    in_array($thumb_extension, array('jpg', 'jpeg', 'png', 'webp'));
+                if ($thumb_is_valid) {
+                    $thumb_media = Wo_ShareFile(array(
+                        'file' => $_FILES['video_thumb']['tmp_name'],
+                        'name' => $_FILES['video_thumb']['name'],
+                        'size' => $_FILES['video_thumb']['size'],
+                        'type' => $_FILES['video_thumb']['type'],
+                        'types' => 'jpg,jpeg,png,webp'
+                    ));
+                } else {
+                    $thumb_media = false;
+                }
+                if ($thumb_media === false || empty($thumb_media['filename'])) {
+                    $error_code = 7;
+                    $error_message = 'Could not upload the video thumbnail.';
+                } else {
+                    $mediaThumbFilename = $thumb_media['filename'];
                 }
             }
             if (!empty($_POST['image_url'])) {
@@ -147,6 +173,9 @@ if (empty($error_code)) {
                 'lat' => $lat,
                 'reply_id' => $reply_id,
             );
+            if (!empty($mediaThumbFilename)) {
+                $message_data['media_thumb'] = Wo_Secure($mediaThumbFilename);
+            }
     		if (!empty($_POST['text']) || (isset($_POST['text']) && $_POST['text'] === '0') ) {
     		 	$message_data['text'] = Wo_Secure($_POST['text']);
     		}
@@ -168,6 +197,15 @@ if (empty($error_code)) {
             }
             if (empty($error_message)) {
                 $last_id      = Wo_RegisterMessage($message_data);
+            }
+            if (empty($last_id) && (!empty($mediaFilename) || !empty($mediaThumbFilename))) {
+                foreach (array($mediaFilename, $mediaThumbFilename) as $failed_upload) {
+                    if (empty($failed_upload)) {
+                        continue;
+                    }
+                    @unlink($failed_upload);
+                    Wo_DeleteFromToS3($failed_upload);
+                }
             }
         }
         else if (empty($error_message)) {
@@ -237,6 +275,9 @@ if (empty($error_code)) {
                     }
                     $message['media']     = Wo_GetMedia($message['media']);
                 }
+                if (!empty($message['media_thumb'])) {
+                    $message['media_thumb'] = Wo_GetMedia($message['media_thumb']);
+                }
                 if (!empty($message['time'])) {
                     $time_today = time() - 86400;
                     if ($message['time'] < $time_today) {
@@ -281,6 +322,9 @@ if (empty($error_code)) {
                             $message['reply']['file_size'] = Wo_SizeFormat(filesize($message['reply']['media']));
                         }
                         $message['reply']['media']     = Wo_GetMedia($message['reply']['media']);
+                    }
+                    if (!empty($message['reply']['media_thumb'])) {
+                        $message['reply']['media_thumb'] = Wo_GetMedia($message['reply']['media_thumb']);
                     }
                     if (!empty($message['reply']['time'])) {
                         $time_today = time() - 86400;

@@ -75,6 +75,20 @@ describe('prepareVideoForUpload', () => {
     );
   });
 
+  it('can force chat videos through the compatible MP4 path regardless of size', async () => {
+    compressor.compress.mockResolvedValueOnce('/cache/chat-video.mp4');
+
+    await prepareVideoForUpload(sourceVideo, {
+      minimumFileSizeForCompress: 0,
+    });
+
+    expect(compressor.compress).toHaveBeenCalledWith(
+      sourceVideo.uri,
+      expect.objectContaining({ minimumFileSizeForCompress: 0 }),
+      expect.any(Function),
+    );
+  });
+
   it('does not touch remote media URLs', async () => {
     const remoteVideo = {
       ...sourceVideo,

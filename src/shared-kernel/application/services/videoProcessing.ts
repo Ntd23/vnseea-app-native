@@ -23,6 +23,8 @@ export type PrepareVideoOptions = {
   onProgress?: (progress: number) => void;
   /** Allows a caller to cancel an in-flight native compression. */
   signal?: AbortSignal;
+  /** Override the native size threshold, for example to normalize chat MOVs. */
+  minimumFileSizeForCompress?: number;
 };
 
 type NativeVideoCompressor = {
@@ -152,7 +154,8 @@ export async function prepareVideoForUpload<
       {
         compressionMethod: 'auto',
         maxSize: MAX_VIDEO_DIMENSION,
-        minimumFileSizeForCompress: MINIMUM_COMPRESS_SIZE_MB,
+        minimumFileSizeForCompress:
+          options.minimumFileSizeForCompress ?? MINIMUM_COMPRESS_SIZE_MB,
         progressDivider: PROGRESS_DIVIDER,
         getCancellationId: id => {
           cancellationId = id;

@@ -65,7 +65,6 @@ import {
   launchImageLibrary,
   type MediaType,
 } from 'react-native-image-picker';
-import VideoPlayer from 'react-native-video';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -113,6 +112,7 @@ import { KeyboardSafeView } from '../../../shared-kernel/presentation/components
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   createCachedVideoPosterThumbnail,
+  createVideoUploadThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
@@ -2266,11 +2266,13 @@ function ChatVideoPreview({
   thumbnail,
   cacheKey,
   compact = false,
+  isSending = false,
 }: {
   uri: string;
   thumbnail?: string;
   cacheKey?: string;
   compact?: boolean;
+  isSending?: boolean;
 }) {
   const { width: viewportWidth, height: viewportHeight } =
     useWindowDimensions();
@@ -2416,6 +2418,11 @@ function ChatVideoPreview({
             style={{ marginLeft: 3 }}
           />
         </View>
+        {isSending ? (
+          <View style={styles.videoSendingOverlay}>
+            <ActivityIndicator size={compact ? 'small' : 'large'} color="#fff" />
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -2489,7 +2496,11 @@ function MessageMedia({
         activeOpacity={0.9}
         delayLongPress={320}
         onSingleTap={() =>
-          onOpenMedia({ uri: message.media!, type: 'video' })
+          onOpenMedia({
+            uri: message.media!,
+            type: 'video',
+            thumbnail: message.thumbnail,
+          })
         }
         onLongPress={onLongPress}
         onDoubleTap={onDoubleTap}
@@ -2498,6 +2509,7 @@ function MessageMedia({
           uri={message.media}
           thumbnail={message.thumbnail}
           cacheKey={message.id}
+          isSending={message.deliveryState === 'sending'}
         />
       </DoubleTapTouchable>
     );
@@ -2538,6 +2550,7 @@ function MediaMessageGroup({
     uri: message.media!,
     type:
       message.mediaType === 'video' ? ('video' as const) : ('image' as const),
+    thumbnail: message.thumbnail,
   }));
   const captions = orderedMessages
     .map(message => message.message.trim())
@@ -2575,6 +2588,7 @@ function MediaMessageGroup({
                   {
                     uri: message.media!,
                     type: message.mediaType === 'video' ? 'video' : 'image',
+                    thumbnail: message.thumbnail,
                   },
                   viewerItems,
                 );
@@ -2587,6 +2601,7 @@ function MediaMessageGroup({
                   thumbnail={message.thumbnail}
                   cacheKey={message.id}
                   compact
+                  isSending={message.deliveryState === 'sending'}
                 />
               ) : (
                 <Image
@@ -3507,29 +3522,48 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
 
     if (result.didCancel || result.errorCode) return;
 
-    const selected: MessageAttachment[] = [];
-    for (const asset of result.assets ?? []) {
-      if (!asset.uri) continue;
-      const isVideo =
-        asset.type?.startsWith('video/') ||
-        /\.(mp4|mov|webm|m4v)$/i.test(asset.fileName ?? '');
-      const uri =
-        Platform.OS === 'android' && !/^[a-z][a-z0-9+.-]*:\/\//i.test(asset.uri)
-          ? `file://${asset.uri}`
-          : asset.uri;
-      selected.push({
-        uri,
-        name: asset.fileName ?? `chat-${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
-        type: asset.type ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
-        mediaType: isVideo ? 'video' : 'image',
-      });
-    }
+    const selected = await Promise.all(
+      (result.assets ?? []).map(
+        async (asset): Promise<MessageAttachment | undefined> => {
+          if (!asset.uri) return undefined;
+          const isVideo =
+            asset.type?.startsWith('video/') ||
+            /\.(mp4|mov|webm|m4v)$/i.test(asset.fileName ?? '');
+          const uri =
+            Platform.OS === 'android' &&
+            !/^[a-z][a-z0-9+.-]*:\/\//i.test(asset.uri)
+              ? `file://${asset.uri}`
+              : asset.uri;
+          const thumbnail = isVideo
+            ? await createVideoUploadThumbnail(uri)
+            : undefined;
+          return {
+            uri,
+            name:
+              asset.fileName ??
+              `chat-${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
+            type: asset.type ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
+            mediaType: isVideo ? 'video' : 'image',
+            width: asset.width,
+            height: asset.height,
+            duration: asset.duration,
+            thumbnailUri: thumbnail?.uri,
+            thumbnailName: thumbnail?.name,
+            thumbnailType: thumbnail?.type,
+          };
+        },
+      ),
+    );
+    const validSelected = selected.filter(
+      (attachment): attachment is MessageAttachment =>
+        attachment !== undefined,
+    );
 
-    if (selected.length > 0) {
+    if (validSelected.length > 0) {
       setSharedMapLocation(undefined);
       setAttachments(current => {
         const filtered = current.filter(a => a.mediaType !== 'audio');
-        return [...filtered, ...selected].slice(0, MAX_MEDIA_ATTACHMENTS);
+        return [...filtered, ...validSelected].slice(0, MAX_MEDIA_ATTACHMENTS);
       });
     }
   }, []);
@@ -4105,13 +4139,17 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                   )}
                   {att.mediaType === 'video' && (
                     <>
-                      <VideoPlayer
-                        source={{ uri: att.uri }}
-                        style={{ height: '100%', width: '100%' }}
-                        resizeMode="cover"
-                        paused
-                        muted
-                      />
+                      {att.thumbnailUri ? (
+                        <Image
+                          source={{ uri: att.thumbnailUri }}
+                          className="h-full w-full"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="h-full w-full items-center justify-center bg-gray-900">
+                          <Video size={24} color="rgba(255,255,255,0.5)" />
+                        </View>
+                      )}
                       <View className="absolute inset-0 items-center justify-center bg-black/30">
                         <Play size={16} color="#fff" fill="#fff" />
                       </View>
@@ -4988,6 +5026,13 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.22)',
+  },
+  videoSendingOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.42)',
   },
   videoPreviewFill: {
     height: '100%',
