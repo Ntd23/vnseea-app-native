@@ -1427,6 +1427,12 @@ if (!function_exists('VNSEEA_SendOneSignalDelivery')) {
             ),
             'data' => $payload
         );
+        if ($platform === 'android') {
+            $request['existing_android_channel_id'] = 'vnseea_notifications_sound_v1';
+            $request['android_sound'] = 'app_notification_sound';
+        } else {
+            $request['ios_sound'] = 'default';
+        }
         $request_data = !empty($delivery['request_data']) && is_array($delivery['request_data'])
             ? $delivery['request_data']
             : array();
@@ -1438,12 +1444,6 @@ if (!function_exists('VNSEEA_SendOneSignalDelivery')) {
         }
         if (isset($request_data['priority'])) {
             $request['priority'] = (int)$request_data['priority'] === 5 ? 5 : 10;
-        }
-        if ($platform === 'android') {
-            $request['existing_android_channel_id'] = 'vnseea_notifications_sound_v1';
-            $request['android_sound'] = 'app_notification_sound';
-        } else {
-            $request['ios_sound'] = 'default';
         }
 
         VNSEEA_PushDeliveryDebugLog('onesignal_delivery_attempt', $debug_context);
@@ -1867,6 +1867,432 @@ if (!function_exists('VNSEEA_SendApnsVoipTarget')) {
     }
 }
 
+if (!function_exists('VNSEEA_DeduplicateCallPushTargets')) {
+    function VNSEEA_DeduplicateCallPushTargets($targets)
+    {
+        $deduplicated = array();
+        $seen = array();
+        foreach ((array)$targets as $target) {
+            if (!is_array($target)) {
+                continue;
+            }
+            $token = trim((string)(isset($target['token']) ? $target['token'] : ''));
+            if ($token === '') {
+                continue;
+            }
+            $platform = !empty($target['platform']) && $target['platform'] === 'ios'
+                ? 'ios'
+                : 'android';
+            $key = $platform . '|' . hash('sha256', $token);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $target['platform'] = $platform;
+            $target['token'] = $token;
+            $deduplicated[] = $target;
+        }
+        return $deduplicated;
+    }
+}
+
+if (!function_exists('VNSEEA_BuildOneSignalCallRequestPayload')) {
+    function VNSEEA_BuildOneSignalCallRequestPayload($platform, $token, $payload, $request_data, $app_id, $idempotency_key, $now = null)
+    {
+        $platform = $platform === 'ios' ? 'ios' : 'android';
+        $payload = is_array($payload) ? $payload : array();
+        $request_data = is_array($request_data) ? $request_data : array();
+        $now = $now === null ? time() : (int)$now;
+        $expires_at = !empty($payload['expires_at']) ? (int)$payload['expires_at'] : 0;
+        $ttl = $expires_at > 0
+            ? max(1, min(45, $expires_at - $now))
+            : 45;
+        if (!empty($request_data['ttl'])) {
+            $ttl = max(1, min($ttl, (int)$request_data['ttl']));
+        }
+        $ring_mode = !empty($payload['ring_mode'])
+            ? strtolower((string)$payload['ring_mode'])
+            : 'fullscreen';
+        $priority = in_array($ring_mode, array('passive', 'silent'), true) ? 5 : 10;
+        if (isset($request_data['priority'])) {
+            $priority = (int)$request_data['priority'] === 5 ? 5 : 10;
+        }
+        $call_id = !empty($payload['call_id']) ? (string)$payload['call_id'] : 'unknown';
+        $context = !empty($payload['call_context']) ? (string)$payload['call_context'] : 'direct';
+        $call_type = !empty($payload['call_type']) && $payload['call_type'] === 'audio'
+            ? 'audio'
+            : 'video';
+        $collapse_id = $context === 'group'
+            ? 'livekit_group_call_' . $call_id
+            : 'livekit_call_' . $call_type . '_' . $call_id;
+        if (!empty($request_data['collapse_id'])) {
+            $collapse_id = substr((string)$request_data['collapse_id'], 0, 64);
+        }
+
+        $request = array(
+            'app_id' => (string)$app_id,
+            'include_subscription_ids' => array((string)$token),
+            'idempotency_key' => (string)$idempotency_key,
+            'headings' => array(
+                'en' => !empty($payload['title']) ? $payload['title'] : 'VNSEEA',
+                'vi' => !empty($payload['title']) ? $payload['title'] : 'VNSEEA'
+            ),
+            'contents' => array(
+                'en' => !empty($payload['body']) ? $payload['body'] : 'Incoming call',
+                'vi' => !empty($payload['body']) ? $payload['body'] : 'Cuoc goi den'
+            ),
+            'data' => $payload,
+            'priority' => $priority,
+            'ttl' => $ttl,
+            'collapse_id' => $collapse_id
+        );
+        if ($platform === 'android') {
+            $request['existing_android_channel_id'] = 'vnseea_calls_fullscreen_v6_system_ringtone';
+        } else {
+            $request['ios_sound'] = 'default';
+        }
+        return $request;
+    }
+}
+
+if (!function_exists('VNSEEA_PrepareOneSignalCallRequest')) {
+    function VNSEEA_PrepareOneSignalCallRequest($target, $payload)
+    {
+        $platform = !empty($target['platform']) && $target['platform'] === 'ios'
+            ? 'ios'
+            : 'android';
+        $config = VNSEEA_OneSignalConfigForPlatform($platform);
+        $debug_context = array(
+            'recipient_user_id' => !empty($target['recipient_user_id'])
+                ? (int)$target['recipient_user_id']
+                : 0,
+            'platform' => $platform,
+            'token_suffix' => substr((string)$target['token'], -8),
+            'target_count' => 1,
+            'app_id_suffix' => !empty($config['app_id'])
+                ? substr((string)$config['app_id'], -8)
+                : ''
+        );
+        if (empty($config['app_id']) || empty($config['api_key'])) {
+            $result = array(
+                'accepted' => false,
+                'terminal' => true,
+                'error' => 'onesignal_not_configured',
+                'http_status' => 0
+            );
+            VNSEEA_PushDeliveryDebugLog(
+                'onesignal_delivery_response',
+                array_merge($debug_context, $result, array('duration_ms' => 0))
+            );
+            return array('channel' => 'onesignal', 'target' => $target, 'result' => $result);
+        }
+
+        $request_data = !empty($target['request_data']) && is_array($target['request_data'])
+            ? $target['request_data']
+            : array();
+        $request = VNSEEA_BuildOneSignalCallRequestPayload(
+            $platform,
+            $target['token'],
+            $payload,
+            $request_data,
+            $config['app_id'],
+            VNSEEA_PushUuidV4()
+        );
+
+        VNSEEA_PushDeliveryDebugLog('onesignal_delivery_attempt', $debug_context);
+        $ch = curl_init('https://api.onesignal.com/notifications');
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'Content-Type: application/json; charset=utf-8',
+            'Authorization: Key ' . $config['api_key']
+        ));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($request, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 2000);
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 5000);
+        curl_setopt($ch, CURLOPT_NOSIGNAL, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        return array(
+            'channel' => 'onesignal',
+            'target' => $target,
+            'debug_context' => $debug_context,
+            'started_at' => microtime(true),
+            'handle' => $ch
+        );
+    }
+}
+
+if (!function_exists('VNSEEA_PrepareApnsVoipCallRequest')) {
+    function VNSEEA_PrepareApnsVoipCallRequest($target, $notification_data, $display_name, $call_type, $context)
+    {
+        $environment = !empty($target['apns_environment']) && $target['apns_environment'] === 'sandbox'
+            ? 'sandbox'
+            : 'production';
+        $debug_context = array(
+            'recipient_user_id' => !empty($target['recipient_user_id'])
+                ? (int)$target['recipient_user_id']
+                : 0,
+            'platform' => 'ios',
+            'environment' => $environment,
+            'token_suffix' => !empty($target['token'])
+                ? substr((string)$target['token'], -8)
+                : '',
+            'target_count' => 1
+        );
+        $error = '';
+        if (!function_exists('Wo_ApiVoipConfigValue') ||
+            Wo_ApiVoipConfigValue('ios_voip_enabled', '0') !== '1' ||
+            empty($target['token'])) {
+            $error = 'voip_not_configured';
+        }
+        $team_id = function_exists('Wo_ApiVoipConfigValue')
+            ? Wo_ApiVoipConfigValue('ios_voip_team_id')
+            : '';
+        $key_id = function_exists('Wo_ApiVoipConfigValue')
+            ? Wo_ApiVoipConfigValue('ios_voip_key_id')
+            : '';
+        $bundle_id = function_exists('Wo_ApiVoipConfigValue')
+            ? Wo_ApiVoipConfigValue('ios_voip_bundle_id')
+            : '';
+        $key_path = function_exists('Wo_ApiVoipConfigValue')
+            ? Wo_ApiVoipConfigValue('ios_voip_private_key_path')
+            : '';
+        if ($error === '' && ($team_id === '' || $key_id === '' || $bundle_id === '' ||
+            $key_path === '' || !class_exists('\\Firebase\\JWT\\JWT') || !file_exists($key_path))) {
+            $error = 'voip_credentials_missing';
+        }
+        $private_key = $error === '' ? file_get_contents($key_path) : '';
+        if ($error === '' && empty($private_key)) {
+            $error = 'voip_private_key_unreadable';
+        }
+        if ($error !== '') {
+            $result = array(
+                'accepted' => false,
+                'terminal' => true,
+                'error' => $error,
+                'http_status' => 0
+            );
+            VNSEEA_PushDeliveryDebugLog(
+                'apns_voip_delivery_response',
+                array_merge($debug_context, $result, array('duration_ms' => 0))
+            );
+            return array('channel' => 'voip', 'target' => $target, 'result' => $result);
+        }
+
+        $jwt = \Firebase\JWT\JWT::encode(array(
+            'iss' => $team_id,
+            'iat' => time()
+        ), $private_key, 'ES256', $key_id);
+        $body_prefix = $context === 'group' ? 'Group ' : '';
+        $payload = array_merge($notification_data, array(
+            'aps' => array(
+                'alert' => array(
+                    'title' => $display_name,
+                    'body' => $body_prefix . ($call_type === 'video' ? 'Video call' : 'Audio call')
+                ),
+                'sound' => 'default',
+                'content-available' => 1
+            )
+        ));
+        $endpoint = $environment === 'sandbox'
+            ? 'https://api.sandbox.push.apple.com/3/device/'
+            : 'https://api.push.apple.com/3/device/';
+        VNSEEA_PushDeliveryDebugLog('apns_voip_delivery_attempt', $debug_context);
+        $ch = curl_init($endpoint . rawurlencode($target['token']));
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'authorization: bearer ' . $jwt,
+            'apns-topic: ' . $bundle_id . '.voip',
+            'apns-push-type: voip',
+            'apns-priority: 10',
+            'apns-expiration: ' . (time() + 45),
+            'content-type: application/json'
+        ));
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 2000);
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, 5000);
+        curl_setopt($ch, CURLOPT_NOSIGNAL, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        return array(
+            'channel' => 'voip',
+            'target' => $target,
+            'debug_context' => $debug_context,
+            'started_at' => microtime(true),
+            'handle' => $ch
+        );
+    }
+}
+
+if (!function_exists('VNSEEA_CompleteOneSignalCallRequest')) {
+    function VNSEEA_CompleteOneSignalCallRequest($request, $response, $curl_error, $http_status)
+    {
+        $decoded = json_decode((string)$response, true);
+        $recipient_count = is_array($decoded) && array_key_exists('recipients', $decoded)
+            ? (int)$decoded['recipients']
+            : null;
+        $accepted = VNSEEA_OneSignalResponseHasRecipient($http_status, $decoded);
+        $duration_ms = (int)round((microtime(true) - $request['started_at']) * 1000);
+        VNSEEA_PushDeliveryDebugLog(
+            'onesignal_delivery_response',
+            array_merge($request['debug_context'], array(
+                'accepted' => $accepted ? 1 : 0,
+                'http_status' => (int)$http_status,
+                'recipient_count' => $recipient_count,
+                'curl_error' => (string)$curl_error,
+                'duration_ms' => $duration_ms,
+                'provider_id_suffix' => !empty($decoded['id'])
+                    ? substr((string)$decoded['id'], -8)
+                    : '',
+                'response_preview' => substr((string)$response, 0, 500)
+            ))
+        );
+        if ($accepted) {
+            return array(
+                'accepted' => true,
+                'terminal' => false,
+                'provider_id' => (string)$decoded['id'],
+                'http_status' => (int)$http_status,
+                'duration_ms' => $duration_ms
+            );
+        }
+        $no_valid_subscriptions =
+            $http_status >= 200 && $http_status < 300 &&
+            (empty($decoded['id']) || ($recipient_count !== null && $recipient_count < 1));
+        $error_text = trim((string)$curl_error . ' ' . (is_string($response) ? $response : ''));
+        $invalid_token = in_array((int)$http_status, array(400, 404, 410), true) &&
+            preg_match('/subscription|player|token|not a valid/i', $error_text);
+        $transient = $curl_error !== '' || $http_status === 429 || $http_status >= 500 || $http_status === 0;
+        return array(
+            'accepted' => false,
+            'terminal' => $no_valid_subscriptions || $invalid_token || !$transient,
+            'invalid_token' => (bool)($invalid_token || $no_valid_subscriptions),
+            'error' => $no_valid_subscriptions
+                ? 'onesignal_no_valid_subscriptions'
+                : ($error_text !== '' ? substr($error_text, 0, 255) : 'onesignal_rejected'),
+            'http_status' => (int)$http_status,
+            'duration_ms' => $duration_ms
+        );
+    }
+}
+
+if (!function_exists('VNSEEA_CompleteApnsVoipCallRequest')) {
+    function VNSEEA_CompleteApnsVoipCallRequest($request, $response, $curl_error, $http_status, $header_size)
+    {
+        $headers = substr((string)$response, 0, (int)$header_size);
+        $body = substr((string)$response, (int)$header_size);
+        $decoded = $body !== '' ? json_decode($body, true) : array();
+        $reason = !empty($decoded['reason']) ? (string)$decoded['reason'] : (string)$curl_error;
+        $provider_id = '';
+        if (preg_match('/^apns-id:\s*(.+)$/mi', $headers, $matches)) {
+            $provider_id = trim($matches[1]);
+        }
+        $accepted = $http_status >= 200 && $http_status < 300;
+        $duration_ms = (int)round((microtime(true) - $request['started_at']) * 1000);
+        VNSEEA_PushDeliveryDebugLog(
+            'apns_voip_delivery_response',
+            array_merge($request['debug_context'], array(
+                'accepted' => $accepted ? 1 : 0,
+                'http_status' => (int)$http_status,
+                'reason' => $reason !== '' ? $reason : '-',
+                'curl_error' => (string)$curl_error,
+                'duration_ms' => $duration_ms,
+                'provider_id_suffix' => $provider_id !== '' ? substr($provider_id, -8) : ''
+            ))
+        );
+        if ($accepted) {
+            return array(
+                'accepted' => true,
+                'terminal' => false,
+                'provider_id' => $provider_id,
+                'http_status' => (int)$http_status,
+                'duration_ms' => $duration_ms
+            );
+        }
+        $invalid = ($http_status === 410 && in_array($reason, array('Unregistered', 'ExpiredToken'), true)) ||
+            ($http_status === 400 && in_array($reason, array('BadDeviceToken', 'DeviceTokenNotForTopic'), true));
+        return array(
+            'accepted' => false,
+            'terminal' => $invalid || ($http_status >= 400 && $http_status < 500 && $http_status !== 429),
+            'invalid_token' => $invalid,
+            'error' => $reason !== '' ? $reason : 'apns_rejected',
+            'http_status' => (int)$http_status,
+            'duration_ms' => $duration_ms
+        );
+    }
+}
+
+if (!function_exists('VNSEEA_ExecuteConcurrentCallPushRequests')) {
+    function VNSEEA_ExecuteConcurrentCallPushRequests($requests)
+    {
+        $completed = array();
+        $active_requests = array();
+        foreach ((array)$requests as $request) {
+            if (!empty($request['handle'])) {
+                $active_requests[] = $request;
+            } elseif (isset($request['result'])) {
+                $completed[] = array_merge($request, array('result' => $request['result']));
+            }
+        }
+        if (empty($active_requests)) {
+            return $completed;
+        }
+
+        if (!function_exists('curl_multi_init')) {
+            foreach ($active_requests as $request) {
+                $handle = $request['handle'];
+                $response = curl_exec($handle);
+                $curl_error = curl_error($handle);
+                $http_status = (int)curl_getinfo($handle, CURLINFO_HTTP_CODE);
+                $header_size = (int)curl_getinfo($handle, CURLINFO_HEADER_SIZE);
+                $result = $request['channel'] === 'voip'
+                    ? VNSEEA_CompleteApnsVoipCallRequest($request, $response, $curl_error, $http_status, $header_size)
+                    : VNSEEA_CompleteOneSignalCallRequest($request, $response, $curl_error, $http_status);
+                curl_close($handle);
+                $completed[] = array_merge($request, array('handle' => null, 'result' => $result));
+            }
+            return $completed;
+        }
+
+        $multi = curl_multi_init();
+        foreach ($active_requests as $request) {
+            curl_multi_add_handle($multi, $request['handle']);
+        }
+        $running = null;
+        do {
+            do {
+                $status = curl_multi_exec($multi, $running);
+            } while ($status === CURLM_CALL_MULTI_PERFORM);
+            if ($running > 0) {
+                $selected = curl_multi_select($multi, 1.0);
+                if ($selected === -1) {
+                    usleep(1000);
+                }
+            }
+        } while ($running > 0 && $status === CURLM_OK);
+
+        foreach ($active_requests as $request) {
+            $handle = $request['handle'];
+            $response = curl_multi_getcontent($handle);
+            $curl_error = curl_error($handle);
+            $http_status = (int)curl_getinfo($handle, CURLINFO_HTTP_CODE);
+            $header_size = (int)curl_getinfo($handle, CURLINFO_HEADER_SIZE);
+            $result = $request['channel'] === 'voip'
+                ? VNSEEA_CompleteApnsVoipCallRequest($request, $response, $curl_error, $http_status, $header_size)
+                : VNSEEA_CompleteOneSignalCallRequest($request, $response, $curl_error, $http_status);
+            curl_multi_remove_handle($multi, $handle);
+            curl_close($handle);
+            $completed[] = array_merge($request, array('handle' => null, 'result' => $result));
+        }
+        curl_multi_close($multi);
+        return $completed;
+    }
+}
+
 if (!function_exists('VNSEEA_SendImmediateCallPush')) {
     function VNSEEA_SendImmediateCallPush($recipient_id, $notification_data, $display_name, $call_type, $context = 'direct', $allow_voip = true, $request_data = array(), $excluded_endpoint_id = '', $is_control = false)
     {
@@ -1895,8 +2321,11 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
         if ($expires_at > 0) {
             $request_data['ttl'] = max(1, min((int)$request_data['ttl'], $expires_at - time()));
         }
-        $onesignal_targets = VNSEEA_GetUserPushTargets($recipient_id, 'onesignal');
+        $onesignal_targets = VNSEEA_DeduplicateCallPushTargets(
+            VNSEEA_GetUserPushTargets($recipient_id, 'onesignal')
+        );
         $onesignal_state = empty($onesignal_targets) ? 'unavailable' : 'failed';
+        $requests = array();
         foreach ($onesignal_targets as $target) {
             $target_endpoint_id = !empty($target['client_endpoint_id']) ? (string)$target['client_endpoint_id'] : '';
             if ($is_control && $target_endpoint_id === '') {
@@ -1907,6 +2336,7 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
             }
             $delivery = array_merge($target, array(
                 'batch_uuid' => VNSEEA_PushUuidV4(),
+                'recipient_user_id' => $recipient_id,
                 'request_data' => $request_data
             ));
             $payload = array_merge($notification_data, array(
@@ -1918,17 +2348,13 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
                     ? ($call_type === 'video' ? 'Cuộc gọi nhóm video đến' : 'Cuộc gọi nhóm thoại đến')
                     : ($call_type === 'video' ? 'Cuộc gọi video đến' : 'Cuộc gọi thoại đến'))
             ));
-            $result = VNSEEA_SendOneSignalDelivery($delivery, $payload);
-            if (!empty($result['accepted'])) {
-                $onesignal_state = 'accepted';
-            }
-            if (!empty($result['invalid_token'])) {
-                VNSEEA_DeactivateRejectedPushToken($target);
-            }
+            $requests[] = VNSEEA_PrepareOneSignalCallRequest($delivery, $payload);
         }
 
         $voip_targets = $allow_voip
-            ? VNSEEA_GetUserPushTargets($recipient_id, 'apns_voip')
+            ? VNSEEA_DeduplicateCallPushTargets(
+                VNSEEA_GetUserPushTargets($recipient_id, 'apns_voip')
+            )
             : array();
         $voip_state = empty($voip_targets) ? 'unavailable' : 'failed';
         foreach ($voip_targets as $target) {
@@ -1942,17 +2368,48 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
             $target_notification_data = array_merge($notification_data, array(
                 'client_endpoint_id' => $target_endpoint_id
             ));
-            $result = VNSEEA_SendApnsVoipTarget(
+            $target['recipient_user_id'] = $recipient_id;
+            $requests[] = VNSEEA_PrepareApnsVoipCallRequest(
                 $target,
                 $target_notification_data,
                 $display_name,
                 $call_type,
                 $context
             );
-            if (!empty($result['accepted'])) {
+        }
+
+        $dispatch_started_at = microtime(true);
+        $completed = VNSEEA_ExecuteConcurrentCallPushRequests($requests);
+        foreach ($completed as $request) {
+            $result = !empty($request['result']) && is_array($request['result'])
+                ? $request['result']
+                : array();
+            $target = !empty($request['target']) && is_array($request['target'])
+                ? $request['target']
+                : array();
+            if (!empty($result['invalid_token'])) {
+                VNSEEA_DeactivateRejectedPushToken($target);
+            }
+            if (empty($result['accepted'])) {
+                continue;
+            }
+            if ($request['channel'] === 'onesignal') {
+                $onesignal_state = 'accepted';
+            } elseif ($request['channel'] === 'voip') {
                 $voip_state = 'accepted';
             }
         }
+        VNSEEA_PushDeliveryDebugLog('call_push_dispatch_timing', array(
+            'recipient_user_id' => $recipient_id,
+            'context' => $context,
+            'call_type' => $call_type,
+            'target_count' => count($requests),
+            'onesignal_target_count' => count($onesignal_targets),
+            'voip_target_count' => count($voip_targets),
+            'duration_ms' => (int)round((microtime(true) - $dispatch_started_at) * 1000),
+            'onesignal' => $onesignal_state,
+            'voip' => $voip_state
+        ));
 
         return array(
             'onesignal' => $onesignal_state,

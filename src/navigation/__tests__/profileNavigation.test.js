@@ -22,6 +22,15 @@ describe('profile navigation route separation', () => {
 
     expect(routesSource).toContain("USER_PROFILE: 'UserProfile'");
     expect(registrySource).toContain('{ name: ROUTES.USER_PROFILE, component: ProfileScreen }');
+    const stackRoutesSource = registrySource.slice(
+      registrySource.indexOf('export function createStackRoutes'),
+    );
+    expect(stackRoutesSource).toContain(
+      "...(Platform.OS === 'android'",
+    );
+    expect(stackRoutesSource).toContain(
+      '{ name: ROUTES.PROFILE, component: ProfileScreen }',
+    );
     expect(typesSource).toContain('[ROUTES.PROFILE]: undefined');
     expect(typesSource).toContain('[ROUTES.USER_PROFILE]: { userId: string }');
   });
@@ -92,33 +101,37 @@ describe('profile navigation route separation', () => {
     mockNavigationRef.isReady.mockReset();
   });
 
-  it('opens own profile inside the iOS tab shell while preserving Android routing', () => {
+  it('uses the iOS profile tab and the Android full-page profile route', () => {
     const helperSource = read('src/navigation/profileNavigation.ts');
 
-    expect(helperSource).toContain("import { Platform } from 'react-native'");
     expect(helperSource).toContain("import { navigationRef } from './navigationRef'");
     expect(helperSource).toContain('navigationRef.isReady()');
     expect(helperSource).toContain('navigationRef as unknown as NavigateLike');
-    expect(helperSource).toContain("if (Platform.OS !== 'ios')");
-    expect(helperSource).toContain('rootNavigator.navigate(ROUTES.PROFILE)');
     expect(helperSource).toContain('rootNavigator.navigate(ROUTES.MAIN_TABS, {');
     expect(helperSource).toContain('screen: ROUTES.PROFILE');
+    expect(helperSource).toContain("import { Platform } from 'react-native'");
+    expect(helperSource).toContain("if (Platform.OS !== 'ios')");
+    expect(helperSource).toContain('rootNavigator.navigate(ROUTES.PROFILE)');
     expect(helperSource).not.toContain(
       'pushProfileRoute(rootNavigator, ROUTES.PROFILE)',
     );
   });
 
-  it('keeps root profile routes transparent with swipe-back disabled', () => {
+  it('opens other-user profiles as opaque native-stack cards', () => {
     const appNavigatorSource = read('src/navigation/AppNavigator.tsx');
     const profileSource = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
-    expect(appNavigatorSource).toContain('PROFILE_PUSH_ROUTES');
-    expect(appNavigatorSource).toContain('ROUTES.PROFILE');
-    expect(appNavigatorSource).toContain('ROUTES.USER_PROFILE');
-    expect(appNavigatorSource).toContain("presentation: 'transparentModal'");
-    expect(appNavigatorSource).toContain("animation: 'none'");
-    expect(appNavigatorSource).toContain("contentStyle: { backgroundColor: 'transparent' }");
-    expect(appNavigatorSource).toContain('gestureEnabled: false');
+    expect(appNavigatorSource).toContain(
+      'const PROFILE_STACK_OPTIONS: NativeStackNavigationOptions = {',
+    );
+    expect(appNavigatorSource).toContain("presentation: 'card'");
+    expect(appNavigatorSource).toContain("animation: 'default'");
+    expect(appNavigatorSource).toContain("contentStyle: { backgroundColor: '#FFFFFF' }");
+    expect(appNavigatorSource).toContain('gestureEnabled: true');
+    expect(appNavigatorSource).toContain('name === ROUTES.PROFILE');
+    expect(appNavigatorSource).toContain('name === ROUTES.USER_PROFILE');
+    expect(appNavigatorSource).not.toContain('PROFILE_PUSH_ROUTES');
+    expect(appNavigatorSource).not.toContain('PROFILE_PUSH_OPTIONS');
     expect(profileSource).toContain('onPress={handleProfileBack}');
     expect(profileSource).not.toContain('profileSwipeBackGesture');
     expect(profileSource).not.toContain(
@@ -127,6 +140,17 @@ describe('profile navigation route separation', () => {
     expect(profileSource).not.toContain('profileSwipeBackScreenStyle');
     expect(profileSource).not.toContain('profileSwipeBackCue');
     expect(profileSource).not.toContain('Swipe to go back');
+  });
+
+  it('routes Settings fallbacks to the own-profile tab instead of a root profile screen', () => {
+    const settingsSource = read(
+      'src/settings/presentation/screens/SettingsScreen.tsx',
+    );
+
+    expect(settingsSource).toContain('navigateToOwnProfile(rootNavigation)');
+    expect(settingsSource).not.toContain(
+      'rootNavigation.dispatch(CommonActions.navigate(ROUTES.PROFILE))',
+    );
   });
 
   it('opens profile connections with a short dedicated transition', () => {

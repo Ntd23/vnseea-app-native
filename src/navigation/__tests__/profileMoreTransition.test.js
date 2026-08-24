@@ -8,24 +8,32 @@ function read(relativePath) {
 }
 
 describe('ProfileMore transition responsiveness', () => {
-  it('releases the underlying profile as soon as the custom close starts', () => {
+  it('uses native-stack navigation instead of a custom overlay transition', () => {
     const source = read('src/profile/presentation/screens/ProfileMoreScreen.tsx');
 
-    expect(source).toContain('const SCREEN_CLOSE_DURATION_MS = 180;');
-    expect(source).toContain('const swipeBackCueStyle = useAnimatedStyle(() => ({');
-    expect(source).toContain('styles.swipeBackCue');
-    expect(source).toContain('Vuốt đúng rồi');
+    expect(source).toContain('onPress={() => navigation.goBack()}');
+    expect(source).toContain("backgroundColor: '#FFFFFF'");
+    expect(source).not.toContain('GestureDetector');
+    expect(source).not.toContain('previousScreenDim');
+    expect(source).not.toContain('screenTranslateX');
+    expect(source).not.toContain('Vuốt đúng rồi');
   });
 
-  it('keeps profile routes warm while ProfileMore is displayed as a transparent modal', () => {
+  it('presents ProfileMore and PostDetail as opaque full-page cards', () => {
     const source = read('src/navigation/AppNavigator.tsx');
 
-    expect(source).toContain('const PROFILE_PUSH_OPTIONS: NativeStackNavigationOptions = {');
-    expect(source).toContain('const PROFILE_MORE_OPTIONS: NativeStackNavigationOptions = {');
-    expect(source).toContain("presentation: 'transparentModal'");
-    expect(source).toContain("animation: 'none'");
-    expect(source).toContain("contentStyle: { backgroundColor: 'transparent' }");
-    expect(source).toContain('gestureEnabled: false');
+    expect(source).toContain('options={PROFILE_STACK_OPTIONS}');
+    expect(source).toContain("presentation: 'card'");
+    expect(source).toContain("contentStyle: { backgroundColor: '#FFFFFF' }");
+    expect(source).not.toContain('PROFILE_MORE_OPTIONS');
+    const postDetailOptions = source.slice(
+      source.indexOf('const POST_DETAIL_OPTIONS'),
+      source.indexOf('const NOTIFICATIONS_OPTIONS'),
+    );
+    expect(postDetailOptions).toContain("presentation: 'card'");
+    expect(postDetailOptions).toContain(
+      "contentStyle: { backgroundColor: '#FFFFFF' }",
+    );
   });
 
   it('keeps ProfileScreen navigation on its explicit back control', () => {

@@ -227,7 +227,9 @@ export function createStackRoutes(
         ]
       : []),
     { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
-    { name: ROUTES.PROFILE, component: ProfileScreen },
+    ...(Platform.OS === 'android'
+      ? [{ name: ROUTES.PROFILE, component: ProfileScreen }]
+      : []),
     { name: ROUTES.USER_PROFILE, component: ProfileScreen },
     { name: ROUTES.PROFILE_MORE, component: ProfileMoreScreen },
     { name: ROUTES.PROFILE_FRIENDS, component: ProfileFriendsScreen },
