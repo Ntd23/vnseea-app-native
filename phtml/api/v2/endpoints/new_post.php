@@ -131,6 +131,10 @@ if (!empty($_POST['postText'])) {
 
 
 $video_thumb   = '';
+$video_thumbnail_contract = isset($_POST['video_thumbnail_contract'])
+    ? trim((string) $_POST['video_thumbnail_contract'])
+    : '';
+$preserve_video_thumbnail_aspect = $video_thumbnail_contract === 'preserve_aspect_v1';
 $media         = '';
 $mediaFilename = '';
 $mediaName     = '';
@@ -381,12 +385,14 @@ if (isset($_FILES['postVideo']['name']) && empty($mediaFilename)) {
                 'name' => $_FILES['video_thumb']['name'],
                 'size' => $_FILES["video_thumb"]["size"],
                 'type' => $_FILES["video_thumb"]["type"],
-                'types' => 'jpeg,png,jpg,gif',
-                'crop' => array(
+                'types' => 'jpeg,png,jpg,gif'
+            );
+            if (!$preserve_video_thumbnail_aspect) {
+                $fileInfo['crop'] = array(
                     'width' => 525,
                     'height' => 295
-                )
-            );
+                );
+            }
             $media    = Wo_ShareFile($fileInfo);
             if (!empty($media)) {
                 $video_thumb = $media['filename'];

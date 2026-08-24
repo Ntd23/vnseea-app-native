@@ -292,6 +292,9 @@ const styles = StyleSheet.create({
     left: 0,
     backgroundColor: 'rgba(0,0,0,0.36)',
   },
+  feedVideoPosterImage: {
+    backgroundColor: 'transparent',
+  },
   videoPosterSkeleton: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1267,6 +1270,34 @@ const FeedVideoBackdrop = React.memo(function FeedVideoBackdrop({
         enabled={enabled}
       />
       {blurred ? <View style={styles.feedVideoBlurredBackdropScrim} /> : null}
+    </View>
+  );
+});
+
+const FeedVideoPoster = React.memo(function FeedVideoPoster({
+  uri,
+  enabled,
+  blurredBackdrop = false,
+}: {
+  uri: string;
+  enabled: boolean;
+  blurredBackdrop?: boolean;
+}) {
+  return (
+    <View pointerEvents="none" style={styles.feedVideoBackdrop}>
+      {blurredBackdrop ? (
+        <FeedVideoBackdrop
+          uri={uri}
+          enabled={enabled}
+          blurred
+        />
+      ) : null}
+      <FeedMediaImage
+        uri={uri}
+        style={[StyleSheet.absoluteFill, styles.feedVideoPosterImage]}
+        resizeMode="contain"
+        enabled={enabled}
+      />
     </View>
   );
 });
@@ -2734,10 +2765,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             pointerEvents="none"
             style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
           >
-            <FeedVideoBackdrop
+            <FeedVideoPoster
               uri={resolvedThumbnailUrl}
               enabled={mediaLoadEnabled}
-              blurred={shouldBlurVideoBackdrop}
+              blurredBackdrop={shouldBlurVideoBackdrop}
             />
           </Animated.View>
         ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
@@ -2876,10 +2907,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 <VideoPosterSkeleton />
                 {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
                 {resolvedThumbnailUrl ? (
-                  <FeedVideoBackdrop
+                  <FeedVideoPoster
                     uri={resolvedThumbnailUrl}
                     enabled={mediaLoadEnabled}
-                    blurred={shouldBlurVideoBackdrop && !isFrameCoverVisible}
+                    blurredBackdrop={
+                      shouldBlurVideoBackdrop && !isFrameCoverVisible
+                    }
                   />
                 ) : null}
                 {stableVideoSurface}

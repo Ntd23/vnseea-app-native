@@ -307,6 +307,60 @@ describe('Home feed video autoplay safety', () => {
     expect(stableVideoSurfaceSource).not.toContain('posterResizeMode=');
   });
 
+  it('keeps the clear poster contained over an independently cropped backdrop', () => {
+    const postCardsSource = read(
+      'src/feed/presentation/components/PostCards.tsx',
+    );
+    const posterSource = postCardsSource.slice(
+      postCardsSource.indexOf('const FeedVideoPoster = React.memo'),
+      postCardsSource.indexOf('const VideoFallbackPoster = React.memo'),
+    );
+
+    expect(posterSource).toContain('<FeedVideoBackdrop');
+    expect(posterSource).toContain('resizeMode="contain"');
+    expect(posterSource.indexOf('<FeedVideoBackdrop')).toBeLessThan(
+      posterSource.indexOf('resizeMode="contain"'),
+    );
+    expect(posterSource).toContain('styles.feedVideoPosterImage');
+  });
+
+  it('activates the settled video without a second dwell delay', () => {
+    const feedScreenSource = read(
+      'src/feed/presentation/screens/FeedScreen.tsx',
+    );
+    const endScrollSource = feedScreenSource.slice(
+      feedScreenSource.indexOf('const endScrollPause = useCallback'),
+      feedScreenSource.indexOf(
+        'const rememberFeedScrollOffset = useCallback',
+      ),
+    );
+
+    expect(endScrollSource).toContain('measureActiveFeedVideoOnScreen(true);');
+    expect(endScrollSource).not.toContain(
+      'measureActiveFeedVideoOnScreen(false);',
+    );
+  });
+
+  it('does not wait for a platform-specific timeout after scrolling ends', () => {
+    const feedScreenSource = read(
+      'src/feed/presentation/screens/FeedScreen.tsx',
+    );
+    const dragEndSource = feedScreenSource.slice(
+      feedScreenSource.indexOf('const handleScrollEndDrag = useCallback'),
+      feedScreenSource.indexOf('const handleMomentumScrollEnd = useCallback'),
+    );
+    const momentumEndSource = feedScreenSource.slice(
+      feedScreenSource.indexOf('const handleMomentumScrollEnd = useCallback'),
+      feedScreenSource.indexOf('useEffect(() => {', feedScreenSource.indexOf('const handleMomentumScrollEnd = useCallback')),
+    );
+
+    expect(feedScreenSource).not.toContain('FEED_SCROLL_SETTLE_DELAY_MS');
+    expect(dragEndSource).toContain('}, 0);');
+    expect(momentumEndSource).not.toContain('setTimeout(');
+    expect(momentumEndSource).toContain('endScrollPause();');
+    expect(momentumEndSource).toContain('flushPendingLoadMoreRef.current();');
+  });
+
   it('limits poster blur to the active idle surface and keeps an Android frame cover', () => {
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',
@@ -327,12 +381,14 @@ describe('Home feed video autoplay safety', () => {
       "Platform.OS !== 'android' || performanceSurface === 'profile'",
     );
     expect(postCardsSource).toContain(
-      'blurred={shouldBlurVideoBackdrop && !isFrameCoverVisible}',
+      'shouldBlurVideoBackdrop && !isFrameCoverVisible',
     );
     expect(postCardsSource).toContain(
       'const shouldRenderVideoFrameCover =\n    Boolean(resolvedThumbnailUrl) && isFrameCoverVisible;',
     );
-    expect(postCardsSource).toContain('blurred={shouldBlurVideoBackdrop}');
+    expect(postCardsSource).toContain(
+      'blurredBackdrop={shouldBlurVideoBackdrop}',
+    );
     expect(postCardsSource).toContain('resizeMode="contain"');
     expect(feedMediaImageSource).toContain(
       "blurRadius?: ImageProps['blurRadius'];",

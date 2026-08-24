@@ -278,7 +278,6 @@ const FEED_VIDEO_MEDIA_MOUNT_AHEAD_ITEMS = 1;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 const FEED_SCROLL_EVENT_THROTTLE_MS = FEED_IS_ANDROID ? 32 : 16;
-const FEED_SCROLL_SETTLE_DELAY_MS = FEED_IS_ANDROID ? 180 : 80;
 const FEED_REELS_PRELOAD_DELAY_MS = 8000;
 const FEED_REELS_PRELOAD_RETRY_MS = 500;
 const FEED_PRODUCTS_LOAD_DELAY_MS = 6000;
@@ -2245,7 +2244,7 @@ function FeedScreen() {
     }
     scheduleActiveFeedInlineLivePostId(null, true);
     pendingActiveVideoIdRef.current = null;
-    measureActiveFeedVideoOnScreen(false);
+    measureActiveFeedVideoOnScreen(true);
   }, [
     measureActiveFeedVideoOnScreen,
     publishStableFeedVisibleMediaPostIds,
@@ -2394,7 +2393,7 @@ function FeedScreen() {
         if (isMomentumScrollingRef.current) return;
         endScrollPause();
         flushPendingLoadMoreRef.current();
-      }, FEED_SCROLL_SETTLE_DELAY_MS);
+      }, 0);
     },
     [endScrollPause, rememberFeedScrollOffset],
   );
@@ -2406,14 +2405,11 @@ function FeedScreen() {
       feedViewportHeightRef.current = layoutMeasurement.height;
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
+        scrollEndTimeoutRef.current = null;
       }
       isMomentumScrollingRef.current = false;
-      scrollEndTimeoutRef.current = setTimeout(() => {
-        scrollEndTimeoutRef.current = null;
-        if (isMomentumScrollingRef.current) return;
-        endScrollPause();
-        flushPendingLoadMoreRef.current();
-      }, FEED_SCROLL_SETTLE_DELAY_MS);
+      endScrollPause();
+      flushPendingLoadMoreRef.current();
     },
     [endScrollPause, rememberFeedScrollOffset],
   );
