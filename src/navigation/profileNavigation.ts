@@ -28,7 +28,7 @@ function getRootNavigator(navigation: NavigateLike): NavigateLike {
 
 function pushProfileRoute(
   navigation: NavigateLike,
-  routeName: typeof ROUTES.PROFILE | typeof ROUTES.USER_PROFILE,
+  routeName: typeof ROUTES.USER_PROFILE,
   params?: { userId: string },
 ) {
   if (typeof navigation.push === 'function') {

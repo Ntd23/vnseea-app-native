@@ -19,7 +19,6 @@ import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -42,7 +41,6 @@ import java.util.Calendar
 
 class IncomingCallActivity : Activity() {
   private companion object {
-    const val INCOMING_CALL_RINGTONE_RES_NAME = "incoming_call_ringtone"
     const val DEFAULT_INCOMING_CALL_EXPIRY_DELAY_MS = 50_000L
     const val MAX_INCOMING_CALL_EXPIRY_DELAY_MS = 60_000L
   }
@@ -583,17 +581,8 @@ class IncomingCallActivity : Activity() {
     ringtone = null
   }
 
-  private fun incomingRingtoneUri(): Uri {
-    val customRingtoneId = resources.getIdentifier(
-      INCOMING_CALL_RINGTONE_RES_NAME,
-      "raw",
-      packageName,
-    )
-    if (customRingtoneId != 0) {
-      return Uri.parse("android.resource://$packageName/$customRingtoneId")
-    }
-    return RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-  }
+  private fun incomingRingtoneUri() =
+    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
 
   private fun statusPill(): LinearLayout {
     return LinearLayout(this).apply {

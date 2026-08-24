@@ -5016,13 +5016,23 @@ function VNSEEA_AttachMessageStoryContext($message)
 
 function VNSEEA_AttachCanonicalMessageContext($message)
 {
-    return VNSEEA_AttachMessageMentions(
+    $message = VNSEEA_AttachMessageMentions(
         VNSEEA_AttachMessageStoryContext(
             VNSEEA_AttachMarketplaceMessageContext(
                 VNSEEA_AttachMessageSystemEvent($message)
             )
         )
     );
+    if (!is_array($message)) {
+        return $message;
+    }
+    if (!empty($message['media_thumb'])) {
+        $message['media_thumb'] = Wo_GetMedia($message['media_thumb']);
+    }
+    if (!empty($message['reply']) && is_array($message['reply']) && !empty($message['reply']['media_thumb'])) {
+        $message['reply']['media_thumb'] = Wo_GetMedia($message['reply']['media_thumb']);
+    }
+    return $message;
 }
 
 function Wo_GetMessages($data = array(), $limit = 50)
@@ -6325,6 +6335,10 @@ function Wo_DeleteMessage($message_id, $media = '', $deleter_id = 0)
                     if (isset($sql_fetch_one['media']) and !empty($sql_fetch_one['media'])) {
                         @unlink($sql_fetch_one['media']);
                         $delete_from_s3 = Wo_DeleteFromToS3($sql_fetch_one['media']);
+                    }
+                    if (isset($sql_fetch_one['media_thumb']) && !empty($sql_fetch_one['media_thumb'])) {
+                        @unlink($sql_fetch_one['media_thumb']);
+                        Wo_DeleteFromToS3($sql_fetch_one['media_thumb']);
                     }
                     return true;
                 } else {

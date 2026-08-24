@@ -40,6 +40,7 @@ import {
   CHAT_FALLBACK_POLL_DELAYS_MS,
   getBoundedFallbackPollDelay,
 } from '../polling/messageFallbackPolling';
+import { preserveOptimisticVideoThumbnail } from '../media/messageVideoMedia';
 
 const PAGE_SIZE = 30;
 const TYPING_EMIT_THROTTLE_MS = 1200;
@@ -599,6 +600,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         message,
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
+        thumbnail: attachment?.thumbnailUri,
         mediaGroupId: options?.mediaGroupId,
         sharedPost: textDescriptor.sharedPost,
         storyReply: options?.storyReply,
@@ -645,6 +647,11 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
             mediaGroupId: options.mediaGroupId,
           }));
         }
+
+        sentMessages = preserveOptimisticVideoThumbnail(
+          sentMessages,
+          optimisticMessage,
+        );
 
         setMessages(current =>
           mergeMessages(

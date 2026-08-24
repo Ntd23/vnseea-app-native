@@ -31,23 +31,11 @@ const TRANSPARENT_MODAL_ROUTES: ReadonlySet<string> = new Set([
   ROUTES.STORY_VIEWER,
 ]);
 
-const PROFILE_PUSH_ROUTES: ReadonlySet<string> = new Set([
-  ROUTES.PROFILE,
-  ROUTES.USER_PROFILE,
-]);
-
-const PROFILE_PUSH_OPTIONS: NativeStackNavigationOptions = {
-  presentation: 'transparentModal',
-  animation: 'none',
-  contentStyle: { backgroundColor: 'transparent' },
-  gestureEnabled: false,
-};
-
-const PROFILE_MORE_OPTIONS: NativeStackNavigationOptions = {
-  presentation: 'transparentModal',
-  animation: 'none',
-  contentStyle: { backgroundColor: 'transparent' },
-  gestureEnabled: false,
+const PROFILE_STACK_OPTIONS: NativeStackNavigationOptions = {
+  presentation: 'card',
+  animation: 'default',
+  contentStyle: { backgroundColor: '#FFFFFF' },
+  gestureEnabled: true,
 };
 
 const PROFILE_CONNECTIONS_OPTIONS: NativeStackNavigationOptions = {
@@ -57,12 +45,12 @@ const PROFILE_CONNECTIONS_OPTIONS: NativeStackNavigationOptions = {
 };
 
 const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {
-  presentation: 'transparentModal',
+  presentation: 'card',
   // PostDetail drives its own interactive horizontal transition. Running a
   // native-stack pop after that transition finishes makes swipe-back look as
   // if it pauses and then exits a second time.
   animation: 'none',
-  contentStyle: { backgroundColor: 'transparent' },
+  contentStyle: { backgroundColor: '#FFFFFF' },
   gestureEnabled: false,
 };
 
@@ -140,23 +128,17 @@ function AppNavigator() {
               />
             );
           }
-          if (PROFILE_PUSH_ROUTES.has(name)) {
+          if (
+            name === ROUTES.PROFILE ||
+            name === ROUTES.USER_PROFILE ||
+            name === ROUTES.PROFILE_MORE
+          ) {
             return (
               <Stack.Screen
                 key={name}
                 name={name}
                 component={component}
-                options={PROFILE_PUSH_OPTIONS}
-              />
-            );
-          }
-          if (name === ROUTES.PROFILE_MORE) {
-            return (
-              <Stack.Screen
-                key={name}
-                name={name}
-                component={component}
-                options={PROFILE_MORE_OPTIONS}
+                options={PROFILE_STACK_OPTIONS}
               />
             );
           }

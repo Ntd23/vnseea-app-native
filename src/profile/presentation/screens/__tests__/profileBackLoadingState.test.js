@@ -12,7 +12,7 @@ describe('Profile back behavior while loading', () => {
     const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
     expect(source).toContain('function FullProfileSkeleton({');
-    expect(source).toContain('onBack: () => void;');
+    expect(source).toContain('{ onBack }: { onBack: () => void }');
     expect(source).toContain('onPress={onBack}');
     expect(source).toContain(
       '<FullProfileSkeleton onBack={handleProfileBack}',

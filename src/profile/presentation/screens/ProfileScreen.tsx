@@ -4473,11 +4473,6 @@ function ProfileScreen() {
       isVerified: Boolean(profile?.verified),
     };
 
-    if (Platform.OS === 'ios') {
-      navigation.replace(ROUTES.CHAT, { chat });
-      return;
-    }
-
     navigation.navigate(ROUTES.CHAT, { chat });
   };
 

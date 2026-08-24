@@ -65,7 +65,6 @@ import {
   launchImageLibrary,
   type MediaType,
 } from 'react-native-image-picker';
-import VideoPlayer from 'react-native-video';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -113,8 +112,17 @@ import { KeyboardSafeView } from '../../../shared-kernel/presentation/components
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   createCachedVideoPosterThumbnail,
+  createVideoUploadThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
+import {
+  applyComposerVideoThumbnail,
+  createComposerMediaDrafts,
+  isComposerMediaAttachment,
+  markComposerMediaPreparationFailed,
+  type ChatComposerAttachment,
+  type ComposerMediaAttachment,
+} from '../../application/media/messageComposerMediaDraft';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
 import {
   buildMapShareUrl,
@@ -2266,11 +2274,13 @@ function ChatVideoPreview({
   thumbnail,
   cacheKey,
   compact = false,
+  isSending = false,
 }: {
   uri: string;
   thumbnail?: string;
   cacheKey?: string;
   compact?: boolean;
+  isSending?: boolean;
 }) {
   const { width: viewportWidth, height: viewportHeight } =
     useWindowDimensions();
@@ -2416,6 +2426,11 @@ function ChatVideoPreview({
             style={{ marginLeft: 3 }}
           />
         </View>
+        {isSending ? (
+          <View style={styles.videoSendingOverlay}>
+            <ActivityIndicator size={compact ? 'small' : 'large'} color="#fff" />
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -2489,7 +2504,11 @@ function MessageMedia({
         activeOpacity={0.9}
         delayLongPress={320}
         onSingleTap={() =>
-          onOpenMedia({ uri: message.media!, type: 'video' })
+          onOpenMedia({
+            uri: message.media!,
+            type: 'video',
+            thumbnail: message.thumbnail,
+          })
         }
         onLongPress={onLongPress}
         onDoubleTap={onDoubleTap}
@@ -2498,6 +2517,7 @@ function MessageMedia({
           uri={message.media}
           thumbnail={message.thumbnail}
           cacheKey={message.id}
+          isSending={message.deliveryState === 'sending'}
         />
       </DoubleTapTouchable>
     );
@@ -2538,6 +2558,7 @@ function MediaMessageGroup({
     uri: message.media!,
     type:
       message.mediaType === 'video' ? ('video' as const) : ('image' as const),
+    thumbnail: message.thumbnail,
   }));
   const captions = orderedMessages
     .map(message => message.message.trim())
@@ -2575,6 +2596,7 @@ function MediaMessageGroup({
                   {
                     uri: message.media!,
                     type: message.mediaType === 'video' ? 'video' : 'image',
+                    thumbnail: message.thumbnail,
                   },
                   viewerItems,
                 );
@@ -2587,6 +2609,7 @@ function MediaMessageGroup({
                   thumbnail={message.thumbnail}
                   cacheKey={message.id}
                   compact
+                  isSending={message.deliveryState === 'sending'}
                 />
               ) : (
                 <Image
@@ -2769,7 +2792,10 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     notifyTyping(initialText);
     navigation.setParams({ initialText: undefined });
   }, [navigation, notifyTyping, route.params?.initialText]);
-  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ChatComposerAttachment[]>([]);
+  const mediaPreparationTasksRef = useRef(
+    new Map<string, Promise<ComposerMediaAttachment>>(),
+  );
   const [viewerMediaItems, setViewerMediaItems] = useState<
     ChatMediaViewerItem[]
   >([]);
@@ -3254,6 +3280,27 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     }, [activeGroupMention, notifyTyping, selectedMentions, text],
   );
 
+  const resolvePreparedAttachments = useCallback(
+    async (pending: ChatComposerAttachment[]): Promise<MessageAttachment[]> =>
+      Promise.all(
+        pending.map(async attachment => {
+          if (!isComposerMediaAttachment(attachment)) return attachment;
+
+          const preparationTask = mediaPreparationTasksRef.current.get(
+            attachment.draftId,
+          );
+          if (!preparationTask) return attachment;
+
+          try {
+            return await preparationTask;
+          } finally {
+            mediaPreparationTasksRef.current.delete(attachment.draftId);
+          }
+        }),
+      ),
+    [],
+  );
+
   const handleSend = useCallback(async () => {
     if (
       sendInFlightRef.current ||
@@ -3268,7 +3315,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       const recordedAudio = recorder.isRecording
         ? await recorder.stopRecording()
         : undefined;
-      const pendingAttachments = recordedAudio
+      const pendingAttachments: ChatComposerAttachment[] = recordedAudio
         ? [{ ...recordedAudio, mediaType: 'audio' as const }]
         : attachments;
 
@@ -3339,7 +3386,9 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       );
       if (replyingMessage) setReplyingMessage(undefined);
 
-      const nextAttachments = pendingAttachments;
+      const nextAttachments = await resolvePreparedAttachments(
+        pendingAttachments,
+      );
       const groupableAttachmentCount = nextAttachments.filter(
         attachment =>
           attachment.mediaType === 'image' || attachment.mediaType === 'video',
@@ -3386,6 +3435,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     attachments,
     isSending,
     recorder,
+    resolvePreparedAttachments,
     sendMessage,
     stopTyping,
     text,
@@ -3507,32 +3557,75 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
 
     if (result.didCancel || result.errorCode) return;
 
-    const selected: MessageAttachment[] = [];
-    for (const asset of result.assets ?? []) {
-      if (!asset.uri) continue;
-      const isVideo =
-        asset.type?.startsWith('video/') ||
-        /\.(mp4|mov|webm|m4v)$/i.test(asset.fileName ?? '');
-      const uri =
-        Platform.OS === 'android' && !/^[a-z][a-z0-9+.-]*:\/\//i.test(asset.uri)
-          ? `file://${asset.uri}`
-          : asset.uri;
-      selected.push({
-        uri,
-        name: asset.fileName ?? `chat-${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
-        type: asset.type ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
-        mediaType: isVideo ? 'video' : 'image',
-      });
-    }
+    const selectionId = `${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const availableSlots = Math.max(
+      0,
+      MAX_MEDIA_ATTACHMENTS - visualAttachments.length,
+    );
+    const validSelected = createComposerMediaDrafts(result.assets ?? [], {
+      platform: Platform.OS === 'android' ? 'android' : 'ios',
+      createDraftId: index => `${selectionId}-${index}`,
+    }).slice(0, availableSlots);
 
-    if (selected.length > 0) {
+    if (validSelected.length > 0) {
       setSharedMapLocation(undefined);
       setAttachments(current => {
         const filtered = current.filter(a => a.mediaType !== 'audio');
-        return [...filtered, ...selected].slice(0, MAX_MEDIA_ATTACHMENTS);
+        return [...filtered, ...validSelected].slice(0, MAX_MEDIA_ATTACHMENTS);
+      });
+
+      validSelected.forEach(draft => {
+        if (draft.mediaType !== 'video') return;
+
+        const markFailed = () => {
+          setAttachments(current =>
+            markComposerMediaPreparationFailed(current, draft.draftId),
+          );
+          return markComposerMediaPreparationFailed(
+            [draft],
+            draft.draftId,
+          )[0] as ComposerMediaAttachment;
+        };
+        const preparationTask = createVideoUploadThumbnail(draft.uri)
+          .then(thumbnail => {
+            if (!thumbnail) return markFailed();
+
+            setAttachments(current =>
+              applyComposerVideoThumbnail(current, draft.draftId, thumbnail),
+            );
+            return applyComposerVideoThumbnail(
+              [draft],
+              draft.draftId,
+              thumbnail,
+            )[0] as ComposerMediaAttachment;
+          })
+          .catch(markFailed);
+        mediaPreparationTasksRef.current.set(
+          draft.draftId,
+          preparationTask,
+        );
       });
     }
-  }, []);
+  }, [visualAttachments.length]);
+
+  const handleRemoveAttachment = useCallback(
+    (attachment: ChatComposerAttachment) => {
+      if (isComposerMediaAttachment(attachment)) {
+        mediaPreparationTasksRef.current.delete(attachment.draftId);
+      }
+      setAttachments(current =>
+        current.filter(item =>
+          isComposerMediaAttachment(attachment) &&
+          isComposerMediaAttachment(item)
+            ? item.draftId !== attachment.draftId
+            : item.uri !== attachment.uri,
+        ),
+      );
+    },
+    [],
+  );
 
   const handleShareCurrentLocation = useCallback(async () => {
     if (isPickingCurrentLocationRef.current) return;
@@ -4093,7 +4186,11 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
             >
               {visualAttachments.map((att, i) => (
                 <View
-                  key={`${att.uri}-${i}`}
+                  key={
+                    isComposerMediaAttachment(att)
+                      ? att.draftId
+                      : `${att.uri}-${i}`
+                  }
                   className="h-20 w-20 overflow-hidden rounded-xl bg-gray-200"
                 >
                   {att.mediaType === 'image' && (
@@ -4105,25 +4202,30 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                   )}
                   {att.mediaType === 'video' && (
                     <>
-                      <VideoPlayer
-                        source={{ uri: att.uri }}
-                        style={{ height: '100%', width: '100%' }}
-                        resizeMode="cover"
-                        paused
-                        muted
-                      />
+                      {att.thumbnailUri ? (
+                        <Image
+                          source={{ uri: att.thumbnailUri }}
+                          className="h-full w-full"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="h-full w-full items-center justify-center bg-gray-900">
+                          <Video size={24} color="rgba(255,255,255,0.5)" />
+                        </View>
+                      )}
                       <View className="absolute inset-0 items-center justify-center bg-black/30">
-                        <Play size={16} color="#fff" fill="#fff" />
+                        {isComposerMediaAttachment(att) &&
+                        att.preparationState === 'preparing' ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Play size={16} color="#fff" fill="#fff" />
+                        )}
                       </View>
                     </>
                   )}
                   <TouchableOpacity
                     className="absolute right-1 top-1 h-6 w-6 items-center justify-center rounded-full bg-black/60"
-                    onPress={() =>
-                      setAttachments(current =>
-                        current.filter(item => item.uri !== att.uri),
-                      )
-                    }
+                    onPress={() => handleRemoveAttachment(att)}
                   >
                     <X size={12} color="#fff" />
                   </TouchableOpacity>
@@ -4144,11 +4246,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               <TouchableOpacity
                 className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-white"
                 activeOpacity={0.8}
-                onPress={() =>
-                  setAttachments(current =>
-                    current.filter(item => item.uri !== audioAttachment.uri),
-                  )
-                }
+                onPress={() => handleRemoveAttachment(audioAttachment)}
               >
                 <X size={18} color="#64748B" />
               </TouchableOpacity>
@@ -4988,6 +5086,13 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.22)',
+  },
+  videoSendingOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.42)',
   },
   videoPreviewFill: {
     height: '100%',

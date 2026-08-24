@@ -106,6 +106,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToNotifications } from '../../../navigation/notificationNavigation';
+import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import type {
   MainTabParamList,
@@ -4597,7 +4598,7 @@ function SettingsScreen() {
       return;
     }
 
-    rootNavigation.dispatch(CommonActions.navigate(ROUTES.PROFILE));
+    navigateToOwnProfile(rootNavigation);
   }, [navigation]);
 
   const resetProfileBackPreview = useCallback(() => {

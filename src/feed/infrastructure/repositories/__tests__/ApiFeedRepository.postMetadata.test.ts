@@ -129,6 +129,7 @@ describe('ApiFeedRepository post metadata', () => {
       is_anonymous: '0',
       media_width: 1920,
       media_height: 1080,
+      video_thumbnail_contract: 'preserve_aspect_v1',
     });
     expect(result.post).toMatchObject({
       kind: 'video',

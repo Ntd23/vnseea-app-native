@@ -8,7 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.media.AudioAttributes
-import android.net.Uri
+import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,8 +17,7 @@ import com.vnseea.android.R
 import org.json.JSONObject
 
 object LiveKitCallNotifier {
-  private const val CHANNEL_ID = "vnseea_calls_fullscreen_v5_app_ringtone"
-  private const val INCOMING_CALL_RINGTONE_RES_NAME = "incoming_call_ringtone"
+  private const val CHANNEL_ID = "vnseea_calls_fullscreen_v6_system_ringtone"
 
   fun show(context: Context, data: JSONObject) {
     val callId = data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)
@@ -29,7 +28,7 @@ object LiveKitCallNotifier {
     }
 
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val ringtoneUri = incomingCallRingtoneUri(context)
+    val ringtoneUri = incomingCallRingtoneUri()
     val ringtoneAttributes = AudioAttributes.Builder()
       .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -164,17 +163,8 @@ object LiveKitCallNotifier {
       manager.canUseFullScreenIntent()
   }
 
-  private fun incomingCallRingtoneUri(context: Context): Uri {
-    val customRingtoneId = context.resources.getIdentifier(
-      INCOMING_CALL_RINGTONE_RES_NAME,
-      "raw",
-      context.packageName,
-    )
-    if (customRingtoneId != 0) {
-      return Uri.parse("android.resource://${context.packageName}/$customRingtoneId")
-    }
-    return android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
-  }
+  private fun incomingCallRingtoneUri() =
+    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
 
   private fun copyCallExtras(data: JSONObject, intent: Intent) {
     for (key in listOf(

@@ -12,9 +12,9 @@ export function getFeedVideoPlaybackPolicy(platform: string) {
 
   return {
     warmBehindItems: 0,
-    warmAheadItems: isAndroid ? 0 : 1,
-    idleWarmMaxCount: isAndroid ? 0 : 1,
-    scrollingWarmMaxCount: 0,
+    warmAheadItems: 1,
+    idleWarmMaxCount: 1,
+    scrollingWarmMaxCount: isAndroid ? 1 : 0,
     posterPrefetchBehindItems: 0,
     posterPrefetchAheadItems: isAndroid ? 1 : 2,
   } as const;
@@ -194,7 +194,9 @@ export function shouldMountWarmFeedVideo({
   wasPlayerSurfaceMounted?: boolean;
 }) {
   if (!isWarm) return false;
-  if (platform === 'android' && isScrollBusy) return false;
+  if (platform === 'android' && isScrollBusy) {
+    return wasPlayerSurfaceMounted;
+  }
   if (!optimizationEnabled) {
     return isWarm || !isScrollBusy || shouldKeepPreparedVideoMounted;
   }

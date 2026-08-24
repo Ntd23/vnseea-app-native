@@ -101,6 +101,7 @@ import {
   FEED_VIDEO_SURFACE_MAX_RECOVERY_ATTEMPTS,
   shouldRecoverFeedVideoSurface,
 } from './feedVideoSurfaceRecovery';
+import { getFeedVideoFrameLayout } from './feedVideoFrameLayout';
 import { markFeedMediaLoaded } from '../../application/state/feedMediaLoadState';
 import { FeedMediaImage } from './FeedMediaImage';
 import { StaggeredFeedMediaImage } from './StaggeredFeedMediaImage';
@@ -291,6 +292,36 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     backgroundColor: 'rgba(0,0,0,0.36)',
+  },
+  feedVideoSideBlur: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
+  },
+  feedVideoSideBlurLeft: {
+    left: 0,
+  },
+  feedVideoSideBlurRight: {
+    right: 0,
+  },
+  feedVideoSideBlurImage: {
+    width: '100%',
+    height: '100%',
+    opacity: 0.82,
+    transform: [{ scale: 1.12 }],
+  },
+  feedVideoSideBlurScrim: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  feedVideoPosterImage: {
+    backgroundColor: 'transparent',
   },
   videoPosterSkeleton: {
     alignItems: 'center',
@@ -1271,6 +1302,72 @@ const FeedVideoBackdrop = React.memo(function FeedVideoBackdrop({
   );
 });
 
+const FeedVideoPoster = React.memo(function FeedVideoPoster({
+  uri,
+  enabled,
+  blurredBackdrop = false,
+}: {
+  uri: string;
+  enabled: boolean;
+  blurredBackdrop?: boolean;
+}) {
+  return (
+    <View pointerEvents="none" style={styles.feedVideoBackdrop}>
+      {blurredBackdrop ? (
+        <FeedVideoBackdrop
+          uri={uri}
+          enabled={enabled}
+          blurred
+        />
+      ) : null}
+      <FeedMediaImage
+        uri={uri}
+        style={[StyleSheet.absoluteFill, styles.feedVideoPosterImage]}
+        resizeMode="contain"
+        enabled={enabled}
+      />
+    </View>
+  );
+});
+
+const FeedVideoSideBlur = React.memo(function FeedVideoSideBlur({
+  uri,
+  enabled,
+  sideFillFraction,
+}: {
+  uri: string;
+  enabled: boolean;
+  sideFillFraction: number;
+}) {
+  const sideWidth = `${
+    Math.max(0, Math.min(0.5, sideFillFraction)) * 100
+  }%` as `${number}%`;
+  const sideWidthStyle = useMemo<ViewStyle>(
+    () => ({ width: sideWidth }),
+    [sideWidth],
+  );
+
+  const renderSide = (sideStyle: ViewStyle) => (
+    <View style={[styles.feedVideoSideBlur, sideStyle, sideWidthStyle]}>
+      <FeedMediaImage
+        uri={uri}
+        style={styles.feedVideoSideBlurImage}
+        resizeMode="cover"
+        blurRadius={FEED_VIDEO_BACKDROP_BLUR_RADIUS}
+        enabled={enabled}
+      />
+      <View style={styles.feedVideoSideBlurScrim} />
+    </View>
+  );
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {renderSide(styles.feedVideoSideBlurLeft)}
+      {renderSide(styles.feedVideoSideBlurRight)}
+    </View>
+  );
+});
+
 const VideoFallbackPoster = React.memo(function VideoFallbackPoster({
   label,
 }: {
@@ -2027,6 +2124,24 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     };
   }
   const aspectRatio = reservedAspectRatioRef.current.value;
+  const {
+    frameAspectRatio,
+    isHeightCapped: isVideoHeightCapped,
+    sideFillFraction: videoSideFillFraction,
+  } = getFeedVideoFrameLayout(aspectRatio);
+  const videoSideFillPercent = `${
+    videoSideFillFraction * 100
+  }%` as `${number}%`;
+  const videoPlayerInsetStyle = useMemo<ViewStyle | null>(
+    () =>
+      isVideoHeightCapped
+        ? {
+            left: videoSideFillPercent,
+            right: videoSideFillPercent,
+          }
+        : null,
+    [isVideoHeightCapped, videoSideFillPercent],
+  );
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const mediaIdentityRef = useRef(mediaIdentity);
@@ -2389,10 +2504,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   videoMetricsRoleRef.current = videoMetricsRole;
   const shouldBlurVideoBackdrop =
     Boolean(resolvedThumbnailUrl) &&
-    isActive &&
-    isPlaybackSurfaceFocused &&
-    !isScrollBusy &&
-    (Platform.OS !== 'android' || performanceSurface === 'profile');
+    (isVideoHeightCapped ||
+      (isActive &&
+        isPlaybackSurfaceFocused &&
+        !isScrollBusy &&
+        (Platform.OS !== 'android' || performanceSurface === 'profile')));
   const shouldRenderVideoFrameCover =
     Boolean(resolvedThumbnailUrl) && isFrameCoverVisible;
 
@@ -2698,6 +2814,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           source={videoSource}
           style={[
             StyleSheet.absoluteFill,
+            videoPlayerInsetStyle,
             !hasRenderedFrame ? { opacity: 0 } : null,
           ]}
           resizeMode="contain"
@@ -2734,10 +2851,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             pointerEvents="none"
             style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
           >
-            <FeedVideoBackdrop
+            <FeedVideoPoster
               uri={resolvedThumbnailUrl}
               enabled={mediaLoadEnabled}
-              blurred={shouldBlurVideoBackdrop}
+              blurredBackdrop={shouldBlurVideoBackdrop}
             />
           </Animated.View>
         ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
@@ -2775,6 +2892,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     shouldBlurVideoBackdrop,
     shouldRenderVideoFrameCover,
     shouldMountVideo,
+    videoPlayerInsetStyle,
     videoPlayerGeneration,
     videoSource,
   ]);
@@ -2867,7 +2985,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             collapsable={false}
             style={FEED_VIDEO_MEDIA_SURFACE_STYLE}
           >
-            <FeedMediaFrame style={{ aspectRatio }}>
+            <FeedMediaFrame style={{ aspectRatio: frameAspectRatio }}>
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={handleVideoPress}
@@ -2876,13 +2994,22 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 <VideoPosterSkeleton />
                 {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
                 {resolvedThumbnailUrl ? (
-                  <FeedVideoBackdrop
+                  <FeedVideoPoster
                     uri={resolvedThumbnailUrl}
                     enabled={mediaLoadEnabled}
-                    blurred={shouldBlurVideoBackdrop && !isFrameCoverVisible}
+                    blurredBackdrop={
+                      shouldBlurVideoBackdrop && !isFrameCoverVisible
+                    }
                   />
                 ) : null}
                 {stableVideoSurface}
+                {isVideoHeightCapped && resolvedThumbnailUrl ? (
+                  <FeedVideoSideBlur
+                    uri={resolvedThumbnailUrl}
+                    enabled={mediaLoadEnabled}
+                    sideFillFraction={videoSideFillFraction}
+                  />
+                ) : null}
                 {/* Big play button overlay while paused */}
                 {showPlayOverlay ? (
                   <View

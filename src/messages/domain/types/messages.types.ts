@@ -254,6 +254,12 @@ export interface MessageAttachment {
   name: string;
   type: string;
   mediaType: 'image' | 'video' | 'audio';
+  thumbnailUri?: string;
+  thumbnailName?: string;
+  thumbnailType?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
 }
 
 export interface GetMessagesOptions {

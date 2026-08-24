@@ -37,21 +37,19 @@ describe('Profile owner-only controls', () => {
     );
   });
 
-  it('closes the profile overlay before opening a one-to-one chat', () => {
+  it('pushes a one-to-one chat above the full-page profile menu', () => {
     const profileMore = read(
       'src/profile/presentation/screens/ProfileMoreScreen.tsx',
     );
 
-    expect(profileMore).toContain('pendingCloseActionRef');
-    expect(profileMore).toContain('closeScreenThen(() =>');
     expect(profileMore).toContain('navigation.navigate(ROUTES.CHAT');
+    expect(profileMore).not.toContain('pendingCloseActionRef');
+    expect(profileMore).not.toContain('closeScreenThen(() =>');
     const openChatStart = profileMore.indexOf('const openChat = useCallback');
-    const closeThenIndex = profileMore.indexOf('closeScreenThen(() =>', openChatStart);
     const navigateIndex = profileMore.indexOf(
       'navigation.navigate(ROUTES.CHAT',
       openChatStart,
     );
-    expect(closeThenIndex).toBeGreaterThan(openChatStart);
-    expect(navigateIndex).toBeGreaterThan(closeThenIndex);
+    expect(navigateIndex).toBeGreaterThan(openChatStart);
   });
 });

@@ -11,6 +11,7 @@ import {
   type ReactionType,
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
+import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
 import {
   describeMessageTextContent,
@@ -1936,6 +1937,12 @@ export function createMessagesRepository(): MessagesRepository {
       options?: SendMessageOptions,
     ) {
       const target = getChatTarget(chat);
+      const uploadAttachment =
+        attachment?.mediaType === 'video'
+          ? await prepareVideoForUpload(attachment, {
+              minimumFileSizeForCompress: 0,
+            })
+          : attachment;
       const messageHashId = `${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
@@ -1999,17 +2006,29 @@ export function createMessagesRepository(): MessagesRepository {
           ? apiRoutes.messages.groupChat
           : apiRoutes.messages.send;
       const payload = target.type === 'group' ? groupPayload : userPayload;
-      const response = attachment
+      const response = uploadAttachment
         ? await apiBridge.multipart<SendMessageResponse>(route, {
             ...payload,
-            ...(attachment.mediaType
+            ...(uploadAttachment.mediaType
               ? {
-                  message_type: attachment.mediaType,
-                  media_type: attachment.mediaType,
-                  type_two: attachment.mediaType,
+                  message_type: uploadAttachment.mediaType,
+                  media_type: uploadAttachment.mediaType,
+                  type_two: uploadAttachment.mediaType,
                 }
               : {}),
-            file: attachment,
+            file: uploadAttachment,
+            ...(uploadAttachment.mediaType === 'video' &&
+            uploadAttachment.thumbnailUri
+              ? {
+                  video_thumb: {
+                    uri: uploadAttachment.thumbnailUri,
+                    name:
+                      uploadAttachment.thumbnailName ||
+                      `video-thumb-${Date.now()}.jpg`,
+                    type: uploadAttachment.thumbnailType || 'image/jpeg',
+                  },
+                }
+              : {}),
           })
         : await apiBridge.post<SendMessageResponse>(route, payload);
       discoveryCache = undefined;

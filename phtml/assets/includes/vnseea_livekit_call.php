@@ -92,9 +92,11 @@ if (!function_exists('Wo_PublishCanonicalLiveKitPayload')) {
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 250);
         curl_setopt($ch, CURLOPT_TIMEOUT_MS, 750);
         curl_setopt($ch, CURLOPT_NOSIGNAL, true);
+        $started_at = microtime(true);
         $result = curl_exec($ch);
         $error = curl_error($ch);
         $status = intval(curl_getinfo($ch, CURLINFO_HTTP_CODE));
+        $duration_ms = (int)round((microtime(true) - $started_at) * 1000);
         curl_close($ch);
 
         if (function_exists('Wo_VnseeaCallDebugLog')) {
@@ -103,6 +105,7 @@ if (!function_exists('Wo_PublishCanonicalLiveKitPayload')) {
                 'call_id' => !empty($payload['call_id']) ? $payload['call_id'] : '',
                 'context' => !empty($payload['context']) ? $payload['context'] : 'direct',
                 'http_status' => $status,
+                'duration_ms' => $duration_ms,
                 'error' => $error !== '' ? $error : '-',
                 'response_present' => $result !== false && $result !== '' ? 1 : 0
             ));
@@ -544,6 +547,13 @@ if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
             'provider' => 'livekit',
             'status' => 'calling'
         ));
+        $realtime_sent = Wo_PublishCanonicalLiveKitIncomingCall(
+            $call_id,
+            $call_type,
+            $caller,
+            $recipient,
+            $room_name
+        );
         $push_channels = Wo_SendCanonicalLiveKitCallPush(
             $recipient,
             $caller,
@@ -551,13 +561,6 @@ if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
             $call_type,
             $room_name,
             $source
-        );
-        $realtime_sent = Wo_PublishCanonicalLiveKitIncomingCall(
-            $call_id,
-            $call_type,
-            $caller,
-            $recipient,
-            $room_name
         );
 
         return array(

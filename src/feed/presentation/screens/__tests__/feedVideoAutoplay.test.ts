@@ -20,9 +20,9 @@ describe('feed video autoplay selection', () => {
   it('uses one shared low-decoder policy for Home and Profile surfaces', () => {
     expect(getFeedVideoPlaybackPolicy('android')).toEqual({
       warmBehindItems: 0,
-      warmAheadItems: 0,
-      idleWarmMaxCount: 0,
-      scrollingWarmMaxCount: 0,
+      warmAheadItems: 1,
+      idleWarmMaxCount: 1,
+      scrollingWarmMaxCount: 1,
       posterPrefetchBehindItems: 0,
       posterPrefetchAheadItems: 1,
     });
@@ -240,7 +240,7 @@ describe('feed video autoplay selection', () => {
     ).toBe(false);
   });
 
-  it('releases an already-mounted Android warm surface during an optimized fling', () => {
+  it('retains one already-mounted Android warm surface during a fling', () => {
     expect(
       shouldMountWarmFeedVideo({
         platform: 'android',
@@ -250,7 +250,7 @@ describe('feed video autoplay selection', () => {
         shouldKeepPreparedVideoMounted: false,
         wasPlayerSurfaceMounted: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('retains visible media through a transient empty relayout snapshot', () => {

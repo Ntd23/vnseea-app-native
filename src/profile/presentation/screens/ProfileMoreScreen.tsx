@@ -3,30 +3,18 @@ import {
   APP_BRAND_COLOR,
   APP_COLORS,
 } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  BackHandler,
   Linking,
-  Platform,
   ScrollView,
   Share,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  interpolate,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Archive,
@@ -60,7 +48,10 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { resolveProfileOwnership } from '../../application/utils/profileOwnership';
 
 type ProfileMoreNavigation = NativeStackNavigationProp<RootStackParamList>;
-type ProfileMoreRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE_MORE>;
+type ProfileMoreRoute = RouteProp<
+  RootStackParamList,
+  typeof ROUTES.PROFILE_MORE
+>;
 type ProfileMoreIcon = React.ComponentType<{
   size?: number;
   color?: string;
@@ -96,7 +87,8 @@ const COPY = {
     linkTitleOwn: 'Liên kết đến trang cá nhân của bạn',
     linkTitleOther: (name: string) => `Liên kết đến trang cá nhân của ${name}`,
     linkSubtitleOwn: 'Liên kết riêng của bạn trên VNSEEA.',
-    linkSubtitleOther: (name: string) => `Liên kết riêng của ${name} trên VNSEEA.`,
+    linkSubtitleOther: (name: string) =>
+      `Liên kết riêng của ${name} trên VNSEEA.`,
     copyLink: 'Sao chép liên kết',
     copiedTitle: 'Đã sao chép',
     copiedMessage: 'Liên kết trang cá nhân đã được sao chép.',
@@ -133,7 +125,8 @@ const COPY = {
     linkTitleOwn: 'Link to your profile',
     linkTitleOther: (name: string) => `Link to ${name}'s profile`,
     linkSubtitleOwn: 'Your private VNSEEA profile link.',
-    linkSubtitleOther: (name: string) => `${name}'s private VNSEEA profile link.`,
+    linkSubtitleOther: (name: string) =>
+      `${name}'s private VNSEEA profile link.`,
     copyLink: 'Copy link',
     copiedTitle: 'Copied',
     copiedMessage: 'Profile link copied.',
@@ -152,26 +145,14 @@ const COPY = {
   },
 } as const;
 
-const BACK_GESTURE_EDGE_WIDTH = 28;
-const BACK_GESTURE_START_X = Platform.OS === 'android' ? 18 : 0;
-const BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 82 : BACK_GESTURE_EDGE_WIDTH;
-const BACK_GESTURE_ACTIVE_OFFSET_X = Platform.OS === 'android' ? 6 : 12;
-const BACK_GESTURE_FAIL_OFFSET_Y = Platform.OS === 'android' ? 24 : 16;
-const BACK_GESTURE_DISTANCE_RATIO = 0.28;
-const BACK_GESTURE_VELOCITY = 650;
-const SCREEN_OPEN_DURATION_MS = 220;
-const SCREEN_CLOSE_DURATION_MS = 180;
-const SCREEN_SPRING_CONFIG = {
-  damping: 19,
-  stiffness: 230,
-};
-
 function hasValue(value?: string) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
 function apiSucceeded(value: unknown) {
-  return value === 200 || value === '200' || value === true || value === 'success';
+  return (
+    value === 200 || value === '200' || value === true || value === 'success'
+  );
 }
 
 function buildProfileUrl(userId?: string, username?: string) {
@@ -195,7 +176,6 @@ export default function ProfileMoreScreen() {
   const copy = COPY[language];
   const navigation = useNavigation<ProfileMoreNavigation>();
   const route = useRoute<ProfileMoreRoute>();
-  const { width: screenWidth } = useWindowDimensions();
   const params = route.params;
   const isOwnProfile = resolveProfileOwnership({
     currentUserId: sessionStorage.getSession()?.userId,
@@ -207,69 +187,6 @@ export default function ProfileMoreScreen() {
     [params.userId, params.username],
   );
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
-  const screenTranslateX = useSharedValue(screenWidth);
-  const previousScreenDim = useSharedValue(0);
-  const isClosing = useSharedValue(false);
-  const pendingCloseActionRef = useRef<(() => void) | null>(null);
-
-  const completeClose = useCallback(() => {
-    const pendingAction = pendingCloseActionRef.current;
-    pendingCloseActionRef.current = null;
-    navigation.goBack();
-    if (pendingAction) {
-      requestAnimationFrame(() => requestAnimationFrame(pendingAction));
-    }
-  }, [navigation]);
-
-  const closeScreen = useCallback(() => {
-    if (isClosing.value) return;
-    isClosing.value = true;
-    previousScreenDim.value = withTiming(0, {
-      duration: SCREEN_CLOSE_DURATION_MS,
-    });
-    screenTranslateX.value = withTiming(
-      screenWidth,
-      { duration: SCREEN_CLOSE_DURATION_MS },
-      finished => {
-        if (finished) {
-          runOnJS(completeClose)();
-        }
-      },
-    );
-  }, [
-    completeClose,
-    isClosing,
-    previousScreenDim,
-    screenTranslateX,
-    screenWidth,
-  ]);
-
-  const closeScreenThen = useCallback((action: () => void) => {
-    if (isClosing.value) return;
-    pendingCloseActionRef.current = action;
-    closeScreen();
-  }, [closeScreen, isClosing]);
-
-  useEffect(() => {
-    isClosing.value = false;
-    screenTranslateX.value = screenWidth;
-    previousScreenDim.value = 0;
-    previousScreenDim.value = withTiming(0.12, {
-      duration: SCREEN_OPEN_DURATION_MS,
-    });
-    screenTranslateX.value = withTiming(0, {
-      duration: SCREEN_OPEN_DURATION_MS,
-    });
-  }, [isClosing, previousScreenDim, screenTranslateX, screenWidth]);
-
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeScreen();
-      return true;
-    });
-
-    return () => subscription.remove();
-  }, [closeScreen]);
 
   const openChat = useCallback(() => {
     if (!params.userId) return;
@@ -286,11 +203,8 @@ export default function ProfileMoreScreen() {
       isOnline: false,
       isVerified: false,
     };
-    closeScreenThen(() => {
-      navigation.navigate(ROUTES.CHAT, { chat });
-    });
+    navigation.navigate(ROUTES.CHAT, { chat });
   }, [
-    closeScreenThen,
     displayName,
     navigation,
     params.avatarUrl,
@@ -302,12 +216,15 @@ export default function ProfileMoreScreen() {
     if (!params.userId) return;
     navigation.navigate(ROUTES.PROFILE_FRIENDS, {
       userId: String(params.userId),
-      title: language === 'vi' ? `Bạn bè của ${displayName}` : `${displayName}'s friends`,
+      title:
+        language === 'vi'
+          ? `Bạn bè của ${displayName}`
+          : `${displayName}'s friends`,
       displayName,
       avatarUrl: params.avatarUrl,
       initialTab: 'friends',
     });
-  }, [displayName, language, navigation, params.userId]);
+  }, [displayName, language, navigation, params.avatarUrl, params.userId]);
 
   const shareProfile = useCallback(async () => {
     try {
@@ -329,7 +246,13 @@ export default function ProfileMoreScreen() {
     } catch {
       Alert.alert(copy.errorTitle, copy.genericError);
     }
-  }, [copy.copiedMessage, copy.copiedTitle, copy.errorTitle, copy.genericError, profileUrl]);
+  }, [
+    copy.copiedMessage,
+    copy.copiedTitle,
+    copy.errorTitle,
+    copy.genericError,
+    profileUrl,
+  ]);
 
   const reportProfile = useCallback(() => {
     if (!params.userId) return;
@@ -350,7 +273,10 @@ export default function ProfileMoreScreen() {
               text: 'Reported from profile menu',
               ensure_reported: 1,
             });
-            if (Number(response.code) !== 1 && !apiSucceeded(response.api_status)) {
+            if (
+              Number(response.code) !== 1 &&
+              !apiSucceeded(response.api_status)
+            ) {
               throw new Error(copy.genericError);
             }
             Alert.alert(copy.reportTitle, copy.reportSuccess);
@@ -414,12 +340,7 @@ export default function ProfileMoreScreen() {
         },
       },
     ]);
-  }, [
-    copy,
-    displayName,
-    params.blocked,
-    params.userId,
-  ]);
+  }, [copy, displayName, params.blocked, params.userId]);
 
   const pokeProfile = useCallback(async () => {
     if (!params.userId || loadingActionId === 'poke') return;
@@ -453,12 +374,7 @@ export default function ProfileMoreScreen() {
     } finally {
       setLoadingActionId(null);
     }
-  }, [
-    copy,
-    displayName,
-    loadingActionId,
-    params.userId,
-  ]);
+  }, [copy, displayName, loadingActionId, params.userId]);
 
   const ownActions = useMemo<ProfileMoreAction[]>(() => {
     if (!isOwnProfile) return [];
@@ -636,98 +552,6 @@ export default function ProfileMoreScreen() {
 
   const actions = isOwnProfile ? ownActions : otherActions;
 
-  const swipeBackGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .hitSlop({ left: BACK_GESTURE_START_X, width: BACK_GESTURE_WIDTH })
-        .activeOffsetX([BACK_GESTURE_ACTIVE_OFFSET_X, 999])
-        .failOffsetY([-BACK_GESTURE_FAIL_OFFSET_Y, BACK_GESTURE_FAIL_OFFSET_Y])
-        .onUpdate(event => {
-          'worklet';
-          if (isClosing.value) return;
-          const nextX = Math.min(
-            screenWidth,
-            Math.max(0, event.translationX),
-          );
-          screenTranslateX.value = nextX;
-          previousScreenDim.value = interpolate(
-            nextX,
-            [0, screenWidth],
-            [0.12, 0],
-            'clamp',
-          );
-        })
-        .onEnd(event => {
-          'worklet';
-          if (isClosing.value) return;
-          const shouldClose =
-            event.translationX > screenWidth * BACK_GESTURE_DISTANCE_RATIO ||
-            event.velocityX > BACK_GESTURE_VELOCITY;
-
-          if (shouldClose) {
-            isClosing.value = true;
-            previousScreenDim.value = withTiming(0, {
-              duration: SCREEN_CLOSE_DURATION_MS,
-            });
-            screenTranslateX.value = withTiming(
-              screenWidth,
-              { duration: SCREEN_CLOSE_DURATION_MS },
-              finished => {
-                if (finished) {
-                  runOnJS(completeClose)();
-                }
-              },
-            );
-            return;
-          }
-
-          previousScreenDim.value = withSpring(0.12, SCREEN_SPRING_CONFIG);
-          screenTranslateX.value = withSpring(0, SCREEN_SPRING_CONFIG);
-        }),
-    [
-      completeClose,
-      isClosing,
-      previousScreenDim,
-      screenTranslateX,
-      screenWidth,
-    ],
-  );
-
-  const screenAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: screenTranslateX.value }],
-  }));
-
-  const previousScreenDimStyle = useAnimatedStyle(() => ({
-    opacity: previousScreenDim.value,
-  }));
-
-  const swipeBackCueStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      screenTranslateX.value,
-      [0, screenWidth * 0.12, screenWidth * BACK_GESTURE_DISTANCE_RATIO],
-      [0, 0.78, 1],
-      'clamp',
-    ),
-    transform: [
-      {
-        translateX: interpolate(
-          screenTranslateX.value,
-          [0, screenWidth * BACK_GESTURE_DISTANCE_RATIO],
-          [-16, 8],
-          'clamp',
-        ),
-      },
-      {
-        scale: interpolate(
-          screenTranslateX.value,
-          [0, screenWidth * BACK_GESTURE_DISTANCE_RATIO],
-          [0.92, 1],
-          'clamp',
-        ),
-      },
-    ],
-  }));
-
   const renderAction = (action: ProfileMoreAction, index: number) => {
     const Icon = action.Icon;
     const isLoading = loadingActionId === action.id;
@@ -756,7 +580,11 @@ export default function ProfileMoreScreen() {
           {action.label}
         </Text>
         {isLoading ? (
-          <ActivityIndicator size="small" color={APP_BRAND_COLOR} style={styles.rowSpinner} />
+          <ActivityIndicator
+            size="small"
+            color={APP_BRAND_COLOR}
+            style={styles.rowSpinner}
+          />
         ) : null}
       </TouchableOpacity>
     );
@@ -765,73 +593,54 @@ export default function ProfileMoreScreen() {
   return (
     <SafeAreaView style={styles.root}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          styles.previousScreenDim,
-          previousScreenDimStyle,
-        ]}
-      />
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.swipeBackCue, swipeBackCueStyle]}
-      >
-        <ArrowLeft size={18} color={APP_BRAND_COLOR} strokeWidth={2.6} />
-        <Text style={styles.swipeBackCueText}>
-          {language === 'vi' ? 'Vuốt đúng rồi' : 'Keep swiping'}
-        </Text>
-      </Animated.View>
-      <GestureDetector gesture={swipeBackGesture}>
-        <Animated.View style={[styles.screen, screenAnimatedStyle]}>
-          <View style={styles.header}>
-            <TouchableOpacity
-              activeOpacity={0.72}
-              onPress={closeScreen}
-              style={styles.backButton}
-            >
-              <ArrowLeft size={24} color="#050505" strokeWidth={2.3} />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {isOwnProfile ? copy.ownTitle : displayName}
-            </Text>
-            <View style={styles.headerSpacer} />
-          </View>
-
-          <ScrollView
-            style={styles.content}
-            contentContainerStyle={styles.contentContainer}
-            showsVerticalScrollIndicator={false}
+      <View style={styles.screen}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            activeOpacity={0.72}
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
           >
-            <View style={styles.section}>{actions.map(renderAction)}</View>
+            <ArrowLeft size={24} color="#050505" strokeWidth={2.3} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {isOwnProfile ? copy.ownTitle : displayName}
+          </Text>
+          <View style={styles.headerSpacer} />
+        </View>
 
-            <View style={styles.separator} />
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.section}>{actions.map(renderAction)}</View>
 
-            <View style={styles.linkSection}>
-              <Text style={styles.linkTitle}>
-                {isOwnProfile
-                  ? copy.linkTitleOwn
-                  : copy.linkTitleOther(displayName)}
-              </Text>
-              <Text style={styles.linkSubtitle}>
-                {isOwnProfile
-                  ? copy.linkSubtitleOwn
-                  : copy.linkSubtitleOther(displayName)}
-              </Text>
-              <View style={styles.linkDivider} />
-              <Text style={styles.linkText}>{profileUrl}</Text>
-              <TouchableOpacity
-                activeOpacity={0.78}
-                onPress={copyProfileLink}
-                style={styles.copyButton}
-              >
-                <Copy size={16} color="#050505" />
-                <Text style={styles.copyButtonText}>{copy.copyLink}</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </Animated.View>
-      </GestureDetector>
+          <View style={styles.separator} />
+
+          <View style={styles.linkSection}>
+            <Text style={styles.linkTitle}>
+              {isOwnProfile
+                ? copy.linkTitleOwn
+                : copy.linkTitleOther(displayName)}
+            </Text>
+            <Text style={styles.linkSubtitle}>
+              {isOwnProfile
+                ? copy.linkSubtitleOwn
+                : copy.linkSubtitleOther(displayName)}
+            </Text>
+            <View style={styles.linkDivider} />
+            <Text style={styles.linkText}>{profileUrl}</Text>
+            <TouchableOpacity
+              activeOpacity={0.78}
+              onPress={copyProfileLink}
+              style={styles.copyButton}
+            >
+              <Copy size={16} color="#050505" />
+              <Text style={styles.copyButtonText}>{copy.copyLink}</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -839,43 +648,11 @@ export default function ProfileMoreScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: 'transparent',
-  },
-  previousScreenDim: {
-    backgroundColor: '#000000',
-  },
-  swipeBackCue: {
-    position: 'absolute',
-    left: Platform.OS === 'android' ? 30 : 14,
-    top: '50%',
-    marginTop: -22,
-    zIndex: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  swipeBackCueText: {
-    marginLeft: 7,
-    color: APP_BRAND_COLOR,
-    fontSize: 12,
-    fontWeight: '800',
+    backgroundColor: '#FFFFFF',
   },
   screen: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000000',
-    shadowOffset: { width: -8, height: 0 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    elevation: 16,
   },
   header: {
     height: 52,

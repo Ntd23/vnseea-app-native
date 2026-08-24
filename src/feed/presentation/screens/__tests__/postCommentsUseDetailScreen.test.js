@@ -91,9 +91,16 @@ describe('post comments use the full post detail screen', () => {
     expect(detail).not.toContain('swipeBackCueText');
     expect(detail).not.toContain('Swipe to go back');
     expect(navigator).toContain('const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {');
-    expect(navigator).toContain("presentation: 'transparentModal'");
-    expect(navigator).toContain("animation: 'none'");
-    expect(navigator).toContain("contentStyle: { backgroundColor: 'transparent' }");
+    const postDetailOptions = navigator.slice(
+      navigator.indexOf('const POST_DETAIL_OPTIONS'),
+      navigator.indexOf('const NOTIFICATIONS_OPTIONS'),
+    );
+    expect(postDetailOptions).toContain("presentation: 'card'");
+    expect(postDetailOptions).toContain("animation: 'none'");
+    expect(postDetailOptions).toContain(
+      "contentStyle: { backgroundColor: '#FFFFFF' }",
+    );
+    expect(postDetailOptions).not.toContain("presentation: 'transparentModal'");
     expect(navigator).toContain('options={POST_DETAIL_OPTIONS}');
   });
 });

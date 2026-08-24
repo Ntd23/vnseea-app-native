@@ -3174,6 +3174,7 @@ export function createFeedRepository(): FeedRepository {
       if (draft.video) {
         const mediaWidth = Math.round(Number(draft.video.width));
         const mediaHeight = Math.round(Number(draft.video.height));
+        payload.video_thumbnail_contract = 'preserve_aspect_v1';
         payload.postVideo = {
           uri: draft.video.uri,
           name: createSafeUploadFileName({

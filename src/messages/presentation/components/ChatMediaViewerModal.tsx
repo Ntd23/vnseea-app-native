@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
   Image,
@@ -32,6 +33,7 @@ import {
   Pause,
   Play,
   Rewind,
+  RotateCcw,
   Volume2,
   VolumeX,
   X,
@@ -47,6 +49,7 @@ import {
 export type ChatMediaViewerItem = {
   uri: string;
   type: 'image' | 'video';
+  thumbnail?: string;
 };
 
 type Props = {
@@ -127,12 +130,26 @@ function formatTime(seconds: number) {
   return `${minutes}:${remainder}`;
 }
 
-function ChatVideoViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
+function ChatVideoViewer({
+  uri,
+  thumbnail,
+  isActive,
+  onClose,
+}: {
+  uri: string;
+  thumbnail?: string;
+  isActive: boolean;
+  onClose: () => void;
+}) {
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showControls, setShowControls] = useState(true);
+  const [isReady, setIsReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoRef = useRef<any>(null);
   const progressWidthRef = useRef(1);
@@ -149,6 +166,25 @@ function ChatVideoViewer({ uri, onClose }: { uri: string; onClose: () => void })
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     };
   }, [scheduleControlsHide]);
+
+  useEffect(() => {
+    setPaused(!isActive);
+    setCurrentTime(0);
+    setDuration(0);
+    setIsReady(false);
+    setIsLoading(isActive);
+    setHasError(false);
+  }, [isActive, uri]);
+
+  const handleRetry = useCallback(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setPaused(false);
+    setIsReady(false);
+    setIsLoading(true);
+    setHasError(false);
+    setRetryKey(current => current + 1);
+  }, []);
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -193,20 +229,67 @@ function ChatVideoViewer({ uri, onClose }: { uri: string; onClose: () => void })
           scheduleControlsHide();
         }}
       >
-        <VideoPlayer
-          ref={videoRef}
-          source={{ uri }}
-          style={styles.media}
-          resizeMode="contain"
-          paused={paused}
-          muted={muted}
-          controls={false}
-          playInBackground={false}
-          playWhenInactive={false}
-          onProgress={event => setCurrentTime(event.currentTime)}
-          onLoad={event => setDuration(event.duration)}
-        />
-        {showControls ? (
+        {thumbnail && (!isReady || !isActive) ? (
+          <Image
+            source={{ uri: thumbnail }}
+            style={styles.mediaPoster}
+            resizeMode="contain"
+          />
+        ) : null}
+        {isActive ? (
+          <VideoPlayer
+            key={`${uri}-${retryKey}`}
+            ref={videoRef}
+            source={{ uri }}
+            style={[styles.media, !isReady && styles.hiddenVideo]}
+            resizeMode="contain"
+            paused={paused}
+            muted={muted}
+            controls={false}
+            playInBackground={false}
+            playWhenInactive={false}
+            onLoadStart={() => {
+              setIsLoading(true);
+              setIsReady(false);
+              setHasError(false);
+            }}
+            onReadyForDisplay={() => {
+              setIsReady(true);
+              setIsLoading(false);
+            }}
+            onProgress={event => setCurrentTime(event.currentTime)}
+            onLoad={event => setDuration(event.duration)}
+            onError={() => {
+              setHasError(true);
+              setIsLoading(false);
+              setIsReady(false);
+              setPaused(true);
+            }}
+          />
+        ) : null}
+        {isActive && isLoading && !hasError ? (
+          <View style={styles.videoStateOverlay} pointerEvents="none">
+            <ActivityIndicator size="large" color="#ffffff" />
+          </View>
+        ) : null}
+        {isActive && hasError ? (
+          <View style={styles.videoStateOverlay}>
+            <Text className="mb-4 text-sm font-semibold text-white">
+              Không phát được video
+            </Text>
+            <TouchableOpacity
+              className="h-12 flex-row items-center rounded-full bg-white px-5"
+              activeOpacity={0.85}
+              onPress={handleRetry}
+            >
+              <RotateCcw size={18} color="#111827" />
+              <Text className="ml-2 text-sm font-bold text-gray-900">
+                Thử lại
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {isActive && showControls && isReady && !hasError ? (
           <View
             className="absolute inset-0 items-center justify-center bg-black/20"
             pointerEvents="box-none"
@@ -256,9 +339,15 @@ function ChatVideoViewer({ uri, onClose }: { uri: string; onClose: () => void })
                 </View>
               </View>
               <View className="mt-1 flex-row items-center justify-between">
-                <Text className="text-xs font-semibold text-white">
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </Text>
+                {duration > 0 ? (
+                  <Text className="text-xs font-semibold text-white">
+                    {formatTime(currentTime)} / {formatTime(duration)}
+                  </Text>
+                ) : (
+                  <Text className="text-xs font-semibold text-white/80">
+                    Đang tải video
+                  </Text>
+                )}
                 <TouchableOpacity
                   className="h-9 w-9 items-center justify-center rounded-full bg-white/10"
                   onPress={() => setMuted(current => !current)}
@@ -357,7 +446,7 @@ export function ChatMediaViewerModal({
               onIndexChange(nextIndex);
             }
           }}
-          renderItem={({ item }) => (
+          renderItem={({ item, index: itemIndex }) => (
             <View style={[styles.slide, { width: screenWidth }]}>
               {item.type === 'image' ? (
                 <SwipeToCloseContainer onClose={onClose}>
@@ -370,7 +459,12 @@ export function ChatMediaViewerModal({
                   </View>
                 </SwipeToCloseContainer>
               ) : (
-                <ChatVideoViewer uri={item.uri} onClose={onClose} />
+                <ChatVideoViewer
+                  uri={item.uri}
+                  thumbnail={item.thumbnail}
+                  isActive={itemIndex === index}
+                  onClose={onClose}
+                />
               )}
             </View>
           )}
@@ -412,6 +506,19 @@ const styles = StyleSheet.create({
   media: {
     width: '100%',
     height: '100%',
+  },
+  mediaPoster: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#000000',
+  },
+  hiddenVideo: {
+    opacity: 0,
+  },
+  videoStateOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
   },
   slide: {
     flex: 1,
