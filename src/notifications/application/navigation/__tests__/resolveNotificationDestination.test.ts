@@ -59,6 +59,22 @@ describe('resolveNotificationDestination', () => {
     },
   );
 
+  it('opens the exact story for a new story notification', () => {
+    expect(
+      resolveNotificationDestination(
+        notification({ type: 'new_story', storyId: '146' }),
+      ),
+    ).toEqual({ kind: 'story', storyId: '146' });
+  });
+
+  it('opens the exact post for a new post notification', () => {
+    expect(
+      resolveNotificationDestination(
+        notification({ type: 'new_post', postId: '247' }),
+      ),
+    ).toEqual({ kind: 'post', postId: '247' });
+  });
+
   it('falls back to the Story list when a Story target is unavailable', () => {
     expect(
       resolveNotificationDestination(

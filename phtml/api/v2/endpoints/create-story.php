@@ -205,3 +205,13 @@ if (empty($error_code)) {
         }
     }
 }
+
+if (isset($response_data['api_status'])
+    && $response_data['api_status'] === 200
+    && !empty($response_data['story_id'])
+    && function_exists('VNSEEA_EnqueueFollowerContentNotification')) {
+    VNSEEA_EnqueueFollowerContentNotification('story',
+        (int) $response_data['story_id'],
+        (int) $wo['user']['id']
+    );
+}

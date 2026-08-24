@@ -221,14 +221,30 @@ export async function navigateToNotification(
       navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: destination.blogId });
       return;
     case 'story': {
+      let stories: StoryItem[] = [];
       try {
-        const stories = await storiesRepository.getUserStories();
+        stories = await storiesRepository.getUserStories();
         const target = findStoryTarget(stories, destination.storyId);
         if (target) {
           navigation.navigate(ROUTES.STORY_VIEWER, {
             stories,
             initialUserIndex: target.userIndex,
             initialSegmentIndex: target.segmentIndex,
+          });
+          return;
+        }
+      } catch (error) {
+        console.warn('[NotificationNavigation] load Story rail failed', error);
+      }
+      try {
+        const story = await storiesRepository.getStoryById(
+          destination.storyId,
+        );
+        if (story) {
+          navigation.navigate(ROUTES.STORY_VIEWER, {
+            stories: [story],
+            initialUserIndex: 0,
+            initialSegmentIndex: 0,
           });
           return;
         }

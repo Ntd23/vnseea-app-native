@@ -153,7 +153,10 @@ export function resolveNotificationDestination(
     return { kind: 'memories' };
   }
 
-  if (item.storyId && (type === 'viewed_story' || type === 'reaction')) {
+  if (
+    item.storyId &&
+    (type === 'viewed_story' || type === 'reaction' || type === 'new_story')
+  ) {
     return { kind: 'story', storyId: item.storyId };
   }
 

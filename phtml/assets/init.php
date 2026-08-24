@@ -24,3 +24,4 @@ require_once('includes/functions_three.php');
 require_once('includes/vnseea_batch_hydration.php');
 require_once('includes/vnseea_live.php');
 require_once('includes/vnseea_push_delivery.php');
+require_once('includes/vnseea_content_notifications.php');

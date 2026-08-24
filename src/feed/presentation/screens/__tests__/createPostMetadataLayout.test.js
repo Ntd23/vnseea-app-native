@@ -48,11 +48,19 @@ describe('Create Post metadata layout', () => {
     const source = read(
       'src/feed/presentation/screens/CreatePostScreen.tsx',
     );
+    const captionLayout = read(
+      'src/feed/presentation/screens/createPostCaptionLayout.ts',
+    );
 
-    expect(source).toContain('CAPTION_MAX_LINES = 12');
+    expect(captionLayout).toContain('CAPTION_MAX_LINES = 12');
     expect(source).toContain('CAPTION_MAX_HEIGHT');
     expect(source).toContain('onContentSizeChange');
     expect(source).toContain('function AutoGrowingComposerInput');
+    expect(source).toContain('useAutoGrowingCaptionLayout');
+    expect(source).toContain('function CaptionHeightMeasurer');
+    expect(source).toContain('testID="create-post-caption-measurer"');
+    expect(source).toContain('numberOfLines={CAPTION_MEASURE_LINES}');
+    expect(source).toContain("Platform.OS === 'ios' ? undefined");
     expect(source).toContain('scrollEnabled={isOverflowing}');
     expect(source).not.toContain("color: hasValue ? 'transparent'");
     expect(source).toContain('getPhotoGridItemLayout');

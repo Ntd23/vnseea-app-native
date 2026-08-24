@@ -48,6 +48,9 @@ do {
         exit(2);
     }
 
+    $fanout_processed = function_exists('VNSEEA_ProcessFollowerContentNotificationQueue')
+        ? VNSEEA_ProcessFollowerContentNotificationQueue(2, 50)
+        : 0;
     $processed = VNSEEA_ProcessPushDeliveryQueue($batch_size);
     if ($run_once) {
         break;
@@ -56,7 +59,7 @@ do {
         fwrite(STDERR, "push delivery worker reached its memory recycle limit\n");
         exit(0);
     }
-    if ($processed < 1) {
+    if ($processed < 1 && $fanout_processed < 1) {
         usleep($idle_ms * 1000);
     } else {
         usleep(50000);

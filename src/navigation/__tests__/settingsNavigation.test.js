@@ -51,4 +51,20 @@ describe('settings navigation across platform tab layouts', () => {
       expect(source).not.toContain('screen: ROUTES.SETTINGS');
     }
   });
+
+  it('pops a direct Settings panel and only uses panel history for nested navigation', () => {
+    const settings = read(
+      'src/settings/presentation/screens/SettingsScreen.tsx',
+    );
+
+    expect(settings).toContain('panelHistoryRef.current.pop()');
+    expect(settings).toContain('route.name === ROUTES.SETTINGS_PANEL');
+    expect(settings).toContain('navigation.goBack()');
+    expect(settings).not.toContain(
+      'setActivePanel(item.action.panel as SettingsPanelRouteParam)',
+    );
+    expect(settings).toMatch(
+      /navigateToPanel\(\s*item\.action\.panel as SettingsPanelRouteParam/,
+    );
+  });
 });

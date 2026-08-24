@@ -4685,7 +4685,7 @@ if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
         exit();
     }
     if ($s == 'send_mail_to_mock_users') {
-        $isset_test = 'off';
+        $isset_test = (!empty($_POST['test_message']) && $_POST['test_message'] === 'on') ? 'on' : 'off';
         $types      = array(
             'week',
             'month',
@@ -4697,14 +4697,19 @@ if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
             'active',
             'inactive',
         );
-        if (empty($_POST['message']) || empty($_POST['subject']) || empty($_POST['send_to']) || !in_array($_POST['send_to'], $types)) {
+        $send_to = !empty($_POST['send_to']) ? Wo_Secure($_POST['send_to']) : '';
+        $user_ids = array();
+        if (!empty($_POST['selected_emails'])) {
+            $user_ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $_POST['selected_emails'])))));
+        }
+        $has_selected_users = !empty($user_ids);
+        $bulk_mail_confirmed = !empty($_POST['bulk_mail_confirmed']) && $_POST['bulk_mail_confirmed'] === '1';
+
+        if (empty($_POST['message']) || empty($_POST['subject'])) {
             $send_errors = $error_icon . $wo['lang']['please_check_details'];
+        } else if ($isset_test !== 'on' && !$has_selected_users && (!in_array($send_to, $types) || !$bulk_mail_confirmed)) {
+            $send_errors = $error_icon . 'Vui lòng chọn người nhận và xác nhận thao tác gửi email hàng loạt.';
         } else {
-            if (!empty($_POST['test_message'])) {
-                if ($_POST['test_message'] == 'on') {
-                    $isset_test = 'on';
-                }
-            }
             if ($isset_test == 'on') {
                 $send_message_data = array(
                     'from_email' => $wo['config']['siteEmail'],
@@ -4719,22 +4724,21 @@ if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
                 $send              = Wo_SendMessage($send_message_data);
             } else {
                 $users = array();
-                if (isset($_POST['selected_emails']) && strlen($_POST['selected_emails']) > 0) {
-                    $user_ids = explode(',', $_POST['selected_emails']);
-                    if (is_array($user_ids) && count($user_ids) > 0) {
-                        foreach ($user_ids as $user_id) {
-                            $users[] = Wo_UserData($user_id);
+                if ($has_selected_users) {
+                    foreach ($user_ids as $user_id) {
+                        $user = Wo_UserData($user_id);
+                        if (!empty($user['user_id']) && !empty($user['email'])) {
+                            $users[] = $user;
                         }
                     }
-                }
-                 else if ($_POST['send_to'] == 'active') {
+                } else if ($send_to == 'active') {
                     $users = Wo_GetAllUsersByType('active');
-                } else if ($_POST['send_to'] == 'inactive') {
+                } else if ($send_to == 'inactive') {
                     $users = Wo_GetAllUsersByType('inactive');
-                } else if ($_POST['send_to'] == 'all') {
+                } else if ($send_to == 'all') {
                     $users = Wo_GetAllUsersByType('all');
                 } else {
-                    $users = Wo_GetUsersByTime($_POST['send_to']);
+                    $users = Wo_GetUsersByTime($send_to);
                 }
                 ob_end_clean();
                 header("Content-Encoding: none");

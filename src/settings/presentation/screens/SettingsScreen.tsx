@@ -4316,13 +4316,18 @@ function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const route = useRoute<SettingsRoute>();
   const insets = useSafeAreaInsets();
-  const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
+  const [activePanel, setActivePanel] = useState<SettingsPanel>(
+    () => route.params?.initialPanel ?? 'main',
+  );
+  const panelHistoryRef = useRef<SettingsPanel[]>([]);
 
   const navigateToPanel = useCallback(
     (newPanel: SettingsPanel) => {
+      if (newPanel === activePanel) return;
+      panelHistoryRef.current.push(activePanel);
       setActivePanel(newPanel);
     },
-    [],
+    [activePanel],
   );
 
   const [currencySettings, setCurrencySettings] =
@@ -4559,8 +4564,28 @@ function SettingsScreen() {
   }, [dashboardItems]);
 
   const handleDashboardBack = useCallback(() => {
+    const previousPanel = panelHistoryRef.current.pop();
+    if (previousPanel) {
+      setActivePanel(previousPanel);
+      return;
+    }
+
+    if (route.name === ROUTES.SETTINGS_PANEL) {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+        return;
+      }
+
+      navigation.dispatch(
+        CommonActions.navigate(
+          openedFromProfile ? ROUTES.PROFILE : ROUTES.USER_DASHBOARD,
+        ),
+      );
+      return;
+    }
+
     setActivePanel('main');
-  }, []);
+  }, [navigation, openedFromProfile, route.name]);
 
   const completeProfileSettingsBack = useCallback(() => {
     const parentNavigation = navigation.getParent();
@@ -4654,10 +4679,9 @@ function SettingsScreen() {
   );
 
   useEffect(() => {
-    const requestedPanel = route.params?.initialPanel;
-    if (requestedPanel) {
-      setActivePanel(requestedPanel);
-    }
+    const requestedPanel = route.params?.initialPanel ?? 'main';
+    panelHistoryRef.current = [];
+    setActivePanel(requestedPanel);
   }, [route.params?.initialPanel]);
 
   const loadCurrencySettings = useCallback(async () => {
@@ -5510,7 +5534,9 @@ function SettingsScreen() {
                     activeOpacity={0.7}
                     onPress={() => {
                       if (item.action.type === 'panel') {
-                        setActivePanel(item.action.panel as SettingsPanelRouteParam);
+                        navigateToPanel(
+                          item.action.panel as SettingsPanelRouteParam,
+                        );
                         return;
                       }
                       if (item.action.type === 'editProfile') {

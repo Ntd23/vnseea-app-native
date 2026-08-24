@@ -20,6 +20,7 @@ import {
   Bell,
   CalendarDays,
   Check,
+  CirclePlay,
   Flag,
   Heart,
   Image as ImageIcon,
@@ -66,6 +67,16 @@ type NotificationStyle = {
 };
 
 const STYLE_BY_TYPE: Record<string, NotificationStyle> = {
+  new_post: {
+    Icon: ImageIcon,
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
+  },
+  new_story: {
+    Icon: CirclePlay,
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
+  },
   following: { Icon: UserPlus, iconColor: '#3B82F6', borderColor: '#3B82F6' },
   liked_post: { Icon: Heart, iconColor: '#EF4444', borderColor: '#EF4444' },
   wondered_post: { Icon: Heart, iconColor: '#F59E0B', borderColor: '#F59E0B' },

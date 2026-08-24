@@ -27,9 +27,11 @@ jest.mock(
   '../../../../stories/infrastructure/repositories/ApiStoriesRepository',
   () => {
     const getUserStories = jest.fn();
+    const getStoryById = jest.fn();
     return {
       __mockGetUserStories: getUserStories,
-      createStoriesRepository: () => ({ getUserStories }),
+      __mockGetStoryById: getStoryById,
+      createStoriesRepository: () => ({ getUserStories, getStoryById }),
     };
   },
 );
@@ -39,6 +41,12 @@ const mockGetUserStories = (
     '../../../../stories/infrastructure/repositories/ApiStoriesRepository',
   ) as { __mockGetUserStories: jest.Mock }
 ).__mockGetUserStories;
+
+const mockGetStoryById = (
+  jest.requireMock(
+    '../../../../stories/infrastructure/repositories/ApiStoriesRepository',
+  ) as { __mockGetStoryById: jest.Mock }
+).__mockGetStoryById;
 
 function notification(
   overrides: Partial<NotificationsItem>,
@@ -68,6 +76,8 @@ function notification(
 describe('navigateToNotification', () => {
   beforeEach(() => {
     mockGetUserStories.mockReset();
+    mockGetStoryById.mockReset();
+    mockGetStoryById.mockResolvedValue(null);
   });
 
   it('opens a reaction notification in the matching post detail', async () => {
@@ -193,5 +203,46 @@ describe('navigateToNotification', () => {
     );
 
     expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.STORIES_LIST);
+  });
+
+  it('loads the exact Story when it is outside the first Story rail page', async () => {
+    const navigation = { navigate: jest.fn() };
+    const targetStory = {
+      id: '145',
+      publisher: {
+        userId: '7',
+        username: 'sender',
+        name: 'Người gửi',
+      },
+      postedAt: 1,
+      expiresAt: 2,
+      media: [
+        {
+          id: 'media-145',
+          type: 'image',
+          url: 'https://example.test/story-145.jpg',
+          storyId: '145',
+        },
+      ],
+      isOwner: false,
+      isViewed: false,
+      hasUnseen: true,
+      myReaction: null,
+      reactionCount: 0,
+    };
+    mockGetUserStories.mockResolvedValue([]);
+    mockGetStoryById.mockResolvedValue(targetStory);
+
+    await navigateToNotification(
+      notification({ type: 'new_story', storyId: '145' }),
+      navigation,
+    );
+
+    expect(mockGetStoryById).toHaveBeenCalledWith('145');
+    expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.STORY_VIEWER, {
+      stories: [targetStory],
+      initialUserIndex: 0,
+      initialSegmentIndex: 0,
+    });
   });
 });
