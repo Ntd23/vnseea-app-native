@@ -11,6 +11,7 @@ export type NotificationBadgeSyncDependencies = {
   updateCounts: (counts: BadgeCounts) => void;
   subscribeToAppActive: (listener: () => void) => () => void;
   subscribeToForegroundPush: (listener: () => void) => () => void;
+  subscribeToRealtime: (listener: () => void) => () => void;
   setTimer?: (callback: () => void, delayMs: number) => TimerHandle;
   clearTimer?: (timer: TimerHandle) => void;
   random?: () => number;
@@ -48,6 +49,7 @@ export function createNotificationBadgeSync(
   let pollTimer: TimerHandle | null = null;
   let unsubscribeAppActive: (() => void) | null = null;
   let unsubscribeForegroundPush: (() => void) | null = null;
+  let unsubscribeRealtime: (() => void) | null = null;
 
   const clearEventTimer = () => {
     if (!eventTimer) return;
@@ -132,6 +134,9 @@ export function createNotificationBadgeSync(
       unsubscribeForegroundPush = dependencies.subscribeToForegroundPush(
         requestEventRefresh,
       );
+      unsubscribeRealtime = dependencies.subscribeToRealtime(
+        requestEventRefresh,
+      );
       void refresh();
       scheduleNextPoll();
     }
@@ -149,8 +154,10 @@ export function createNotificationBadgeSync(
       refreshPending = false;
       unsubscribeAppActive?.();
       unsubscribeForegroundPush?.();
+      unsubscribeRealtime?.();
       unsubscribeAppActive = null;
       unsubscribeForegroundPush = null;
+      unsubscribeRealtime = null;
     };
   };
 

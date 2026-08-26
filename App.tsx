@@ -19,6 +19,7 @@ import { initializePushNotificationNavigation } from './src/notifications/applic
 import { initializeAndroidMessagePushOpen } from './src/messages/application/notifications/androidMessagePushOpen';
 import { initI18n } from './src/shared-kernel/infrastructure/i18n';
 import { SnackbarProvider } from './src/shared-kernel/presentation/components/Snackbar';
+import { AppUpdatePrompt } from './src/shared-kernel/presentation/components/AppUpdatePrompt';
 
 // Initialize i18n before any component subscribes to translations.
 initI18n();
@@ -47,6 +48,7 @@ function App() {
           <LiveKitCallSessionProvider>
             <GroupLiveKitCallSessionProvider>
               <AppNavigator />
+              <AppUpdatePrompt />
               <IncomingCallWatcher />
               <LiveKitMiniCallBar />
             </GroupLiveKitCallSessionProvider>

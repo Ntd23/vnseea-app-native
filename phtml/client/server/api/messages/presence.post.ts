@@ -3,6 +3,7 @@
 import { readBody } from "h3"
 import { createBackendApiClient } from "../../utils/backend-api-client"
 import { getBackendCurrentUser } from "../../utils/backend-current-user"
+import { publishMessagePresenceChange } from "../../utils/message-presence-publisher"
 import { markMessageUserOffline, markMessageUserOnline } from "./_presence"
 
 type PresenceInput = {
@@ -21,11 +22,26 @@ export default defineEventHandler(async (event) => {
   const currentUserId = asNumber(currentUser.user_id)
 
   if (action === "offline") {
-    markMessageUserOffline(currentUserId)
+    const changed = markMessageUserOffline(currentUserId)
+
+    if (changed) {
+      await publishMessagePresenceChange(event, {
+        userId: currentUserId,
+        online: false,
+      })
+    }
+
     return { ok: true }
   }
 
-  markMessageUserOnline(currentUserId)
+  const changed = markMessageUserOnline(currentUserId)
+
+  if (changed) {
+    await publishMessagePresenceChange(event, {
+      userId: currentUserId,
+      online: true,
+    })
+  }
 
   const client = createBackendApiClient(event)
 

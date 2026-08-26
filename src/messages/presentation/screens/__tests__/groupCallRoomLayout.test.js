@@ -8,7 +8,7 @@ function read(relativePath) {
 }
 
 describe('group call room responsive gallery', () => {
-  it('keeps two callers wide and reserves space for visible call chrome', () => {
+  it('keeps two callers wide without resizing video for call chrome', () => {
     const source = read(
       'src/messages/presentation/screens/GroupCallRoomScreen.tsx',
     );
@@ -20,16 +20,20 @@ describe('group call room responsive gallery', () => {
     expect(source).toContain('columnWrapperStyle');
     expect(source).toContain('ItemSeparatorComponent');
     expect(source).toContain('participants.length <= 2');
-    expect(source).toContain('const [isChromeVisible, setChromeVisible]');
-    expect(source).toContain('Animated.timing(chromeProgress');
+    expect(source).toContain('useCallChromeVisibility');
+    expect(source).toContain("session?.phase === 'connected'");
     expect(source).toContain('useSafeAreaInsets');
     expect(source).toContain(
       'screenWidth - safeAreaInsets.left - safeAreaInsets.right - 24',
     );
-    expect(source).toContain('paddingTop: isChromeVisible ? headerHeight : 0');
-    expect(source).toContain(
+    expect(source).not.toContain(
+      'paddingTop: isChromeVisible ? headerHeight : 0',
+    );
+    expect(source).not.toContain(
       'paddingBottom: isChromeVisible ? controlsHeight : 0',
     );
+    expect(source).toContain('outputRange: [-headerHeight, 0]');
+    expect(source).toContain('outputRange: [controlsHeight, 0]');
     expect(source).toContain('absolute bottom-0 left-0 right-0 z-20');
     expect(source).toContain('absolute left-0 right-0 top-0 z-20');
   });

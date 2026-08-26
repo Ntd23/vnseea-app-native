@@ -23,6 +23,9 @@ describe('message realtime runtime', () => {
     expect(source).toContain("require('socket.io-client-v4')");
     expect(source).toContain("nuxtApiUrl('realtime/token')");
     expect(source).toContain("nextSocket.on('messages:count'");
+    expect(source).toContain("'notification:new'");
+    expect(source).toContain("'notification:counts-changed'");
+    expect(source).toContain("'navigation:counts-changed'");
     expect(source).toContain("'relationship:changed'");
     expect(source).toContain("nextSocket.on('message:typing'");
     expect(source).toContain("nextSocket.on('message:typing-stop'");
@@ -34,6 +37,14 @@ describe('message realtime runtime', () => {
     expect(packageJson.dependencies['socket.io-client-v4']).toBe(
       'npm:socket.io-client@4.8.3',
     );
+  });
+
+  it('publishes App foreground and background presence through the authenticated bridge', () => {
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain("nuxtApiUrl('messages/presence')");
+    expect(source).toContain("publishPresence('online')");
+    expect(source).toContain("publishPresence('offline')");
   });
 
   it('refreshes follow discovery when a realtime relationship notification arrives', () => {

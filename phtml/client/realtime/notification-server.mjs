@@ -240,10 +240,15 @@ export function createRealtimeRelay({
       const kind = String(payload.kind || "notification").trim()
       const eventNames = realtimeEventNames[kind] || realtimeEventNames.notification
       if (kind === "relationship" && Array.isArray(payload.relationships)) {
+        let emitted = 0
         payload.relationships.slice(0, 10).forEach(relationship => {
           const relationshipRecipientId = String(relationship?.recipientId || "").trim()
           const peerUserId = String(relationship?.peerUserId || "").trim()
-          if (!relationshipRecipientId || !peerUserId) return
+          if (
+            !/^[1-9][0-9]*$/.test(relationshipRecipientId)
+            || !/^[1-9][0-9]*$/.test(peerUserId)
+            || relationshipRecipientId === peerUserId
+          ) return
           io.to(`user:${relationshipRecipientId}`).emit("relationship:changed", {
             kind,
             peerUserId,
@@ -251,7 +256,12 @@ export function createRealtimeRelay({
             isFollowing: Boolean(Number(relationship?.isFollowing)),
             isFollower: Boolean(Number(relationship?.isFollower)),
           })
+          emitted += 1
         })
+        if (emitted === 0) {
+          send(encodeJson(400, { ok: false, message: "Invalid relationship change" }))
+          return
+        }
         send(encodeJson(200, { ok: true }))
         return
       }
@@ -260,7 +270,12 @@ export function createRealtimeRelay({
         kind,
       }
       if (kind === "relationship") {
-        eventPayload.peerUserId = String(payload.peerUserId || "")
+        const peerUserId = String(payload.peerUserId || "").trim()
+        if (!/^[1-9][0-9]*$/.test(peerUserId) || peerUserId === recipientId) {
+          send(encodeJson(400, { ok: false, message: "Invalid relationship change" }))
+          return
+        }
+        eventPayload.peerUserId = peerUserId
         eventPayload.occurredAt = Number(payload.occurredAt) || Date.now()
         eventPayload.isFollowing = Boolean(Number(payload.isFollowing))
         eventPayload.isFollower = Boolean(Number(payload.isFollower))

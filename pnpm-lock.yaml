@@ -18,7 +18,7 @@ patchedDependencies:
     hash: abd58184afb9e24cc9ef0bc8d2a1747e170eeb3afa911ce60e4e4450ea4c5213
     path: patches/@shopify__flash-list@2.3.1.patch
   react-native-callkeep@4.3.16:
-    hash: 6a4b0a65642336494d8cfd176c6b68861cb0ff17e6b85e81dd36d647f89e9ad4
+    hash: fa922cf22cd4c62131044ef9e4310e1d9ffe461f11cbab83a6356da3f3a32455
     path: patches/react-native-callkeep@4.3.16.patch
   react-native-css-interop@0.2.3:
     hash: 084efd53ec081af8eee6637779a9cb8a73b6e213c5f32d4a27bb6d8c4c99a2a7
@@ -111,7 +111,7 @@ importers:
         version: 0.24.10(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       react-native-callkeep:
         specifier: ^4.3.16
-        version: 4.3.16(patch_hash=6a4b0a65642336494d8cfd176c6b68861cb0ff17e6b85e81dd36d647f89e9ad4)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))
+        version: 4.3.16(patch_hash=fa922cf22cd4c62131044ef9e4310e1d9ffe461f11cbab83a6356da3f3a32455)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))
       react-native-camera-kit:
         specifier: ^18.0.0
         version: 18.0.0(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -9269,7 +9269,7 @@ snapshots:
       react: 19.2.3
       react-native: 0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
 
-  react-native-callkeep@4.3.16(patch_hash=6a4b0a65642336494d8cfd176c6b68861cb0ff17e6b85e81dd36d647f89e9ad4)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)):
+  react-native-callkeep@4.3.16(patch_hash=fa922cf22cd4c62131044ef9e4310e1d9ffe461f11cbab83a6356da3f3a32455)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)):
     dependencies:
       react-native: 0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
 
