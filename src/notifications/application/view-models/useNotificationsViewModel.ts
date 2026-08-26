@@ -25,6 +25,7 @@ import {
 import { createLatestRequestGuard } from './notificationRequestGuard';
 import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
 import { replaceOrderNotificationBadges } from '../../../orders/application/notifications/orderNotificationBadgeStore';
+import { subscribeToMessageRealtimeEvent } from '../../../messages/infrastructure/realtime/messageRealtimeRuntime';
 
 const PAGE_SIZE = 100;
 
@@ -181,7 +182,13 @@ export function useNotificationsViewModel() {
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const unsubscribe = foregroundPushEvents.subscribe(payload => {
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        loadFirstPage(false, true);
+      }, 250);
+    };
+    const unsubscribePush = foregroundPushEvents.subscribe(payload => {
       const incomingNotification = mapForegroundPushNotification(payload);
       if (incomingNotification) {
         const isNew = !notificationIdsRef.current.has(incomingNotification.id);
@@ -197,14 +204,17 @@ export function useNotificationsViewModel() {
         }
       }
 
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => {
-        loadFirstPage(false, true);
-      }, 250);
+      scheduleRefresh();
     });
+    const unsubscribeRealtime = [
+      subscribeToMessageRealtimeEvent('notification:new', scheduleRefresh),
+      subscribeToMessageRealtimeEvent('request:new', scheduleRefresh),
+      subscribeToMessageRealtimeEvent('group-chat-request:new', scheduleRefresh),
+    ];
 
     return () => {
-      unsubscribe();
+      unsubscribePush();
+      unsubscribeRealtime.forEach(unsubscribe => unsubscribe());
       if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [loadFirstPage]);

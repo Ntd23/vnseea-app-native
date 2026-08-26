@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
-index c78c45810e9d30fc063c7fec21bfbd45ac2edbae..2f71f1f495fc759394fc1c5519742c84ef3a8c6b 100644
+index 025480ac97460cc45775ea11aa43af36522d5df6..3d1e197c6857288fa7de9f66b9cd5cbdf9703d11 100644
 --- a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
 +++ b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
 @@ -1,4 +1,6 @@
@@ -12,35 +12,50 @@ index c78c45810e9d30fc063c7fec21bfbd45ac2edbae..2f71f1f495fc759394fc1c5519742c84
 @@ -434,7 +436,6 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
          this.hasListeners = false;
      }
- 
+
 -    @ReactMethod
      public void displayIncomingCall(String uuid, String number, String callerName) {
          this.displayIncomingCall(uuid, number, callerName, false, null);
      }
-@@ -486,7 +487,6 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
+@@ -483,7 +484,6 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
          conn.onAnswer();
      }
- 
+
 -    @ReactMethod
      public void startCall(String uuid, String number, String callerName) {
          this.startCall(uuid, number, callerName, false, null);
      }
+diff --git a/index.d.ts b/index.d.ts
+index 25b43da9726f61ccdb3cf31233c21ff7941507eb..939ce90c5fc24d05a637d8b98ce271f292fec74f 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -28,8 +28,8 @@ declare module 'react-native-callkeep' {
+     didReceiveStartCallAction: { handle: string, callUUID?: string, name?: string };
+     answerCall: { callUUID: string };
+     endCall: { callUUID: string };
+-    didActivateAudioSession: undefined;
+-    didDeactivateAudioSession: undefined;
++    didActivateAudioSession: { callUUID: string };
++    didDeactivateAudioSession: { callUUID: string };
+     didDisplayIncomingCall: {
+       error?: string,
+       errorCode?: 'Unentitled' | 'CallUUIDAlreadyExists' | 'FilteredByDoNotDisturb' | 'FilteredByBlockList' | 'Unknown',
 diff --git a/ios/RNCallKeep/RNCallKeep.m b/ios/RNCallKeep/RNCallKeep.m
+index 786045fea8f667bd112f90050c8018c96cde6a3b..e8539eb8eb09d2c94ab74eedd6e46a06fe9cb6f4 100644
 --- a/ios/RNCallKeep/RNCallKeep.m
 +++ b/ios/RNCallKeep/RNCallKeep.m
 @@ -16,6 +16,7 @@
- 
+
  #import <AVFoundation/AVAudioSession.h>
  #import <CallKit/CallKit.h>
 +#import <objc/message.h>
- 
+
  #ifdef DEBUG
  static int const OUTGOING_CALL_WAKEUP_DELAY = 10;
-@@ -37,6 +38,114 @@ static NSString *const RNCallKeepProviderReset = @"RNCallKeepProviderReset";
- static NSString *const RNCallKeepCheckReachability = @"RNCallKeepCheckReachability";
+@@ -38,6 +39,114 @@ static NSString *const RNCallKeepCheckReachability = @"RNCallKeepCheckReachabili
  static NSString *const RNCallKeepDidChangeAudioRoute = @"RNCallKeepDidChangeAudioRoute";
  static NSString *const RNCallKeepDidLoadWithEvents = @"RNCallKeepDidLoadWithEvents";
-+
+
 +static NSString *VNSEEAPortTypesForAudioSessionPorts(NSArray<AVAudioSessionPortDescription *> *ports) {
 +    NSMutableArray<NSString *> *portTypes = [NSMutableArray array];
 +    for (AVAudioSessionPortDescription *port in ports) {
@@ -148,26 +163,73 @@ diff --git a/ios/RNCallKeep/RNCallKeep.m b/ios/RNCallKeep/RNCallKeep.m
 +
 +    VNSEEALogAudioSessionState(@"native_callkit_audio_session_configured", nil);
 +}
- 
++
  @implementation RNCallKeep
  {
-@@ -915,10 +1024,12 @@ - (void)configureAudioSession
+     NSOperatingSystemVersion _version;
+@@ -45,6 +154,7 @@ static NSString *const RNCallKeepDidLoadWithEvents = @"RNCallKeepDidLoadWithEven
+     bool _hasListeners;
+     bool _isReachable;
+     NSMutableArray *_delayedEvents;
++    NSString *_vnseeaCurrentCallUUID;
+ }
+
+ static bool isSetupNatively;
+@@ -175,6 +285,28 @@ RCT_EXPORT_MODULE()
+     }
+ }
+
++- (void)vnseeaRememberCurrentCallUUID:(NSUUID *)callUUID {
++    if (callUUID == nil) {
++        return;
++    }
++    _vnseeaCurrentCallUUID = [callUUID.UUIDString lowercaseString];
++}
++
++- (NSString *)vnseeaCurrentCallUUID {
++    if (_vnseeaCurrentCallUUID.length > 0) {
++        return _vnseeaCurrentCallUUID;
++    }
++
++    for (CXCall *call in self.callKeepCallController.callObserver.calls) {
++        if (!call.hasEnded) {
++            [self vnseeaRememberCurrentCallUUID:call.UUID];
++            return _vnseeaCurrentCallUUID;
++        }
++    }
++
++    return @"";
++}
++
+ + (NSDictionary *) getSettings {
+     return [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"RNCallKeepSettings"];
+ }
+@@ -789,6 +921,9 @@ RCT_EXPORT_METHOD(getAudioRoutes: (RCTPromiseResolveBlock)resolve
+     [RNCallKeep initCallKitProvider];
+     [sharedProvider reportNewIncomingCallWithUUID:uuid update:callUpdate completion:^(NSError * _Nullable error) {
+         RNCallKeep *callKeep = [RNCallKeep allocWithZone: nil];
++        if (error == nil) {
++            [callKeep vnseeaRememberCurrentCallUUID:uuid];
++        }
+         [callKeep sendEventWithNameWrapper:RNCallKeepDidDisplayIncomingCall body:@{
+             @"error": error && error.localizedDescription ? error.localizedDescription : @"",
+             @"errorCode": error ? [callKeep getIncomingCallErrorCode:error] : @"",
+@@ -915,9 +1050,11 @@ RCT_EXPORT_METHOD(getAudioRoutes: (RCTPromiseResolveBlock)resolve
  #ifdef DEBUG
      NSLog(@"[RNCallKeep][configureAudioSession] Activating audio session");
  #endif
+-
+-    NSUInteger categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+-    NSString *mode = AVAudioSessionModeDefault;
 +    AVAudioSessionCategoryOptions categoryOptions =
 +        AVAudioSessionCategoryOptionAllowBluetooth |
 +        AVAudioSessionCategoryOptionDefaultToSpeaker |
 +        AVAudioSessionCategoryOptionMixWithOthers;
 +    NSString *mode = AVAudioSessionModeVoiceChat;
  
--    NSUInteger categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
--    NSString *mode = AVAudioSessionModeDefault;
--
      NSDictionary *settings = [RNCallKeep getSettings];
      if (settings && settings[@"audioSession"]) {
-         if (settings[@"audioSession"][@"categoryOptions"]) {
-@@ -931,16 +1042,33 @@ - (void)configureAudioSession
+@@ -931,16 +1068,33 @@ RCT_EXPORT_METHOD(getAudioRoutes: (RCTPromiseResolveBlock)resolve
      }
  
      AVAudioSession* audioSession = [AVAudioSession sharedInstance];
@@ -208,21 +270,54 @@ diff --git a/ios/RNCallKeep/RNCallKeep.m b/ios/RNCallKeep/RNCallKeep.m
  }
  
  + (BOOL)application:(UIApplication *)application
-@@ -1142,7 +1270,8 @@ - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession
+@@ -1042,6 +1196,7 @@ continueUserActivity:(NSUserActivity *)userActivity
+ #ifdef DEBUG
+     NSLog(@"[RNCallKeep][providerDidReset]");
+ #endif
++    _vnseeaCurrentCallUUID = @"";
+     //this means something big changed, so tell the JS. The JS should
+     //probably respond by hanging up all calls.
+     [self sendEventWithNameWrapper:RNCallKeepProviderReset body:nil];
+@@ -1053,6 +1208,7 @@ continueUserActivity:(NSUserActivity *)userActivity
+ #ifdef DEBUG
+     NSLog(@"[RNCallKeep][CXProviderDelegate][provider:performStartCallAction]");
+ #endif
++    [self vnseeaRememberCurrentCallUUID:action.callUUID];
+     //do this first, audio sessions are flakey
+     [self configureAudioSession];
+     //tell the JS to actually make the call
+@@ -1080,6 +1236,7 @@ RCT_EXPORT_METHOD(reportUpdatedCall:(NSString *)uuidString contactIdentifier:(NS
+ #ifdef DEBUG
+     NSLog(@"[RNCallKeep][CXProviderDelegate][provider:performAnswerCallAction]");
+ #endif
++    [self vnseeaRememberCurrentCallUUID:action.callUUID];
+     [self configureAudioSession];
+     [self sendEventWithNameWrapper:RNCallKeepPerformAnswerCallAction body:@{ @"callUUID": [action.callUUID.UUIDString lowercaseString] }];
+     [action fulfill];
+@@ -1142,8 +1299,11 @@ RCT_EXPORT_METHOD(reportUpdatedCall:(NSString *)uuidString contactIdentifier:(NS
      };
      [[NSNotificationCenter defaultCenter] postNotificationName:AVAudioSessionInterruptionNotification object:nil userInfo:userInfo];
  
 -    [self configureAudioSession];
+-    [self sendEventWithNameWrapper:RNCallKeepDidActivateAudioSession body:nil];
 +    VNSEEAConfigureCallKitAudioSession(audioSession);
 +    VNSEEABridgeRTCAudioSessionDidActivate(audioSession);
-     [self sendEventWithNameWrapper:RNCallKeepDidActivateAudioSession body:nil];
++    [self sendEventWithNameWrapper:RNCallKeepDidActivateAudioSession body:@{
++        @"callUUID": [self vnseeaCurrentCallUUID]
++    }];
  }
  
-@@ -1151,6 +1280,7 @@ - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSessio
+ - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
+@@ -1151,7 +1311,11 @@ RCT_EXPORT_METHOD(reportUpdatedCall:(NSString *)uuidString contactIdentifier:(NS
  #ifdef DEBUG
      NSLog(@"[RNCallKeep][CXProviderDelegate][provider:didDeactivateAudioSession]");
  #endif
+-    [self sendEventWithNameWrapper:RNCallKeepDidDeactivateAudioSession body:nil];
 +    VNSEEABridgeRTCAudioSessionDidDeactivate(audioSession);
-     [self sendEventWithNameWrapper:RNCallKeepDidDeactivateAudioSession body:nil];
++    [self sendEventWithNameWrapper:RNCallKeepDidDeactivateAudioSession body:@{
++        @"callUUID": [self vnseeaCurrentCallUUID]
++    }];
++    _vnseeaCurrentCallUUID = @"";
  }
  
+ @end

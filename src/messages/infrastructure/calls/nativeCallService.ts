@@ -70,6 +70,11 @@ let cachedInitialNativeMessageAction: Promise<Record<
 > | null> | null = null;
 const pendingAnswerUuids: string[] = [];
 const pendingEndUuids: string[] = [];
+type InitialCallKeepEvent = {
+  name?: string;
+  data?: Record<string, unknown>;
+};
+const replayedInitialCallKeepEventKeys = new Set<string>();
 const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type NativeAudioSessionActivationResult = {
   activated: boolean;
@@ -420,21 +425,12 @@ function hasRecentWebRTCAudioSessionActivation(callUuid?: string) {
 }
 
 function resolveCallKitAudioSessionCallUuid(rawCallUuid?: string) {
-  if (rawCallUuid) {
-    return {
-      rawCallUuid,
-      resolvedCallUuid: rawCallUuid,
-      candidateCount: activeCalls.has(rawCallUuid) ? 1 : 0,
-    };
-  }
-
-  const candidateUuids = Array.from(activeCalls.entries())
-    .filter(([, activeCall]) => activeCall.usesNativeCallUi)
-    .map(([activeCallUuid]) => activeCallUuid);
+  const resolvedCallUuid = rawCallUuid?.trim() ?? '';
   return {
     rawCallUuid,
-    resolvedCallUuid: candidateUuids.length === 1 ? candidateUuids[0] : '',
-    candidateCount: candidateUuids.length,
+    resolvedCallUuid,
+    candidateCount:
+      resolvedCallUuid && activeCalls.has(resolvedCallUuid) ? 1 : 0,
   };
 }
 
@@ -666,10 +662,76 @@ export function createNativeGroupCallUuid(callId?: string) {
   )}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
+function getInitialCallKeepEventKey(event: InitialCallKeepEvent) {
+  const data = event.data ?? {};
+  const callUuid = String(
+    data.callUUID ?? data.callUuid ?? data.uuid ?? '',
+  ).trim();
+
+  return `${event.name ?? 'unknown'}:${callUuid || 'none'}`;
+}
+
+function replayInitialCallKeepEvents(events: unknown) {
+  if (!Array.isArray(events) || events.length === 0) return;
+
+  const pendingEvents = events.filter(
+    (event): event is InitialCallKeepEvent =>
+      Boolean(event && typeof event === 'object'),
+  );
+  const phases = [
+    new Set(['RNCallKeepDidDisplayIncomingCall']),
+    new Set([
+      'RNCallKeepPerformAnswerCallAction',
+      'RNCallKeepPerformEndCallAction',
+    ]),
+    new Set([
+      'RNCallKeepDidActivateAudioSession',
+      'RNCallKeepDidDeactivateAudioSession',
+    ]),
+  ];
+
+  for (const phase of phases) {
+    for (const event of pendingEvents) {
+      if (!event.name || !phase.has(event.name)) continue;
+
+      const eventKey = getInitialCallKeepEventKey(event);
+      if (replayedInitialCallKeepEventKeys.has(eventKey)) continue;
+      replayedInitialCallKeepEventKeys.add(eventKey);
+
+      const data = event.data ?? {};
+      const callUuid = String(
+        data.callUUID ?? data.callUuid ?? data.uuid ?? '',
+      ).trim();
+      if (event.name === 'RNCallKeepDidDisplayIncomingCall' && callUuid) {
+        rememberNativeCallFromPayload(callUuid, data.payload);
+      } else if (
+        event.name === 'RNCallKeepPerformAnswerCallAction' &&
+        callUuid
+      ) {
+        emitAnswer(callUuid);
+      } else if (
+        event.name === 'RNCallKeepPerformEndCallAction' &&
+        callUuid
+      ) {
+        emitEnd(callUuid);
+      } else if (event.name === 'RNCallKeepDidActivateAudioSession') {
+        emitAudioSessionActivated(callUuid || undefined);
+      } else if (event.name === 'RNCallKeepDidDeactivateAudioSession') {
+        emitAudioSessionDeactivated(callUuid || undefined);
+      }
+    }
+  }
+}
+
 export async function configureNativeCallService() {
   if (isConfigured) return;
   const RNCallKeep = loadCallKeep();
   if (RNCallKeep?.default) {
+    RNCallKeep.default.addEventListener(
+      'didLoadWithEvents',
+      replayInitialCallKeepEvents,
+    );
+
     await RNCallKeep.default.setup({
       ios: {
         appName: 'VNSEEA',
@@ -715,37 +777,14 @@ export async function configureNativeCallService() {
         rememberNativeCallFromPayload(event.callUUID, event.payload);
       },
     );
-    RNCallKeep.default.addEventListener(
-      'didLoadWithEvents',
-      (events: any[]) => {
-        for (const event of events) {
-          if (event.name === 'RNCallKeepDidDisplayIncomingCall') {
-            rememberNativeCallFromPayload(
-              event.data.callUUID,
-              event.data.payload,
-            );
-          }
-        }
-        for (const event of events) {
-          if (event.name === 'RNCallKeepPerformAnswerCallAction') {
-            emitAnswer(event.data.callUUID);
-          }
-          if (event.name === 'RNCallKeepPerformEndCallAction') {
-            emitEnd(event.data.callUUID);
-          }
-          if (event.name === 'RNCallKeepDidActivateAudioSession') {
-            emitAudioSessionActivated(
-              event.data?.callUUID ?? event.data?.callUuid ?? event.data?.uuid,
-            );
-          }
-          if (event.name === 'RNCallKeepDidDeactivateAudioSession') {
-            emitAudioSessionDeactivated(
-              event.data?.callUUID ?? event.data?.callUuid ?? event.data?.uuid,
-            );
-          }
-        }
-      },
-    );
+    try {
+      const initialEvents = await RNCallKeep.default.getInitialEvents();
+      replayInitialCallKeepEvents(initialEvents);
+    } catch (error) {
+      console.warn('[LiveKitCall] Could not replay initial CallKeep events', error);
+    } finally {
+      RNCallKeep.default.clearInitialEvents();
+    }
   }
   if (Platform.OS === 'ios') {
     const RNVoipPushNotification = loadVoipPushNotification();

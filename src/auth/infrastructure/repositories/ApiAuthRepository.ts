@@ -82,8 +82,8 @@ function logAuthDebug(event: string, data: Record<string, unknown> = {}) {
 }
 
 function clearLocalAuthState() {
-  sessionStorage.clearSession();
   disconnectLiveKitCallRealtime();
+  sessionStorage.clearSession();
   logoutPushUser();
 }
 

@@ -15,6 +15,7 @@ import {
   setOrderNotificationBadgeOwner,
 } from '../../../orders/application/notifications/orderNotificationBadgeStore';
 import { createNotificationBadgeSync } from './notificationBadgeSync';
+import { subscribeToMessageRealtimeEvent } from '../../../messages/infrastructure/realtime/messageRealtimeRuntime';
 
 let notificationsRepository: ReturnType<
   typeof createNotificationsRepository
@@ -82,6 +83,15 @@ const notificationBadgeSync = createNotificationBadgeSync({
   },
   subscribeToForegroundPush: listener =>
     foregroundPushEvents.subscribe(listener),
+  subscribeToRealtime: listener => {
+    const unsubscribers = [
+      subscribeToMessageRealtimeEvent('notification:counts-changed', listener),
+      subscribeToMessageRealtimeEvent('request:new', listener),
+      subscribeToMessageRealtimeEvent('group-chat-request:new', listener),
+      subscribeToMessageRealtimeEvent('navigation:counts-changed', listener),
+    ];
+    return () => unsubscribers.forEach(unsubscribe => unsubscribe());
+  },
   warn: error => {
     console.warn('[useNotificationBadgeViewModel] refresh failed', error);
   },

@@ -36,6 +36,11 @@ export type MessageTypingRealtimeEvent = {
 export type MessageRealtimeEventName =
   | 'message:presence'
   | 'relationship:changed'
+  | 'notification:new'
+  | 'notification:counts-changed'
+  | 'request:new'
+  | 'group-chat-request:new'
+  | 'navigation:counts-changed'
   | 'livekit_call_incoming'
   | 'livekit_call_answered'
   | 'livekit_call_declined'
@@ -52,6 +57,7 @@ const createSocket: SocketFactory =
   socketModule.io ?? socketModule.default ?? socketModule;
 
 export const MESSAGE_INVALIDATION_DEBOUNCE_MS = 150;
+const MESSAGE_RECONNECT_AUTH_RETRY_MS = 1_000;
 
 const invalidationListeners = new Set<
   (event: MessageRealtimeInvalidation) => void
@@ -65,6 +71,11 @@ const eventListeners = new Map<
 const forwardedEventNames: MessageRealtimeEventName[] = [
   'message:presence',
   'relationship:changed',
+  'notification:new',
+  'notification:counts-changed',
+  'request:new',
+  'group-chat-request:new',
+  'navigation:counts-changed',
   'livekit_call_incoming',
   'livekit_call_answered',
   'livekit_call_declined',
@@ -80,6 +91,7 @@ let connecting = false;
 let connected = false;
 let appState: AppStateStatus = AppState.currentState;
 let invalidationTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAuthTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingTypingEvents: Array<{
   event: 'message:typing' | 'message:typing-stop';
   recipientId: string;
@@ -108,6 +120,49 @@ async function requestToken(token: string) {
     token: result.token,
     url: result.url.replace(/\/+$/, ''),
   };
+}
+
+async function publishPresence(action: 'online' | 'offline') {
+  const token = sessionStorage.getAccessToken();
+  if (!token) return;
+  await fetch(nuxtApiUrl('messages/presence'), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action }),
+  }).catch(() => undefined);
+}
+
+function hasRealtimeDemand() {
+  return (
+    invalidationListeners.size > 0 ||
+    connectionListeners.size > 0 ||
+    typingListeners.size > 0 ||
+    eventListeners.size > 0
+  );
+}
+
+function clearReconnectAuthTimer() {
+  if (!reconnectAuthTimer) return;
+  clearTimeout(reconnectAuthTimer);
+  reconnectAuthTimer = null;
+}
+
+function scheduleFreshAuthReconnect() {
+  if (
+    reconnectAuthTimer ||
+    appState !== 'active' ||
+    !hasRealtimeDemand()
+  ) {
+    return;
+  }
+  reconnectAuthTimer = setTimeout(() => {
+    reconnectAuthTimer = null;
+    ensureConnected().catch(() => undefined);
+  }, MESSAGE_RECONNECT_AUTH_RETRY_MS);
 }
 
 function setConnected(nextConnected: boolean) {
@@ -165,7 +220,9 @@ function publishForwardedEvent(
 
 function bindSocket(nextSocket: SocketLike) {
   nextSocket.on('connect', () => {
+    clearReconnectAuthTimer();
     setConnected(true);
+    void publishPresence('online');
     emitPresenceWatch(nextSocket);
     pendingTypingEvents.splice(0).forEach(pending => {
       nextSocket.emit(pending.event, { recipientId: pending.recipientId });
@@ -173,7 +230,15 @@ function bindSocket(nextSocket: SocketLike) {
     publishInvalidation('reconnect');
   });
   nextSocket.on('disconnect', () => setConnected(false));
-  nextSocket.on('connect_error', () => setConnected(false));
+  nextSocket.on('connect_error', () => {
+    if (socket === nextSocket) {
+      nextSocket.disconnect();
+      socket = null;
+      accessToken = '';
+    }
+    setConnected(false);
+    scheduleFreshAuthReconnect();
+  });
   nextSocket.on('messages:count', () => publishInvalidation('event'));
   nextSocket.on('message:typing', payload => publishTyping(payload, true));
   nextSocket.on('message:typing-stop', payload =>
@@ -199,6 +264,14 @@ async function ensureConnected() {
     const auth = await requestToken(token);
     if (!auth) {
       setConnected(false);
+      scheduleFreshAuthReconnect();
+      return;
+    }
+    if (
+      appState !== 'active' ||
+      sessionStorage.getAccessToken() !== token ||
+      !hasRealtimeDemand()
+    ) {
       return;
     }
     socket?.disconnect();
@@ -212,21 +285,27 @@ async function ensureConnected() {
     bindSocket(socket);
   } catch {
     setConnected(false);
+    scheduleFreshAuthReconnect();
   } finally {
     connecting = false;
   }
 }
 
 AppState.addEventListener('change', nextState => {
+  const previousState = appState;
   appState = nextState;
-  if (
-    nextState === 'active' &&
-    (invalidationListeners.size > 0 ||
-      connectionListeners.size > 0 ||
-      typingListeners.size > 0 ||
-      eventListeners.size > 0)
-  ) {
+  if (nextState === 'active' && hasRealtimeDemand()) {
+    void publishPresence('online');
     ensureConnected().catch(() => undefined);
+    return;
+  }
+  if (previousState === 'active' && nextState !== 'active') {
+    void publishPresence('offline');
+    clearReconnectAuthTimer();
+    socket?.disconnect();
+    socket = null;
+    accessToken = '';
+    setConnected(false);
   }
 });
 
@@ -235,6 +314,8 @@ export function connectMessageRealtime() {
 }
 
 export function disconnectMessageRealtime() {
+  void publishPresence('offline');
+  clearReconnectAuthTimer();
   socket?.disconnect();
   socket = null;
   accessToken = '';

@@ -38,6 +38,9 @@ describe('logout flow cleanup and navigation', () => {
     expect(cleanupBlock).toContain('disconnectLiveKitCallRealtime();');
     expect(cleanupBlock).toContain('logoutPushUser();');
     expect(cleanupBlock).toContain('sessionStorage.clearSession();');
+    expect(
+      cleanupBlock.indexOf('disconnectLiveKitCallRealtime();'),
+    ).toBeLessThan(cleanupBlock.indexOf('sessionStorage.clearSession();'));
     expect(cleanupBlock.indexOf('sessionStorage.clearSession();')).toBeLessThan(
       cleanupBlock.indexOf('logoutPushUser();'),
     );

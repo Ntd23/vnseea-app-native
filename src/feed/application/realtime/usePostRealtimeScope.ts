@@ -39,9 +39,7 @@ export function usePostRealtimeScope({
             .map(value => String(value).trim())
             .filter(value => /^[1-9][0-9]*$/.test(value)),
         ),
-      )
-        .sort((left, right) => Number(left) - Number(right))
-        .slice(0, 50),
+      ).slice(0, 50),
     [postIds, posts],
   );
   const signature = normalizedIds.join(',');

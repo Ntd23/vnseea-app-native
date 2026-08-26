@@ -3,8 +3,10 @@ import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appCo
 import React, { useCallback, useEffect } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   BackHandler,
   Image,
+  Pressable,
   StatusBar,
   StyleSheet,
   Text,
@@ -30,6 +32,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { CallAudioOutputSelector } from '../components/CallAudioOutputSelector';
+import { useCallChromeVisibility } from '../utils/useCallChromeVisibility';
 
 type CallRoomScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -103,12 +106,16 @@ function ControlButton({
   );
 }
 
-function FloatingBackButton() {
+function MinimizeCallButton({ floating = false }: { floating?: boolean }) {
   const { minimizeCall } = useLiveKitCallSession();
   return (
     <TouchableOpacity
-      className="absolute left-4 top-12 z-30 h-11 w-11 items-center justify-center rounded-full bg-slate-950/80"
+      className={`h-11 w-11 items-center justify-center rounded-full bg-slate-950/80 ${
+        floating ? 'absolute left-4 top-12 z-30' : ''
+      }`}
       activeOpacity={0.82}
+      accessibilityRole="button"
+      accessibilityLabel="Thu nhỏ cuộc gọi"
       onPress={minimizeCall}
     >
       <ArrowLeft size={22} color="#ffffff" />
@@ -217,7 +224,7 @@ function WaitingRoom({
 
   return (
     <SafeAreaView className="flex-1 bg-slate-950" edges={ROOT_SAFE_AREA_EDGES}>
-      <FloatingBackButton />
+      <MinimizeCallButton floating />
       <View className="flex-1 items-center justify-center px-8">
         {peerAvatar ? (
           <Image
@@ -266,7 +273,9 @@ function AudioRoom({
   peerName: string;
   peerAvatar: string;
 }) {
-  const { session, minimizeCall } = useLiveKitCallSession();
+  const { session } = useLiveKitCallSession();
+  const { chromeProgress, isChromeVisible, toggleChrome } =
+    useCallChromeVisibility(session?.phase === 'connected');
   const avatarInitial = peerName.trim().charAt(0).toUpperCase() || '?';
 
   return (
@@ -282,27 +291,12 @@ function AudioRoom({
       ) : null}
       <View style={styles.audioBackdropOverlay} />
 
-      <SafeAreaView className="flex-1 px-5" edges={ROOT_SAFE_AREA_EDGES}>
-        <View className="flex-row items-center justify-between pt-2">
-          <TouchableOpacity
-            className="h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-900/70"
-            activeOpacity={0.82}
-            accessibilityRole="button"
-            accessibilityLabel="Thu nhỏ cuộc gọi"
-            onPress={minimizeCall}
-          >
-            <ArrowLeft size={22} color="#ffffff" />
-          </TouchableOpacity>
-          <View className="flex-row items-center rounded-full border border-white/10 bg-slate-900/65 px-3 py-2">
-            <PhoneCall size={15} color="#93c5fd" />
-            <Text className="ml-2 text-xs font-bold text-info-muted">
-              CUỘC GỌI THOẠI
-            </Text>
-          </View>
-          <View className="h-11 w-11" />
-        </View>
-
-        <View className="flex-1 items-center justify-center pb-10">
+      <Pressable className="flex-1" onPress={toggleChrome}>
+        <SafeAreaView
+          className="flex-1 items-center justify-center px-5"
+          edges={ROOT_SAFE_AREA_EDGES}
+        >
+          <View className="items-center justify-center pb-10">
           <View className="items-center justify-center rounded-full border border-white/15 bg-white/5 p-2">
             {peerAvatar ? (
               <Image
@@ -345,72 +339,172 @@ function AudioRoom({
               </Text>
             </View>
           ) : null}
-        </View>
+          </View>
+        </SafeAreaView>
+      </Pressable>
 
-        <CallControls callType="audio" />
-      </SafeAreaView>
+      <Animated.View
+        pointerEvents={isChromeVisible ? 'auto' : 'none'}
+        style={[
+          styles.topCallChrome,
+          {
+            opacity: chromeProgress,
+            transform: [
+              {
+                translateY: chromeProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-96, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <SafeAreaView edges={['top', 'left', 'right']}>
+          <View className="flex-row items-center justify-between px-5 pt-2">
+            <MinimizeCallButton />
+            <View className="flex-row items-center rounded-full border border-white/10 bg-slate-900/65 px-3 py-2">
+              <PhoneCall size={15} color="#93c5fd" />
+              <Text className="ml-2 text-xs font-bold text-info-muted">
+                CUỘC GỌI THOẠI
+              </Text>
+            </View>
+            <View className="h-11 w-11" />
+          </View>
+        </SafeAreaView>
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents={isChromeVisible ? 'auto' : 'none'}
+        style={[
+          styles.bottomCallChrome,
+          {
+            opacity: chromeProgress,
+            transform: [
+              {
+                translateY: chromeProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [144, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <SafeAreaView edges={['bottom', 'left', 'right']}>
+          <View className="px-3">
+            <CallControls callType="audio" />
+          </View>
+        </SafeAreaView>
+      </Animated.View>
     </View>
   );
 }
 
 function VideoRoom({ peerName }: { peerName: string }) {
   const { session } = useLiveKitCallSession();
+  const { chromeProgress, isChromeVisible, toggleChrome } =
+    useCallChromeVisibility(session?.phase === 'connected');
   const remoteVideoStreamUrl = session?.remoteVideoStreamUrl ?? '';
   const localVideoStreamUrl = session?.localVideoStreamUrl ?? '';
 
   return (
     <View className="flex-1 bg-black">
-      <FloatingBackButton />
-      <View className="absolute right-4 top-12 z-20">
-        <RemoteStatusBadges
-          isCameraMuted={Boolean(session?.isRemoteCameraMuted)}
-          isMicrophoneMuted={Boolean(session?.isRemoteMicrophoneMuted)}
-        />
-      </View>
-      {remoteVideoStreamUrl ? (
-        <RTCView
-          streamURL={remoteVideoStreamUrl}
-          style={styles.remoteVideo}
-          objectFit="cover"
-          zOrder={0}
-        />
-      ) : (
-        <View className="flex-1 items-center justify-center bg-slate-950 px-8">
-          <Video size={42} color="#ffffff" />
-          <Text className="mt-4 text-center text-lg font-semibold text-white">
-            Đang chờ video từ {peerName}
-          </Text>
-          {session?.mediaErrorText ? (
-            <Text className="mt-2 text-center text-sm text-red-300">
-              {session.mediaErrorText}
-            </Text>
-          ) : null}
-          {session?.deliveryWarningText ? (
-            <Text className="mt-3 text-center text-sm text-amber-200">
-              {session.deliveryWarningText}
-            </Text>
-          ) : null}
-        </View>
-      )}
-      <View style={styles.localVideoWrap}>
-        {localVideoStreamUrl && session?.isLocalCameraEnabled ? (
+      <Pressable className="flex-1" onPress={toggleChrome}>
+        {remoteVideoStreamUrl ? (
           <RTCView
-            key={`${localVideoStreamUrl}-${session.localVideoRenderKey}`}
-            streamURL={localVideoStreamUrl}
-            style={styles.localVideo}
+            streamURL={remoteVideoStreamUrl}
+            style={styles.remoteVideo}
             objectFit="cover"
-            mirror={session?.localCameraFacingMode === 'user'}
-            zOrder={1}
+            zOrder={0}
           />
         ) : (
-          <View className="flex-1 items-center justify-center bg-slate-900">
-            <CameraOff size={24} color="#ffffff" />
+          <View className="flex-1 items-center justify-center bg-slate-950 px-8">
+            <Video size={42} color="#ffffff" />
+            <Text className="mt-4 text-center text-lg font-semibold text-white">
+              Đang chờ video từ {peerName}
+            </Text>
+            {session?.mediaErrorText ? (
+              <Text className="mt-2 text-center text-sm text-red-300">
+                {session.mediaErrorText}
+              </Text>
+            ) : null}
+            {session?.deliveryWarningText ? (
+              <Text className="mt-3 text-center text-sm text-amber-200">
+                {session.deliveryWarningText}
+              </Text>
+            ) : null}
           </View>
         )}
-      </View>
-      <View className="absolute bottom-0 left-0 right-0">
-        <CallControls callType="video" />
-      </View>
+        <View style={styles.localVideoWrap}>
+          {localVideoStreamUrl && session?.isLocalCameraEnabled ? (
+            <RTCView
+              key={`${localVideoStreamUrl}-${session.localVideoRenderKey}`}
+              streamURL={localVideoStreamUrl}
+              style={styles.localVideo}
+              objectFit="cover"
+              mirror={session?.localCameraFacingMode === 'user'}
+              zOrder={1}
+            />
+          ) : (
+            <View className="flex-1 items-center justify-center bg-slate-900">
+              <CameraOff size={24} color="#ffffff" />
+            </View>
+          )}
+        </View>
+      </Pressable>
+
+      <Animated.View
+        pointerEvents={isChromeVisible ? 'auto' : 'none'}
+        style={[
+          styles.topCallChrome,
+          {
+            opacity: chromeProgress,
+            transform: [
+              {
+                translateY: chromeProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-96, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <SafeAreaView edges={['top', 'left', 'right']}>
+          <View className="flex-row items-start justify-between px-4 pt-2">
+            <MinimizeCallButton />
+            <RemoteStatusBadges
+              isCameraMuted={Boolean(session?.isRemoteCameraMuted)}
+              isMicrophoneMuted={Boolean(session?.isRemoteMicrophoneMuted)}
+            />
+          </View>
+        </SafeAreaView>
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents={isChromeVisible ? 'auto' : 'none'}
+        style={[
+          styles.bottomCallChrome,
+          {
+            opacity: chromeProgress,
+            transform: [
+              {
+                translateY: chromeProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [144, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <SafeAreaView edges={['bottom', 'left', 'right']}>
+          <View className="px-3">
+            <CallControls callType="video" />
+          </View>
+        </SafeAreaView>
+      </Animated.View>
     </View>
   );
 }
@@ -514,6 +608,22 @@ const styles = StyleSheet.create({
   localVideo: {
     width: '100%',
     height: '100%',
+  },
+  topCallChrome: {
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 30,
+    elevation: 30,
+  },
+  bottomCallChrome: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    zIndex: 30,
+    elevation: 30,
   },
 });
 

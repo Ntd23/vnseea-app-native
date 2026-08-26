@@ -92,6 +92,10 @@ import { useAuthViewModel } from '../../../auth/application/view-models/useAuthV
 import { useEarningsViewModel } from '../../../wallet';
 import { useSettingsViewModel } from '../../../settings';
 import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
+import {
+  APP_RELEASE_VERSION,
+  getMobilePlatform,
+} from '../../../shared-kernel/application/app-update/appRelease';
 
 const SCREEN_W = Dimensions.get('window').width;
 const DRAWER_W = SCREEN_W * 0.84;
@@ -112,6 +116,7 @@ const DRAWER_COPY = {
     logoutConfirmTitle: 'Xác nhận đăng xuất',
     logoutConfirmMsg: 'Bạn có chắc chắn muốn đăng xuất tài khoản?',
     cancel: 'Hủy',
+    versionLabel: 'Phiên bản',
     general: 'Chung',
     profile: 'Hồ sơ',
     privacy: 'Quyền riêng tư',
@@ -203,6 +208,7 @@ const DRAWER_COPY = {
     logoutConfirmTitle: 'Confirm Log Out',
     logoutConfirmMsg: 'Are you sure you want to log out of your account?',
     cancel: 'Cancel',
+    versionLabel: 'Version',
     general: 'General',
     profile: 'Profile',
     privacy: 'Privacy',
@@ -297,6 +303,10 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
   const copy = DRAWER_COPY[language] || DRAWER_COPY.vi;
+  const mobilePlatform = getMobilePlatform();
+  const appVersion = mobilePlatform
+    ? APP_RELEASE_VERSION[mobilePlatform]
+    : '';
   const { logout } = useAuthViewModel();
   const { walletOverview } = useEarningsViewModel();
   const {
@@ -862,6 +872,9 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              icon={<LogOut size={18} color="#ef4444" />}
              onPress={handleLogout}
             />
+            <Text style={styles.versionText}>
+              {`VNSEEA · ${copy.versionLabel} ${appVersion}`}
+            </Text>
           </ScrollView>
           </View>
         ) : (
@@ -1387,6 +1400,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginLeft: 8,
+  },
+  versionText: {
+    marginTop: 12,
+    marginBottom: 4,
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   logoutConfirmOverlay: {
     position: 'absolute',

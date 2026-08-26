@@ -33,6 +33,10 @@ describe('post realtime runtime', () => {
     );
   });
 
+  it('accepts edited invalidations emitted by the canonical relay', () => {
+    expect(source).toContain("'reaction', 'comment', 'share', 'edited', 'deleted'");
+  });
+
   it('cancels pending token requests and disconnects when realtime has no demand', () => {
     expect(source).toContain('signal: AbortSignal');
     expect(source).toContain('signal,');
