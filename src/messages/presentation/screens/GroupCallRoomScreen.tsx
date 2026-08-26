@@ -55,6 +55,7 @@ import {
   getRenderableGroupCameraTrack,
 } from '../../application/livekit/groupCallVideoState';
 import type { GroupLiveKitParticipant } from '../../domain/types/groupCall.types';
+import { useCallChromeVisibility } from '../utils/useCallChromeVisibility';
 
 type GroupCallRoomScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -580,18 +581,10 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
   } = useGroupLiveKitCallSession();
   const groupName =
     session?.group.name || route.params.groupName || 'Cuộc gọi nhóm';
-  const [isChromeVisible, setChromeVisible] = useState(true);
-  const isChromeVisibleRef = useRef(true);
-  const chromeProgress = useRef(new Animated.Value(1)).current;
+  const { chromeProgress, isChromeVisible, toggleChrome } =
+    useCallChromeVisibility(session?.phase === 'connected');
   const [headerHeight, setHeaderHeight] = useState(72);
   const [controlsHeight, setControlsHeight] = useState(92);
-  const callContentStyle = useMemo(
-    () => ({
-      paddingTop: isChromeVisible ? headerHeight : 0,
-      paddingBottom: isChromeVisible ? controlsHeight : 0,
-    }),
-    [controlsHeight, headerHeight, isChromeVisible],
-  );
   const mediaErrorStyle = useMemo(
     () => ({
       bottom: isChromeVisible ? controlsHeight + 8 : 12,
@@ -604,18 +597,6 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
     }),
     [headerHeight, isChromeVisible],
   );
-
-  const toggleChrome = useCallback(() => {
-    const nextVisible = !isChromeVisibleRef.current;
-    isChromeVisibleRef.current = nextVisible;
-    setChromeVisible(nextVisible);
-    chromeProgress.stopAnimation();
-    Animated.timing(chromeProgress, {
-      toValue: nextVisible ? 1 : 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
-  }, [chromeProgress]);
 
   useEffect(() => {
     ensureSessionFromRoute(route.params);
@@ -640,11 +621,7 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
       edges={['top', 'right', 'bottom', 'left']}
     >
       <View className="flex-1">
-        <Pressable
-          className="flex-1"
-          onPress={toggleChrome}
-          style={callContentStyle}
-        >
+        <Pressable className="flex-1" onPress={toggleChrome}>
           {!session?.payload || session.hasMediaPermissions !== true ? (
             <View className="flex-1 items-center justify-center px-8">
               {session?.group.avatar ? (
@@ -698,7 +675,7 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
               {
                 translateY: chromeProgress.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [-12, 0],
+                  outputRange: [-headerHeight, 0],
                 }),
               },
             ],
@@ -764,7 +741,7 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
               {
                 translateY: chromeProgress.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [12, 0],
+                  outputRange: [controlsHeight, 0],
                 }),
               },
             ],

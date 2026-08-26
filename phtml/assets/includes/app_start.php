@@ -65,7 +65,11 @@ $required_config_defaults = array(
     'sepay_account_name' => '',
     'sepay_webhook_token' => '',
     'sepay_desc_prefix' => 'SE',
-    'email_activation_point' => '0'
+    'email_activation_point' => '0',
+    'vnseea_ios_app_version' => '2.0.3',
+    'vnseea_android_app_version' => '9.0.17',
+    'vnseea_ios_store_url' => 'https://apps.apple.com/vn/app/vnseea/id6767143251?l=vi',
+    'vnseea_android_store_url' => 'https://play.google.com/store/apps/details?id=com.vnseea.android'
 );
 foreach ($required_config_defaults as $config_name => $config_value) {
     if (!array_key_exists($config_name, $config)) {

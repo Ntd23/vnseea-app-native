@@ -9,7 +9,7 @@ const directPayload = {
   avatar: 'https://example.com/a.jpg',
 };
 
-function loadServiceForPlatform(os, nativeModules = {}) {
+function loadServiceForPlatform(os, nativeModules = {}, initialEvents = []) {
   jest.resetModules();
 
   let foregroundHandler = null;
@@ -45,6 +45,8 @@ function loadServiceForPlatform(os, nativeModules = {}) {
     displayIncomingCall: jest.fn(),
     startCall: jest.fn(),
     endCall: jest.fn(),
+    getInitialEvents: jest.fn().mockResolvedValue(initialEvents),
+    clearInitialEvents: jest.fn(),
   };
 
   jest.doMock('react-native', () => ({
@@ -269,7 +271,7 @@ describe('native call service foreground incoming push handling', () => {
     expect(preReportBlock).toContain('return');
   });
 
-  it('resolves nil CallKit audio activation to the only active iOS native call', async () => {
+  it('does not infer a missing CallKit audio UUID from JS active calls', async () => {
     const {
       service,
       rtcAudioSession,
@@ -287,18 +289,57 @@ describe('native call service foreground incoming push handling', () => {
     getCallKeepHandler('didActivateAudioSession')();
 
     await expect(waitPromise).resolves.toMatchObject({
-      activated: true,
-      source: 'event',
+      activated: false,
+      source: 'timeout',
       callUuid: 'call-a',
     });
     expect(rtcAudioSession.audioSessionDidActivate).not.toHaveBeenCalled();
-    await expect(
-      service.waitForNativeAudioSessionActivation('call-a', 50),
-    ).resolves.toMatchObject({
-      activated: true,
-      source: 'recent',
-      callUuid: 'call-a',
+  });
+
+  it('replays initial CallKeep events in order once and clears the native queue', async () => {
+    const initialEvents = [
+      {
+        name: 'RNCallKeepDidActivateAudioSession',
+        data: { callUUID: 'call-initial' },
+      },
+      {
+        name: 'RNCallKeepPerformAnswerCallAction',
+        data: { callUUID: 'call-initial' },
+      },
+      {
+        name: 'RNCallKeepDidDisplayIncomingCall',
+        data: { callUUID: 'call-initial', payload: directPayload },
+      },
+    ];
+    const {
+      service,
+      callKeepDefault,
+      getCallKeepHandler,
+    } = loadServiceForPlatform('ios', {}, initialEvents);
+    const replayOrder = [];
+
+    service.setNativeCallListeners({
+      onAnswer: callUuid => {
+        expect(service.getNativeCall(callUuid)?.callId).toBe('42');
+        replayOrder.push(`answer:${callUuid}`);
+      },
+      onAudioSessionActivated: callUuid => {
+        replayOrder.push(`activation:${callUuid}`);
+      },
     });
+
+    await service.configureNativeCallService();
+    getCallKeepHandler('didLoadWithEvents')(initialEvents);
+
+    expect(callKeepDefault.addEventListener.mock.calls[0][0]).toBe(
+      'didLoadWithEvents',
+    );
+    expect(callKeepDefault.getInitialEvents).toHaveBeenCalledTimes(1);
+    expect(callKeepDefault.clearInitialEvents).toHaveBeenCalledTimes(1);
+    expect(replayOrder).toEqual([
+      'answer:call-initial',
+      'activation:call-initial',
+    ]);
   });
 
   it('does not resolve a CallKit audio waiter from another call activation', async () => {

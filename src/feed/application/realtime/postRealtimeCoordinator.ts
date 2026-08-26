@@ -2,6 +2,7 @@ export type PostRealtimeMutation =
   | 'reaction'
   | 'comment'
   | 'share'
+  | 'edited'
   | 'deleted';
 
 export type PostChangedEvent = {

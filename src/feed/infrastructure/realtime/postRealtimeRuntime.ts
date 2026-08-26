@@ -85,7 +85,7 @@ function normalizeChange(payload: unknown): PostChangedEvent | null {
   if (
     !eventId ||
     !/^[1-9][0-9]*$/.test(postId) ||
-    !['reaction', 'comment', 'share', 'deleted'].includes(mutation)
+    !['reaction', 'comment', 'share', 'edited', 'deleted'].includes(mutation)
   ) {
     return null;
   }

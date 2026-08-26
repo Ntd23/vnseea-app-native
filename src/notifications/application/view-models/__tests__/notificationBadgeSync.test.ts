@@ -19,8 +19,10 @@ describe('notification badge sync', () => {
   function createHarness() {
     let appActiveListener: (() => void) | null = null;
     let pushListener: (() => void) | null = null;
+    let realtimeListener: (() => void) | null = null;
     const unsubscribeAppActive = jest.fn();
     const unsubscribePush = jest.fn();
+    const unsubscribeRealtime = jest.fn();
     const fetchNotificationCounts = jest.fn().mockResolvedValue({
       notificationCount: 4,
       messageCount: 2,
@@ -41,6 +43,10 @@ describe('notification badge sync', () => {
           pushListener = listener;
           return unsubscribePush;
         },
+        subscribeToRealtime: listener => {
+          realtimeListener = listener;
+          return unsubscribeRealtime;
+        },
         random: () => 0.5,
       },
       {
@@ -57,8 +63,10 @@ describe('notification badge sync', () => {
       updateCounts,
       unsubscribeAppActive,
       unsubscribePush,
+      unsubscribeRealtime,
       emitAppActive: () => appActiveListener?.(),
       emitPush: () => pushListener?.(),
+      emitRealtime: () => realtimeListener?.(),
     };
   }
 
@@ -82,6 +90,21 @@ describe('notification badge sync', () => {
     unsubscribeSecond();
     expect(harness.unsubscribeAppActive).toHaveBeenCalledTimes(1);
     expect(harness.unsubscribePush).toHaveBeenCalledTimes(1);
+    expect(harness.unsubscribeRealtime).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes counts immediately after a coalesced realtime event', async () => {
+    const harness = createHarness();
+    const unsubscribe = harness.sync.subscribe();
+    await flushAsyncWork();
+
+    harness.emitRealtime();
+    jest.advanceTimersByTime(1_500);
+    await flushAsyncWork();
+
+    expect(harness.fetchNotificationCounts).toHaveBeenCalledTimes(2);
+    expect(harness.fetchUnreadChatCount).toHaveBeenCalledTimes(2);
+    unsubscribe();
   });
 
   it('coalesces foreground and push bursts after the initial refresh', async () => {
@@ -141,6 +164,7 @@ describe('notification badge sync', () => {
       updateCounts: jest.fn(),
       subscribeToAppActive: () => jest.fn(),
       subscribeToForegroundPush: () => jest.fn(),
+      subscribeToRealtime: () => jest.fn(),
     });
 
     const first = sync.refresh();

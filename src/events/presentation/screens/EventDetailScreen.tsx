@@ -63,6 +63,7 @@ import { PollPostCard } from '../../../feed/presentation/components/PollPostCard
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
+import { useScrollViewPostRealtimeIds } from '../../../feed/application/realtime/scrollViewPostVisibility';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import type {
   FeedPollPost,
@@ -185,29 +186,6 @@ function EventDetailScreen() {
       commentCount: Math.max(0, post.commentCount + delta),
     })),
   });
-  usePostRealtimeScope({
-    postIds: posts.slice(0, 20).map(post => post.id),
-    posts: posts.slice(0, 20),
-    enabled: isFocused,
-    onSnapshot: nextPost => {
-      setPosts(current =>
-        current.map(post =>
-          String(post.id) === String(nextPost.id)
-            ? (nextPost as FeedTextPost | FeedVideoPost | FeedPollPost)
-            : post,
-        ),
-      );
-    },
-    onDeleted: postId => {
-      setPosts(current => current.filter(post => String(post.id) !== postId));
-    },
-    onCommentMutation: change => {
-      if (String(commentVm.selectedCommentPostId) === change.postId) {
-        void commentVm.refreshComments();
-      }
-    },
-  });
-
   const loadPosts = useCallback(async (refreshing = false) => {
     refreshing ? setIsRefreshing(true) : setIsLoadingPosts(true);
     setPostsError(null);
@@ -327,6 +305,31 @@ function EventDetailScreen() {
   const displayedPosts = useMemo(() => posts.filter(post =>
     activeFilter === 'all' || (post.kind === 'text' && post.photos.length > 0),
   ), [activeFilter, posts]);
+  const realtimePostViewport = useScrollViewPostRealtimeIds(
+    displayedPosts.map(post => post.id),
+  );
+  usePostRealtimeScope({
+    postIds: realtimePostViewport.postIds,
+    posts: displayedPosts,
+    enabled: isFocused,
+    onSnapshot: nextPost => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id)
+            ? (nextPost as FeedTextPost | FeedVideoPost | FeedPollPost)
+            : post,
+        ),
+      );
+    },
+    onDeleted: postId => {
+      setPosts(current => current.filter(post => String(post.id) !== postId));
+    },
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
+  });
   const selectedCommentPost = useMemo(() => posts.find(post => post.id === commentVm.selectedCommentPostId), [commentVm.selectedCommentPostId, posts]);
 
   const renderPost = useCallback((post: FeedTextPost | FeedVideoPost | FeedPollPost) => {
@@ -369,6 +372,9 @@ function EventDetailScreen() {
       <ScrollView
         className="flex-1"
         contentContainerClassName="pb-20"
+        onLayout={realtimePostViewport.onViewportLayout}
+        onScroll={realtimePostViewport.onScroll}
+        scrollEventThrottle={32}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void loadPosts(true)} colors={[BRAND]} tintColor={BRAND} />}
       >
@@ -444,7 +450,21 @@ function EventDetailScreen() {
         ) : postsError ? (
           <View className="bg-white px-4 py-8"><Text className="text-center text-red-600">{postsError}</Text></View>
         ) : displayedPosts.length ? (
-          <View className="bg-white">{displayedPosts.map(renderPost)}</View>
+          <View
+            className="bg-white"
+            onLayout={realtimePostViewport.onPostListLayout}
+          >
+            {displayedPosts.map(post => (
+              <View
+                key={post.id}
+                onLayout={event =>
+                  realtimePostViewport.onPostLayout(post.id, event)
+                }
+              >
+                {renderPost(post)}
+              </View>
+            ))}
+          </View>
         ) : (
           <View className="items-center bg-white py-16">
             <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-100"><Grid3X3 size={28} color="#90A4AE" /></View>

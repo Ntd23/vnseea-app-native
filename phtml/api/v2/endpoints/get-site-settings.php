@@ -26,7 +26,17 @@ $public_config = array(
     'theme_url' => $theme_url,
     'logo_url' => $theme_url . '/img/logo.' . $logo_extension,
     'night_logo_url' => $theme_url . '/img/night-logo.' . $logo_extension,
-    'favicon_url' => $theme_url . '/img/icon.' . $favicon_extension
+    'favicon_url' => $theme_url . '/img/icon.' . $favicon_extension,
+    'mobile_app' => array(
+        'ios' => array(
+            'version' => isset($wo['config']['vnseea_ios_app_version']) ? trim($wo['config']['vnseea_ios_app_version']) : '',
+            'store_url' => isset($wo['config']['vnseea_ios_store_url']) ? trim($wo['config']['vnseea_ios_store_url']) : ''
+        ),
+        'android' => array(
+            'version' => isset($wo['config']['vnseea_android_app_version']) ? trim($wo['config']['vnseea_android_app_version']) : '',
+            'store_url' => isset($wo['config']['vnseea_android_store_url']) ? trim($wo['config']['vnseea_android_store_url']) : ''
+        )
+    )
 );
 $get_config['page_categories'] = $wo['page_categories'];
 $get_config['group_categories'] = $wo['group_categories'];

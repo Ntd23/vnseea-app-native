@@ -130,7 +130,32 @@ describe('iOS CallKit audio session configuration', () => {
     expect(serviceSource).toContain('type NativeAudioSessionActivationWaiter');
     expect(serviceSource).toContain('audioSessionActivationWaiters.add(waiter)');
     expect(serviceSource).not.toContain(
+      'candidateUuids.length === 1 ? candidateUuids[0]',
+    );
+    expect(serviceSource).not.toContain(
       'if (!callUuid || !lastWebRTCAudioSessionActivatedCallUuid) {\n    return true;\n  }',
+    );
+  });
+
+  it('replays CallKeep startup events safely and limits iOS to one call', () => {
+    const serviceSource = read(
+      'src/messages/infrastructure/calls/nativeCallService.ts',
+    );
+    const nativeSource = read('ios/VNSEEA/AppDelegate.swift');
+    const callKeepPatchSource = read('patches/react-native-callkeep@4.3.16.patch');
+
+    const didLoadIndex = serviceSource.indexOf("'didLoadWithEvents'");
+    const answerIndex = serviceSource.indexOf("'answerCall'", didLoadIndex);
+
+    expect(didLoadIndex).toBeGreaterThan(-1);
+    expect(answerIndex).toBeGreaterThan(didLoadIndex);
+    expect(serviceSource).toContain('getInitialEvents()');
+    expect(serviceSource).toContain('clearInitialEvents()');
+    expect(serviceSource).toContain('replayedInitialCallKeepEventKeys');
+    expect(nativeSource).toContain('"maximumCallsPerCallGroup": "1"');
+    expect(callKeepPatchSource).toContain('_vnseeaCurrentCallUUID');
+    expect(callKeepPatchSource).toContain(
+      '@"callUUID": [self vnseeaCurrentCallUUID]',
     );
   });
 

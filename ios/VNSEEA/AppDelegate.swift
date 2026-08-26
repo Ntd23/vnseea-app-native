@@ -70,7 +70,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     RNCallKeep.setup([
       "appName": "VNSEEA",
       "maximumCallGroups": "1",
-      "maximumCallsPerCallGroup": "8",
+      "maximumCallsPerCallGroup": "1",
       "supportsVideo": true,
       "includesCallsInRecents": false,
       "audioSession": [

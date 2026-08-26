@@ -9,21 +9,29 @@ const PRESENCE_TTL_MS = 70_000
 const presenceByUserId = new Map<number, PresenceRecord>()
 
 export const markMessageUserOnline = (userId: number) => {
-  if (userId <= 0) return
+  if (userId <= 0) return false
+
+  const wasOnline = getMessageUserPresenceState(userId) === true
 
   presenceByUserId.set(userId, {
     online: true,
     expiresAt: Date.now() + PRESENCE_TTL_MS,
   })
+
+  return !wasOnline
 }
 
 export const markMessageUserOffline = (userId: number) => {
-  if (userId <= 0) return
+  if (userId <= 0) return false
+
+  const wasOnline = getMessageUserPresenceState(userId) === true
 
   presenceByUserId.set(userId, {
     online: false,
     expiresAt: Date.now() + PRESENCE_TTL_MS,
   })
+
+  return wasOnline
 }
 
 export const getMessageUserPresenceState = (userId: number) => {

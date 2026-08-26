@@ -63,6 +63,7 @@ import PostReactionsSheet from '../../../feed/presentation/components/PostReacti
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
+import { useScrollViewPostRealtimeIds } from '../../../feed/application/realtime/scrollViewPostVisibility';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import type {
   FeedPost,
@@ -494,28 +495,6 @@ function GroupDetailScreen() {
       };
     }, [targetGroupId]),
   );
-  usePostRealtimeScope({
-    postIds: posts.slice(0, 20).map(post => post.id),
-    posts: posts.slice(0, 20),
-    enabled: isFocused,
-    onSnapshot: nextPost => {
-      setPosts(current =>
-        current.map(post =>
-          String(post.id) === String(nextPost.id)
-            ? (nextPost as FeedTextPost | FeedVideoPost | FeedPollPost)
-            : post,
-        ),
-      );
-    },
-    onDeleted: postId => {
-      setPosts(current => current.filter(post => String(post.id) !== postId));
-    },
-    onCommentMutation: change => {
-      if (String(commentVm.selectedCommentPostId) === change.postId) {
-        void commentVm.refreshComments();
-      }
-    },
-  });
   const loadGroupPosts = useCallback(
     async (refreshing = false) => {
       if (!targetGroupId) {
@@ -1072,6 +1051,31 @@ function GroupDetailScreen() {
       return text.includes(normalizedQuery);
     });
   }, [posts, searchQuery]);
+  const realtimePostViewport = useScrollViewPostRealtimeIds(
+    displayedPosts.map(post => post.id),
+  );
+  usePostRealtimeScope({
+    postIds: realtimePostViewport.postIds,
+    posts: displayedPosts,
+    enabled: isFocused,
+    onSnapshot: nextPost => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id)
+            ? (nextPost as FeedTextPost | FeedVideoPost | FeedPollPost)
+            : post,
+        ),
+      );
+    },
+    onDeleted: postId => {
+      setPosts(current => current.filter(post => String(post.id) !== postId));
+    },
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
+  });
   const hasSearchQuery = searchQuery.trim().length > 0;
   const renderGroupPost = useCallback(
     (post: FeedTextPost | FeedVideoPost | FeedPollPost) => {
@@ -1166,6 +1170,9 @@ function GroupDetailScreen() {
       <ScrollView
         className="flex-1"
         contentContainerClassName="pb-10"
+        onLayout={realtimePostViewport.onViewportLayout}
+        onScroll={realtimePostViewport.onScroll}
+        scrollEventThrottle={32}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -1455,7 +1462,18 @@ function GroupDetailScreen() {
             </TouchableOpacity>
           </View>
         ) : displayedPosts.length > 0 ? (
-          <View>{displayedPosts.map(renderGroupPost)}</View>
+          <View onLayout={realtimePostViewport.onPostListLayout}>
+            {displayedPosts.map(post => (
+              <View
+                key={post.id}
+                onLayout={event =>
+                  realtimePostViewport.onPostLayout(post.id, event)
+                }
+              >
+                {renderGroupPost(post)}
+              </View>
+            ))}
+          </View>
         ) : (
           <View className={`${FEED_CARD_CLASS} px-3 py-12`}>
             <View className="items-center justify-center">
