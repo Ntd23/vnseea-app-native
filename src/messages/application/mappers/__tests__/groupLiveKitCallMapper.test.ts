@@ -22,6 +22,10 @@ describe('groupLiveKitCallMapper', () => {
             voip: 'unavailable',
           },
         },
+        call_progress: {
+          state: 'device_received',
+          endpoint_count: 3,
+        },
       }),
     ).toMatchObject({
       isExisting: false,
@@ -32,6 +36,10 @@ describe('groupLiveKitCallMapper', () => {
           onesignal: 'failed',
           voip: 'unavailable',
         },
+      },
+      progress: {
+        state: 'device_received',
+        endpointCount: 3,
       },
     });
   });

@@ -67,6 +67,7 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
       Log.i("LiveKitCallPush", "ignored handled incoming push call_id=$callId")
       return
     }
+    LiveKitCallNativeActions.reportProgress(data, "device_received")
     val ringMode = data.optString(LiveKitCallNativeActions.EXTRA_RING_MODE).trim().lowercase()
     if (eventType == "livekit_group_call" && (ringMode == "silent" || ringMode == "passive")) {
       Log.i("LiveKitCallPush", "show passive group call call_id=$callId ring_mode=$ringMode")

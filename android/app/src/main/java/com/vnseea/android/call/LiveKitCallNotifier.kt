@@ -155,6 +155,7 @@ object LiveKitCallNotifier {
       Log.i("LiveKitCallPush", "cancel raced notification for handled call_id=$callId")
       return
     }
+    LiveKitCallNativeActions.reportProgress(data, "ringing")
     Log.i("LiveKitCallPush", "notification posted id=$notificationId")
   }
 

@@ -118,4 +118,26 @@ describe('Android call runtime contract', () => {
     expect(queries).toContain('android.intent.action.VIEW');
     expect(queries).toContain('android:scheme="tel"');
   });
+
+  it('reports device ringing progress and generates caller tones natively', () => {
+    const notifier = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt',
+    );
+    const pushExtension = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotificationServiceExtension.kt',
+    );
+    const intentModule = read(
+      'android/app/src/main/java/com/vnseea/android/call/VnseeaCallIntentModule.kt',
+    );
+    const nativeActions = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNativeActions.kt',
+    );
+
+    expect(pushExtension).toContain('"device_received"');
+    expect(notifier).toContain('reportProgress(data, "ringing")');
+    expect(nativeActions).toContain('"call_progress" to progress');
+    expect(intentModule).toContain('fun startProgressTone');
+    expect(intentModule).toContain('ToneGenerator.TONE_SUP_RINGTONE');
+    expect(intentModule).toContain('ToneGenerator.TONE_SUP_BUSY');
+  });
 });

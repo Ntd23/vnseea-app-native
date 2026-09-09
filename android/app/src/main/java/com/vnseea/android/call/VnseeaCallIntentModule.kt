@@ -6,7 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.media.AudioManager
+import android.media.ToneGenerator
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -18,7 +22,85 @@ import org.json.JSONObject
 class VnseeaCallIntentModule(
   private val appContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(appContext) {
+  private val toneHandler = Handler(Looper.getMainLooper())
+  private var toneGenerator: ToneGenerator? = null
+  private var toneRunnable: Runnable? = null
+  private var activeToneCallId = ""
+  private var activeToneMode = ""
+
   override fun getName() = "VnseeaCallIntent"
+
+  @ReactMethod
+  fun startProgressTone(mode: String?, callId: String?, promise: Promise) {
+    val nextCallId = callId.orEmpty()
+    val nextMode = mode.orEmpty().ifBlank { "connecting" }
+    if (nextCallId.isBlank()) {
+      promise.resolve(false)
+      return
+    }
+    toneHandler.post {
+      if (activeToneCallId == nextCallId && activeToneMode == nextMode && toneRunnable != null) {
+        promise.resolve(true)
+        return@post
+      }
+      stopProgressToneInternal()
+      try {
+        activeToneCallId = nextCallId
+        activeToneMode = nextMode
+        toneGenerator = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 65)
+        val tone = when (nextMode) {
+          "ringing" -> ToneGenerator.TONE_SUP_RINGTONE
+          "busy" -> ToneGenerator.TONE_SUP_BUSY
+          else -> ToneGenerator.TONE_SUP_DIAL
+        }
+        val duration = when (nextMode) {
+          "ringing" -> 900
+          "busy" -> 240
+          else -> 220
+        }
+        val interval = when (nextMode) {
+          "ringing" -> 2_200L
+          "busy" -> 550L
+          else -> 3_000L
+        }
+        toneRunnable = object : Runnable {
+          override fun run() {
+            toneGenerator?.startTone(tone, duration)
+            toneHandler.postDelayed(this, interval)
+          }
+        }.also { it.run() }
+        promise.resolve(true)
+      } catch (error: Throwable) {
+        stopProgressToneInternal()
+        promise.reject("E_CALL_PROGRESS_TONE", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun stopProgressTone(callId: String?, promise: Promise) {
+    toneHandler.post {
+      if (callId.isNullOrBlank() || callId == activeToneCallId) {
+        stopProgressToneInternal()
+      }
+      promise.resolve(true)
+    }
+  }
+
+  private fun stopProgressToneInternal() {
+    toneRunnable?.let { toneHandler.removeCallbacks(it) }
+    toneRunnable = null
+    toneGenerator?.stopTone()
+    toneGenerator?.release()
+    toneGenerator = null
+    activeToneCallId = ""
+    activeToneMode = ""
+  }
+
+  override fun invalidate() {
+    stopProgressToneInternal()
+    super.invalidate()
+  }
 
   @ReactMethod
   fun getInitialCallAction(promise: Promise) {

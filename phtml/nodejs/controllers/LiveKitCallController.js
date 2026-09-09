@@ -240,11 +240,23 @@
         ring_mode: readString(data && data.ring_mode),
         left_user_id: readString(data && data.left_user_id),
         declined_user_id: readString(data && data.declined_user_id),
+        active_user_id: readString(data && data.active_user_id),
+        progress: readString(data && data.progress),
+        progress_user_id: readString(data && data.progress_user_id),
+        progress_endpoint_count: readNumber(data && data.progress_endpoint_count),
+        progress_updated_at_ms: readNumber(data && data.progress_updated_at_ms),
       };
 
       if (event === 'incoming') {
         for (const recipientId of recipientIds) {
           emitToRecipient(ctx, io, recipientId, 'livekit_group_call_incoming', payload);
+        }
+        return true;
+      }
+
+      if (event === 'progress') {
+        for (const recipientId of recipientIds) {
+          emitToRecipient(ctx, io, recipientId, 'livekit_group_call_progress', payload);
         }
         return true;
       }
@@ -298,7 +310,15 @@
       elapsed: readNumber(data && data.elapsed),
       elapsed_ms: readNumber(data && data.elapsed_ms),
       duration: readNumber(data && data.duration),
+      progress: readString(data && data.progress),
+      progress_user_id: readString(data && data.progress_user_id),
+      progress_endpoint_count: readNumber(data && data.progress_endpoint_count),
+      progress_updated_at_ms: readNumber(data && data.progress_updated_at_ms),
     };
+    if (event === 'progress') {
+      emitToRecipient(ctx, io, callerId, 'livekit_call_progress', basePayload);
+      return true;
+    }
     const eventName =
       event === 'answered'
         ? 'livekit_call_answered'

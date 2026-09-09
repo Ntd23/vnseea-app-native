@@ -7,7 +7,7 @@ $response_data = array(
     'api_status' => 400
 );
 
-$valid_actions = array('create', 'payload', 'join', 'leave', 'sync', 'incoming', 'decline', 'candidates', 'add_members', 'native_action');
+$valid_actions = array('create', 'payload', 'join', 'leave', 'sync', 'incoming', 'decline', 'progress', 'candidates', 'add_members', 'native_action');
 $action = !empty($_POST['type']) ? Wo_Secure($_POST['type']) : '';
 
 function Wo_ApiGroupCallError($error_id, $error_text, $api_status = 400) {
@@ -355,6 +355,45 @@ function Wo_ApiGroupCallDismissOtherEndpoints($group_call, $user_id, $endpoint_i
     Wo_DismissCanonicalLiveKitGroupOtherEndpoints($group_call, $user_id, $endpoint_id);
 }
 
+function Wo_ApiGroupCallReportProgress($call_id, $actor_id, $endpoint_id, $progress) {
+    $group_call = Wo_GetGroupCallById(intval($call_id));
+    if (empty($group_call) || !is_array($group_call)) {
+        return Wo_ApiGroupCallError('call_not_found', 'Group call not found.', 404);
+    }
+    if (!empty($group_call['status']) && $group_call['status'] !== 'active') {
+        return Wo_ApiGroupCallError('call_ended', 'Group call has ended.', 410);
+    }
+    $group_id = intval(!empty($group_call['group_id']) ? $group_call['group_id'] : 0);
+    $creator_id = intval(!empty($group_call['created_by']) ? $group_call['created_by'] : 0);
+    $actor_id = intval($actor_id);
+    if ($actor_id <= 0 || $actor_id === $creator_id || !Wo_IsGroupChatCallMember($group_id, $actor_id)) {
+        return Wo_ApiGroupCallError('group_forbidden', 'You cannot update this group call.', 403);
+    }
+    if (VNSEEA_LiveKitCallProgressRank($progress) <= 0) {
+        return Wo_ApiGroupCallError('invalid_call_progress', 'Invalid call progress.', 400);
+    }
+    $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+    if ($endpoint_id === '') {
+        $endpoint_id = VNSEEA_GetRequestEndpointId($actor_id);
+    }
+    if (!VNSEEA_RecordLiveKitCallProgress('group', $call_id, 'video', $actor_id, $endpoint_id, $progress)) {
+        return Wo_ApiGroupCallError('call_progress_failed', 'Could not update group call progress.', 500);
+    }
+    $aggregate = VNSEEA_GetLiveKitCallProgress('group', $call_id, $creator_id);
+    Wo_ApiGroupCallPublishRealtime('progress', $group_call, array(
+        'recipient_ids' => $creator_id > 0 ? array((string) $creator_id) : array(),
+        'progress' => $aggregate['state'],
+        'progress_user_id' => (string) $actor_id,
+        'progress_endpoint_count' => intval($aggregate['endpoint_count']),
+        'progress_updated_at_ms' => intval($aggregate['updated_at_ms'])
+    ));
+    return array(
+        'api_status' => 200,
+        'call' => Wo_ApiGroupCallSummary($group_call),
+        'call_progress' => $aggregate
+    );
+}
+
 if (empty($action) || !in_array($action, $valid_actions)) {
     $response_data = Wo_ApiGroupCallError('type_missing', 'type can not be empty.');
 }
@@ -393,7 +432,12 @@ else if ($action == 'create') {
                     'call' => Wo_ApiGroupCallSummary($group_call),
                     'group' => Wo_ApiGroupCallGroup($group),
                     'is_existing' => !empty($group_call['is_existing']) ? 1 : 0,
-                    'delivery' => $delivery
+                    'delivery' => $delivery,
+                    'call_progress' => VNSEEA_GetLiveKitCallProgress(
+                        'group',
+                        intval($group_call['id']),
+                        intval(!empty($group_call['created_by']) ? $group_call['created_by'] : 0)
+                    )
                 );
             }
         }
@@ -467,7 +511,12 @@ else if ($action == 'sync') {
             'call' => Wo_ApiGroupCallSummary($sync_data['call']),
             'group' => Wo_ApiGroupCallGroup($sync_data['group']),
             'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array()),
-            'endpoint_owned' => VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id)
+            'endpoint_owned' => VNSEEA_IsLiveKitEndpointOwner('group_call', $call_id, intval($wo['user']['user_id']), 'participant', $endpoint_id),
+            'call_progress' => VNSEEA_GetLiveKitCallProgress(
+                'group',
+                $call_id,
+                intval(!empty($sync_data['call']['created_by']) ? $sync_data['call']['created_by'] : 0)
+            )
         );
     }
 }
@@ -515,6 +564,16 @@ else if ($action == 'decline') {
         : (empty($declined)
             ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
             : array('api_status' => 200));
+}
+else if ($action == 'progress') {
+    $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
+    $progress = !empty($_POST['call_progress']) ? Wo_Secure($_POST['call_progress']) : '';
+    $response_data = Wo_ApiGroupCallReportProgress(
+        $call_id,
+        intval($wo['user']['user_id']),
+        VNSEEA_GetRequestEndpointId($wo['user']['user_id']),
+        $progress
+    );
 }
 else if ($action == 'native_action') {
     $payload = Wo_ApiGroupCallVerifyActionToken(!empty($_POST['action_token']) ? $_POST['action_token'] : '');
@@ -580,6 +639,10 @@ else if ($action == 'native_action') {
                 : (empty($group_call)
                     ? Wo_ApiGroupCallError('leave_failed', 'Could not leave group call.', 404)
                     : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call)));
+        }
+        else if ($call_action == 'progress') {
+            $progress = !empty($_POST['call_progress']) ? Wo_Secure($_POST['call_progress']) : '';
+            $response_data = Wo_ApiGroupCallReportProgress($call_id, $actor_id, $endpoint_id, $progress);
         }
         else {
             $response_data = Wo_ApiGroupCallError('invalid_call_action', 'Invalid group call action.', 400);

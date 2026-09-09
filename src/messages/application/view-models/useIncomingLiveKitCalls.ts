@@ -242,7 +242,14 @@ export function useIncomingLiveKitCalls() {
       setTrackedDirectCall(null);
       dismissAndroidIncomingCall(call.callId);
       runWhenNavigationReady(() => {
-        answerIncomingCall(call)
+        repository
+          .reportProgress({
+            callId: call.callId,
+            callType: call.callType,
+            progress: 'answering',
+          })
+          .catch(() => undefined)
+          .then(() => answerIncomingCall(call))
           .then(didAnswer => {
             if (!didAnswer) return;
             dismissAndroidIncomingCall(call.callId);
@@ -259,6 +266,7 @@ export function useIncomingLiveKitCalls() {
     [
       answerIncomingCall,
       dismissAndroidIncomingCall,
+      repository,
       runWhenNavigationReady,
       setTrackedDirectCall,
     ],
@@ -268,7 +276,10 @@ export function useIncomingLiveKitCalls() {
     (call: IncomingGroupLiveKitCall) => {
       dismissAndroidIncomingCall(call.callId);
       runWhenNavigationReady(() => {
-        answerIncomingGroupCall(call)
+        groupRepository
+          .reportProgress({ callId: call.callId, progress: 'answering' })
+          .catch(() => undefined)
+          .then(() => answerIncomingGroupCall(call))
           .then(didAnswer => {
             if (!didAnswer) return;
             navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
@@ -285,6 +296,7 @@ export function useIncomingLiveKitCalls() {
     [
       answerIncomingGroupCall,
       dismissAndroidIncomingCall,
+      groupRepository,
       runWhenNavigationReady,
     ],
   );
@@ -397,13 +409,27 @@ export function useIncomingLiveKitCalls() {
         return;
       }
       setTrackedDirectCall(call);
-      if (Platform.OS === 'android') {
+      repository
+        .reportProgress({
+          callId: call.callId,
+          callType: call.callType,
+          progress: 'device_received',
+        })
+        .catch(() => undefined);
+      const displayResult =
         loadNativeCallService()?.displayNativeIncomingCall?.(call);
-      } else {
-        loadNativeCallService()?.displayNativeIncomingCall?.(call);
-      }
+      Promise.resolve(displayResult)
+        .then(result => {
+          if (!result) return;
+          return repository.reportProgress({
+            callId: call.callId,
+            callType: call.callType,
+            progress: 'ringing',
+          });
+        })
+        .catch(() => undefined);
     },
-    [setTrackedDirectCall, shouldIgnoreIncomingSignal],
+    [repository, setTrackedDirectCall, shouldIgnoreIncomingSignal],
   );
 
   const handleIncomingGroupCallSignal = useCallback(
@@ -415,18 +441,41 @@ export function useIncomingLiveKitCalls() {
       ) {
         return;
       }
+      groupRepository
+        .reportProgress({ callId: call.callId, progress: 'device_received' })
+        .catch(() => undefined);
       if (Platform.OS === 'android') {
-        loadNativeCallService()?.displayNativeIncomingGroupCall?.(call);
+        Promise.resolve(
+          loadNativeCallService()?.displayNativeIncomingGroupCall?.(call),
+        )
+          .then(result => {
+            if (!result || call.ringMode === 'passive') return;
+            return groupRepository.reportProgress({
+              callId: call.callId,
+              progress: 'ringing',
+            });
+          })
+          .catch(() => undefined);
       } else {
         if (!isAppForeground()) return;
         if (call.ringMode !== 'passive') {
-          loadNativeCallService()?.displayNativeIncomingGroupCall?.(call);
+          Promise.resolve(
+            loadNativeCallService()?.displayNativeIncomingGroupCall?.(call),
+          )
+            .then(result => {
+              if (!result) return;
+              return groupRepository.reportProgress({
+                callId: call.callId,
+                progress: 'ringing',
+              });
+            })
+            .catch(() => undefined);
           return;
         }
         setActiveIncomingGroupCall(call);
       }
     },
-    [setActiveIncomingGroupCall, shouldIgnoreIncomingSignal],
+    [groupRepository, setActiveIncomingGroupCall, shouldIgnoreIncomingSignal],
   );
 
   const handleInitialNativeCallAction = useCallback(() => {

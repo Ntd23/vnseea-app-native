@@ -7,7 +7,7 @@ $response_data = array(
     'api_status' => 400
 );
 
-$valid_actions = array('create', 'answer', 'payload', 'check', 'close', 'incoming', 'native_action', 'register_voip_token');
+$valid_actions = array('create', 'answer', 'payload', 'check', 'close', 'incoming', 'progress', 'native_action', 'register_voip_token');
 $action = !empty($_POST['type']) ? Wo_Secure($_POST['type']) : '';
 
 function Wo_ApiLiveKitError($error_id, $error_text, $api_status = 400) {
@@ -612,6 +612,51 @@ function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id, $endpoint_id =
     ), Wo_ApiLiveKitTimingFields($timing));
 }
 
+function Wo_ApiLiveKitReportProgress($call_id, $call_type, $actor_id, $endpoint_id, $progress) {
+    $call_source = ($call_id > 0) ? Wo_GetCallSourceById($call_id, $call_type) : false;
+    if (empty($call_source) || !is_array($call_source)) {
+        return Wo_ApiLiveKitError('call_not_found', 'Call not found.', 404);
+    }
+    if (intval($call_source['to_id']) !== intval($actor_id)) {
+        return Wo_ApiLiveKitError('call_forbidden', 'You cannot update this call.', 403);
+    }
+
+    $status = !empty($call_source['status']) ? $call_source['status'] : 'calling';
+    if ($status !== 'calling' || intval(!empty($call_source['active']) ? $call_source['active'] : 0) === 1) {
+        return Wo_ApiLiveKitError('call_not_available', 'Call is no longer ringing.', 409);
+    }
+    if (VNSEEA_LiveKitCallProgressRank($progress) <= 0) {
+        return Wo_ApiLiveKitError('invalid_call_progress', 'Invalid call progress.', 400);
+    }
+
+    $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+    if ($endpoint_id === '') {
+        $endpoint_id = VNSEEA_GetRequestEndpointId($actor_id);
+    }
+    if (!VNSEEA_RecordLiveKitCallProgress('direct', $call_id, $call_type, $actor_id, $endpoint_id, $progress)) {
+        return Wo_ApiLiveKitError('call_progress_failed', 'Could not update call progress.', 500);
+    }
+
+    $aggregate = VNSEEA_GetLiveKitCallProgress('direct', $call_id);
+    Wo_ApiLiveKitPublishRealtime('progress', $call_source, $call_type, array(
+        'status' => 'calling',
+        'active' => false,
+        'finished' => false,
+        'progress' => $aggregate['state'],
+        'progress_user_id' => (string) intval($actor_id),
+        'progress_endpoint_count' => intval($aggregate['endpoint_count']),
+        'progress_updated_at_ms' => intval($aggregate['updated_at_ms'])
+    ));
+
+    return array(
+        'api_status' => 200,
+        'call_id' => (string) $call_id,
+        'call_type' => $call_type,
+        'call_status' => 'calling',
+        'call_progress' => $aggregate
+    );
+}
+
 function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor_id = 0, $endpoint_id = '') {
     global $sqlConnect;
 
@@ -793,15 +838,31 @@ else if ($action == 'check') {
             'elapsed' => $timing['elapsed'],
             'elapsed_ms' => $timing['elapsed_ms']
         ));
+        $call_progress = $call_status === 'answered'
+            ? array('state' => 'answered', 'endpoint_count' => 1, 'updated_at_ms' => intval($timing['started_at_ms']))
+            : VNSEEA_GetLiveKitCallProgress('direct', $call_id);
         $response_data = array_merge(array(
             'api_status' => 200,
             'call_id' => (string) $call_id,
             'call_type' => $call_type,
             'call_status' => $call_status,
             'active' => intval(!empty($call_source['active']) ? $call_source['active'] : 0),
-            'finished' => in_array($call_status, array('declined', 'cancelled', 'no_answer', 'missed', 'ended'))
+            'finished' => in_array($call_status, array('declined', 'cancelled', 'no_answer', 'missed', 'ended')),
+            'call_progress' => $call_progress
         ), Wo_ApiLiveKitTimingFields($timing));
     }
+}
+else if ($action == 'progress') {
+    $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
+    $call_type = Wo_ApiLiveKitCallType(!empty($_POST['call_type']) ? $_POST['call_type'] : 'video');
+    $progress = !empty($_POST['call_progress']) ? Wo_Secure($_POST['call_progress']) : '';
+    $response_data = Wo_ApiLiveKitReportProgress(
+        $call_id,
+        $call_type,
+        intval($wo['user']['user_id']),
+        VNSEEA_GetRequestEndpointId($wo['user']['user_id']),
+        $progress
+    );
 }
 else if ($action == 'close') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
@@ -831,6 +892,10 @@ else if ($action == 'native_action') {
         else if ($call_action == 'close') {
             $duration = !empty($_POST['duration']) ? intval($_POST['duration']) : 0;
             $response_data = Wo_ApiLiveKitCloseCall($call_id, $call_type, 'ended', $duration, $actor_id, $endpoint_id);
+        }
+        else if ($call_action == 'progress') {
+            $progress = !empty($_POST['call_progress']) ? Wo_Secure($_POST['call_progress']) : '';
+            $response_data = Wo_ApiLiveKitReportProgress($call_id, $call_type, $actor_id, $endpoint_id, $progress);
         }
         else {
             $response_data = Wo_ApiLiveKitError('invalid_call_action', 'Invalid call action.', 400);

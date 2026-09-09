@@ -9,11 +9,13 @@ import {
   mapGroupLiveKitSyncResponse,
   mapIncomingGroupLiveKitCall,
 } from '../../application/mappers/groupLiveKitCallMapper';
+import { mapLiveKitCallProgress } from '../../application/mappers/liveKitCallMapper';
 import type {
   AddGroupLiveKitMembersInput,
   CreateGroupLiveKitCallInput,
   GroupLiveKitCallIdentityInput,
   GroupLiveKitCallRepository,
+  ReportGroupLiveKitCallProgressInput,
 } from '../../domain/repositories/GroupLiveKitCallRepository';
 import type {
   GroupLiveKitCreateResult,
@@ -22,6 +24,7 @@ import type {
   GroupLiveKitSyncResult,
   IncomingGroupLiveKitCall,
 } from '../../domain/types/groupCall.types';
+import type { LiveKitCallProgress } from '../../domain/types/call.types';
 
 type GroupCallApiEnvelope = Record<string, unknown> & {
   api_status: number | string;
@@ -92,6 +95,20 @@ class ApiGroupLiveKitCallRepository implements GroupLiveKitCallRepository {
       },
     );
     return mapGroupLiveKitSyncResponse(response);
+  }
+
+  async reportProgress(
+    input: ReportGroupLiveKitCallProgressInput,
+  ): Promise<LiveKitCallProgress> {
+    const response = await apiBridge.post<GroupCallApiEnvelope>(
+      apiRoutes.messages.groupCall,
+      {
+        type: 'progress',
+        call_id: input.callId,
+        call_progress: input.progress,
+      },
+    );
+    return mapLiveKitCallProgress(response.call_progress);
   }
 
   async getIncomingCall(): Promise<IncomingGroupLiveKitCall | null> {

@@ -123,6 +123,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
 
     RNVoipPushNotificationManager.addCompletionHandler(uuid, completionHandler: completion)
     RNVoipPushNotificationManager.didReceiveIncomingPush(with: payload, forType: type.rawValue)
+    reportNativeCallProgress(data, state: "device_received")
     RNCallKeep.reportNewIncomingCall(
       uuid,
       handle: handle,
@@ -135,8 +136,49 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
       supportsUngrouping: false,
       fromPushKit: true,
       payload: data,
-      withCompletionHandler: nil
+      withCompletionHandler: { [weak self] in
+        self?.reportNativeCallProgress(data, state: "ringing")
+      }
     )
+  }
+
+  private func reportNativeCallProgress(_ payload: [AnyHashable: Any], state: String) {
+    let apiUrl = stringValue(payload["api_url"])
+    let actionToken = stringValue(payload["action_token"])
+    let endpointId = stringValue(payload["client_endpoint_id"])
+    let serverKey = RNCConfig.env(for: "SERVER_KEY")?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard
+      !apiUrl.isEmpty,
+      !actionToken.isEmpty,
+      !serverKey.isEmpty,
+      let url = URL(string: apiUrl)
+    else {
+      return
+    }
+
+    let fields = [
+      "server_key": serverKey,
+      "type": "native_action",
+      "call_action": "progress",
+      "action_token": actionToken,
+      "client_endpoint_id": endpointId,
+      "call_progress": state,
+    ]
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 4
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    request.httpBody = fields
+      .map { key, value in
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        let encodedKey = key.addingPercentEncoding(withAllowedCharacters: allowed) ?? key
+        let encodedValue = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+        return "\(encodedKey)=\(encodedValue)"
+      }
+      .joined(separator: "&")
+      .data(using: .utf8)
+    URLSession.shared.dataTask(with: request).resume()
   }
 
   private func nativeCallUuid(from payload: [AnyHashable: Any]) -> String {

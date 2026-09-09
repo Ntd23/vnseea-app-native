@@ -159,6 +159,19 @@ describe('iOS CallKit audio session configuration', () => {
     );
   });
 
+  it('acknowledges PushKit delivery and provides native caller progress tones', () => {
+    const appDelegate = read('ios/VNSEEA/AppDelegate.swift');
+    const toneSource = read('ios/VNSEEA/NavigationSpeechModule.swift');
+    const toneBridge = read('ios/VNSEEA/NavigationSpeechModule.m');
+
+    expect(appDelegate).toContain('state: "device_received"');
+    expect(appDelegate).toContain('state: "ringing"');
+    expect(appDelegate).toContain('"call_action": "progress"');
+    expect(toneSource).toContain('@objc(VnseeaCallProgressTone)');
+    expect(toneSource).toContain('AVAudioPlayerNode');
+    expect(toneBridge).toContain('RCT_EXTERN_MODULE(VnseeaCallProgressTone');
+  });
+
   it('patches only the native dependency layers required for CallKit/WebRTC audio', () => {
     const packageJson = JSON.parse(read('package.json'));
     const patchedDependencies = packageJson.pnpm?.patchedDependencies ?? {};
