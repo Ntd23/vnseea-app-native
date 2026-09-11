@@ -167,6 +167,20 @@ import {
   MAP_TYPEAHEAD_SEARCH_RADIUS_METERS,
 } from '../../application/utils/mapSearchRadius';
 import {
+  advanceRouteProgress,
+  buildNavigationPrompt,
+  buildNavigationSpeechText,
+  estimateRemainingDuration,
+  evaluateOffRouteReroute,
+  offRouteThresholdMeters,
+  resolveFusedNavigationHeading,
+  resolveRouteInstruction,
+  type NavigationInstruction as TurnInstruction,
+  type NavigationPromptKeySet,
+  type OffRouteRerouteState,
+  type RouteProgress,
+} from '../../application/navigation/navigationGuidance';
+import {
   DISCOVERY_RELOAD_DISTANCE_METERS,
   DISCOVERY_VIEWPORT_MAX_RADIUS_KM,
   DISCOVERY_VIEWPORT_MIN_RADIUS_KM,
@@ -195,9 +209,8 @@ const ROUTE_CAMERA_LOOKAHEAD_DISTANCE_RATIO = 0.16;
 const ROUTE_HEADING_LOOKAHEAD_MIN_METERS = 8;
 const ROUTE_HEADING_LOOKAHEAD_MAX_METERS = 28;
 const ROUTE_HEADING_LOOKAHEAD_DISTANCE_RATIO = 0.1;
-const OFF_ROUTE_DISTANCE_METERS = 24;
-const OFF_ROUTE_CONFIRM_MS = 0;
-const REROUTE_COOLDOWN_MS = 1500;
+const OFF_ROUTE_CONFIRM_MS = 5000;
+const REROUTE_COOLDOWN_MS = 15000;
 const NAVIGATION_ARRIVAL_DISTANCE_METERS = 24;
 const DISCOVERY_RADIUS_METERS = 3000;
 const SEARCH_MAP_FIT_CLUSTER_METERS = 50000;
@@ -589,20 +602,6 @@ function AddressPlaceMapMarker({
   );
 }
 
-type TurnInstruction = {
-  distanceMeters: number;
-  label: string;
-  detail?: string;
-  maneuver:
-    | 'straight'
-    | 'left'
-    | 'right'
-    | 'slight-left'
-    | 'slight-right'
-    | 'uturn'
-    | 'arrive';
-};
-
 function distanceMeters(left: LatLng, right: LatLng) {
   const earthRadius = 6371000;
   const latFrom = (left.latitude * Math.PI) / 180;
@@ -824,13 +823,9 @@ function selectedPointFromGooglePrediction(
     placeId: details?.placeId || prediction.placeId,
     title: details?.name || prediction.mainText,
     subtitle:
-      details?.location ||
-      prediction.secondaryText ||
-      prediction.description,
+      details?.location || prediction.secondaryText || prediction.description,
     address:
-      details?.location ||
-      prediction.secondaryText ||
-      prediction.description,
+      details?.location || prediction.secondaryText || prediction.description,
     coordinate,
     types: details?.types?.length ? details.types : prediction.types,
     icon: details?.icon || prediction.icon,
@@ -1280,14 +1275,6 @@ function normalizeBearingDelta(fromBearing: number, toBearing: number) {
   return ((toBearing - fromBearing + 540) % 360) - 180;
 }
 
-function maneuverFromDelta(delta: number): TurnInstruction['maneuver'] {
-  const absolute = Math.abs(delta);
-  if (absolute >= 145) return 'uturn';
-  if (absolute < 32) return 'straight';
-  if (absolute < 70) return delta > 0 ? 'slight-right' : 'slight-left';
-  return delta > 0 ? 'right' : 'left';
-}
-
 function turnLabel(maneuver: TurnInstruction['maneuver']) {
   switch (maneuver) {
     case 'left':
@@ -1298,6 +1285,22 @@ function turnLabel(maneuver: TurnInstruction['maneuver']) {
       return 'Chếch trái';
     case 'slight-right':
       return 'Chếch phải';
+    case 'sharp-left':
+      return 'Rẽ gấp sang trái';
+    case 'sharp-right':
+      return 'Rẽ gấp sang phải';
+    case 'ramp-left':
+      return 'Đi vào đường nhánh bên trái';
+    case 'ramp-right':
+      return 'Đi vào đường nhánh bên phải';
+    case 'fork-left':
+      return 'Đi theo nhánh trái';
+    case 'fork-right':
+      return 'Đi theo nhánh phải';
+    case 'merge':
+      return 'Nhập làn';
+    case 'roundabout':
+      return 'Đi vào vòng xuyến';
     case 'uturn':
       return 'Quay đầu';
     case 'arrive':
@@ -1319,11 +1322,18 @@ function ManeuverIcon({
   switch (maneuver) {
     case 'left':
     case 'slight-left':
+    case 'sharp-left':
+    case 'ramp-left':
+    case 'fork-left':
       return <CornerUpLeft size={size} color={color} />;
     case 'right':
     case 'slight-right':
+    case 'sharp-right':
+    case 'ramp-right':
+    case 'fork-right':
       return <CornerUpRight size={size} color={color} />;
     case 'uturn':
+    case 'roundabout':
       return <Undo2 size={size} color={color} />;
     case 'arrive':
       return <MapPinCheck size={size} color={color} />;
@@ -1364,33 +1374,6 @@ function distanceToRoutePath(point: LatLng, path: LatLng[]) {
   return nearestDistance;
 }
 
-function routeDistanceFromIndex(path: LatLng[], startIndex: number) {
-  if (path.length < 2) return 0;
-  const safeStart = Math.max(0, Math.min(startIndex, path.length - 1));
-  let total = 0;
-  for (let index = safeStart + 1; index < path.length; index += 1) {
-    total += distanceMeters(path[index - 1], path[index]);
-  }
-  return total;
-}
-
-function routeDistanceBetweenIndexes(
-  path: LatLng[],
-  startIndex: number,
-  endIndex: number,
-) {
-  if (path.length < 2) return 0;
-  const safeStart = Math.max(0, Math.min(startIndex, path.length - 1));
-  const safeEnd = Math.max(0, Math.min(endIndex, path.length - 1));
-  if (safeEnd <= safeStart) return 0;
-
-  let total = 0;
-  for (let index = safeStart + 1; index <= safeEnd; index += 1) {
-    total += distanceMeters(path[index - 1], path[index]);
-  }
-  return total;
-}
-
 function isSameCoordinate(
   left: LatLng | null | undefined,
   right: LatLng | null | undefined,
@@ -1399,17 +1382,6 @@ function isSameCoordinate(
   return Boolean(
     left && right && distanceMeters(left, right) <= toleranceMeters,
   );
-}
-
-function stepManeuver(maneuver?: string): TurnInstruction['maneuver'] {
-  const normalized = String(maneuver || '').toLowerCase();
-  if (normalized.includes('uturn')) return 'uturn';
-  if (normalized.includes('slight-left')) return 'slight-left';
-  if (normalized.includes('slight-right')) return 'slight-right';
-  if (normalized.includes('left')) return 'left';
-  if (normalized.includes('right')) return 'right';
-  if (normalized.includes('straight')) return 'straight';
-  return 'straight';
 }
 
 function cleanRouteInstruction(value?: string) {
@@ -1522,246 +1494,6 @@ function currentNavigationRoadName({
     roadNameFromInstruction(step?.instruction) ||
     roadNameFromRouteSummary(routeSummary)
   );
-}
-
-function nextStepInstruction(
-  routePath: LatLng[],
-  current: LatLng,
-  destinationTitle: string | undefined,
-  routeSteps: MapRouteStep[] | undefined,
-) {
-  if (!routeSteps?.length || routePath.length < 2) {
-    return null;
-  }
-
-  const currentIndex = nearestRouteIndex(routePath, current);
-  const candidates = routeSteps
-    .map(step => {
-      const stepStart = step.startLocation ?? step.path?.[0];
-      if (!stepStart) return null;
-      const stepIndex = nearestRouteIndex(routePath, stepStart);
-      const distanceAhead =
-        stepIndex > currentIndex
-          ? routeDistanceBetweenIndexes(routePath, currentIndex, stepIndex)
-          : distanceMeters(current, stepStart);
-      return { step, stepIndex, distanceAhead };
-    })
-    .filter(Boolean) as Array<{
-    step: MapRouteStep;
-    stepIndex: number;
-    distanceAhead: number;
-  }>;
-
-  const nextStep =
-    candidates.find(
-      candidate =>
-        candidate.stepIndex > currentIndex && candidate.distanceAhead >= 8,
-    ) ??
-    candidates.find(
-      candidate =>
-        candidate.stepIndex >= currentIndex &&
-        candidate.distanceAhead <= 45 &&
-        stepManeuver(candidate.step.maneuver) !== 'straight',
-    ) ??
-    candidates.find(
-      candidate =>
-        candidate.stepIndex <= currentIndex + 1 &&
-        candidate.distanceAhead <= 60 &&
-        cleanRouteInstruction(candidate.step.instruction).length > 0,
-    );
-
-  if (!nextStep) {
-    return null;
-  }
-
-  const maneuver = stepManeuver(nextStep.step.maneuver);
-  const instruction = cleanRouteInstruction(nextStep.step.instruction);
-  const distanceAhead = Math.max(1, nextStep.distanceAhead);
-
-  return {
-    distanceMeters: distanceAhead,
-    label:
-      distanceAhead <= 8
-        ? 'Bắt đầu'
-        : distanceAhead <= 60 && maneuver === 'arrive'
-        ? `Sắp đến ${destinationTitle || 'điểm đến'}`
-        : `${formatDistance(distanceAhead)} nữa`,
-    detail: instruction || turnLabel(maneuver),
-    maneuver,
-  } satisfies TurnInstruction;
-}
-
-function navigationSpeechText(instruction: TurnInstruction) {
-  return [
-    instruction.label,
-    instruction.detail || turnLabel(instruction.maneuver),
-  ]
-    .filter(Boolean)
-    .join('. ');
-}
-
-function navigationInstructionKey(instruction: TurnInstruction) {
-  return `${instruction.maneuver}:${
-    instruction.detail || instruction.label
-  }:${Math.round(instruction.distanceMeters / 10)}`;
-}
-
-function geometryTurnInstruction(
-  routePath: LatLng[],
-  current: LatLng,
-  destinationTitle?: string,
-): TurnInstruction | null {
-  const path = buildNavigationPath(current, routePath);
-  if (path.length < 2) return null;
-
-  if (path.length < 3) {
-    const remaining = routeDistance(path);
-    return {
-      distanceMeters: remaining,
-      label:
-        remaining <= 60
-          ? `Sắp đến ${destinationTitle || 'điểm đến'}`
-          : `Tiếp tục ${formatDistance(remaining)}`,
-      detail: remaining <= 60 ? undefined : 'Đi theo tuyến đã chọn',
-      maneuver: remaining <= 60 ? 'arrive' : 'straight',
-    };
-  }
-
-  const connectorDistance = distanceMeters(path[0], path[1]);
-  const scanStartIndex = connectorDistance > ROUTE_CONNECTOR_MIN_METERS ? 2 : 1;
-  let distanceAhead = scanStartIndex > 1 ? connectorDistance : 0;
-
-  for (let index = scanStartIndex; index < path.length - 1; index += 1) {
-    distanceAhead += distanceMeters(path[index - 1], path[index]);
-    const previous = path[index - 1];
-    const point = path[index];
-    const next = path[index + 1];
-    const incoming = bearingBetween(previous, point);
-    const outgoing = bearingBetween(point, next);
-    const delta = normalizeBearingDelta(incoming, outgoing);
-    const maneuver = maneuverFromDelta(delta);
-
-    if (maneuver !== 'straight' && distanceAhead >= 12) {
-      return {
-        distanceMeters: distanceAhead,
-        label: `${formatDistance(distanceAhead)} nữa`,
-        detail: turnLabel(maneuver),
-        maneuver,
-      };
-    }
-  }
-
-  const remaining = routeDistance(path);
-  if (remaining <= 60) {
-    return {
-      distanceMeters: remaining,
-      label: `Sắp đến ${destinationTitle || 'điểm đến'}`,
-      maneuver: 'arrive',
-    };
-  }
-
-  return {
-    distanceMeters: remaining,
-    label: `Tiếp tục ${formatDistance(Math.min(remaining, 500))}`,
-    detail: 'Đi theo tuyến đã chọn',
-    maneuver: 'straight',
-  };
-}
-
-function nextTurnInstruction(
-  routePath: LatLng[],
-  current: LatLng | null,
-  destinationTitle?: string,
-  routeSteps?: MapRouteStep[],
-): TurnInstruction | null {
-  if (!current || routePath.length < 2) {
-    return null;
-  }
-
-  const stepInstruction = nextStepInstruction(
-    routePath,
-    current,
-    destinationTitle,
-    routeSteps,
-  );
-  const geometryInstruction = geometryTurnInstruction(
-    routePath,
-    current,
-    destinationTitle,
-  );
-
-  if (geometryInstruction) {
-    if (
-      stepInstruction &&
-      stepInstruction.maneuver === geometryInstruction.maneuver &&
-      Math.abs(
-        stepInstruction.distanceMeters - geometryInstruction.distanceMeters,
-      ) <= 45
-    ) {
-      const roadName = roadNameFromInstruction(stepInstruction.detail);
-      if (roadName) {
-        return {
-          ...geometryInstruction,
-          detail: `${turnLabel(geometryInstruction.maneuver)} vào ${roadName}`,
-        };
-      }
-    }
-
-    return geometryInstruction;
-  }
-
-  const path = buildNavigationPath(current, routePath);
-  if (path.length < 3) {
-    const remaining = routeDistance(path);
-    return {
-      distanceMeters: remaining,
-      label:
-        remaining <= 60
-          ? `Sắp đến ${destinationTitle || 'điểm đến'}`
-          : `Tiếp tục ${formatDistance(remaining)}`,
-      maneuver: remaining <= 60 ? 'arrive' : 'straight',
-    };
-  }
-
-  const startIndex = nearestRouteIndex(path, current);
-  let distanceAhead = 0;
-  const scanStart = Math.max(1, startIndex + 1);
-
-  for (let index = scanStart; index < path.length - 1; index += 1) {
-    distanceAhead += distanceMeters(path[index - 1], path[index]);
-    const previous = path[index - 1];
-    const point = path[index];
-    const next = path[index + 1];
-    const incoming = bearingBetween(previous, point);
-    const outgoing = bearingBetween(point, next);
-    const delta = normalizeBearingDelta(incoming, outgoing);
-    const maneuver = maneuverFromDelta(delta);
-
-    if (maneuver !== 'straight' && distanceAhead >= 12) {
-      return {
-        distanceMeters: distanceAhead,
-        label: `${formatDistance(distanceAhead)} nữa ${turnLabel(
-          maneuver,
-        ).toLowerCase()}`,
-        maneuver,
-      };
-    }
-  }
-
-  const remaining = routeDistanceFromIndex(path, startIndex);
-  if (remaining <= 60) {
-    return {
-      distanceMeters: remaining,
-      label: `Sắp đến ${destinationTitle || 'điểm đến'}`,
-      maneuver: 'arrive',
-    };
-  }
-
-  return {
-    distanceMeters: remaining,
-    label: `Tiếp tục ${formatDistance(Math.min(remaining, 500))}`,
-    maneuver: 'straight',
-  };
 }
 
 function parseGeoInfo(value: unknown): LatLng | null {
@@ -2408,9 +2140,16 @@ export default function NearbyUsersScreen() {
   const isAutoCenteringRef = useRef(true);
   const lastRoutedOriginRef = useRef<LatLng | null>(null);
   const activeRoutePathRef = useRef<LatLng[]>([]);
-  const lastRerouteAtRef = useRef(0);
-  const offRouteStartedAtRef = useRef(0);
-  const lastSpokenInstructionRef = useRef('');
+  const routeProgressRef = useRef<RouteProgress | null>(null);
+  const offRouteRerouteStateRef = useRef<OffRouteRerouteState>({
+    offRouteSince: null,
+    lastRerouteAt: 0,
+  });
+  const announcedNavigationPromptsRef = useRef<NavigationPromptKeySet>(
+    new Set(),
+  );
+  const stableNavigationHeadingRef = useRef<number | null>(null);
+  const currentLocationAccuracyRef = useRef<number | undefined>(undefined);
   const selectedPointTitleRef = useRef<string | undefined>(undefined);
   const lastNavigationCameraHeadingRef = useRef<{
     heading: number | null;
@@ -2478,6 +2217,9 @@ export default function NearbyUsersScreen() {
     [],
   );
   const [activeRoute, setActiveRoute] = useState<LatLng[]>([]);
+  const [routeProgress, setRouteProgress] = useState<RouteProgress | null>(
+    null,
+  );
   const [activeRouteDuration, setActiveRouteDuration] = useState<number | null>(
     null,
   );
@@ -2493,6 +2235,7 @@ export default function NearbyUsersScreen() {
   const [isMapShareSheetOpen, setIsMapShareSheetOpen] = useState(false);
   const [isPostingMapShare, setIsPostingMapShare] = useState(false);
   const [routeHeading, setRouteHeading] = useState<number | null>(null);
+  const [navigationDisplayHeading, setNavigationDisplayHeading] = useState(0);
   const [searchMessage, setSearchMessage] = useState('');
   const setNavigationAutoCentering = useCallback((enabled: boolean) => {
     isAutoCenteringRef.current = enabled;
@@ -3364,13 +3107,48 @@ export default function NearbyUsersScreen() {
     () => routeOptions.find(route => route.id === selectedRouteId),
     [routeOptions, selectedRouteId],
   );
+  const navigationRoutePath = useMemo(
+    () =>
+      isNavigating && routeProgress?.remainingPath.length
+        ? routeProgress.remainingPath
+        : activeRoute,
+    [activeRoute, isNavigating, routeProgress?.remainingPath],
+  );
+  const navigationRouteConnector = useMemo(() => {
+    if (!isNavigating || !routeProgress || !currentLocation) {
+      return activeRouteConnector;
+    }
+    return distanceMeters(currentLocation, routeProgress.snappedCoordinate) >
+      ROUTE_CONNECTOR_MIN_METERS
+      ? [currentLocation, routeProgress.snappedCoordinate]
+      : [];
+  }, [activeRouteConnector, currentLocation, isNavigating, routeProgress]);
   const activeRouteDistance = useMemo(() => {
-    const origin = currentLocation;
-    if (!origin || !shouldShowRoute) {
+    if (!shouldShowRoute) {
       return selectedDistance;
     }
-    return routeDistance(buildNavigationPath(origin, activeRoute));
-  }, [activeRoute, currentLocation, selectedDistance, shouldShowRoute]);
+    if (isNavigating && routeProgress) {
+      return routeProgress.remainingDistanceMeters;
+    }
+    const origin = currentLocation;
+    return origin
+      ? routeDistance(buildNavigationPath(origin, activeRoute))
+      : selectedDistance;
+  }, [
+    activeRoute,
+    currentLocation,
+    isNavigating,
+    routeProgress,
+    selectedDistance,
+    shouldShowRoute,
+  ]);
+  const remainingRouteDuration = useMemo(
+    () =>
+      isNavigating
+        ? estimateRemainingDuration(activeRouteDuration, routeProgress)
+        : activeRouteDuration,
+    [activeRouteDuration, isNavigating, routeProgress],
+  );
   const distanceToActiveDestination = useMemo(() => {
     if (!currentLocation || !activeDestination) return undefined;
     return distanceMeters(currentLocation, activeDestination);
@@ -3381,30 +3159,35 @@ export default function NearbyUsersScreen() {
       distanceToActiveDestination !== undefined &&
       distanceToActiveDestination <= NAVIGATION_ARRIVAL_DISTANCE_METERS,
   );
-  const currentUserMarkerHeading = resolveNavigationHeading({
-    deviceHeading,
-    gpsHeading: lastHeadingStateRef.current === null ? null : currentHeading,
-    routeHeading: shouldShowRoute ? routeHeading : null,
-    userSpeed,
-    preferRouteHeading: false,
-  });
+  const currentUserMarkerHeading = isNavigating
+    ? navigationDisplayHeading
+    : resolveNavigationHeading({
+        deviceHeading,
+        gpsHeading:
+          lastHeadingStateRef.current === null ? null : currentHeading,
+        routeHeading: shouldShowRoute ? routeHeading : null,
+        userSpeed,
+        preferRouteHeading: false,
+      });
   const shouldShowNavigationPuck = isNavigating && shouldShowRoute;
   const shouldShowHeadingPuck =
     shouldShowNavigationPuck || userSpeed > NAVIGATION_MOVING_SPEED_MPS;
   const turnInstruction = useMemo(
     () =>
       isNavigating && shouldShowRoute
-        ? nextTurnInstruction(
-            activeRoute,
-            currentLocation,
-            selectedPoint?.title,
-            selectedRoute?.steps,
-          )
+        ? routeProgress
+          ? resolveRouteInstruction({
+              routePath: activeRoute,
+              progress: routeProgress,
+              routeSteps: selectedRoute?.steps,
+              destinationTitle: selectedPoint?.title,
+            })
+          : null
         : null,
     [
       activeRoute,
-      currentLocation,
       isNavigating,
+      routeProgress,
       selectedPoint?.title,
       selectedRoute?.steps,
       shouldShowRoute,
@@ -3429,6 +3212,11 @@ export default function NearbyUsersScreen() {
     ],
   );
   const isRoutePreview = shouldShowRoute && !isNavigating;
+  const routeRenderMode = isNavigating
+    ? 'navigation'
+    : isRoutePreview
+    ? 'preview'
+    : 'idle';
   // Search results and place details are independent sheets. A route preview
   // or active navigation temporarily takes over the bottom of the screen, but
   // the committed search session stays alive so the results sheet can return
@@ -3441,13 +3229,13 @@ export default function NearbyUsersScreen() {
     !isRoutePreview &&
     !isNavigating;
   const arrivalTimeText = useMemo(() => {
-    if (!activeRouteDuration || activeRouteDuration <= 0) return '';
-    const arrival = new Date(Date.now() + activeRouteDuration * 1000);
+    if (!remainingRouteDuration || remainingRouteDuration <= 0) return '';
+    const arrival = new Date(Date.now() + remainingRouteDuration * 1000);
     return arrival.toLocaleTimeString('vi-VN', {
       hour: '2-digit',
       minute: '2-digit',
     });
-  }, [activeRouteDuration]);
+  }, [remainingRouteDuration]);
 
   useEffect(() => {
     activeDestinationRef.current = activeDestination;
@@ -3635,11 +3423,17 @@ export default function NearbyUsersScreen() {
     activeDestinationRef.current = null;
     isNavigatingRef.current = false;
     activeRoutePathRef.current = [];
-    lastRerouteAtRef.current = 0;
-    offRouteStartedAtRef.current = 0;
+    routeProgressRef.current = null;
+    offRouteRerouteStateRef.current = {
+      offRouteSince: null,
+      lastRerouteAt: 0,
+    };
+    announcedNavigationPromptsRef.current.clear();
+    stableNavigationHeadingRef.current = null;
     setActiveDestination(null);
     setActiveRoute([]);
     setActiveRouteConnector([]);
+    setRouteProgress(null);
     setActiveRouteDuration(null);
     setRouteOptions([]);
     setSelectedRouteId('');
@@ -3652,7 +3446,6 @@ export default function NearbyUsersScreen() {
     setIsMapShareSheetOpen(false);
     setIsPostingMapShare(false);
     lastRoutedOriginRef.current = null;
-    lastSpokenInstructionRef.current = '';
     lastNavigationCameraHeadingRef.current = {
       heading: null,
       center: null,
@@ -3700,6 +3493,35 @@ export default function NearbyUsersScreen() {
   );
 
   useEffect(() => {
+    if (!isNavigating || !shouldShowRoute || !routeProgress) {
+      stableNavigationHeadingRef.current = null;
+      return;
+    }
+
+    const isOnRoute =
+      routeProgress.offRouteDistanceMeters <=
+      offRouteThresholdMeters(currentLocationAccuracyRef.current);
+    const nextHeading = resolveFusedNavigationHeading({
+      routeHeading: routeProgress.routeHeading,
+      gpsHeading: lastHeadingStateRef.current === null ? null : currentHeading,
+      deviceHeading,
+      previousHeading: stableNavigationHeadingRef.current,
+      speedMetersPerSecond: userSpeed,
+      isOnRoute,
+    });
+    stableNavigationHeadingRef.current = nextHeading;
+    setNavigationDisplayHeading(nextHeading);
+    setRouteHeading(routeProgress.routeHeading);
+  }, [
+    currentHeading,
+    deviceHeading,
+    isNavigating,
+    routeProgress,
+    shouldShowRoute,
+    userSpeed,
+  ]);
+
+  useEffect(() => {
     if (
       !isNavigating ||
       !shouldShowRoute ||
@@ -3716,18 +3538,8 @@ export default function NearbyUsersScreen() {
     const last = lastNavigationCameraHeadingRef.current;
     const movedMeters =
       last.center === null ? Infinity : distanceMeters(last.center, location);
-    const cameraCenter = navigationCameraCenter(location, activeRoute);
-    const nextRouteHeading =
-      activeDestination !== null
-        ? navigationRouteHeading(location, activeRoute, activeDestination)
-        : routeHeading ?? currentHeading;
-    const nextCameraHeading = resolveNavigationHeading({
-      deviceHeading,
-      gpsHeading: lastHeadingStateRef.current === null ? null : currentHeading,
-      routeHeading: nextRouteHeading,
-      userSpeed,
-      preferRouteHeading: true,
-    });
+    const cameraCenter = navigationCameraCenter(location, navigationRoutePath);
+    const nextCameraHeading = navigationDisplayHeading;
     const headingChanged =
       last.heading === null
         ? Infinity
@@ -3741,7 +3553,6 @@ export default function NearbyUsersScreen() {
       center: location,
       updatedAt: now,
     };
-    setRouteHeading(nextRouteHeading);
     mapRef.current?.animateCamera(
       {
         center: cameraCenter,
@@ -3752,37 +3563,44 @@ export default function NearbyUsersScreen() {
       { duration: 180 },
     );
   }, [
-    activeDestination,
-    activeRoute,
-    currentHeading,
-    deviceHeading,
     currentLocation,
     isNavigating,
     isAutoCentering,
-    routeHeading,
+    navigationDisplayHeading,
+    navigationRoutePath,
     shouldShowRoute,
-    userSpeed,
   ]);
 
   useEffect(() => {
     if (!voiceGuidanceEnabled) {
-      lastSpokenInstructionRef.current = '';
       stopNavigationSpeech();
       return;
     }
     if (!isNavigating || !turnInstruction) {
       return;
     }
-    const key = navigationInstructionKey(turnInstruction);
-    if (lastSpokenInstructionRef.current === key) {
-      return;
+    const prompt = buildNavigationPrompt(
+      turnInstruction,
+      selectedTransportRouteMode,
+      announcedNavigationPromptsRef.current,
+    );
+    if (!prompt) return;
+    announcedNavigationPromptsRef.current.add(prompt.key);
+    if (prompt.shouldVibrate) {
+      Vibration.vibrate(80);
     }
-    lastSpokenInstructionRef.current = key;
-    Vibration.vibrate(80);
-    const speechText = navigationSpeechText(turnInstruction);
+    const speechText = buildNavigationSpeechText(
+      turnInstruction,
+      prompt.phase,
+    );
     console.log('[NavigationSpeech] speaking:', speechText);
     speakNavigationInstruction(speechText);
-  }, [isNavigating, turnInstruction, voiceGuidanceEnabled]);
+  }, [
+    isNavigating,
+    selectedTransportRouteMode,
+    turnInstruction,
+    voiceGuidanceEnabled,
+  ]);
 
   useEffect(
     () => () => {
@@ -3816,10 +3634,7 @@ export default function NearbyUsersScreen() {
   }, []);
 
   const applyInitialUserCenter = useCallback((location: LatLng) => {
-    if (
-      hasAppliedInitialUserCenterRef.current ||
-      hasUserMovedMapRef.current
-    ) {
+    if (hasAppliedInitialUserCenterRef.current || hasUserMovedMapRef.current) {
       return;
     }
 
@@ -3881,27 +3696,12 @@ export default function NearbyUsersScreen() {
     if (isNavigating) {
       setNavigationAutoCentering(true);
       const cameraCenter =
-        shouldShowRoute && activeRoute.length > 1
-          ? navigationCameraCenter(location, activeRoute)
+        shouldShowRoute && navigationRoutePath.length > 1
+          ? navigationCameraCenter(location, navigationRoutePath)
           : location;
       const nextHeading =
         shouldShowRoute && activeDestination !== null
-          ? (() => {
-              const nextRouteHeading = navigationRouteHeading(
-                location,
-                activeRoute,
-                activeDestination,
-              );
-              setRouteHeading(nextRouteHeading);
-              return resolveNavigationHeading({
-                deviceHeading,
-                gpsHeading:
-                  lastHeadingStateRef.current === null ? null : currentHeading,
-                routeHeading: nextRouteHeading,
-                userSpeed,
-                preferRouteHeading: true,
-              });
-            })()
+          ? navigationDisplayHeading
           : routeHeading ?? currentHeading;
       mapRef.current?.animateCamera(
         {
@@ -3924,16 +3724,15 @@ export default function NearbyUsersScreen() {
     }
   }, [
     activeDestination,
-    activeRoute,
     currentHeading,
-    deviceHeading,
     isNavigating,
+    navigationDisplayHeading,
+    navigationRoutePath,
     routeHeading,
     requestMapLocationAccess,
     setNavigationAutoCentering,
     shouldShowRoute,
     locationAccessError,
-    userSpeed,
   ]);
 
   const handleCloseSelectedPlace = useCallback(() => {
@@ -3996,29 +3795,10 @@ export default function NearbyUsersScreen() {
   }, [disableNavigationAutoCentering, queueViewportPageLoad]);
 
   const resetMapHeading = useCallback(() => {
-    const location = currentLocationRef.current;
-    const nextRouteHeading =
-      isNavigating &&
-      shouldShowRoute &&
-      location &&
-      activeDestination !== null &&
-      activeRoute.length > 1
-        ? navigationRouteHeading(location, activeRoute, activeDestination)
-        : NAVIGATION_CAMERA_HEADING;
     const nextHeading =
-      nextRouteHeading !== NAVIGATION_CAMERA_HEADING
-        ? resolveNavigationHeading({
-            deviceHeading,
-            gpsHeading:
-              lastHeadingStateRef.current === null ? null : currentHeading,
-            routeHeading: nextRouteHeading,
-            userSpeed,
-            preferRouteHeading: true,
-          })
+      isNavigating && shouldShowRoute
+        ? navigationDisplayHeading
         : NAVIGATION_CAMERA_HEADING;
-    if (nextRouteHeading !== NAVIGATION_CAMERA_HEADING) {
-      setRouteHeading(nextRouteHeading);
-    }
     mapRef.current?.animateCamera(
       {
         heading: nextHeading,
@@ -4026,15 +3806,7 @@ export default function NearbyUsersScreen() {
       },
       { duration: 320 },
     );
-  }, [
-    activeDestination,
-    activeRoute,
-    currentHeading,
-    deviceHeading,
-    isNavigating,
-    shouldShowRoute,
-    userSpeed,
-  ]);
+  }, [isNavigating, navigationDisplayHeading, shouldShowRoute]);
 
   const loadPagesAroundUser = useCallback(
     async (location: LatLng, options?: PageDiscoveryLoadOptions) => {
@@ -4173,20 +3945,36 @@ export default function NearbyUsersScreen() {
       destinationTitle?: string,
       cameraDurationMs = 650,
       moveCamera = true,
+      isAutomaticReroute = false,
     ) => {
       const origin = currentLocationRef.current;
       if (!origin) return;
+      const wasNavigating = isNavigatingRef.current;
+      if (navigating && !wasNavigating) {
+        setRouteRenderRevision(current => current + 1);
+      }
 
       const routePath = normalizeRoutePath(route.path, origin, destination);
       const navigationPath = buildNavigationPath(origin, routePath);
       const routeConnector = routeConnectorFromLocation(origin, routePath);
+      const initialProgress = navigating
+        ? advanceRouteProgress(routePath, origin)
+        : null;
 
       activeDestinationRef.current = destination;
       isNavigatingRef.current = navigating;
       activeRoutePathRef.current = routePath;
-      offRouteStartedAtRef.current = 0;
+      routeProgressRef.current = initialProgress;
+      offRouteRerouteStateRef.current = {
+        ...offRouteRerouteStateRef.current,
+        offRouteSince: null,
+      };
+      if (navigating && !isAutomaticReroute) {
+        announcedNavigationPromptsRef.current.clear();
+      }
       setActiveRoute(routePath);
       setActiveRouteConnector(routeConnector);
+      setRouteProgress(initialProgress);
       setActiveDestination(destination);
       setActiveRouteDuration(route.durationSeconds);
       setSelectedRouteId(route.id);
@@ -4197,8 +3985,15 @@ export default function NearbyUsersScreen() {
       lastRoutedOriginRef.current = origin;
 
       if (navigationPath.length > 1 && navigating) {
-        const heading = navigationRouteHeading(origin, routePath, destination);
-        const cameraCenter = navigationCameraCenter(origin, routePath);
+        const heading =
+          initialProgress?.routeHeading ??
+          navigationRouteHeading(origin, routePath, destination);
+        stableNavigationHeadingRef.current = heading;
+        setNavigationDisplayHeading(heading);
+        const cameraCenter = navigationCameraCenter(
+          origin,
+          initialProgress?.remainingPath ?? routePath,
+        );
         const navigationCamera = {
           center: cameraCenter,
           heading,
@@ -4232,25 +4027,6 @@ export default function NearbyUsersScreen() {
             }, 700);
           }
         }
-        if (voiceGuidanceEnabled) {
-          const firstInstruction = nextTurnInstruction(
-            routePath,
-            origin,
-            destinationTitle,
-            route.steps,
-          );
-          if (firstInstruction) {
-            lastSpokenInstructionRef.current =
-              navigationInstructionKey(firstInstruction);
-            Vibration.vibrate(80);
-            const firstSpeechText = navigationSpeechText(firstInstruction);
-            console.log(
-              '[NavigationSpeech] first instruction:',
-              firstSpeechText,
-            );
-            speakNavigationInstruction(firstSpeechText);
-          }
-        }
         return;
       }
 
@@ -4267,7 +4043,7 @@ export default function NearbyUsersScreen() {
         });
       }
     },
-    [setNavigationAutoCentering, voiceGuidanceEnabled],
+    [setNavigationAutoCentering],
   );
 
   const selectRouteOption = useCallback(
@@ -4396,7 +4172,7 @@ export default function NearbyUsersScreen() {
             latestLocation &&
             activePath.length > 1 &&
             distanceToRoutePath(latestLocation, activePath) <=
-              OFF_ROUTE_DISTANCE_METERS
+              offRouteThresholdMeters(currentLocationAccuracyRef.current)
           ) {
             return;
           }
@@ -4411,6 +4187,7 @@ export default function NearbyUsersScreen() {
           destinationTitle,
           source === 'auto' ? 220 : 650,
           moveCamera,
+          source === 'auto',
         );
         setIsSheetCollapsed(navigating);
       } catch {
@@ -5141,9 +4918,13 @@ export default function NearbyUsersScreen() {
         return;
       }
 
+      const previousRawLocation = currentLocationRef.current;
       currentLocationRef.current = location;
       deviceLocationRef.current = location;
       const now = Date.now();
+      const accuracy = Number(coordinate.accuracy);
+      currentLocationAccuracyRef.current =
+        Number.isFinite(accuracy) && accuracy > 0 ? accuracy : undefined;
       if (now - lastPersistedLocationAtRef.current >= 5000) {
         lastPersistedLocationAtRef.current = now;
         saveLastMapLocation({
@@ -5176,7 +4957,8 @@ export default function NearbyUsersScreen() {
         setLocationSource('gps');
       }
 
-      const speed = coordinate.speed ?? 0;
+      const rawSpeed = Number(coordinate.speed);
+      const speed = Number.isFinite(rawSpeed) && rawSpeed > 0 ? rawSpeed : 0;
       const lastSpeed = lastSpeedStateRef.current;
       if (
         lastSpeed === null ||
@@ -5188,8 +4970,21 @@ export default function NearbyUsersScreen() {
         setUserSpeed(speed);
       }
 
-      const gpsHeading = Number(coordinate.heading);
-      if (Number.isFinite(gpsHeading) && gpsHeading >= 0 && gpsHeading <= 360) {
+      const nativeGpsHeading = Number(coordinate.heading);
+      const movementDistance = previousRawLocation
+        ? distanceMeters(previousRawLocation, location)
+        : 0;
+      const movementHeading =
+        previousRawLocation && movementDistance >= 4
+          ? bearingBetween(previousRawLocation, location)
+          : null;
+      const gpsHeading =
+        Number.isFinite(nativeGpsHeading) &&
+        nativeGpsHeading >= 0 &&
+        nativeGpsHeading <= 360
+          ? nativeGpsHeading
+          : movementHeading;
+      if (gpsHeading !== null) {
         const lastHeading = lastHeadingStateRef.current;
         if (
           lastHeading === null ||
@@ -5214,35 +5009,37 @@ export default function NearbyUsersScreen() {
 
       const latestActiveDestination = activeDestinationRef.current;
       if (!latestActiveDestination || !isNavigatingRef.current) return;
+      const activePath = activeRoutePathRef.current;
+      const nextProgress = advanceRouteProgress(
+        activePath,
+        location,
+        routeProgressRef.current?.cursor,
+      );
+      routeProgressRef.current = nextProgress;
+      setRouteProgress(nextProgress);
       if (
         distanceMeters(location, latestActiveDestination) <=
         NAVIGATION_ARRIVAL_DISTANCE_METERS
       ) {
-        offRouteStartedAtRef.current = 0;
+        offRouteRerouteStateRef.current = {
+          ...offRouteRerouteStateRef.current,
+          offRouteSince: null,
+        };
         return;
       }
-      const activePath = activeRoutePathRef.current;
-      const offRouteDistance = distanceToRoutePath(location, activePath);
-      const shouldReroute =
-        activePath.length < 2 || offRouteDistance > OFF_ROUTE_DISTANCE_METERS;
-
-      if (!shouldReroute) {
-        offRouteStartedAtRef.current = 0;
-        return;
-      }
-
-      if (offRouteStartedAtRef.current === 0) {
-        offRouteStartedAtRef.current = now;
-      }
-
-      const offRouteLongEnough =
-        now - offRouteStartedAtRef.current >= OFF_ROUTE_CONFIRM_MS;
-      if (
-        offRouteLongEnough &&
-        now - lastRerouteAtRef.current >= REROUTE_COOLDOWN_MS
-      ) {
-        lastRerouteAtRef.current = now;
-        offRouteStartedAtRef.current = 0;
+      const rerouteDecision = evaluateOffRouteReroute({
+        offRouteDistanceMeters:
+          activePath.length < 2
+            ? Number.POSITIVE_INFINITY
+            : nextProgress.offRouteDistanceMeters,
+        horizontalAccuracyMeters: currentLocationAccuracyRef.current,
+        now,
+        state: offRouteRerouteStateRef.current,
+        confirmationMs: OFF_ROUTE_CONFIRM_MS,
+        cooldownMs: REROUTE_COOLDOWN_MS,
+      });
+      offRouteRerouteStateRef.current = rerouteDecision.state;
+      if (rerouteDecision.shouldReroute) {
         loadRouteOptions(
           latestActiveDestination,
           true,
@@ -6053,7 +5850,7 @@ export default function NearbyUsersScreen() {
         {/* Main Route & Connector Polylines (Always mounted to prevent react-native-maps unmount render bugs on Android) */}
         {routePreviewAlternativeSlots.map((route, index) => (
           <React.Fragment
-            key={['alt-route-slot', routeRenderRevision, index].join(':')}
+            key={['alt-route-slot', routeRenderMode, routeRenderRevision, index].join(':')}
           >
             <Polyline
               coordinates={route ? route.path : []}
@@ -6090,11 +5887,11 @@ export default function NearbyUsersScreen() {
           </React.Fragment>
         ))}
 
-       <Polyline
+        <Polyline
           key={['route-connector-border', routeRenderRevision].join(':')}
-         coordinates={
-            shouldShowRoute && activeRouteConnector.length > 1
-              ? activeRouteConnector
+          coordinates={
+            shouldShowRoute && navigationRouteConnector.length > 1
+              ? navigationRouteConnector
               : []
           }
           lineCap="round"
@@ -6103,11 +5900,11 @@ export default function NearbyUsersScreen() {
           strokeWidth={8}
           zIndex={15}
         />
-       <Polyline
+        <Polyline
           key={['route-connector', routeRenderRevision].join(':')}
-         coordinates={
-            shouldShowRoute && activeRouteConnector.length > 1
-              ? activeRouteConnector
+          coordinates={
+            shouldShowRoute && navigationRouteConnector.length > 1
+              ? navigationRouteConnector
               : []
           }
           lineCap="round"
@@ -6117,18 +5914,18 @@ export default function NearbyUsersScreen() {
           zIndex={16}
         />
 
-       <Polyline
+        <Polyline
           key={['route-main-border', routeRenderRevision].join(':')}
-         coordinates={shouldShowRoute ? activeRoute : []}
+          coordinates={shouldShowRoute ? navigationRoutePath : []}
           lineCap="round"
           lineJoin="round"
           strokeColor="rgba(255, 255, 255, 0.92)"
           strokeWidth={11}
           zIndex={16}
         />
-       <Polyline
+        <Polyline
           key={['route-main', routeRenderRevision].join(':')}
-         coordinates={shouldShowRoute ? activeRoute : []}
+          coordinates={shouldShowRoute ? navigationRoutePath : []}
           lineCap="round"
           lineJoin="round"
           strokeColor={isRoutePreview ? '#2D00D7' : '#1A73E8'}
@@ -7087,8 +6884,8 @@ export default function NearbyUsersScreen() {
             <Text style={styles.navigationEtaTitle}>
               {hasArrivedAtDestination
                 ? 'Đã đến nơi'
-                : activeRouteDuration && activeRouteDuration > 0
-                ? formatDuration(activeRouteDuration)
+                : remainingRouteDuration && remainingRouteDuration > 0
+                ? formatDuration(remainingRouteDuration)
                 : 'Đang cập nhật'}
             </Text>
             <Text style={styles.navigationEtaSubtitle}>
@@ -7138,8 +6935,8 @@ export default function NearbyUsersScreen() {
                 ? formatDistance(selectedDistance)
                 : undefined,
             durationText:
-              activeRouteDuration !== null && activeRouteDuration > 0
-                ? formatDuration(activeRouteDuration)
+              remainingRouteDuration !== null && remainingRouteDuration > 0
+                ? formatDuration(remainingRouteDuration)
                 : undefined,
             rating: selectedPoint.rating,
             ratingsTotal: selectedPoint.ratingsTotal,
@@ -7241,10 +7038,10 @@ export default function NearbyUsersScreen() {
           </View>
 
           <View className="mt-3 flex-row flex-wrap items-center">
-            {activeRouteDuration !== null && activeRouteDuration > 0 ? (
+            {remainingRouteDuration !== null && remainingRouteDuration > 0 ? (
               <View style={styles.durationBadge}>
                 <Text style={styles.durationText}>
-                  {formatDuration(activeRouteDuration)}
+                  {formatDuration(remainingRouteDuration)}
                 </Text>
               </View>
             ) : null}

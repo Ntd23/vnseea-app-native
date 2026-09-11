@@ -14,6 +14,19 @@ export type CallDeliveryState = {
   };
 };
 
+export type LiveKitCallProgressState =
+  | 'dispatching'
+  | 'device_received'
+  | 'ringing'
+  | 'answering'
+  | 'answered';
+
+export type LiveKitCallProgress = {
+  state: LiveKitCallProgressState;
+  endpointCount: number;
+  updatedAtMs: number;
+};
+
 export type LiveKitCallStatus =
   | 'calling'
   | 'answered'
@@ -67,6 +80,7 @@ export type LiveKitCallCreateResult = {
   busy: boolean;
   peer?: LiveKitCallPeer;
   delivery: CallDeliveryState;
+  progress: LiveKitCallProgress;
 };
 
 export type LiveKitCallCheckResult = {
@@ -82,6 +96,7 @@ export type LiveKitCallCheckResult = {
   elapsedSeconds: number;
   elapsedMs: number;
   endpointOwned: boolean;
+  progress: LiveKitCallProgress;
 };
 
 export type IncomingLiveKitCall = {

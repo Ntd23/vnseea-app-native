@@ -6,6 +6,10 @@ import type {
   GroupLiveKitSyncResult,
   IncomingGroupLiveKitCall,
 } from '../types/groupCall.types';
+import type {
+  LiveKitCallProgress,
+  LiveKitCallProgressState,
+} from '../types/call.types';
 
 export type CreateGroupLiveKitCallInput = {
   groupId: string;
@@ -14,6 +18,11 @@ export type CreateGroupLiveKitCallInput = {
 export type GroupLiveKitCallIdentityInput = {
   callId: string;
 };
+
+export type ReportGroupLiveKitCallProgressInput =
+  GroupLiveKitCallIdentityInput & {
+    progress: Exclude<LiveKitCallProgressState, 'dispatching' | 'answered'>;
+  };
 
 export type AddGroupLiveKitMembersInput = GroupLiveKitCallIdentityInput & {
   groupId: string;
@@ -36,6 +45,9 @@ export interface GroupLiveKitCallRepository {
   syncCall(
     input: GroupLiveKitCallIdentityInput,
   ): Promise<GroupLiveKitSyncResult>;
+  reportProgress(
+    input: ReportGroupLiveKitCallProgressInput,
+  ): Promise<LiveKitCallProgress>;
   getIncomingCall(): Promise<IncomingGroupLiveKitCall | null>;
   declineCall(input: GroupLiveKitCallIdentityInput): Promise<void>;
   getCandidates(

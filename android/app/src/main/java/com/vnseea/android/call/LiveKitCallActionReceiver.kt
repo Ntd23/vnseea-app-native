@@ -19,6 +19,13 @@ class LiveKitCallActionReceiver : BroadcastReceiver() {
       LiveKitCallNativeActions.dismissIncomingCall(context, callId)
     }
     if (action == "answer") {
+      LiveKitCallNativeActions.postAction(
+        apiUrl,
+        actionToken,
+        "progress",
+        clientEndpointId,
+        "answering",
+      )
       LiveKitCallNativeActions.postAction(apiUrl, actionToken, "answer", clientEndpointId)
       context.startActivity(Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP

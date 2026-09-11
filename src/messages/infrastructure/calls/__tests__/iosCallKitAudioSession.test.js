@@ -159,11 +159,38 @@ describe('iOS CallKit audio session configuration', () => {
     );
   });
 
+  it('acknowledges PushKit delivery and provides native caller progress tones', () => {
+    const appDelegate = read('ios/VNSEEA/AppDelegate.swift');
+    const toneSource = read('ios/VNSEEA/NavigationSpeechModule.swift');
+    const toneBridge = read('ios/VNSEEA/NavigationSpeechModule.m');
+    const project = read('ios/VNSEEA.xcodeproj/project.pbxproj');
+    const jsBridge = read(
+      'src/messages/infrastructure/calls/callProgressTone.ts',
+    );
+
+    expect(appDelegate).toContain('state: "device_received"');
+    expect(appDelegate).toContain('state: "ringing"');
+    expect(appDelegate).toContain('"call_action": "progress"');
+    expect(toneSource).toContain('@objc(VnseeaCallProgressTone)');
+    expect(toneSource).toContain('AVAudioPlayerNode');
+    expect(toneSource).not.toContain('NSObject, RCTBridgeModule');
+    expect(toneSource).toContain('prepareCallProgressAudioSession');
+    expect(toneSource).toContain('try session.setActive(true)');
+    expect(toneSource).toContain('self.engine.prepare()');
+    expect(toneBridge).toContain('RCT_EXTERN_MODULE(VnseeaCallProgressTone');
+    expect(project).toContain('NavigationSpeechModule.swift in Sources');
+    expect(project).toContain('NavigationSpeechModule.m in Sources');
+    expect(jsBridge).toContain('[CallProgressTone] native module unavailable');
+    expect(jsBridge).toContain('[CallProgressTone] start failed');
+  });
+
   it('patches only the native dependency layers required for CallKit/WebRTC audio', () => {
     const packageJson = JSON.parse(read('package.json'));
     const patchedDependencies = packageJson.pnpm?.patchedDependencies ?? {};
 
-    expect(patchedDependencies['@livekit/react-native@2.11.1']).toBeUndefined();
+    expect(patchedDependencies['@livekit/react-native@2.11.1']).toBe(
+      'patches/@livekit__react-native@2.11.1.patch',
+    );
     expect(
       patchedDependencies['@livekit/react-native-webrtc@144.1.1'],
     ).toBe('patches/@livekit__react-native-webrtc@144.1.1.patch');
@@ -173,12 +200,12 @@ describe('iOS CallKit audio session configuration', () => {
     expect(
       patchedDependencies['react-native-video@6.19.2'],
     ).toBe('patches/react-native-video@6.19.2.patch');
-    expect(exists('patches/@livekit__react-native@2.11.1.patch')).toBe(false);
+    expect(exists('patches/@livekit__react-native@2.11.1.patch')).toBe(true);
     expect(exists('patches/@livekit__react-native-webrtc@144.1.1.patch')).toBe(true);
     expect(exists('patches/react-native-video@6.19.2.patch')).toBe(true);
   });
 
-  it('keeps LiveKit unpatched and adds native WebRTC engine audio safeguards', () => {
+  it('keeps the LiveKit patch scoped to video dimensions and adds native WebRTC engine audio safeguards', () => {
     const liveKitNativeSource = read(
       'node_modules/@livekit/react-native/ios/LiveKitReactNativeModule.swift',
     );
@@ -187,10 +214,13 @@ describe('iOS CallKit audio session configuration', () => {
     );
     const webRtcPatchPath = 'patches/@livekit__react-native-webrtc@144.1.1.patch';
     const webRtcPatchSource = exists(webRtcPatchPath) ? read(webRtcPatchPath) : '';
+    const liveKitPatchSource = read('patches/@livekit__react-native@2.11.1.patch');
 
     expect(liveKitNativeSource).not.toContain('callKitVoiceAudioLockEnabled');
     expect(liveKitNativeSource).not.toContain('setCallKitVoiceAudioLock');
     expect(liveKitNativeSource).not.toContain('guardCallKitVoiceAudioLock');
+    expect(liveKitPatchSource).toContain('onDimensionsChange');
+    expect(liveKitPatchSource).not.toContain('callKitVoiceAudioLockEnabled');
     expect(webRtcAudioSessionSource).toContain('audioSessionDidActivate');
     expect(webRtcAudioSessionSource).toContain('audioSessionDidDeactivate');
     expect(webRtcAudioSessionSource).toContain('audioSessionDebugState');

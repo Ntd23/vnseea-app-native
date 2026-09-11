@@ -42,10 +42,12 @@ export type MessageRealtimeEventName =
   | 'group-chat-request:new'
   | 'navigation:counts-changed'
   | 'livekit_call_incoming'
+  | 'livekit_call_progress'
   | 'livekit_call_answered'
   | 'livekit_call_declined'
   | 'livekit_call_closed'
   | 'livekit_group_call_incoming'
+  | 'livekit_group_call_progress'
   | 'livekit_group_call_sync'
   | 'livekit_group_call_closed';
 
@@ -77,10 +79,12 @@ const forwardedEventNames: MessageRealtimeEventName[] = [
   'group-chat-request:new',
   'navigation:counts-changed',
   'livekit_call_incoming',
+  'livekit_call_progress',
   'livekit_call_answered',
   'livekit_call_declined',
   'livekit_call_closed',
   'livekit_group_call_incoming',
+  'livekit_group_call_progress',
   'livekit_group_call_sync',
   'livekit_group_call_closed',
 ];

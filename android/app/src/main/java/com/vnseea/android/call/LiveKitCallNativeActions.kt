@@ -9,6 +9,7 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import org.json.JSONObject
 
 object LiveKitCallNativeActions {
   private const val HANDLED_INCOMING_CALLS_PREFS = "vnseea_handled_incoming_calls"
@@ -91,6 +92,7 @@ object LiveKitCallNativeActions {
     actionToken: String?,
     action: String,
     clientEndpointId: String? = null,
+    progress: String? = null,
   ) {
     if (apiUrl.isNullOrBlank() || actionToken.isNullOrBlank()) return
     Thread {
@@ -103,13 +105,17 @@ object LiveKitCallNativeActions {
           doOutput = true
           setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
         }
-        val body = listOf(
+        val fields = mutableListOf(
           "server_key" to BuildConfig.SERVER_KEY,
           "type" to "native_action",
           "call_action" to action,
           "action_token" to actionToken,
           "client_endpoint_id" to clientEndpointId.orEmpty(),
-        ).joinToString("&") { (key, value) ->
+        )
+        if (!progress.isNullOrBlank()) {
+          fields.add("call_progress" to progress)
+        }
+        val body = fields.joinToString("&") { (key, value) ->
           "${URLEncoder.encode(key, "UTF-8")}=${URLEncoder.encode(value, "UTF-8")}"
         }
         OutputStreamWriter(connection.outputStream).use { writer ->
@@ -120,5 +126,15 @@ object LiveKitCallNativeActions {
       } catch (_: Throwable) {
       }
     }.start()
+  }
+
+  fun reportProgress(data: JSONObject, progress: String) {
+    postAction(
+      data.optString(EXTRA_API_URL),
+      data.optString(EXTRA_ACTION_TOKEN),
+      "progress",
+      data.optString(EXTRA_CLIENT_ENDPOINT_ID),
+      progress,
+    )
   }
 }

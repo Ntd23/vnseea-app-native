@@ -6,17 +6,20 @@ import {
   mapLiveKitCheckResponse,
   mapLiveKitCreateResponse,
   mapLiveKitJoinPayload,
+  mapLiveKitCallProgress,
 } from '../../application/mappers/liveKitCallMapper';
 import type {
   CloseLiveKitCallInput,
   CreateLiveKitCallInput,
   LiveKitCallIdentityInput,
   LiveKitCallRepository,
+  ReportLiveKitCallProgressInput,
 } from '../../domain/repositories/LiveKitCallRepository';
 import type {
   IncomingLiveKitCall,
   LiveKitCallCheckResult,
   LiveKitCallCreateResult,
+  LiveKitCallProgress,
   LiveKitCallType,
   LiveKitJoinPayload,
 } from '../../domain/types/call.types';
@@ -80,6 +83,21 @@ class ApiLiveKitCallRepository implements LiveKitCallRepository {
       },
     );
     return mapLiveKitCheckResponse(response);
+  }
+
+  async reportProgress(
+    input: ReportLiveKitCallProgressInput,
+  ): Promise<LiveKitCallProgress> {
+    const response = await apiBridge.post<LiveKitApiEnvelope>(
+      apiRoutes.messages.livekit,
+      {
+        type: 'progress',
+        call_id: input.callId,
+        call_type: input.callType,
+        call_progress: input.progress,
+      },
+    );
+    return mapLiveKitCallProgress(response.call_progress);
   }
 
   async closeCall(

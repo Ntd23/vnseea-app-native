@@ -105,6 +105,7 @@ define('T_PUSH_TOKENS', 'Wo_PushTokens');
 define('T_PUSH_DELIVERIES', 'Wo_PushDeliveries');
 define('T_CONTENT_NOTIFICATION_JOBS', 'Wo_ContentNotificationJobs');
 define('T_LIVEKIT_ENDPOINT_LEASES', 'Wo_LiveKitEndpointLeases');
+define('T_LIVEKIT_CALL_PROGRESS', 'Wo_LiveKitCallProgress');
 define('T_USERADS_DATA', 'Wo_UserAds_Data');
 define('T_POKES', 'Wo_Pokes');
 define('T_GIFTS', 'Wo_Gifts');

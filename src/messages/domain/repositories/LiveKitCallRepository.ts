@@ -3,6 +3,8 @@ import type {
   IncomingLiveKitCall,
   LiveKitCallCheckResult,
   LiveKitCallCreateResult,
+  LiveKitCallProgressState,
+  LiveKitCallProgress,
   LiveKitCallType,
   LiveKitJoinPayload,
 } from '../types/call.types';
@@ -17,6 +19,10 @@ export type LiveKitCallIdentityInput = {
   callType: LiveKitCallType;
 };
 
+export type ReportLiveKitCallProgressInput = LiveKitCallIdentityInput & {
+  progress: Exclude<LiveKitCallProgressState, 'dispatching' | 'answered'>;
+};
+
 export type CloseLiveKitCallInput = LiveKitCallIdentityInput & {
   status: 'ended' | 'cancelled' | 'declined' | 'no_answer' | 'missed';
   duration: number;
@@ -27,6 +33,9 @@ export interface LiveKitCallRepository {
   answerCall(input: LiveKitCallIdentityInput): Promise<LiveKitCallCheckResult>;
   getJoinPayload(input: LiveKitCallIdentityInput): Promise<LiveKitJoinPayload>;
   checkCall(input: LiveKitCallIdentityInput): Promise<LiveKitCallCheckResult>;
+  reportProgress(
+    input: ReportLiveKitCallProgressInput,
+  ): Promise<LiveKitCallProgress>;
   closeCall(input: CloseLiveKitCallInput): Promise<LiveKitCallCheckResult>;
   getIncomingCall(
     callType?: LiveKitCallType,

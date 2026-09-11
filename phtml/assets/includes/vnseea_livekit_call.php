@@ -181,6 +181,108 @@ if (!function_exists('Wo_CanonicalLiveKitUser')) {
     }
 }
 
+if (!function_exists('VNSEEA_LiveKitCallProgressRank')) {
+    function VNSEEA_LiveKitCallProgressRank($state)
+    {
+        $ranks = array(
+            'device_received' => 10,
+            'ringing' => 20,
+            'answering' => 30
+        );
+        return isset($ranks[$state]) ? intval($ranks[$state]) : 0;
+    }
+}
+
+if (!function_exists('VNSEEA_LiveKitCallProgressTableReady')) {
+    function VNSEEA_LiveKitCallProgressTableReady()
+    {
+        global $sqlConnect;
+        static $ready = null;
+        if ($ready !== null) {
+            return $ready;
+        }
+        if (!defined('T_LIVEKIT_CALL_PROGRESS')) {
+            $ready = false;
+            return false;
+        }
+        $table = Wo_Secure(T_LIVEKIT_CALL_PROGRESS);
+        $query = mysqli_query($sqlConnect, "SHOW TABLES LIKE '{$table}'");
+        $ready = !empty($query) && mysqli_num_rows($query) > 0;
+        return $ready;
+    }
+}
+
+if (!function_exists('VNSEEA_RecordLiveKitCallProgress')) {
+    function VNSEEA_RecordLiveKitCallProgress($context, $call_id, $call_type, $user_id, $endpoint_id, $state)
+    {
+        global $sqlConnect;
+        $context = $context === 'group' ? 'group' : 'direct';
+        $call_type = $call_type === 'audio' ? 'audio' : 'video';
+        $call_id = intval($call_id);
+        $user_id = intval($user_id);
+        $endpoint_id = VNSEEA_NormalizeClientEndpointId($endpoint_id);
+        $rank = VNSEEA_LiveKitCallProgressRank($state);
+        if ($call_id <= 0 || $user_id <= 0 || $endpoint_id === '' || $rank <= 0 || !VNSEEA_LiveKitCallProgressTableReady()) {
+            return false;
+        }
+
+        $now_ms = (int) round(microtime(true) * 1000);
+        $table = T_LIVEKIT_CALL_PROGRESS;
+        $context_sql = Wo_Secure($context);
+        $call_type_sql = Wo_Secure($call_type);
+        $endpoint_sql = Wo_Secure($endpoint_id);
+        $state_sql = Wo_Secure($state);
+        $query = "INSERT INTO {$table} (`call_context`,`call_id`,`call_type`,`user_id`,`endpoint_id`,`progress_state`,`progress_rank`,`created_at_ms`,`updated_at_ms`) " .
+            "VALUES ('{$context_sql}','{$call_id}','{$call_type_sql}','{$user_id}','{$endpoint_sql}','{$state_sql}','{$rank}','{$now_ms}','{$now_ms}') " .
+            "ON DUPLICATE KEY UPDATE " .
+            "`progress_state`=IF(VALUES(`progress_rank`) >= `progress_rank`, VALUES(`progress_state`), `progress_state`)," .
+            "`updated_at_ms`=IF(VALUES(`progress_rank`) >= `progress_rank`, VALUES(`updated_at_ms`), `updated_at_ms`)," .
+            "`progress_rank`=GREATEST(`progress_rank`, VALUES(`progress_rank`))," .
+            "`call_type`=VALUES(`call_type`)";
+        return mysqli_query($sqlConnect, $query) !== false;
+    }
+}
+
+if (!function_exists('VNSEEA_GetLiveKitCallProgress')) {
+    function VNSEEA_GetLiveKitCallProgress($context, $call_id, $exclude_user_id = 0)
+    {
+        global $sqlConnect;
+        $context = $context === 'group' ? 'group' : 'direct';
+        $call_id = intval($call_id);
+        $exclude_user_id = intval($exclude_user_id);
+        $fallback = array(
+            'state' => 'dispatching',
+            'endpoint_count' => 0,
+            'updated_at_ms' => 0
+        );
+        if ($call_id <= 0 || !VNSEEA_LiveKitCallProgressTableReady()) {
+            return $fallback;
+        }
+
+        $where_user = $exclude_user_id > 0 ? " AND `user_id` <> '{$exclude_user_id}'" : '';
+        $query = mysqli_query(
+            $sqlConnect,
+            "SELECT `progress_state`,`progress_rank`,`updated_at_ms` FROM " . T_LIVEKIT_CALL_PROGRESS .
+            " WHERE `call_context`='" . Wo_Secure($context) . "' AND `call_id`='{$call_id}'{$where_user}" .
+            " ORDER BY `progress_rank` DESC, `updated_at_ms` DESC"
+        );
+        if (empty($query)) {
+            return $fallback;
+        }
+
+        $count = mysqli_num_rows($query);
+        $row = mysqli_fetch_assoc($query);
+        if (empty($row)) {
+            return $fallback;
+        }
+        return array(
+            'state' => !empty($row['progress_state']) ? $row['progress_state'] : 'dispatching',
+            'endpoint_count' => $count,
+            'updated_at_ms' => intval(!empty($row['updated_at_ms']) ? $row['updated_at_ms'] : 0)
+        );
+    }
+}
+
 if (!function_exists('Wo_SendCanonicalLiveKitCallPush')) {
     function Wo_SendCanonicalLiveKitCallPush($recipient, $caller, $call_id, $call_type, $room_name, $source = 'unknown')
     {
@@ -572,7 +674,12 @@ if (!function_exists('Wo_CreateCanonicalLiveKitDirectCall')) {
             'id' => (string) $call_id,
             'room_name' => $room_name,
             'peer' => Wo_CanonicalLiveKitUser($recipient),
-            'delivery' => VNSEEA_BuildCallDeliveryState($realtime_sent, $push_channels)
+            'delivery' => VNSEEA_BuildCallDeliveryState($realtime_sent, $push_channels),
+            'call_progress' => array(
+                'state' => 'dispatching',
+                'endpoint_count' => 0,
+                'updated_at_ms' => 0
+            )
         );
     }
 }
