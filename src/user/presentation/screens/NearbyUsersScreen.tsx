@@ -169,6 +169,7 @@ import {
 import {
   advanceRouteProgress,
   buildNavigationPrompt,
+  buildNavigationSpeechText,
   estimateRemainingDuration,
   evaluateOffRouteReroute,
   offRouteThresholdMeters,
@@ -1284,6 +1285,22 @@ function turnLabel(maneuver: TurnInstruction['maneuver']) {
       return 'Chếch trái';
     case 'slight-right':
       return 'Chếch phải';
+    case 'sharp-left':
+      return 'Rẽ gấp sang trái';
+    case 'sharp-right':
+      return 'Rẽ gấp sang phải';
+    case 'ramp-left':
+      return 'Đi vào đường nhánh bên trái';
+    case 'ramp-right':
+      return 'Đi vào đường nhánh bên phải';
+    case 'fork-left':
+      return 'Đi theo nhánh trái';
+    case 'fork-right':
+      return 'Đi theo nhánh phải';
+    case 'merge':
+      return 'Nhập làn';
+    case 'roundabout':
+      return 'Đi vào vòng xuyến';
     case 'uturn':
       return 'Quay đầu';
     case 'arrive':
@@ -1305,11 +1322,18 @@ function ManeuverIcon({
   switch (maneuver) {
     case 'left':
     case 'slight-left':
+    case 'sharp-left':
+    case 'ramp-left':
+    case 'fork-left':
       return <CornerUpLeft size={size} color={color} />;
     case 'right':
     case 'slight-right':
+    case 'sharp-right':
+    case 'ramp-right':
+    case 'fork-right':
       return <CornerUpRight size={size} color={color} />;
     case 'uturn':
+    case 'roundabout':
       return <Undo2 size={size} color={color} />;
     case 'arrive':
       return <MapPinCheck size={size} color={color} />;
@@ -1470,15 +1494,6 @@ function currentNavigationRoadName({
     roadNameFromInstruction(step?.instruction) ||
     roadNameFromRouteSummary(routeSummary)
   );
-}
-
-function navigationSpeechText(instruction: TurnInstruction) {
-  return [
-    instruction.label,
-    instruction.detail || turnLabel(instruction.maneuver),
-  ]
-    .filter(Boolean)
-    .join('. ');
 }
 
 function parseGeoInfo(value: unknown): LatLng | null {
@@ -3197,6 +3212,11 @@ export default function NearbyUsersScreen() {
     ],
   );
   const isRoutePreview = shouldShowRoute && !isNavigating;
+  const routeRenderMode = isNavigating
+    ? 'navigation'
+    : isRoutePreview
+    ? 'preview'
+    : 'idle';
   // Search results and place details are independent sheets. A route preview
   // or active navigation temporarily takes over the bottom of the screen, but
   // the committed search session stays alive so the results sheet can return
@@ -3569,7 +3589,10 @@ export default function NearbyUsersScreen() {
     if (prompt.shouldVibrate) {
       Vibration.vibrate(80);
     }
-    const speechText = navigationSpeechText(turnInstruction);
+    const speechText = buildNavigationSpeechText(
+      turnInstruction,
+      prompt.phase,
+    );
     console.log('[NavigationSpeech] speaking:', speechText);
     speakNavigationInstruction(speechText);
   }, [
@@ -3926,6 +3949,10 @@ export default function NearbyUsersScreen() {
     ) => {
       const origin = currentLocationRef.current;
       if (!origin) return;
+      const wasNavigating = isNavigatingRef.current;
+      if (navigating && !wasNavigating) {
+        setRouteRenderRevision(current => current + 1);
+      }
 
       const routePath = normalizeRoutePath(route.path, origin, destination);
       const navigationPath = buildNavigationPath(origin, routePath);
@@ -5823,7 +5850,7 @@ export default function NearbyUsersScreen() {
         {/* Main Route & Connector Polylines (Always mounted to prevent react-native-maps unmount render bugs on Android) */}
         {routePreviewAlternativeSlots.map((route, index) => (
           <React.Fragment
-            key={['alt-route-slot', routeRenderRevision, index].join(':')}
+            key={['alt-route-slot', routeRenderMode, routeRenderRevision, index].join(':')}
           >
             <Polyline
               coordinates={route ? route.path : []}

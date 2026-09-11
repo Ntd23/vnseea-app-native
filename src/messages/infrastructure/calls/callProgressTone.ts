@@ -23,28 +23,56 @@ export async function startCallProgressTone(
   callId: string,
   mode: CallProgressToneMode,
 ) {
-  if (!callId) return;
+  if (!callId) return false;
   const nativeModule = moduleForPlatform();
+  if (!nativeModule) {
+    console.warn('[CallProgressTone] native module unavailable', {
+      platform: Platform.OS,
+      mode,
+    });
+    return false;
+  }
   try {
-    if (Platform.OS === 'ios') {
-      await nativeModule?.start?.(mode, callId);
-    } else {
-      await nativeModule?.startProgressTone?.(mode, callId);
+    const didStart =
+      Platform.OS === 'ios'
+        ? await nativeModule.start?.(mode, callId)
+        : await nativeModule.startProgressTone?.(mode, callId);
+    if (didStart !== true) {
+      console.warn('[CallProgressTone] native player rejected start', {
+        platform: Platform.OS,
+        mode,
+        callId,
+      });
     }
-  } catch {
+    return didStart === true;
+  } catch (error) {
+    console.warn('[CallProgressTone] start failed', {
+      platform: Platform.OS,
+      mode,
+      callId,
+      error,
+    });
     // Tones are non-critical; call setup must continue if native audio is unavailable.
+    return false;
   }
 }
 
 export async function stopCallProgressTone(callId: string) {
   const nativeModule = moduleForPlatform();
+  if (!nativeModule) return false;
   try {
-    if (Platform.OS === 'ios') {
-      await nativeModule?.stop?.(callId);
-    } else {
-      await nativeModule?.stopProgressTone?.(callId);
-    }
-  } catch {
+    const didStop =
+      Platform.OS === 'ios'
+        ? await nativeModule.stop?.(callId)
+        : await nativeModule.stopProgressTone?.(callId);
+    return didStop === true;
+  } catch (error) {
+    console.warn('[CallProgressTone] stop failed', {
+      platform: Platform.OS,
+      callId,
+      error,
+    });
     // Do not let tone cleanup interrupt call teardown.
+    return false;
   }
 }

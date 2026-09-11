@@ -119,7 +119,7 @@ describe('Android call runtime contract', () => {
     expect(queries).toContain('android:scheme="tel"');
   });
 
-  it('reports device ringing progress and generates caller tones natively', () => {
+  it('reports device ringing progress and generates portable PCM caller tones', () => {
     const notifier = read(
       'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt',
     );
@@ -137,7 +137,12 @@ describe('Android call runtime contract', () => {
     expect(notifier).toContain('reportProgress(data, "ringing")');
     expect(nativeActions).toContain('"call_progress" to progress');
     expect(intentModule).toContain('fun startProgressTone');
-    expect(intentModule).toContain('ToneGenerator.TONE_SUP_RINGTONE');
-    expect(intentModule).toContain('ToneGenerator.TONE_SUP_BUSY');
+    expect(intentModule).toContain('AudioTrack.Builder()');
+    expect(intentModule).toContain(
+      'AudioAttributes.USAGE_ASSISTANCE_SONIFICATION',
+    );
+    expect(intentModule).toContain('AudioTrack.MODE_STATIC');
+    expect(intentModule).toContain('setLoopPoints(0, samples.size, -1)');
+    expect(intentModule).not.toContain('ToneGenerator.TONE_SUP_');
   });
 });

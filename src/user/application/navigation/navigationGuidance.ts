@@ -12,6 +12,14 @@ export type NavigationManeuver =
   | 'right'
   | 'slight-left'
   | 'slight-right'
+  | 'sharp-left'
+  | 'sharp-right'
+  | 'ramp-left'
+  | 'ramp-right'
+  | 'fork-left'
+  | 'fork-right'
+  | 'merge'
+  | 'roundabout'
   | 'uturn'
   | 'arrive';
 
@@ -475,8 +483,26 @@ export function resolveFusedNavigationHeading({
 }
 
 function maneuverFromValue(value?: string): NavigationManeuver {
-  const normalized = String(value || '').toLowerCase();
-  if (normalized.includes('uturn')) return 'uturn';
+  const normalized = String(value || '')
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-');
+  if (normalized.includes('roundabout') || normalized.includes('rotary')) {
+    return 'roundabout';
+  }
+  if (normalized.includes('uturn') || normalized.includes('u-turn')) {
+    return 'uturn';
+  }
+  if (normalized.includes('ramp-left')) return 'ramp-left';
+  if (normalized.includes('ramp-right')) return 'ramp-right';
+  if (normalized.includes('fork-left') || normalized.includes('keep-left')) {
+    return 'fork-left';
+  }
+  if (normalized.includes('fork-right') || normalized.includes('keep-right')) {
+    return 'fork-right';
+  }
+  if (normalized.includes('merge')) return 'merge';
+  if (normalized.includes('sharp-left')) return 'sharp-left';
+  if (normalized.includes('sharp-right')) return 'sharp-right';
   if (normalized.includes('slight-left')) return 'slight-left';
   if (normalized.includes('slight-right')) return 'slight-right';
   if (normalized.includes('left')) return 'left';
@@ -509,6 +535,22 @@ function turnLabel(maneuver: NavigationManeuver) {
       return 'Chếch trái';
     case 'slight-right':
       return 'Chếch phải';
+    case 'sharp-left':
+      return 'Rẽ gấp sang trái';
+    case 'sharp-right':
+      return 'Rẽ gấp sang phải';
+    case 'ramp-left':
+      return 'Đi vào đường nhánh bên trái';
+    case 'ramp-right':
+      return 'Đi vào đường nhánh bên phải';
+    case 'fork-left':
+      return 'Đi theo nhánh trái';
+    case 'fork-right':
+      return 'Đi theo nhánh phải';
+    case 'merge':
+      return 'Nhập làn';
+    case 'roundabout':
+      return 'Đi vào vòng xuyến';
     case 'uturn':
       return 'Quay đầu';
     case 'arrive':
@@ -516,6 +558,163 @@ function turnLabel(maneuver: NavigationManeuver) {
     default:
       return 'Đi thẳng';
   }
+}
+
+function formatSpeechDistance(meters: number) {
+  const safeMeters = Math.max(1, Number.isFinite(meters) ? meters : 1);
+  if (safeMeters < 100) {
+    return `${Math.max(10, Math.round(safeMeters / 10) * 10)} mét`;
+  }
+  if (safeMeters < 200) {
+    return `${Math.round(safeMeters / 50) * 50} mét`;
+  }
+  if (safeMeters < 1000) {
+    return `${Math.round(safeMeters / 100) * 100} mét`;
+  }
+  const kilometers = Math.round((safeMeters / 1000) * 10) / 10;
+  return `${String(kilometers).replace('.', ',')} ki-lô-mét`;
+}
+
+function cleanSpeechFragment(value?: string) {
+  return cleanInstruction(value)
+    .replace(/^[,.;:\-\s]+|[,.;:\-\s]+$/g, '')
+    .trim();
+}
+
+const VIETNAMESE_ROAD_PREFIX_EXPANSIONS: Array<[RegExp, string]> = [
+  [/(^|[\s,(])đct(?:\.\s*|\s+|(?=\d))/gi, '$1đường cao tốc '],
+  [/(^|[\s,(])ct(?:\.\s*|\s+|(?=\d))/gi, '$1cao tốc '],
+  [/(^|[\s,(])ql(?:\.\s*|\s+|(?=\d))/gi, '$1quốc lộ '],
+  [/(^|[\s,(])đt(?:\.\s*|\s+|(?=\d))/gi, '$1đường tỉnh '],
+  [/(^|[\s,(])tl(?:\.\s*|\s+|(?=\d))/gi, '$1tỉnh lộ '],
+  [/(^|[\s,(])đh(?:\.\s*|\s+|(?=\d))/gi, '$1đường huyện '],
+  [/(^|[\s,(])đx(?:\.\s*|\s+|(?=\d))/gi, '$1đường xã '],
+  [/(^|[\s,(])vđ(?:\.\s*|\s+|(?=\d))/gi, '$1vành đai '],
+  [/(^|[\s,(])ng(?:\.\s*|\s+|(?=\d))/gi, '$1ngõ '],
+  [/(^|[\s,(])đ(?:\.\s*|\s+)/gi, '$1đường '],
+  [/(^|[\s,(])p(?:\.\s*|\s+)/gi, '$1phố '],
+];
+
+function expandVietnameseRoadPrefixes(value?: string) {
+  return VIETNAMESE_ROAD_PREFIX_EXPANSIONS.reduce(
+    (result, [pattern, replacement]) => result.replace(pattern, replacement),
+    cleanInstruction(value),
+  );
+}
+
+function roadNameFromSpeechInstruction(value?: string) {
+  const instruction = expandVietnameseRoadPrefixes(value);
+  if (!instruction) return '';
+  const patterns = [
+    /(?:\bvào|\blên|\btheo|\btrên)\s+(.+?)(?=\s+(?:hướng|về|rồi|để|trong)(?=\s|[,;:.]|$)|[,;:]|\.\s+(?:sau đó|tiếp theo)(?=\s|[,;:.]|$)|$)/i,
+    /\b(?:onto|on)\s+(.+?)(?=\s+(?:toward|towards|for|then)\b|[,;:]|\.\s+(?:then|next)\b|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const candidate = cleanSpeechFragment(instruction.match(pattern)?.[1])
+      .replace(/^đường\s+/i, 'đường ')
+      .replace(/\s+/g, ' ');
+    if (candidate.length >= 2 && candidate.length <= 70) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+function roundaboutExitFromInstruction(value?: string) {
+  const instruction = cleanInstruction(value);
+  const vietnamese = instruction.match(
+    /\blối ra(?:\s+thứ)?\s+(\d+|nhất|hai|ba|tư|bốn|năm|sáu|bảy|tám|chín)\b/i,
+  );
+  if (vietnamese?.[1]) return vietnamese[1].toLowerCase();
+  const english = instruction.match(
+    /\b(\d+)(?:st|nd|rd|th)?\s+exit\b/i,
+  );
+  return english?.[1] || '';
+}
+
+function maneuverSpeechAction(
+  instruction: NavigationInstruction,
+  includeRoad: boolean,
+) {
+  const roadName = includeRoad
+    ? roadNameFromSpeechInstruction(instruction.detail)
+    : '';
+  const withRoad = (action: string, preposition = 'vào') =>
+    roadName ? `${action} ${preposition} ${roadName}` : action;
+
+  switch (instruction.maneuver) {
+    case 'left':
+      return withRoad('rẽ trái');
+    case 'right':
+      return withRoad('rẽ phải');
+    case 'slight-left':
+      return withRoad('chếch trái');
+    case 'slight-right':
+      return withRoad('chếch phải');
+    case 'sharp-left':
+      return withRoad('rẽ gấp sang trái');
+    case 'sharp-right':
+      return withRoad('rẽ gấp sang phải');
+    case 'ramp-left':
+      return 'đi vào đường nhánh bên trái';
+    case 'ramp-right':
+      return 'đi vào đường nhánh bên phải';
+    case 'fork-left':
+      return 'đi theo nhánh trái';
+    case 'fork-right':
+      return 'đi theo nhánh phải';
+    case 'merge':
+      return 'nhập làn';
+    case 'roundabout': {
+      const exit = roundaboutExitFromInstruction(instruction.detail);
+      return exit
+        ? `tại vòng xuyến, đi theo lối ra thứ ${exit}`
+        : 'đi vào vòng xuyến';
+    }
+    case 'uturn':
+      return 'quay đầu';
+    case 'arrive':
+      return 'sắp đến nơi';
+    default:
+      return withRoad('đi thẳng', 'trên');
+  }
+}
+
+function speechSentence(value: string) {
+  const cleanValue = cleanSpeechFragment(value);
+  if (!cleanValue) return '';
+  return `${cleanValue.charAt(0).toLocaleUpperCase('vi-VN')}${cleanValue.slice(
+    1,
+  )}.`;
+}
+
+export function buildNavigationSpeechText(
+  instruction: NavigationInstruction,
+  phase: NavigationPromptPhase,
+) {
+  if (phase === 'arrive') {
+    return speechSentence(instruction.label || 'Sắp đến nơi');
+  }
+
+  const includeRoad = phase === 'prepare' || phase === 'start';
+  const action = maneuverSpeechAction(instruction, includeRoad);
+  if (phase === 'start') {
+    return speechSentence(
+      instruction.maneuver === 'straight' && !roadNameFromSpeechInstruction(instruction.detail)
+        ? 'Bắt đầu hành trình'
+        : `Bắt đầu, ${action}`,
+    );
+  }
+  if (phase === 'prepare') {
+    return speechSentence(
+      `Sau ${formatSpeechDistance(instruction.distanceMeters)}, ${action}`,
+    );
+  }
+  if (phase === 'soon') {
+    return speechSentence(`Sắp tới, ${action}`);
+  }
+  return speechSentence(action);
 }
 
 function locateRouteSteps(

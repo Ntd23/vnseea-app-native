@@ -97,8 +97,16 @@ describe('iOS Google Maps provider for nearby address search', () => {
     expect(source).toContain('setNavigationAutoCentering(true);');
     expect(source).toContain('styles.navigationFinishButton');
     expect(source).toContain('const routePreviewAlternativeSlots = useMemo');
+    expect(source).toContain('const routeRenderMode = isNavigating');
     expect(source).toContain(
-      "key={['alt-route-slot', routeRenderRevision, index].join(':')}",
+      "key={['alt-route-slot', routeRenderMode, routeRenderRevision, index].join(':')}",
+    );
+    expect(source).toContain(
+      'const wasNavigating = isNavigatingRef.current;',
+    );
+    expect(source).toContain('if (navigating && !wasNavigating) {');
+    expect(source).toContain(
+      'setRouteRenderRevision(current => current + 1);',
     );
     expect(source).toContain('coordinates={route ? route.path : []}');
     expect(source).toContain(

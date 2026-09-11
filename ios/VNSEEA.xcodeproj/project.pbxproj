@@ -23,6 +23,8 @@
 		E1D4A0190000000000000019 /* VnseeaColorPicker.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0210000000000000021 /* VnseeaColorPicker.m */; };
 		E1D4A0220000000000000022 /* VnseeaAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0240000000000000024 /* VnseeaAudioRecorder.swift */; };
 		E1D4A0230000000000000023 /* VnseeaAudioRecorder.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0250000000000000025 /* VnseeaAudioRecorder.m */; };
+		E1D4A0260000000000000026 /* NavigationSpeechModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0280000000000000028 /* NavigationSpeechModule.swift */; };
+		E1D4A0270000000000000027 /* NavigationSpeechModule.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0290000000000000029 /* NavigationSpeechModule.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +48,8 @@
 		E1D4A0210000000000000021 /* VnseeaColorPicker.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VnseeaColorPicker.m; path = VNSEEA/VnseeaColorPicker.m; sourceTree = "<group>"; };
 		E1D4A0240000000000000024 /* VnseeaAudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VnseeaAudioRecorder.swift; path = VNSEEA/VnseeaAudioRecorder.swift; sourceTree = "<group>"; };
 		E1D4A0250000000000000025 /* VnseeaAudioRecorder.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VnseeaAudioRecorder.m; path = VNSEEA/VnseeaAudioRecorder.m; sourceTree = "<group>"; };
+		E1D4A0280000000000000028 /* NavigationSpeechModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationSpeechModule.swift; path = VNSEEA/NavigationSpeechModule.swift; sourceTree = "<group>"; };
+		E1D4A0290000000000000029 /* NavigationSpeechModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NavigationSpeechModule.m; path = VNSEEA/NavigationSpeechModule.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -77,6 +81,8 @@
 				E1D4A0210000000000000021 /* VnseeaColorPicker.m */,
 				E1D4A0240000000000000024 /* VnseeaAudioRecorder.swift */,
 				E1D4A0250000000000000025 /* VnseeaAudioRecorder.m */,
+				E1D4A0280000000000000028 /* NavigationSpeechModule.swift */,
+				E1D4A0290000000000000029 /* NavigationSpeechModule.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				A1B2C3D4E5F60718293A4B5C /* VNSEEA.entitlements */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -231,13 +237,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-VNSEEA/Pods-VNSEEA-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-VNSEEA/Pods-VNSEEA-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -274,13 +276,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-VNSEEA/Pods-VNSEEA-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-VNSEEA/Pods-VNSEEA-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -305,6 +303,8 @@
 				E1D4A0190000000000000019 /* VnseeaColorPicker.m in Sources */,
 				E1D4A0220000000000000022 /* VnseeaAudioRecorder.swift in Sources */,
 				E1D4A0230000000000000023 /* VnseeaAudioRecorder.m in Sources */,
+				E1D4A0260000000000000026 /* NavigationSpeechModule.swift in Sources */,
+				E1D4A0270000000000000027 /* NavigationSpeechModule.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -319,7 +319,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = VNSEEA/VNSEEA.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 7M6MAXNF4W;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = VNSEEA/Info.plist;
@@ -354,7 +354,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = VNSEEA/VNSEEA.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 7M6MAXNF4W;
 				INFOPLIST_FILE = VNSEEA/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = VNSEEA;

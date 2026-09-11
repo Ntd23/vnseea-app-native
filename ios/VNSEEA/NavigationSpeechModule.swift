@@ -3,7 +3,7 @@ import AVFoundation
 import React
 
 @objc(VnseeaNavigationSpeech)
-class NavigationSpeechModule: NSObject, RCTBridgeModule, AVSpeechSynthesizerDelegate {
+class NavigationSpeechModule: NSObject, AVSpeechSynthesizerDelegate {
   private lazy var synthesizer: AVSpeechSynthesizer = {
     let synth = AVSpeechSynthesizer()
     synth.delegate = self
@@ -66,7 +66,7 @@ class NavigationSpeechModule: NSObject, RCTBridgeModule, AVSpeechSynthesizerDele
 }
 
 @objc(VnseeaCallProgressTone)
-class CallProgressToneModule: NSObject, RCTBridgeModule {
+class CallProgressToneModule: NSObject {
   private let engine = AVAudioEngine()
   private let player = AVAudioPlayerNode()
   private var activeCallId = ""
@@ -107,10 +107,12 @@ class CallProgressToneModule: NSObject, RCTBridgeModule {
         self.engine.connect(self.player, to: self.engine.mainMixerNode, format: buffer.format)
       }
       do {
+        try self.prepareCallProgressAudioSession()
+        self.player.scheduleBuffer(buffer, at: nil, options: [.loops])
+        self.engine.prepare()
         try self.engine.start()
         self.activeCallId = callId
         self.activeMode = mode
-        self.player.scheduleBuffer(buffer, at: nil, options: [.loops])
         self.player.play()
         resolve(true)
       } catch {
@@ -143,6 +145,14 @@ class CallProgressToneModule: NSObject, RCTBridgeModule {
     engine.stop()
     activeCallId = ""
     activeMode = ""
+  }
+
+  private func prepareCallProgressAudioSession() throws {
+    let session = AVAudioSession.sharedInstance()
+    if session.category != .playAndRecord && session.category != .playback {
+      try session.setCategory(.playback, mode: .default, options: [])
+    }
+    try session.setActive(true)
   }
 
   private func makeToneBuffer(mode: String) -> AVAudioPCMBuffer? {

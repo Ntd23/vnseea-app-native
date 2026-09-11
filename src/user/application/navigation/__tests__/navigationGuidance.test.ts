@@ -1,6 +1,7 @@
 import {
   advanceRouteProgress,
   buildNavigationPrompt,
+  buildNavigationSpeechText,
   estimateRemainingDuration,
   evaluateOffRouteReroute,
   resolveFusedNavigationHeading,
@@ -190,6 +191,148 @@ describe('navigation guidance', () => {
         spoken,
       ),
     ).toBeNull();
+  });
+
+  it('builds concise phase-aware speech without repeating road details', () => {
+    const instruction = {
+      id: 'step:1:21.00000:105.00200',
+      source: 'google_step' as const,
+      stepIndex: 1,
+      distanceMeters: 260,
+      label: '260 m nữa',
+      detail:
+        'Rẽ trái vào đường Nguyễn Trãi hướng về Ngã Tư Sở rồi tiếp tục trong 2 km',
+      maneuver: 'left' as const,
+    };
+
+    expect(buildNavigationSpeechText(instruction, 'prepare')).toBe(
+      'Sau 300 mét, rẽ trái vào đường Nguyễn Trãi.',
+    );
+    expect(
+      buildNavigationSpeechText(
+        { ...instruction, distanceMeters: 90, label: '90 m nữa' },
+        'soon',
+      ),
+    ).toBe('Sắp tới, rẽ trái.');
+    expect(
+      buildNavigationSpeechText(
+        { ...instruction, distanceMeters: 24, label: '24 m nữa' },
+        'now',
+      ),
+    ).toBe('Rẽ trái.');
+  });
+
+  it('uses dedicated short prompts for route starts, roundabouts and arrival', () => {
+    const base = {
+      id: 'step:0:21.00000:105.00000',
+      source: 'google_step' as const,
+      stepIndex: 0,
+      distanceMeters: 1,
+      label: 'Bắt đầu',
+    };
+
+    expect(
+      buildNavigationSpeechText(
+        {
+          ...base,
+          detail: 'Đi thẳng trên đường Phạm Hùng',
+          maneuver: 'straight',
+        },
+        'start',
+      ),
+    ).toBe('Bắt đầu, đi thẳng trên đường Phạm Hùng.');
+    expect(
+      buildNavigationSpeechText(
+        {
+          ...base,
+          distanceMeters: 280,
+          detail:
+            'Tại vòng xuyến, đi theo lối ra thứ 2 vào đường Lê Đức Thọ',
+          maneuver: 'roundabout',
+        },
+        'prepare',
+      ),
+    ).toBe('Sau 300 mét, tại vòng xuyến, đi theo lối ra thứ 2.');
+    expect(
+      buildNavigationSpeechText(
+        {
+          ...base,
+          label: 'Sắp đến Bến xe Mỹ Đình',
+          detail: undefined,
+          maneuver: 'arrive',
+        },
+        'arrive',
+      ),
+    ).toBe('Sắp đến Bến xe Mỹ Đình.');
+  });
+
+  it.each([
+    ['Ng.7 Huy Du', 'ngõ 7 Huy Du'],
+    ['Đ. Võ Chí Công', 'đường Võ Chí Công'],
+    ['P. Huế', 'phố Huế'],
+    ['QL.1A', 'quốc lộ 1A'],
+    ['ĐT.743', 'đường tỉnh 743'],
+    ['TL.10', 'tỉnh lộ 10'],
+    ['ĐH.02', 'đường huyện 02'],
+    ['ĐX.5', 'đường xã 5'],
+    ['CT.01', 'cao tốc 01'],
+    ['ĐCT. Bắc Nam', 'đường cao tốc Bắc Nam'],
+    ['VĐ.3', 'vành đai 3'],
+  ])('expands Vietnamese road prefix %s for speech', (raw, expanded) => {
+    expect(
+      buildNavigationSpeechText(
+        {
+          id: `road:${raw}`,
+          source: 'google_step',
+          stepIndex: 0,
+          distanceMeters: 1,
+          label: 'Bắt đầu',
+          detail: `Đi thẳng trên ${raw}`,
+          maneuver: 'straight',
+        },
+        'start',
+      ),
+    ).toBe(`Bắt đầu, đi thẳng trên ${expanded}.`);
+  });
+
+  it('keeps unknown dotted road abbreviations and stops at a real next sentence', () => {
+    expect(
+      buildNavigationSpeechText(
+        {
+          id: 'road:unknown',
+          source: 'google_step',
+          stepIndex: 0,
+          distanceMeters: 1,
+          label: 'Bắt đầu',
+          detail: 'Đi thẳng trên ABC. 12. Sau đó rẽ phải',
+          maneuver: 'straight',
+        },
+        'start',
+      ),
+    ).toBe('Bắt đầu, đi thẳng trên ABC. 12.');
+  });
+
+  it('preserves Google ramp and roundabout maneuvers for voice guidance', () => {
+    const route = [point(21, 105), point(21, 105.002)];
+    const progress = advanceRouteProgress(route, point(21, 105.0002));
+    const instruction = resolveRouteInstruction({
+      routePath: route,
+      progress,
+      routeSteps: [
+        {
+          instruction: 'Đi vào đường nhánh bên phải',
+          maneuver: 'ramp-right',
+          distanceMeters: 180,
+          durationSeconds: 30,
+          startLocation: point(21, 105.0018),
+        },
+      ],
+    });
+
+    expect(instruction?.maneuver).toBe('ramp-right');
+    expect(
+      instruction && buildNavigationSpeechText(instruction, 'now'),
+    ).toBe('Đi vào đường nhánh bên phải.');
   });
 
   it('requires a sustained off-route GPS sequence and enforces reroute cooldown', () => {
