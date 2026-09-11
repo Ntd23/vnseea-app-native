@@ -39,10 +39,15 @@ import type {
   IncomingLiveKitCall,
   LiveKitCallCheckResult,
   LiveKitCallPeer,
+  LiveKitCallProgress,
   LiveKitCallRouteParams,
   LiveKitCallType,
   LiveKitJoinPayload,
 } from '../../domain/types/call.types';
+import {
+  startCallProgressTone,
+  stopCallProgressTone,
+} from '../../infrastructure/calls/callProgressTone';
 import {
   createNativeCallUuid,
   endNativeCall,
@@ -56,6 +61,7 @@ import {
   onLiveKitCallAnswered,
   onLiveKitCallClosed,
   onLiveKitCallDeclined,
+  onLiveKitCallProgress,
   type LiveKitCallRealtimeTiming,
 } from '../../infrastructure/realtime/liveKitCallRealtime';
 import { createLiveKitCallRepository } from '../../infrastructure/repositories/ApiLiveKitCallRepository';
@@ -98,6 +104,7 @@ type LiveKitCallSession = {
   hasMediaPermissions: boolean | null;
   mediaErrorText: string;
   deliveryWarningText: string;
+  progress: LiveKitCallProgress;
   startedAt: number;
   elapsedSeconds: number;
   localVideoStreamUrl: string;
@@ -1380,6 +1387,12 @@ function canRunCallTimer(phase: CallPhase) {
 function resolveStatusText(session: LiveKitCallSession | null) {
   if (!session) return '';
 
+  if (session.phase === 'ringing' && session.direction === 'outgoing') {
+    if (session.progress.state === 'ringing') return 'Đang đổ chuông...';
+    if (session.progress.state === 'answering') return 'Đang kết nối...';
+    return 'Đang liên hệ...';
+  }
+
   const statusMap: Record<CallPhase, string> = {
     initializing: 'Đang chuẩn bị cuộc gọi...',
     ringing: 'Đang gọi...',
@@ -1411,6 +1424,11 @@ function buildInitialSession(
     hasMediaPermissions: null,
     mediaErrorText: '',
     deliveryWarningText: '',
+    progress: {
+      state: 'dispatching',
+      endpointCount: 0,
+      updatedAtMs: 0,
+    },
     startedAt: 0,
     elapsedSeconds: 0,
     localVideoStreamUrl: '',
@@ -2129,6 +2147,9 @@ export function LiveKitCallSessionProvider({
       const isIosNativeCall =
         Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid);
       clearRingTimers();
+      if (current?.callId) {
+        stopCallProgressTone(current.callId).catch(() => undefined);
+      }
       if (isIosNativeCall && current?.nativeCallUuid) {
         endNativeCall(current.nativeCallUuid);
       }
@@ -3078,6 +3099,7 @@ export function LiveKitCallSessionProvider({
 
       isJoiningAnsweredCallRef.current = true;
       clearRingTimers();
+      stopCallProgressTone(callId).catch(() => undefined);
       try {
         await connectPayload(callId, callType, callUuid, timing);
         return true;
@@ -3111,6 +3133,24 @@ export function LiveKitCallSessionProvider({
         event,
       ).catch(() => undefined);
     });
+    const cleanupProgress = onLiveKitCallProgress(event => {
+      const current = sessionRef.current;
+      if (
+        !current ||
+        current.direction !== 'outgoing' ||
+        current.callId !== event.callId ||
+        !event.progress ||
+        isFinalPhase(current.phase)
+      ) {
+        return;
+      }
+      patchSession({ progress: event.progress });
+      if (event.progress.state === 'ringing') {
+        startCallProgressTone(event.callId, 'ringing').catch(() => undefined);
+      } else if (event.progress.state === 'answering') {
+        stopCallProgressTone(event.callId).catch(() => undefined);
+      }
+    });
     const handleFinished = () => {
       const current = sessionRef.current;
       if (!current || isFinalPhase(current.phase)) return;
@@ -3130,10 +3170,11 @@ export function LiveKitCallSessionProvider({
 
     return () => {
       cleanupAnswered();
+      cleanupProgress();
       cleanupDeclined();
       cleanupClosed();
     };
-  }, [finishSession, joinAnsweredOutgoingCall]);
+  }, [finishSession, joinAnsweredOutgoingCall, patchSession]);
 
   const startOutgoingCall = useCallback(
     (params: StartOutgoingCallParams) => {
@@ -3150,6 +3191,9 @@ export function LiveKitCallSessionProvider({
         }
 
         clearRingTimers();
+        if (current.callId) {
+          stopCallProgressTone(current.callId).catch(() => undefined);
+        }
         const isIosNativeCall =
           Platform.OS === 'ios' && usesNativeCallUi(current.nativeCallUuid);
         if (isIosNativeCall && current.nativeCallUuid) {
@@ -3196,6 +3240,14 @@ export function LiveKitCallSessionProvider({
         });
 
         if (created.busy) {
+          if (created.callId) {
+            startCallProgressTone(created.callId, 'busy').catch(
+              () => undefined,
+            );
+            setTimeout(() => {
+              stopCallProgressTone(created.callId).catch(() => undefined);
+            }, 1_650);
+          }
           setSession(currentSession => {
             const next: LiveKitCallSession | null = currentSession
               ? {
@@ -3231,11 +3283,21 @@ export function LiveKitCallSessionProvider({
                 peer: params.peer ?? created.peer,
                 phase: 'ringing',
                 deliveryWarningText,
+                progress: created.progress,
               }
             : currentSession;
           sessionRef.current = next;
           return next;
         });
+        await startNativeOutgoingCall({
+          callUuid: nextUuid,
+          callType: params.callType,
+          peer: params.peer ?? created.peer,
+        }).catch(() => undefined);
+        startCallProgressTone(
+          nextCallId,
+          created.progress.state === 'ringing' ? 'ringing' : 'connecting',
+        ).catch(() => undefined);
         const checkAnsweredAndJoin = async () => {
           const activeSession = sessionRef.current;
           const roomState = activeRoomRef.current?.state;
@@ -3262,6 +3324,16 @@ export function LiveKitCallSessionProvider({
               callType: params.callType,
             })
             .catch(() => null);
+          if (status?.progress) {
+            patchSession({ progress: status.progress });
+            if (status.progress.state === 'ringing') {
+              startCallProgressTone(nextCallId, 'ringing').catch(
+                () => undefined,
+              );
+            } else if (status.progress.state === 'answering') {
+              stopCallProgressTone(nextCallId).catch(() => undefined);
+            }
+          }
           if (
             status &&
             (status.finished || isTerminalCallStatus(status.status))
@@ -3314,15 +3386,13 @@ export function LiveKitCallSessionProvider({
 
           closeIfStillUnanswered().catch(() => undefined);
         }, OUTGOING_RING_TIMEOUT_MS);
-
-        startNativeOutgoingCall({
-          callUuid: nextUuid,
-          callType: params.callType,
-          peer: params.peer ?? created.peer,
-        }).catch(() => undefined);
       }
 
       boot().catch(caught => {
+        const failedCallId = sessionRef.current?.callId;
+        if (failedCallId) {
+          stopCallProgressTone(failedCallId).catch(() => undefined);
+        }
         patchSession({
           phase: 'error',
           error:
@@ -3811,6 +3881,10 @@ export function LiveKitCallSessionProvider({
   useEffect(() => {
     return () => {
       clearRingTimers();
+      const currentCallId = sessionRef.current?.callId;
+      if (currentCallId) {
+        stopCallProgressTone(currentCallId).catch(() => undefined);
+      }
       resetMediaState();
     };
   }, [clearRingTimers, resetMediaState]);

@@ -39,6 +39,11 @@ import type {
   GroupLiveKitParticipant,
   IncomingGroupLiveKitCall,
 } from '../../domain/types/groupCall.types';
+import type { LiveKitCallProgress } from '../../domain/types/call.types';
+import {
+  startCallProgressTone,
+  stopCallProgressTone,
+} from '../../infrastructure/calls/callProgressTone';
 import {
   createNativeGroupCallUuid,
   displayNativeIncomingGroupCall,
@@ -49,6 +54,7 @@ import {
 } from '../../infrastructure/calls/nativeCallService';
 import {
   onLiveKitGroupCallClosed,
+  onLiveKitGroupCallProgress,
   onLiveKitGroupCallSync,
   type GroupLiveKitCallRealtimeEvent,
 } from '../../infrastructure/realtime/liveKitCallRealtime';
@@ -99,6 +105,7 @@ type GroupLiveKitCallSession = {
   error: string;
   mediaErrorText: string;
   deliveryWarningText: string;
+  progress: LiveKitCallProgress;
   isMinimized: boolean;
   hasMediaPermissions: boolean | null;
   hasCameraPermission: boolean;
@@ -467,6 +474,18 @@ function exitGroupCallRoomIfFocused() {
 
 function resolveStatusText(session: GroupLiveKitCallSession | null) {
   if (!session) return '';
+  const hasRemoteParticipant = session.participants.some(
+    participant => !participant.isLocal,
+  );
+  if (
+    session.direction === 'outgoing' &&
+    session.phase === 'connected' &&
+    !hasRemoteParticipant
+  ) {
+    return session.progress.state === 'ringing'
+      ? 'Đang đổ chuông...'
+      : 'Đang liên hệ các thành viên...';
+  }
   const statusMap: Record<GroupCallPhase, string> = {
     initializing: 'Đang chuẩn bị cuộc gọi nhóm...',
     connecting: '',
@@ -588,6 +607,11 @@ function buildInitialSession(
     error: '',
     mediaErrorText: '',
     deliveryWarningText: '',
+    progress: {
+      state: 'dispatching',
+      endpointCount: 0,
+      updatedAtMs: 0,
+    },
     isMinimized: false,
     hasMediaPermissions: null,
     hasCameraPermission: false,
@@ -924,6 +948,9 @@ export function GroupLiveKitCallSessionProvider({
       logGroupSessionFinishRequested(reason, current, activeRoomRef.current);
       const isIosNativeCall =
         Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid);
+      if (current?.callId) {
+        stopCallProgressTone(current.callId).catch(() => undefined);
+      }
       if (isIosNativeCall && current?.nativeCallUuid) {
         endNativeCall(current.nativeCallUuid);
       }
@@ -969,6 +996,9 @@ export function GroupLiveKitCallSessionProvider({
 
   const cleanupFailedGroupCallStart = useCallback(() => {
     const current = sessionRef.current;
+    if (current?.callId) {
+      stopCallProgressTone(current.callId).catch(() => undefined);
+    }
     logGroupSessionFinishRequested(
       'connect_failure',
       current,
@@ -1289,6 +1319,7 @@ export function GroupLiveKitCallSessionProvider({
           group: created.group,
           nativeCallUuid: callUuid,
           deliveryWarningText,
+          progress: created.progress,
         });
         await startNativeOutgoingGroupCall({
           callUuid,
@@ -1296,6 +1327,15 @@ export function GroupLiveKitCallSessionProvider({
           groupId: created.group.id || params.groupId,
           group: created.group,
         });
+        if (!created.isExisting) {
+          startCallProgressTone(
+            created.call.id,
+            created.progress.state === 'ringing' ? 'ringing' : 'connecting',
+          ).catch(() => undefined);
+          setTimeout(() => {
+            stopCallProgressTone(created.call.id).catch(() => undefined);
+          }, 43_000);
+        }
         await connectPayload(
           created.call.id,
           callUuid,
@@ -1580,6 +1620,23 @@ export function GroupLiveKitCallSessionProvider({
     };
 
     const cleanupSync = onLiveKitGroupCallSync(applyRealtimeSync);
+    const cleanupProgress = onLiveKitGroupCallProgress(event => {
+      const current = sessionRef.current;
+      if (
+        !current ||
+        current.direction !== 'outgoing' ||
+        current.callId !== event.callId ||
+        !event.progress
+      ) {
+        return;
+      }
+      patchSession({ progress: event.progress });
+      if (event.progress.state === 'ringing') {
+        startCallProgressTone(event.callId, 'ringing').catch(() => undefined);
+      } else if (event.progress.state === 'answering') {
+        stopCallProgressTone(event.callId).catch(() => undefined);
+      }
+    });
     const cleanupClosed = onLiveKitGroupCallClosed(event => {
       const current = sessionRef.current;
       if (!current || current.callId !== event.callId) return;
@@ -1588,6 +1645,7 @@ export function GroupLiveKitCallSessionProvider({
 
     return () => {
       cleanupSync();
+      cleanupProgress();
       cleanupClosed();
     };
   }, [finishSession, mergeServerParticipantMetadata, patchSession]);
@@ -1622,12 +1680,21 @@ export function GroupLiveKitCallSessionProvider({
       }
       patchSession({
         group: result.group,
+        progress: result.progress,
       });
       mergeServerParticipantMetadata(result.participants);
     }, GROUP_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [finishSession, mergeServerParticipantMetadata, patchSession, repository]);
+
+  useEffect(() => {
+    const current = session;
+    if (!current?.callId || current.direction !== 'outgoing') return;
+    if (current.participants.some(participant => !participant.isLocal)) {
+      stopCallProgressTone(current.callId).catch(() => undefined);
+    }
+  }, [session]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
@@ -1666,6 +1733,9 @@ export function GroupLiveKitCallSessionProvider({
         current,
         activeRoomRef.current,
       );
+      if (current?.callId) {
+        stopCallProgressTone(current.callId).catch(() => undefined);
+      }
       const isIosNativeCall =
         Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid);
       if (isIosNativeCall && current?.nativeCallUuid) {

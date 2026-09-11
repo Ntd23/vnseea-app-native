@@ -6,6 +6,8 @@ import type {
   LiveKitCallCheckResult,
   LiveKitCallCreateResult,
   LiveKitCallPeer,
+  LiveKitCallProgress,
+  LiveKitCallProgressState,
   LiveKitCallStatus,
   LiveKitCallSummary,
   LiveKitCallType,
@@ -63,6 +65,25 @@ export function mapCallDeliveryState(value: unknown): CallDeliveryState {
       onesignal: normalizeDeliveryChannel(channels.onesignal),
       voip: normalizeDeliveryChannel(channels.voip),
     },
+  };
+}
+
+export function mapLiveKitCallProgress(value: unknown): LiveKitCallProgress {
+  const raw = asRecord(value);
+  const rawState = resolveString(raw.state, 'dispatching');
+  const states: LiveKitCallProgressState[] = [
+    'dispatching',
+    'device_received',
+    'ringing',
+    'answering',
+    'answered',
+  ];
+  return {
+    state: states.includes(rawState as LiveKitCallProgressState)
+      ? (rawState as LiveKitCallProgressState)
+      : 'dispatching',
+    endpointCount: resolveNumber(raw.endpoint_count ?? raw.endpointCount),
+    updatedAtMs: resolveNumber(raw.updated_at_ms ?? raw.updatedAtMs),
   };
 }
 
@@ -131,6 +152,7 @@ export function mapLiveKitCreateResponse(
     busy: resolveBoolean(raw.busy),
     peer: raw.peer ? mapLiveKitPeer(raw.peer) : undefined,
     delivery: mapCallDeliveryState(raw.delivery),
+    progress: mapLiveKitCallProgress(raw.call_progress ?? raw.progress),
   };
 }
 
@@ -167,6 +189,10 @@ export function mapLiveKitCheckResponse(
       raw.endpoint_owned === undefined
         ? true
         : resolveBoolean(raw.endpoint_owned),
+    progress:
+      status === 'answered'
+        ? { state: 'answered', endpointCount: 1, updatedAtMs: 0 }
+        : mapLiveKitCallProgress(raw.call_progress ?? raw.progress),
   };
 }
 

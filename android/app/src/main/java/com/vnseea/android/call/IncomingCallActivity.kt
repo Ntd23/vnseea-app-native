@@ -567,6 +567,13 @@ class IncomingCallActivity : Activity() {
             .build()
         }
         play()
+        LiveKitCallNativeActions.postAction(
+          extra(LiveKitCallNativeActions.EXTRA_API_URL),
+          extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
+          "progress",
+          extra(LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID),
+          "ringing",
+        )
       }
     } catch (_: Throwable) {
       ringtone = null
@@ -816,6 +823,13 @@ class IncomingCallActivity : Activity() {
                   )
                   stopRingtone()
                   cancelNotification()
+                  LiveKitCallNativeActions.postAction(
+                    extra(LiveKitCallNativeActions.EXTRA_API_URL),
+                    extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
+                    "progress",
+                    extra(LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID),
+                    "answering",
+                  )
                   LiveKitCallNativeActions.postAction(
                     extra(LiveKitCallNativeActions.EXTRA_API_URL),
                     extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),

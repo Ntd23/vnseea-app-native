@@ -3,6 +3,8 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
   IncomingLiveKitCall,
+  LiveKitCallProgress,
+  LiveKitCallProgressState,
   LiveKitCallPeer,
   LiveKitCallType,
 } from '../../domain/types/call.types';
@@ -39,6 +41,7 @@ export type LiveKitCallRealtimeEvent = LiveKitCallRealtimeTiming & {
   finished?: boolean;
   peerId?: string;
   peer?: LiveKitCallPeer;
+  progress?: LiveKitCallProgress;
 };
 
 export type GroupLiveKitCallRealtimeEvent = LiveKitCallRealtimeTiming & {
@@ -52,6 +55,7 @@ export type GroupLiveKitCallRealtimeEvent = LiveKitCallRealtimeTiming & {
   leftUserId?: string;
   declinedUserId?: string;
   activeUserId?: string;
+  progress?: LiveKitCallProgress;
 };
 
 export type ChatTypingRealtimeEvent = {
@@ -69,10 +73,12 @@ type Listener<T> = (event: T) => void;
 type EventName =
   | 'userStatus'
   | 'incoming'
+  | 'progress'
   | 'answered'
   | 'declined'
   | 'closed'
   | 'groupIncoming'
+  | 'groupProgress'
   | 'groupSync'
   | 'groupClosed';
 type WebTypingStateResponse = {
@@ -84,10 +90,12 @@ type WebTypingStateResponse = {
 const listeners = {
   userStatus: new Set<Listener<UserOnlineStatusRealtimeEvent>>(),
   incoming: new Set<Listener<IncomingLiveKitCall>>(),
+  progress: new Set<Listener<LiveKitCallRealtimeEvent>>(),
   answered: new Set<Listener<LiveKitCallRealtimeEvent>>(),
   declined: new Set<Listener<LiveKitCallRealtimeEvent>>(),
   closed: new Set<Listener<LiveKitCallRealtimeEvent>>(),
   groupIncoming: new Set<Listener<IncomingGroupLiveKitCall>>(),
+  groupProgress: new Set<Listener<GroupLiveKitCallRealtimeEvent>>(),
   groupSync: new Set<Listener<GroupLiveKitCallRealtimeEvent>>(),
   groupClosed: new Set<Listener<GroupLiveKitCallRealtimeEvent>>(),
 };
@@ -117,6 +125,25 @@ function readNumber(value: unknown) {
 
 function normalizeCallType(value: unknown): LiveKitCallType {
   return value === 'audio' ? 'audio' : 'video';
+}
+
+function mapCallProgress(raw: Record<string, unknown>): LiveKitCallProgress | undefined {
+  const value = readString(raw.progress ?? raw.call_progress);
+  const states: LiveKitCallProgressState[] = [
+    'dispatching',
+    'device_received',
+    'ringing',
+    'answering',
+    'answered',
+  ];
+  if (!states.includes(value as LiveKitCallProgressState)) return undefined;
+  return {
+    state: value as LiveKitCallProgressState,
+    endpointCount:
+      readNumber(raw.progress_endpoint_count ?? raw.endpoint_count) ?? 0,
+    updatedAtMs:
+      readNumber(raw.progress_updated_at_ms ?? raw.updated_at_ms) ?? 0,
+  };
 }
 
 function mapPeer(value: unknown): LiveKitCallPeer {
@@ -210,6 +237,7 @@ function mapRealtimeEvent(value: unknown): LiveKitCallRealtimeEvent | null {
     elapsedMs: readNumber(raw.elapsed_ms ?? raw.elapsedMs),
     peerId: readString(raw.peer_id ?? raw.peerId),
     peer: raw.peer ? mapPeer(raw.peer) : undefined,
+    progress: mapCallProgress(raw),
   };
 }
 
@@ -239,6 +267,7 @@ function mapGroupRealtimeEvent(
     leftUserId: readString(raw.left_user_id ?? raw.leftUserId),
     declinedUserId: readString(raw.declined_user_id ?? raw.declinedUserId),
     activeUserId: readString(raw.active_user_id ?? raw.activeUserId),
+    progress: mapCallProgress(raw),
   };
 }
 
@@ -262,6 +291,10 @@ function bindCanonicalEvents() {
       const call = mapIncomingCall(payload);
       if (call) dispatch('incoming', call);
     }),
+    subscribeToMessageRealtimeEvent('livekit_call_progress', payload => {
+      const event = mapRealtimeEvent(payload);
+      if (event) dispatch('progress', event);
+    }),
     subscribeToMessageRealtimeEvent('livekit_call_answered', payload => {
       const event = mapRealtimeEvent(payload);
       if (event) dispatch('answered', event);
@@ -277,6 +310,10 @@ function bindCanonicalEvents() {
     subscribeToMessageRealtimeEvent('livekit_group_call_incoming', payload => {
       const call = mapIncomingGroupCall(payload);
       if (call) dispatch('groupIncoming', call);
+    }),
+    subscribeToMessageRealtimeEvent('livekit_group_call_progress', payload => {
+      const event = mapGroupRealtimeEvent(payload);
+      if (event) dispatch('groupProgress', event);
     }),
     subscribeToMessageRealtimeEvent('livekit_group_call_sync', payload => {
       const event = mapGroupRealtimeEvent(payload);
@@ -413,6 +450,16 @@ export function onLiveKitCallAnswered(
   };
 }
 
+export function onLiveKitCallProgress(
+  listener: Listener<LiveKitCallRealtimeEvent>,
+) {
+  listeners.progress.add(listener);
+  connectLiveKitCallRealtime();
+  return () => {
+    listeners.progress.delete(listener);
+  };
+}
+
 export function onLiveKitCallDeclined(
   listener: Listener<LiveKitCallRealtimeEvent>,
 ) {
@@ -450,6 +497,16 @@ export function onLiveKitGroupCallSync(
   connectLiveKitCallRealtime();
   return () => {
     listeners.groupSync.delete(listener);
+  };
+}
+
+export function onLiveKitGroupCallProgress(
+  listener: Listener<GroupLiveKitCallRealtimeEvent>,
+) {
+  listeners.groupProgress.add(listener);
+  connectLiveKitCallRealtime();
+  return () => {
+    listeners.groupProgress.delete(listener);
   };
 }
 

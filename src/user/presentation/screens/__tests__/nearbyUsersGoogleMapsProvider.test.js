@@ -15,7 +15,7 @@ describe('iOS Google Maps provider for nearby address search', () => {
   it('renders NearbyUsersScreen with the Google Maps provider on every platform', () => {
     const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
 
-    expect(source).toContain("import MapView, {");
+    expect(source).toContain('import MapView, {');
     expect(source).toContain('PROVIDER_GOOGLE');
     expect(source).toContain('provider={PROVIDER_GOOGLE}');
     expect(source).not.toContain(
@@ -44,23 +44,39 @@ describe('iOS Google Maps provider for nearby address search', () => {
   it('keeps active navigation heading-up instead of north-up', () => {
     const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
 
-    expect(source).toContain('const nextRouteHeading =');
-    expect(source).toContain('const nextCameraHeading = resolveNavigationHeading({');
+    expect(source).toContain('resolveFusedNavigationHeading({');
+    expect(source).toContain(
+      'const nextCameraHeading = navigationDisplayHeading;',
+    );
     expect(source).toContain('heading: nextCameraHeading');
-    expect(source).toContain('deviceHeading,');
-    expect(source).toContain('userSpeed,');
-    expect(source).toContain('const heading = navigationRouteHeading(origin, routePath, destination);');
+    expect(source).toContain('speedMetersPerSecond: userSpeed');
+    expect(source).toContain(
+      'previousHeading: stableNavigationHeadingRef.current',
+    );
+    expect(source).toContain('const navigationRoutePath = useMemo');
+    expect(source).toContain('routeProgress.remainingPath');
+    expect(source).toContain(
+      'coordinates={shouldShowRoute ? navigationRoutePath : []}',
+    );
+    expect(source).toContain('const navigationRouteConnector = useMemo');
+    expect(source).toContain('estimateRemainingDuration(');
     expect(source).toContain('heading,');
-    expect(source).toContain('style={styles.navigationBannerSubtitle} numberOfLines={2}');
+    expect(source).toContain(
+      'style={styles.navigationBannerSubtitle} numberOfLines={2}',
+    );
     expect(source).toContain('const selectRouteOption = useCallback');
     expect(source).toContain('const routeMapLabels = useMemo');
     expect(source).toContain('tappable');
     expect(source).toContain('onPress={() => selectRouteOption(route, false)}');
-    expect(source).toContain('const shouldShowNavigationPuck = isNavigating && shouldShowRoute;');
+    expect(source).toContain(
+      'const shouldShowNavigationPuck = isNavigating && shouldShowRoute;',
+    );
     expect(source).toContain('tracksViewChanges={shouldShowHeadingPuck}');
     expect(source).toContain('const ROUTE_CAMERA_LOOKAHEAD_MAX_METERS = 72;');
     expect(source).toContain('const ROUTE_HEADING_LOOKAHEAD_MAX_METERS = 28;');
-    expect(source).toContain('const ROUTE_CAMERA_LOOKAHEAD_DISTANCE_RATIO = 0.16;');
+    expect(source).toContain(
+      'const ROUTE_CAMERA_LOOKAHEAD_DISTANCE_RATIO = 0.16;',
+    );
     expect(source).toContain('const NAVIGATION_LOCATION_STATE_MIN_METERS = 1;');
     expect(source).toContain('const NAVIGATION_LOCATION_STATE_MIN_MS = 280;');
     expect(source).toContain('const HEADING_STATE_MIN_DEGREES = 2;');
@@ -69,19 +85,33 @@ describe('iOS Google Maps provider for nearby address search', () => {
     expect(source).toContain('currentNavigationRoadName({');
     expect(source).toContain('styles.currentUserRoadLabelPill');
     expect(source).toContain('preferRouteHeading: false,');
-    expect(source).toContain('preferRouteHeading: true,');
-    expect(source).toContain('const OFF_ROUTE_DISTANCE_METERS = 24;');
-    expect(source).toContain('const OFF_ROUTE_CONFIRM_MS = 0;');
-    expect(source).toContain('const REROUTE_COOLDOWN_MS = 1500;');
+    expect(source).toContain('const OFF_ROUTE_CONFIRM_MS = 5000;');
+    expect(source).toContain('const REROUTE_COOLDOWN_MS = 15000;');
+    expect(source).toContain('evaluateOffRouteReroute({');
+    expect(source).toContain('buildNavigationPrompt(');
     expect(source).toContain('const NAVIGATION_ARRIVAL_DISTANCE_METERS = 24;');
-    expect(source).toContain('const [isAutoRerouting, setIsAutoRerouting] = useState(false);');
+    expect(source).toContain(
+      'const [isAutoRerouting, setIsAutoRerouting] = useState(false);',
+    );
     expect(source).toContain('const hasArrivedAtDestination = Boolean(');
-    expect(source).toContain('setIsAutoCentering(true);');
+    expect(source).toContain('setNavigationAutoCentering(true);');
     expect(source).toContain('styles.navigationFinishButton');
     expect(source).toContain('const routePreviewAlternativeSlots = useMemo');
-    expect(source).toContain('key={`alt-route-slot:${index}`}');
+    expect(source).toContain('const routeRenderMode = isNavigating');
+    expect(source).toContain(
+      "key={['alt-route-slot', routeRenderMode, routeRenderRevision, index].join(':')}",
+    );
+    expect(source).toContain(
+      'const wasNavigating = isNavigatingRef.current;',
+    );
+    expect(source).toContain('if (navigating && !wasNavigating) {');
+    expect(source).toContain(
+      'setRouteRenderRevision(current => current + 1);',
+    );
     expect(source).toContain('coordinates={route ? route.path : []}');
-    expect(source).toContain('const routePoint: SelectedPoint | null = coordinate');
+    expect(source).toContain(
+      'const routePoint: SelectedPoint | null = coordinate',
+    );
     expect(source).toContain('selectPoint(routePoint, true);');
     expect(source).toContain('clearSelectedPoint();');
     expect(source).toContain('Kết thúc');
@@ -97,7 +127,9 @@ describe('iOS Google Maps provider for nearby address search', () => {
     );
     expect(appDelegate).toContain('import GoogleMaps');
     expect(appDelegate).toContain('GMSServices.provideAPIKey');
-    expect(appDelegate).toContain('RNCConfig.env(for: "GOOGLE_MAPS_IOS_API_KEY")');
+    expect(appDelegate).toContain(
+      'RNCConfig.env(for: "GOOGLE_MAPS_IOS_API_KEY")',
+    );
     expect(appDelegate).toContain('RNCConfig.env(for: "GOOGLE_MAPS_API_KEY")');
     expect(bridgingHeader).toContain('#import "RNCConfig.h"');
   });

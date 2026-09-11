@@ -10,3 +10,16 @@ RCT_EXTERN_METHOD(speak:(NSString *)text
 RCT_EXTERN_METHOD(stop)
 
 @end
+
+@interface RCT_EXTERN_MODULE(VnseeaCallProgressTone, NSObject)
+
+RCT_EXTERN_METHOD(start:(NSString *)mode
+                  callId:(NSString *)callId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(stop:(NSString *)callId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+@end

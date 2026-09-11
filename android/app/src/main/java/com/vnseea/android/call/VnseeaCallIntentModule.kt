@@ -4,8 +4,13 @@ package com.vnseea.android.call
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -14,11 +19,154 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.bridge.Arguments
 import org.json.JSONObject
+import kotlin.math.PI
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 class VnseeaCallIntentModule(
   private val appContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(appContext) {
+  private val toneHandler = Handler(Looper.getMainLooper())
+  private var progressTonePlayer: AudioTrack? = null
+  private var activeToneCallId = ""
+  private var activeToneMode = ""
+
   override fun getName() = "VnseeaCallIntent"
+
+  @ReactMethod
+  fun startProgressTone(mode: String?, callId: String?, promise: Promise) {
+    val nextCallId = callId.orEmpty()
+    val nextMode = mode.orEmpty().ifBlank { "connecting" }
+    if (nextCallId.isBlank()) {
+      promise.resolve(false)
+      return
+    }
+    toneHandler.post {
+      if (
+        activeToneCallId == nextCallId &&
+        activeToneMode == nextMode &&
+        progressTonePlayer?.playState == AudioTrack.PLAYSTATE_PLAYING
+      ) {
+        promise.resolve(true)
+        return@post
+      }
+      stopProgressToneInternal()
+      try {
+        val samples = buildProgressToneSamples(nextMode)
+        val bufferSize = maxOf(
+          samples.size * Short.SIZE_BYTES,
+          AudioTrack.getMinBufferSize(
+            TONE_SAMPLE_RATE,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+          ),
+        )
+        val player = AudioTrack.Builder()
+          .setAudioAttributes(
+            AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+              .build(),
+          )
+          .setAudioFormat(
+            AudioFormat.Builder()
+              .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+              .setSampleRate(TONE_SAMPLE_RATE)
+              .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+              .build(),
+          )
+          .setBufferSizeInBytes(bufferSize)
+          .setTransferMode(AudioTrack.MODE_STATIC)
+          .build()
+        val writtenSamples = player.write(samples, 0, samples.size)
+        check(writtenSamples == samples.size) {
+          "Unable to load caller progress tone samples."
+        }
+        check(player.setLoopPoints(0, samples.size, -1) == AudioTrack.SUCCESS) {
+          "Unable to loop caller progress tone."
+        }
+        player.setVolume(0.7f)
+        player.play()
+        progressTonePlayer = player
+        activeToneCallId = nextCallId
+        activeToneMode = nextMode
+        promise.resolve(true)
+      } catch (error: Throwable) {
+        stopProgressToneInternal()
+        promise.reject("E_CALL_PROGRESS_TONE", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun stopProgressTone(callId: String?, promise: Promise) {
+    toneHandler.post {
+      if (callId.isNullOrBlank() || callId == activeToneCallId) {
+        stopProgressToneInternal()
+      }
+      promise.resolve(true)
+    }
+  }
+
+  private fun stopProgressToneInternal() {
+    progressTonePlayer?.let { player ->
+      runCatching { player.stop() }
+      player.release()
+    }
+    progressTonePlayer = null
+    activeToneCallId = ""
+    activeToneMode = ""
+  }
+
+  private fun buildProgressToneSamples(mode: String): ShortArray {
+    val durationSeconds: Double
+    val frequency: Double
+    val audibleWindows: List<Pair<Double, Double>>
+    when (mode) {
+      "ringing" -> {
+        durationSeconds = 2.2
+        frequency = 440.0
+        audibleWindows = listOf(0.0 to 0.34, 0.52 to 0.86)
+      }
+      "busy" -> {
+        durationSeconds = 0.55
+        frequency = 425.0
+        audibleWindows = listOf(0.0 to 0.24)
+      }
+      else -> {
+        durationSeconds = 3.0
+        frequency = 425.0
+        audibleWindows = listOf(0.0 to 0.22)
+      }
+    }
+
+    return ShortArray((durationSeconds * TONE_SAMPLE_RATE).roundToInt()) { frame ->
+      val time = frame.toDouble() / TONE_SAMPLE_RATE
+      val window = audibleWindows.firstOrNull { time >= it.first && time < it.second }
+        ?: return@ShortArray 0
+      val localTime = time - window.first
+      val edge = min(
+        1.0,
+        min(localTime / TONE_FADE_SECONDS, (window.second - time) / TONE_FADE_SECONDS),
+      ).coerceAtLeast(0.0)
+      (sin(2.0 * PI * frequency * time) * TONE_AMPLITUDE * edge * Short.MAX_VALUE)
+        .roundToInt()
+        .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+        .toShort()
+    }
+  }
+
+  override fun invalidate() {
+    stopProgressToneInternal()
+    super.invalidate()
+  }
+
+  companion object {
+    private const val TONE_SAMPLE_RATE = 44_100
+    private const val TONE_FADE_SECONDS = 0.012
+    private const val TONE_AMPLITUDE = 0.22
+  }
 
   @ReactMethod
   fun getInitialCallAction(promise: Promise) {

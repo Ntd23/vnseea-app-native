@@ -10,7 +10,10 @@ import type {
   GroupLiveKitSyncResult,
   IncomingGroupLiveKitCall,
 } from '../../domain/types/groupCall.types';
-import { mapCallDeliveryState } from './liveKitCallMapper';
+import {
+  mapCallDeliveryState,
+  mapLiveKitCallProgress,
+} from './liveKitCallMapper';
 
 type RawRecord = Record<string, unknown>;
 
@@ -112,6 +115,7 @@ export function mapGroupLiveKitCreateResponse(
     group: mapGroup(raw.group),
     isExisting: resolveBoolean(raw.is_existing),
     delivery: mapCallDeliveryState(raw.delivery),
+    progress: mapLiveKitCallProgress(raw.call_progress ?? raw.progress),
   };
 }
 
@@ -148,6 +152,7 @@ export function mapGroupLiveKitSyncResponse(
       raw.endpoint_owned === undefined
         ? true
         : resolveBoolean(raw.endpoint_owned),
+    progress: mapLiveKitCallProgress(raw.call_progress ?? raw.progress),
   };
 }
 

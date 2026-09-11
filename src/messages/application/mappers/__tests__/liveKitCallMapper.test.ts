@@ -63,6 +63,11 @@ describe('liveKitCallMapper', () => {
           voip: 'failed',
         },
       },
+      progress: {
+        state: 'dispatching',
+        endpointCount: 0,
+        updatedAtMs: 0,
+      },
     });
   });
 
@@ -90,6 +95,30 @@ describe('liveKitCallMapper', () => {
       elapsedSeconds: 42,
       elapsedMs: 42000,
       endpointOwned: true,
+      progress: {
+        state: 'dispatching',
+        endpointCount: 0,
+        updatedAtMs: 0,
+      },
+    });
+  });
+
+  it('maps device progress independently from provider delivery', () => {
+    expect(
+      mapLiveKitCheckResponse({
+        call_id: '92',
+        call_type: 'audio',
+        call_status: 'calling',
+        call_progress: {
+          state: 'ringing',
+          endpoint_count: 2,
+          updated_at_ms: 1234,
+        },
+      }).progress,
+    ).toEqual({
+      state: 'ringing',
+      endpointCount: 2,
+      updatedAtMs: 1234,
     });
   });
 
