@@ -19,6 +19,7 @@ import type {
   MessageAttachment,
   MessageItem,
   MessageLabel,
+  MessageRecallResult,
   MessageReactionSummary,
   SendMessageOptions,
   PinnedMessageItem,
@@ -94,6 +95,8 @@ export interface MessagesRepository {
     messageId: string,
     reaction: ReactionType | null,
   ): Promise<MessageReactionSummary>;
+
+  recallMessage(messageId: string): Promise<MessageRecallResult>;
 
   /**
    * Delete a conversation

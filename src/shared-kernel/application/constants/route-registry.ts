@@ -88,6 +88,7 @@ export const apiRoutes = {
     pinnedMessages: 'get_pin_message',
     pinMessage: 'pin_message',
     react: 'react_message',
+    recallMessage: 'recall_message',
     reportUser: 'report_user',
   },
   products: {

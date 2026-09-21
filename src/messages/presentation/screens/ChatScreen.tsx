@@ -57,6 +57,7 @@ import {
   CornerUpRight,
   Copy,
   Pin,
+  Trash2,
   UserPlus,
 } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -273,6 +274,13 @@ const CHAT_COPY: Record<
     cannotRemoveMember: string;
     missedCall: string;
     noAnswer: string;
+    recallMessage: string;
+    recallMessageDescription: string;
+    recallConfirmTitle: string;
+    recallConfirmMessage: string;
+    recallConfirmAction: string;
+    recallSuccess: string;
+    recallError: string;
   }
 > = {
   vi: {
@@ -312,6 +320,14 @@ const CHAT_COPY: Record<
     cannotRemoveMember: 'Không xóa được thành viên',
     missedCall: 'Cuộc gọi nhỡ',
     noAnswer: 'Không trả lời',
+    recallMessage: 'Thu hồi tin nhắn',
+    recallMessageDescription: 'Gỡ tin nhắn này với mọi người',
+    recallConfirmTitle: 'Thu hồi tin nhắn?',
+    recallConfirmMessage:
+      'Tin nhắn sẽ được thay bằng thông báo đã thu hồi với mọi người.',
+    recallConfirmAction: 'Thu hồi',
+    recallSuccess: 'Đã thu hồi tin nhắn',
+    recallError: 'Không thể thu hồi tin nhắn',
   },
   en: {
     today: 'Today',
@@ -350,6 +366,14 @@ const CHAT_COPY: Record<
     cannotRemoveMember: 'Could not remove member',
     missedCall: 'Missed call',
     noAnswer: 'No answer',
+    recallMessage: 'Unsend message',
+    recallMessageDescription: 'Remove this message for everyone',
+    recallConfirmTitle: 'Unsend message?',
+    recallConfirmMessage:
+      'This message will be replaced by an unsent message notice for everyone.',
+    recallConfirmAction: 'Unsend',
+    recallSuccess: 'Message unsent',
+    recallError: 'Could not unsend message',
   },
 };
 
@@ -1624,6 +1648,7 @@ function MessageBubble({
   const isSentByMe = message.callEvent
     ? message.callEvent.isInitiator
     : message.isSentByMe;
+  const isRecalled = Boolean(message.isRecalled);
 
   const isMediaOnly =
     !message.callEvent &&
@@ -1663,7 +1688,11 @@ function MessageBubble({
     ? mapShare.caption
     : message.message;
   const messageTextClassName = `text-[15px] leading-5 ${
-    isSentByMe && !replyInfo ? 'text-white' : 'text-gray-900'
+    isRecalled
+      ? 'italic text-gray-500'
+      : isSentByMe && !replyInfo
+      ? 'text-white'
+      : 'text-gray-900'
   }`;
   const messageLinkColor = isSentByMe && !replyInfo
     ? '#ffffff'
@@ -1692,16 +1721,20 @@ function MessageBubble({
     inputRange: [0, 1],
     outputRange: [APP_COLORS.brand.border, APP_BRAND_COLOR],
   });
+  const interactionDisabledRef = useRef(isRecalled);
+  interactionDisabledRef.current = isRecalled;
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
+        if (interactionDisabledRef.current) return false;
         const { dx, dy } = gestureState;
         const isReplySwipe = isSentByMe ? dx > 10 : dx < -10;
         return isReplySwipe && Math.abs(dy) < 8;
       },
       onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+        if (interactionDisabledRef.current) return false;
         const { dx, dy } = gestureState;
         const isReplySwipe = isSentByMe ? dx > 10 : dx < -10;
         return isReplySwipe && Math.abs(dy) < 8;
@@ -1735,7 +1768,7 @@ function MessageBubble({
         const shouldOpenReply = isSentByMe
           ? drag > replySwipeTriggerDistance
           : drag < -replySwipeTriggerDistance;
-        if (shouldOpenReply && onReply) {
+        if (!interactionDisabledRef.current && shouldOpenReply && onReply) {
           onReply(message);
         }
         Animated.parallel([
@@ -1981,7 +2014,9 @@ function MessageBubble({
                   message.callEvent
                     ? ''
                     : `${isSentByMe ? 'self-end' : 'self-start'} ${
-                        isMediaOnly || hasMessageMedia
+                        isRecalled
+                          ? 'rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2'
+                          : isMediaOnly || hasMessageMedia
                           ? ''
                           : replyInfo
                           ? isSentByMe
@@ -1995,8 +2030,8 @@ function MessageBubble({
               >
                 <DoubleTapTouchable
                   activeOpacity={0.9}
-                  onLongPress={() => onLongPress?.(message)}
-                  onDoubleTap={() => onDoubleTap?.(message)}
+                  onLongPress={() => !isRecalled && onLongPress?.(message)}
+                  onDoubleTap={() => !isRecalled && onDoubleTap?.(message)}
                   delayLongPress={350}
                 >
                   {message.callEvent ? (
@@ -2006,12 +2041,14 @@ function MessageBubble({
                     />
                   ) : (
                     <>
-                      <MessageMedia
-                        message={message}
-                        onOpenMedia={onOpenMedia}
-                        onLongPress={() => onLongPress?.(message)}
-                        onDoubleTap={() => onDoubleTap?.(message)}
-                      />
+                      {!isRecalled ? (
+                        <MessageMedia
+                          message={message}
+                          onOpenMedia={onOpenMedia}
+                          onLongPress={() => onLongPress?.(message)}
+                          onDoubleTap={() => onDoubleTap?.(message)}
+                        />
+                      ) : null}
                       {replyInfo ? (
                         hasMessageMedia ? (
                           <View
@@ -2095,6 +2132,8 @@ function MessageBubble({
                           ? isMediaOnly
                             ? 'text-red-600'
                             : 'text-red-100'
+                          : isRecalled
+                          ? 'text-gray-400'
                           : isMediaOnly
                           ? 'text-gray-500'
                           : usesLightReplyBubble || hasMessageMedia
@@ -2163,6 +2202,8 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.replyTo?.storyReply?.available ===
         nextProps.message.replyTo?.storyReply?.available &&
       prevProps.message.deliveryState === nextProps.message.deliveryState &&
+      prevProps.message.isRecalled === nextProps.message.isRecalled &&
+      prevProps.message.recalledAt === nextProps.message.recalledAt &&
       prevProps.message.seen === nextProps.message.seen &&
       prevProps.message.sharedPost?.postId ===
         nextProps.message.sharedPost?.postId &&
@@ -2705,6 +2746,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     loadMessageContext,
     setMessagePinned,
     setMessageReaction,
+    recallMessage,
     sendMessage,
     notifyTyping,
     stopTyping,
@@ -3496,6 +3538,45 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     }
   }, [pinnedMessages, selectedOptionMessage, setMessagePinned]);
 
+  const handleSelectOptionRecall = useCallback(() => {
+    const target = selectedOptionMessage;
+    if (
+      !target ||
+      !target.isSentByMe ||
+      target.isRecalled ||
+      target.deliveryState
+    ) {
+      setSelectedOptionMessage(undefined);
+      return;
+    }
+
+    setSelectedOptionMessage(undefined);
+    Alert.alert(copy.recallConfirmTitle, copy.recallConfirmMessage, [
+      { text: copy.cancel, style: 'cancel' },
+      {
+        text: copy.recallConfirmAction,
+        style: 'destructive',
+        onPress: () => {
+          recallMessage(target.id)
+            .then(recalled => {
+              if (recalled) {
+                showSnackbar({ message: copy.recallSuccess, type: 'success' });
+              }
+            })
+            .catch(recallFailure => {
+              showSnackbar({
+                message:
+                  recallFailure instanceof Error
+                    ? recallFailure.message
+                    : copy.recallError,
+                type: 'error',
+              });
+            });
+        },
+      },
+    ]);
+  }, [copy, recallMessage, selectedOptionMessage]);
+
   const handleMessageReaction = useCallback(
     async (message: MessageItem, reaction: ReactionType | null) => {
       setSelectedOptionMessage(undefined);
@@ -3516,6 +3597,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
 
   const handleDoubleTapMessage = useCallback(
     (message: MessageItem) => {
+      if (message.isRecalled) return;
       const reaction =
         message.reactions.myReaction === 'like' ? null : 'like';
       handleMessageReaction(message, reaction).catch(() => undefined);
@@ -4618,6 +4700,27 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                   </Text>
                 </View>
               </TouchableOpacity>
+
+              {chat.chatType !== 'page' &&
+              selectedOptionMessage?.isSentByMe &&
+              !selectedOptionMessage.deliveryState ? (
+                <TouchableOpacity
+                  className="mb-5 flex-row items-center rounded-xl bg-red-50 px-4 py-4 active:bg-red-100"
+                  onPress={handleSelectOptionRecall}
+                >
+                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-red-100">
+                    <Trash2 size={20} color="#DC2626" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-base font-semibold text-red-700">
+                      {copy.recallMessage}
+                    </Text>
+                    <Text className="text-xs text-red-500">
+                      {copy.recallMessageDescription}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
 
               <TouchableOpacity
                 className="flex-row items-center rounded-xl bg-gray-50 px-4 py-4 mb-5 active:bg-gray-100"

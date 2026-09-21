@@ -147,6 +147,13 @@ export interface MessageReactionSummary {
   breakdown: Partial<Record<ReactionType, number>>;
 }
 
+export interface MessageRecallResult {
+  messageId: string;
+  recalledAt: number;
+  recalledByUserId: string;
+  recalledByName: string;
+}
+
 export type MessageMediaType = 'image' | 'video' | 'audio' | 'file';
 
 export interface MessageReplyReference {
@@ -221,6 +228,10 @@ export interface MessageItem {
   storyReply?: StoryReplyMessageReference;
   replyTo?: MessageReplyReference;
   reactions: MessageReactionSummary;
+  isRecalled?: boolean;
+  recalledAt?: number;
+  recalledByUserId?: string;
+  recalledByName?: string;
   time: number;
   isSentByMe: boolean;
   seen: number;
