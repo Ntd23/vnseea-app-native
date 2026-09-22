@@ -19,7 +19,7 @@ describe('group call room responsive gallery', () => {
     expect(source).toContain('const tileHeight =');
     expect(source).toContain('columnWrapperStyle');
     expect(source).toContain('ItemSeparatorComponent');
-    expect(source).toContain('participants.length <= 2');
+    expect(source).toContain('visibleParticipants.length <= 2');
     expect(source).toContain('useCallChromeVisibility');
     expect(source).toContain("session?.phase === 'connected'");
     expect(source).toContain('useSafeAreaInsets');
@@ -61,8 +61,8 @@ describe('group call room responsive gallery', () => {
 
     expect(source).toContain('const fullRowTileWidth = Math.max(');
     expect(source).toContain('const spansFullRow =');
-    expect(source).toContain('participants.length % 2 === 1');
-    expect(source).toContain('index === participants.length - 1');
+    expect(source).toContain('visibleParticipants.length % 2 === 1');
+    expect(source).toContain('index === visibleParticipants.length - 1');
     expect(source).toContain(
       'tileWidth={spansFullRow ? fullRowTileWidth : tileWidth}',
     );

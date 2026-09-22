@@ -4,6 +4,7 @@ import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
 import livekit_react_native
+import livekit_react_native_webrtc
 import PushKit
 import AVFoundation
 import GoogleMaps
@@ -30,6 +31,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
   ) -> Bool {
     setupGoogleMaps()
     LivekitReactNative.setup()
+    WebRTCModuleOptions.sharedInstance().enableMultitaskingCameraAccess = true
     setupNativeCallNotifications()
 
     let delegate = ReactNativeDelegate()
@@ -104,8 +106,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     let data = payload.dictionaryPayload
     let uuid = nativeCallUuid(from: data)
     if isClosedLiveKitCallPush(data) {
+      let terminalComplianceUuid = UUID().uuidString.lowercased()
+      let callType = stringValue(data["call_type"])
       RNVoipPushNotificationManager.didReceiveIncomingPush(with: payload, forType: type.rawValue)
-      completion()
+      RNCallKeep.reportNewIncomingCall(
+        terminalComplianceUuid,
+        handle: "livekit-terminal",
+        handleType: "generic",
+        hasVideo: callType != "audio",
+        localizedCallerName: "VNSEEA",
+        supportsHolding: false,
+        supportsDTMF: false,
+        supportsGrouping: false,
+        supportsUngrouping: false,
+        fromPushKit: true,
+        payload: data,
+        withCompletionHandler: {
+          if !uuid.isEmpty {
+            RNCallKeep.endCall(withUUID: uuid, reason: 2)
+          }
+          RNCallKeep.endCall(withUUID: terminalComplianceUuid, reason: 2)
+          completion()
+        }
+      )
       return
     }
     let callType = stringValue(data["call_type"])
@@ -185,6 +208,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     let uuid = stringValue(payload["uuid"])
     if !uuid.isEmpty {
       return uuid
+    }
+    if isClosedLiveKitCallPush(payload) {
+      return ""
     }
     return UUID().uuidString.lowercased()
   }

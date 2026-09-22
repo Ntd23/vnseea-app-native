@@ -238,7 +238,7 @@ function Wo_ApiLiveKitSendVoipPush($recipient, $notification_data, $caller_name,
     return Wo_ApiSendApnsVoipPush($recipient, $notification_data, $caller_name, $call_type, 'direct');
 }
 
-function Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id = 0) {
+function Wo_ApiLiveKitSendClosePush($call_source, $call_type, $final_status, $actor_id = 0) {
     global $wo;
     if (empty($call_source) || !is_array($call_source)) {
         return;
@@ -274,20 +274,25 @@ function Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status,
     );
 
     foreach ($recipient_ids as $recipient_id) {
-        $voip_state = VNSEEA_SendImmediateVoipEvent(
+        $push_channels = VNSEEA_SendImmediateCallPush(
             $recipient_id,
             $notification_data,
             $display_name,
             $call_type,
-            'direct'
+            'direct',
+            false,
+            array('priority' => 5, 'ttl' => 20),
+            '',
+            true
         );
-        Wo_ApiLiveKitDebugLog('close_voip_push', array(
+        Wo_ApiLiveKitDebugLog('close_push', array(
             'call_id' => $call_id,
             'call_type' => $call_type,
             'status' => $final_status,
             'actor_id' => $actor_id,
             'recipient_id' => $recipient_id,
-            'state' => $voip_state
+            'onesignal' => !empty($push_channels['onesignal']) ? $push_channels['onesignal'] : 'unavailable',
+            'voip' => !empty($push_channels['voip']) ? $push_channels['voip'] : 'unavailable'
         ));
     }
 }
@@ -717,7 +722,7 @@ function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor
             'peer_id' => (string) $actor_id,
             'duration' => $duration
         ));
-        Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id);
+        Wo_ApiLiveKitSendClosePush($call_source, $call_type, $final_status, $actor_id);
     }
 
     $persisted_source = Wo_GetCallSourceById($call_id, $call_type);
@@ -811,7 +816,7 @@ else if ($action == 'check') {
                     'provider' => 'livekit',
                     'status_by' => $wo['user']['user_id']
                 ));
-                Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']));
+                Wo_ApiLiveKitSendClosePush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']));
             }
         }
         $call_source = Wo_GetCallSourceById($call_id, $call_type);

@@ -1,0 +1,57 @@
+diff --git a/dist/livekit-client.esm.mjs b/dist/livekit-client.esm.mjs
+index 1476417955c20a685451d44f388a67a314acdb05..72d645469021cc1d7aad44b93c8c8cdad2e0f9ec 100644
+--- a/dist/livekit-client.esm.mjs
++++ b/dist/livekit-client.esm.mjs
+@@ -21720,9 +21720,20 @@ class RTCEngine extends eventsExports.EventEmitter {
+         return;
+       }
+       this.midToTrackId = midToTrackId;
+-      const answer = yield this.pcManager.createSubscriberAnswerFromOffer(sd, offerId);
+-      if (answer) {
+-        this.client.sendAnswer(answer, offerId);
++      try {
++        const answer = yield this.pcManager.createSubscriberAnswerFromOffer(sd, offerId);
++        if (answer) {
++          this.client.sendAnswer(answer, offerId);
++        }
++      } catch (error) {
++        if (this.isClosed || !this.pcManager) {
++          this.log.debug('subscriber_offer_ignored_during_engine_close', Object.assign(Object.assign({}, this.logContext), {
++            offerId,
++            error
++          }));
++          return;
++        }
++        throw error;
+       }
+     });
+     this.client.onLocalTrackPublished = res => {
+diff --git a/src/room/RTCEngine.ts b/src/room/RTCEngine.ts
+index 96490f7d1b7c2c960c245226bc7492e4082d2d93..2ed4f5bfed2f3e7bab3002a8115516ea3359e3b3 100644
+--- a/src/room/RTCEngine.ts
++++ b/src/room/RTCEngine.ts
+@@ -681,9 +681,21 @@ export default class RTCEngine extends (EventEmitter as new () => TypedEventEmit
+         return;
+       }
+       this.midToTrackId = midToTrackId;
+-      const answer = await this.pcManager.createSubscriberAnswerFromOffer(sd, offerId);
+-      if (answer) {
+-        this.client.sendAnswer(answer, offerId);
++      try {
++        const answer = await this.pcManager.createSubscriberAnswerFromOffer(sd, offerId);
++        if (answer) {
++          this.client.sendAnswer(answer, offerId);
++        }
++      } catch (error) {
++        if (this.isClosed || !this.pcManager) {
++          this.log.debug('subscriber_offer_ignored_during_engine_close', {
++            ...this.logContext,
++            offerId,
++            error,
++          });
++          return;
++        }
++        throw error;
+       }
+     };
+ 

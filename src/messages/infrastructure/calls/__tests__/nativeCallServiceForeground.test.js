@@ -253,7 +253,7 @@ describe('native call service foreground incoming push handling', () => {
     expect(voipPushDefault.onVoipNotificationCompleted).toHaveBeenCalled();
   });
 
-  it('filters closed VoIP pushes in AppDelegate before reportNewIncomingCall', () => {
+  it('reports a transient CallKit call before ending a legacy terminal VoIP push', () => {
     const fs = require('fs');
     const path = require('path');
     const source = fs.readFileSync(
@@ -261,14 +261,24 @@ describe('native call service foreground incoming push handling', () => {
       'utf8',
     );
     const pushHandlerIndex = source.indexOf('didReceiveIncomingPushWith payload');
-    const reportIndex = source.indexOf('RNCallKeep.reportNewIncomingCall', pushHandlerIndex);
-    const preReportBlock = source.slice(pushHandlerIndex, reportIndex);
+    const closedPushIndex = source.indexOf(
+      'if isClosedLiveKitCallPush(data)',
+      pushHandlerIndex,
+    );
+    const reportIndex = source.indexOf(
+      'RNCallKeep.reportNewIncomingCall',
+      closedPushIndex,
+    );
+    const endIndex = source.indexOf('RNCallKeep.endCall', reportIndex);
 
     expect(pushHandlerIndex).toBeGreaterThan(-1);
-    expect(reportIndex).toBeGreaterThan(pushHandlerIndex);
-    expect(preReportBlock).toContain('isClosedLiveKitCallPush');
-    expect(preReportBlock).toContain('completion()');
-    expect(preReportBlock).toContain('return');
+    expect(closedPushIndex).toBeGreaterThan(pushHandlerIndex);
+    expect(reportIndex).toBeGreaterThan(closedPushIndex);
+    expect(endIndex).toBeGreaterThan(reportIndex);
+    expect(source.slice(closedPushIndex, reportIndex)).toContain(
+      'terminalComplianceUuid',
+    );
+    expect(source.slice(reportIndex, endIndex)).toContain('fromPushKit: true');
   });
 
   it('does not infer a missing CallKit audio UUID from JS active calls', async () => {

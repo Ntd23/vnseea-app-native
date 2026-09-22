@@ -259,6 +259,92 @@ class VnseeaCallIntentModule(
   }
 
   @ReactMethod
+  fun setVideoCallPictureInPictureEnabled(
+    enabled: Boolean,
+    aspectWidth: Int,
+    aspectHeight: Int,
+    promise: Promise,
+  ) {
+    appContext.runOnUiQueueThread {
+      try {
+        promise.resolve(
+          CallPictureInPictureActivity.setEnabled(
+            enabled = enabled,
+            aspectWidth = aspectWidth,
+            aspectHeight = aspectHeight,
+          ),
+        )
+      } catch (error: Throwable) {
+        promise.reject("E_SET_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun configureVideoCallPictureInPicture(
+    enabled: Boolean,
+    localCameraEnabled: Boolean,
+    localMirror: Boolean,
+    localStreamUrl: String?,
+    remoteStreamUrl: String?,
+    aspectWidth: Int,
+    aspectHeight: Int,
+    promise: Promise,
+  ) {
+    appContext.runOnUiQueueThread {
+      try {
+        promise.resolve(
+          CallPictureInPictureActivity.configure(
+            enabled = enabled,
+            localCameraEnabled = localCameraEnabled,
+            localMirror = localMirror,
+            localStreamUrl = localStreamUrl.orEmpty(),
+            remoteStreamUrl = remoteStreamUrl.orEmpty(),
+            aspectWidth = aspectWidth,
+            aspectHeight = aspectHeight,
+          ),
+        )
+      } catch (error: Throwable) {
+        promise.reject("E_CONFIGURE_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun enterVideoCallPictureInPicture(promise: Promise) {
+    appContext.runOnUiQueueThread {
+      try {
+        val context = appContext.currentActivity ?: appContext
+        promise.resolve(CallPictureInPictureActivity.openForCurrentCall(context))
+      } catch (error: Throwable) {
+        promise.reject("E_ENTER_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun isInPictureInPictureMode(promise: Promise) {
+    promise.resolve(CallPictureInPictureActivity.isActive())
+  }
+
+  @ReactMethod
+  fun closeCallPictureInPictureIfActive(promise: Promise) {
+    appContext.runOnUiQueueThread {
+      try {
+        promise.resolve(CallPictureInPictureActivity.closeIfActive())
+      } catch (error: Throwable) {
+        promise.reject("E_CLOSE_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun addListener(eventName: String) = Unit
+
+  @ReactMethod
+  fun removeListeners(count: Int) = Unit
+
+  @ReactMethod
   fun showIncomingCall(callData: com.facebook.react.bridge.ReadableMap, promise: Promise) {
     try {
       val callId = try {

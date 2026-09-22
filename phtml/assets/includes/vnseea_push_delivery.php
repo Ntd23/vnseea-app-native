@@ -2298,6 +2298,7 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
     {
         $recipient_id = (int)$recipient_id;
         $call_type = $call_type === 'audio' ? 'audio' : 'video';
+        $allow_voip = $allow_voip && !$is_control;
         $call_id = !empty($notification_data['call_id'])
             ? (string)$notification_data['call_id']
             : 'unknown';

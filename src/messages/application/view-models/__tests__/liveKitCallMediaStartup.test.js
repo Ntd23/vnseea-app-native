@@ -8,6 +8,19 @@ function read(relativePath) {
 }
 
 describe('LiveKit call media startup resilience', () => {
+  it('guards late subscriber offers while the LiveKit engine is closing', () => {
+    const packageJson = JSON.parse(read('package.json'));
+    const liveKitClientPatch = read('patches/livekit-client@2.19.2.patch');
+
+    expect(packageJson.pnpm?.patchedDependencies?.['livekit-client@2.19.2']).toBe(
+      'patches/livekit-client@2.19.2.patch',
+    );
+    expect(liveKitClientPatch).toContain(
+      'subscriber_offer_ignored_during_engine_close',
+    );
+    expect(liveKitClientPatch).toContain('this.isClosed');
+  });
+
   it('warns the caller when every delivery channel fails and clears on join', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
@@ -320,7 +333,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(finishBlock).toContain('stopAudioSession: !isIosNativeCall');
   });
 
-  it('releases the iOS direct-call audio owner on connect failure and final room disconnect', () => {
+  it('closes the backend call on final room disconnect and preserves transient participant reconnects', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
@@ -354,9 +367,49 @@ describe('LiveKit call media startup resilience', () => {
     );
 
     expect(disconnectedBlock).toContain('activeRoomRef.current !== nextRoom');
-    expect(disconnectedBlock).toContain('finishSession({');
+    expect(disconnectedBlock).toContain("endCall('ended')");
+    expect(disconnectedBlock).not.toContain('finishSession({');
     expect(connectCatchBlock).toContain('setIosVoiceCallAudioActive(false');
     expect(connectCatchBlock).toContain('endNativeCall(callUuid)');
+
+    const participantConnectedIndex = connectBlock.indexOf(
+      'const handleParticipantConnected =',
+    );
+    const participantDisconnectedIndex = connectBlock.indexOf(
+      'const handleParticipantDisconnected =',
+      participantConnectedIndex,
+    );
+    const trackPublishedIndex = connectBlock.indexOf(
+      'const handleTrackPublished =',
+      participantDisconnectedIndex,
+    );
+    const participantConnectedBlock = connectBlock.slice(
+      participantConnectedIndex,
+      participantDisconnectedIndex,
+    );
+    const participantDisconnectedBlock = connectBlock.slice(
+      participantDisconnectedIndex,
+      trackPublishedIndex,
+    );
+
+    expect(source).toContain(
+      'const REMOTE_PARTICIPANT_RECONNECT_GRACE_MS = 15_000;',
+    );
+    expect(source).toContain('remoteParticipantDisconnectTimerRef');
+    expect(participantConnectedBlock).toContain(
+      'clearRemoteParticipantDisconnectTimer();',
+    );
+    expect(participantConnectedBlock).toContain(
+      'hasRemoteParticipant: true',
+    );
+    expect(participantDisconnectedBlock).toContain(
+      'remoteParticipantDisconnectTimerRef.current = setTimeout',
+    );
+    expect(participantDisconnectedBlock).toContain("endCall('ended')");
+    expect(participantDisconnectedBlock).not.toContain(
+      'closeSentRef.current = true',
+    );
+    expect(participantDisconnectedBlock).not.toContain('finishSession();');
   });
 
   it('uses selective subscription for every manual call room', () => {

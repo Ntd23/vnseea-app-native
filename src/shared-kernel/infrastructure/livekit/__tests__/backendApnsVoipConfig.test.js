@@ -55,6 +55,9 @@ describe('backend APNs VoIP config wiring', () => {
 
   it('routes direct and group call VoIP sends through the shared helper', () => {
     const livekit = read('phtml/api/v2/endpoints/livekit.php');
+    const delivery = read(
+      'phtml/assets/includes/vnseea_push_delivery.php',
+    );
     expect(
       fs.existsSync(
         path.join(
@@ -68,13 +71,10 @@ describe('backend APNs VoIP config wiring', () => {
     );
     const groupCall = read('phtml/api/v2/endpoints/group_call.php');
 
-    expect(directCallService).toContain(
-      "Wo_ApiSendApnsVoipPush($recipient, $notification_data, $caller_name, $call_type, 'direct')",
-    );
+    expect(directCallService).toContain('VNSEEA_SendImmediateCallPush(');
+    expect(delivery).toContain('VNSEEA_PrepareApnsVoipCallRequest(');
     expect(livekit).toContain('Wo_SendCanonicalLiveKitCallPush(');
-    expect(groupCall).toContain(
-      "Wo_ApiSendApnsVoipPush($recipient, $notification_data, $display_name, $call_type, 'group')",
-    );
+    expect(groupCall).toContain('VNSEEA_SendImmediateCallPush(');
     expect(directCallService).not.toContain(
       'https://api.push.apple.com/3/device/',
     );
@@ -82,15 +82,24 @@ describe('backend APNs VoIP config wiring', () => {
     expect(groupCall).not.toContain('https://api.push.apple.com/3/device/');
   });
 
-  it('sends a direct VoIP close push when a LiveKit call is cancelled, declined, ended, or no-answer', () => {
+  it('keeps terminal call updates off PushKit and uses the regular push channel', () => {
     const livekit = read('phtml/api/v2/endpoints/livekit.php');
+    const delivery = read(
+      'phtml/assets/includes/vnseea_push_delivery.php',
+    );
 
-    expect(livekit).toContain('function Wo_ApiLiveKitSendCloseVoipPush');
+    expect(livekit).toContain('function Wo_ApiLiveKitSendClosePush');
     expect(livekit).toContain("'event_type' => 'livekit_call_closed'");
     expect(livekit).toContain("'status' => $final_status");
     expect(livekit).toContain("'closed_by' => (string) $actor_id");
-    expect(livekit).toContain('Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id)');
-    expect(livekit).toContain("Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']))");
-    expect(livekit).toContain("Wo_ApiLiveKitDebugLog('close_voip_push'");
+    expect(livekit).toContain(
+      'Wo_ApiLiveKitSendClosePush($call_source, $call_type, $final_status, $actor_id)',
+    );
+    expect(livekit).toContain(
+      "Wo_ApiLiveKitSendClosePush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']))",
+    );
+    expect(livekit).toContain("Wo_ApiLiveKitDebugLog('close_push'");
+    expect(livekit).not.toContain('VNSEEA_SendImmediateVoipEvent(');
+    expect(delivery).toContain('$allow_voip = $allow_voip && !$is_control;');
   });
 });

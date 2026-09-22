@@ -169,6 +169,9 @@ type IosVoiceAudioStage =
 const OUTGOING_RING_TIMEOUT_MS = 43_000;
 const OUTGOING_ANSWER_WATCHDOG_INTERVAL_MS = 650;
 const CONNECTED_CALL_SYNC_INTERVAL_MS = 2_000;
+const REMOTE_PARTICIPANT_RECONNECT_GRACE_MS = 15_000;
+const REMOTE_PARTICIPANT_RECONNECT_MESSAGE =
+  'Đang kết nối lại với đối phương...';
 const LIVEKIT_CALL_DATA_TOPIC = 'vnseea-call-event';
 const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 const CALL_MEDIA_ENABLE_TIMEOUT_MS = 7_000;
@@ -1900,6 +1903,9 @@ export function LiveKitCallSessionProvider({
   const connectPayloadPromiseRef = useRef<Promise<void> | null>(null);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const answerWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const remoteParticipantDisconnectTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const pendingRemoteSubscriptionsRef = useRef(
     new Map<string, PendingRemoteSubscription>(),
   );
@@ -1945,6 +1951,13 @@ export function LiveKitCallSessionProvider({
     if (answerWatchdogRef.current) clearInterval(answerWatchdogRef.current);
     answerWatchdogRef.current = null;
     isAnswerWatchdogCheckingRef.current = false;
+  }, []);
+
+  const clearRemoteParticipantDisconnectTimer = useCallback(() => {
+    if (remoteParticipantDisconnectTimerRef.current) {
+      clearTimeout(remoteParticipantDisconnectTimerRef.current);
+    }
+    remoteParticipantDisconnectTimerRef.current = null;
   }, []);
 
   const clearRemoteTrackSubscriptionTimeout = useCallback(
@@ -2081,6 +2094,7 @@ export function LiveKitCallSessionProvider({
   );
 
   const disconnectActiveRoom = useCallback(() => {
+    clearRemoteParticipantDisconnectTimer();
     clearAllRemoteTrackSubscriptionTimeouts();
     roomEventCleanupRef.current?.();
     roomEventCleanupRef.current = null;
@@ -2088,7 +2102,10 @@ export function LiveKitCallSessionProvider({
     activeRoomRef.current = null;
     setActiveRoom(null);
     disconnectRoomSafely(room);
-  }, [clearAllRemoteTrackSubscriptionTimeouts]);
+  }, [
+    clearAllRemoteTrackSubscriptionTimeouts,
+    clearRemoteParticipantDisconnectTimer,
+  ]);
 
   const durationSeconds = useCallback(() => {
     const current = sessionRef.current;
@@ -2610,12 +2627,15 @@ export function LiveKitCallSessionProvider({
         ) {
           return;
         }
-        finishSession({
-          phase: 'error',
-          error: reason
-            ? `Kết nối media bị ngắt: ${String(reason)}.`
-            : 'Kết nối media bị ngắt.',
+        clearRemoteParticipantDisconnectTimer();
+        logCallDebug('room_terminal_disconnect_closing', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          reason: reason ? String(reason) : '',
         });
+        endCall('ended').catch(() => undefined);
       };
       const handleMediaDeviceError = (error: Error) => {
         const failure = MediaDeviceFailure.getFailure(error);
@@ -2673,6 +2693,8 @@ export function LiveKitCallSessionProvider({
       const handleParticipantConnected = (
         participant: RemoteParticipantLike,
       ) => {
+        clearRemoteParticipantDisconnectTimer();
+        const activeSession = sessionRef.current;
         logCallDebug('participant_connected', {
           callId,
           callType,
@@ -2682,6 +2704,14 @@ export function LiveKitCallSessionProvider({
           participantSid: participant.sid,
           participantName: participant.name,
           remoteParticipants: nextRoom.remoteParticipants.size,
+        });
+        patchSessionForCurrentCall(nextRoom, callId, callUuid, {
+          hasRemoteParticipant: true,
+          mediaErrorText:
+            activeSession?.mediaErrorText ===
+            REMOTE_PARTICIPANT_RECONNECT_MESSAGE
+              ? ''
+              : activeSession?.mediaErrorText ?? '',
         });
         requestRemoteParticipantTrackSubscriptions({
           participant,
@@ -2696,11 +2726,58 @@ export function LiveKitCallSessionProvider({
           isSubscriptionPending: isRemoteTrackSubscriptionPending,
         });
       };
-      const handleParticipantDisconnected = () => {
+      const handleParticipantDisconnected = (
+        participant?: RemoteParticipantLike,
+      ) => {
         const activeSession = sessionRef.current;
-        if (!activeSession || closeSentRef.current) return;
-        closeSentRef.current = true;
-        finishSession();
+        if (
+          activeRoomRef.current !== nextRoom ||
+          !activeSession ||
+          closeSentRef.current ||
+          isFinalPhase(activeSession.phase)
+        ) {
+          return;
+        }
+
+        clearRemoteParticipantDisconnectTimer();
+        patchSessionForCurrentCall(nextRoom, callId, callUuid, {
+          hasRemoteParticipant: false,
+          mediaErrorText: REMOTE_PARTICIPANT_RECONNECT_MESSAGE,
+        });
+        logCallDebug('remote_participant_disconnect_grace_started', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          participantIdentity: participant?.identity,
+          participantSid: participant?.sid,
+          graceMs: REMOTE_PARTICIPANT_RECONNECT_GRACE_MS,
+        });
+
+        remoteParticipantDisconnectTimerRef.current = setTimeout(() => {
+          remoteParticipantDisconnectTimerRef.current = null;
+          const latestSession = sessionRef.current;
+          if (
+            activeRoomRef.current !== nextRoom ||
+            !latestSession ||
+            latestSession.callId !== callId ||
+            latestSession.nativeCallUuid !== callUuid ||
+            closeSentRef.current ||
+            isFinalPhase(latestSession.phase) ||
+            nextRoom.remoteParticipants.size > 0
+          ) {
+            return;
+          }
+
+          logCallDebug('remote_participant_disconnect_timeout', {
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+            graceMs: REMOTE_PARTICIPANT_RECONNECT_GRACE_MS,
+          });
+          endCall('ended').catch(() => undefined);
+        }, REMOTE_PARTICIPANT_RECONNECT_GRACE_MS);
       };
       const handleTrackPublished = (
         publication?: RemoteTrackPublicationLike,
@@ -3059,7 +3136,9 @@ export function LiveKitCallSessionProvider({
     },
     [
       clearRemoteTrackSubscriptionTimeout,
+      clearRemoteParticipantDisconnectTimer,
       disconnectActiveRoom,
+      endCall,
       finishSession,
       isRemoteTrackSubscriptionPending,
       patchSession,
@@ -3695,95 +3774,78 @@ export function LiveKitCallSessionProvider({
     return () => clearInterval(interval);
   }, [durationSeconds, patchSession]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      async function syncCallStatus() {
-        const current = sessionRef.current;
-        if (!current || !current.callId || isFinalPhase(current.phase)) {
-          return;
-        }
+  const syncCallStatus = useCallback(async () => {
+    const current = sessionRef.current;
+    if (!current || !current.callId || isFinalPhase(current.phase)) return;
+    if (current.phase === 'initializing' || current.phase === 'answering')
+      return;
 
-        // Skip if the call is still initializing (no callId yet)
-        // or if we're in the process of answering (brief transient phase)
-        if (current.phase === 'initializing' || current.phase === 'answering') {
-          return;
-        }
-
-        const status = await repository
-          .checkCall({
-            callId: current.callId,
-            callType: current.callType,
-          })
-          .catch(checkError => {
-            logCallDebug('check_error', {
-              callId: current.callId,
-              callType: current.callType,
-              phase: current.phase,
-              error: serializeCallDebugError(checkError),
-            });
-            return null;
-          });
-        if (!status) return;
-        logCallDebug('check_response', {
+    const status = await repository
+      .checkCall({
+        callId: current.callId,
+        callType: current.callType,
+      })
+      .catch(checkError => {
+        logCallDebug('check_error', {
           callId: current.callId,
           callType: current.callType,
           phase: current.phase,
-          status: status.status,
-          active: status.active,
-          finished: status.finished,
-          startedAt: status.startedAt,
-          startedAtMs: status.startedAtMs,
-          elapsedSeconds: status.elapsedSeconds,
-          elapsedMs: status.elapsedMs,
-          serverNow: status.serverNow,
-          serverNowMs: status.serverNowMs,
+          error: serializeCallDebugError(checkError),
         });
+        return null;
+      });
+    if (!status) return;
+    logCallDebug('check_response', {
+      callId: current.callId,
+      callType: current.callType,
+      phase: current.phase,
+      status: status.status,
+      active: status.active,
+      finished: status.finished,
+      startedAt: status.startedAt,
+      startedAtMs: status.startedAtMs,
+      elapsedSeconds: status.elapsedSeconds,
+      elapsedMs: status.elapsedMs,
+      serverNow: status.serverNow,
+      serverNowMs: status.serverNowMs,
+    });
 
-        if (status.finished) {
-          closeSentRef.current = true;
-          finishSession();
-          return;
-        }
+    if (
+      status.finished ||
+      isTerminalCallStatus(status.status) ||
+      (status.status === 'answered' && status.endpointOwned === false)
+    ) {
+      closeSentRef.current = true;
+      finishSession();
+      return;
+    }
 
-        if (status.status === 'answered' && status.endpointOwned === false) {
-          closeSentRef.current = true;
-          finishSession();
-          return;
-        }
+    if (current.phase === 'connected' && status.status === 'answered') {
+      const measuredAt = Date.now();
+      const startedAt = resolveLocalStartedAtFromServer(
+        status,
+        status.startedAt,
+        measuredAt,
+        current.startedAt,
+      );
+      if (Math.abs(startedAt - current.startedAt) < 1200) return;
+      patchSession({
+        startedAt,
+        elapsedSeconds: Math.max(
+          0,
+          Math.floor((Date.now() - startedAt) / 1000),
+        ),
+      });
+    }
+  }, [finishSession, patchSession, repository]);
 
-        if (isTerminalCallStatus(status.status)) {
-          closeSentRef.current = true;
-          finishSession();
-          return;
-        }
-
-        // Timer drift correction only applies during connected phase
-        if (current.phase === 'connected' && status.status === 'answered') {
-          const measuredAt = Date.now();
-          const startedAt = resolveLocalStartedAtFromServer(
-            status,
-            status.startedAt,
-            measuredAt,
-            current.startedAt,
-          );
-          if (Math.abs(startedAt - current.startedAt) < 1200) {
-            return;
-          }
-          patchSession({
-            startedAt,
-            elapsedSeconds: Math.max(
-              0,
-              Math.floor((Date.now() - startedAt) / 1000),
-            ),
-          });
-        }
-      }
-
+  useEffect(() => {
+    const interval = setInterval(() => {
       syncCallStatus().catch(() => undefined);
     }, CONNECTED_CALL_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [finishSession, patchSession, repository]);
+  }, [syncCallStatus]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
@@ -3791,6 +3853,7 @@ export function LiveKitCallSessionProvider({
       const current = sessionRef.current;
       connectLiveKitCallRealtime();
       if (!current) return;
+      syncCallStatus().catch(() => undefined);
       if (current.phase === 'connected') {
         if (Platform.OS === 'ios' && usesNativeCallUi(current.nativeCallUuid)) {
           ensureIosCallKitAudioSessionStarted({
@@ -3876,7 +3939,7 @@ export function LiveKitCallSessionProvider({
     });
 
     return () => subscription.remove();
-  }, [finishSession, joinAnsweredOutgoingCall, repository]);
+  }, [finishSession, joinAnsweredOutgoingCall, repository, syncCallStatus]);
 
   useEffect(() => {
     return () => {

@@ -51,6 +51,9 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
       val context: Context = event.context ?: return
       Log.i("LiveKitCallPush", "dismiss incoming call event_type=$eventType status=$status call_id=$callId")
       LiveKitCallNativeActions.dismissIncomingCall(context, callId)
+      if (shouldEndActiveCall(eventType, status)) {
+        closeActiveCallPresentation(context)
+      }
       return
     }
     if (eventType != "livekit_call" && eventType != "livekit_group_call") {
@@ -239,5 +242,27 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
       normalizedStatus == "no_answer" ||
       normalizedStatus == "missed" ||
       normalizedStatus == "closed"
+  }
+
+  private fun shouldEndActiveCall(eventType: String, status: String): Boolean {
+    val normalizedEvent = eventType.lowercase()
+    val normalizedStatus = status.lowercase()
+    return normalizedEvent == "livekit_call_closed" ||
+      normalizedEvent == "livekit_call_cancelled" ||
+      normalizedEvent == "livekit_call_canceled" ||
+      normalizedEvent == "livekit_call_declined" ||
+      normalizedEvent == "livekit_group_call_closed" ||
+      normalizedStatus == "ended" ||
+      normalizedStatus == "cancelled" ||
+      normalizedStatus == "canceled" ||
+      normalizedStatus == "declined" ||
+      normalizedStatus == "no_answer" ||
+      normalizedStatus == "missed" ||
+      normalizedStatus == "closed"
+  }
+
+  private fun closeActiveCallPresentation(context: Context) {
+    LiveKitCallForegroundService.stop(context)
+    CallPictureInPictureActivity.closeIfActive()
   }
 }

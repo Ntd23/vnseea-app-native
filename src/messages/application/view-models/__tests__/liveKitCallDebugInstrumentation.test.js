@@ -204,7 +204,10 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(source).toContain('function shouldUseIosDirectCallAudioGate');
     expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
     expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
-    expect(connectBlock).toContain('await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)');
+    expect(connectBlock).toContain('await nextRoom.connect(');
+    expect(connectBlock).toContain('nextPayload.wsUrl,');
+    expect(connectBlock).toContain('nextPayload.token,');
+    expect(connectBlock).toContain('LIVEKIT_CONNECT_OPTIONS,');
     expect(connectBlock).toContain('requestRemoteParticipantTrackSubscriptions');
     expect(connectBlock).toContain('RoomEvent.TrackSubscribed');
     expect(connectBlock).toContain('publishLocalCallMedia({');

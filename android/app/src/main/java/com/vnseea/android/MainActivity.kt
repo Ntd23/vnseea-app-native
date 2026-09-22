@@ -9,10 +9,10 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.vnseea.android.call.CallPictureInPictureActivity
 import com.vnseea.android.messages.MessagePushOpenStore
 
 class MainActivity : ReactActivity() {
-
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
    * rendering of the component.
@@ -40,6 +40,27 @@ class MainActivity : ReactActivity() {
     super.onNewIntent(intent)
     setIntent(intent)
     captureMessagePushOpen(intent)
+  }
+
+  fun setVideoCallPictureInPictureEnabled(
+    enabled: Boolean,
+    aspectWidth: Int,
+    aspectHeight: Int,
+  ): Boolean = CallPictureInPictureActivity.setEnabled(
+    enabled = enabled,
+    aspectWidth = aspectWidth,
+    aspectHeight = aspectHeight,
+  )
+
+  fun isCallPictureInPictureActive(): Boolean =
+    CallPictureInPictureActivity.isActive()
+
+  fun closeCallPictureInPictureIfActive(): Boolean =
+    CallPictureInPictureActivity.closeIfActive()
+
+  override fun onUserLeaveHint() {
+    super.onUserLeaveHint()
+    CallPictureInPictureActivity.openForCurrentCall(this)
   }
 
   /**

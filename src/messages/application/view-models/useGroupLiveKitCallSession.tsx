@@ -1662,31 +1662,31 @@ export function GroupLiveKitCallSessionProvider({
     return () => clearInterval(interval);
   }, [patchSession]);
 
+  const syncGroupCallStatus = useCallback(async () => {
+    const current = sessionRef.current;
+    if (!current?.callId || current.phase !== 'connected') return;
+    const result = await repository
+      .syncCall({ callId: current.callId })
+      .catch(() => null);
+    if (!result) return;
+    if (result.endpointOwned === false || result.call.status !== 'active') {
+      finishSession('sync_inactive');
+      return;
+    }
+    patchSession({
+      group: result.group,
+      progress: result.progress,
+    });
+    mergeServerParticipantMetadata(result.participants);
+  }, [finishSession, mergeServerParticipantMetadata, patchSession, repository]);
+
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const current = sessionRef.current;
-      if (!current?.callId || current.phase !== 'connected') return;
-      const result = await repository
-        .syncCall({ callId: current.callId })
-        .catch(() => null);
-      if (!result) return;
-      if (result.endpointOwned === false) {
-        finishSession('sync_inactive');
-        return;
-      }
-      if (result.call.status !== 'active') {
-        finishSession('sync_inactive');
-        return;
-      }
-      patchSession({
-        group: result.group,
-        progress: result.progress,
-      });
-      mergeServerParticipantMetadata(result.participants);
+    const interval = setInterval(() => {
+      syncGroupCallStatus().catch(() => undefined);
     }, GROUP_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [finishSession, mergeServerParticipantMetadata, patchSession, repository]);
+  }, [syncGroupCallStatus]);
 
   useEffect(() => {
     const current = session;
@@ -1701,6 +1701,7 @@ export function GroupLiveKitCallSessionProvider({
       if (nextState !== 'active') return;
       const current = sessionRef.current;
       if (!current || current.phase !== 'connected') return;
+      syncGroupCallStatus().catch(() => undefined);
       if (Platform.OS === 'ios' && usesNativeCallUi(current.nativeCallUuid)) {
         return;
       }
@@ -1723,7 +1724,7 @@ export function GroupLiveKitCallSessionProvider({
     });
 
     return () => subscription.remove();
-  }, []);
+  }, [syncGroupCallStatus]);
 
   useEffect(() => {
     return () => {
