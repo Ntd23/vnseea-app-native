@@ -60,8 +60,8 @@ describe('backend LiveKit call payload and native action state', () => {
     expect(sender).toContain("'ring_mode' => $ring_mode");
     expect(sender).toContain("'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/group_call'");
     expect(sender).toContain("$notification_data['action_token'] = Wo_ApiGroupCallSignActionToken");
-    expect(sender).toContain("if ($ring_mode === 'fullscreen')");
-    expect(sender).toContain('Wo_ApiGroupCallSendVoipPush(');
+    expect(sender).toContain("$ring_mode === 'fullscreen'");
+    expect(sender).toContain('VNSEEA_SendImmediateCallPush(');
   });
 
   it('supports native action answer, decline, and close for direct calls', () => {
@@ -69,11 +69,17 @@ describe('backend LiveKit call payload and native action state', () => {
     const nativeAction = source.slice(source.indexOf("else if ($action == 'native_action')"));
 
     expect(nativeAction).toContain("$call_action == 'answer'");
-    expect(nativeAction).toContain("Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id)");
+    expect(nativeAction).toContain(
+      'Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id, $endpoint_id)',
+    );
     expect(nativeAction).toContain("$call_action == 'decline'");
-    expect(nativeAction).toContain("Wo_ApiLiveKitCloseCall($call_id, $call_type, 'declined', 0, $actor_id)");
+    expect(nativeAction).toContain(
+      "Wo_ApiLiveKitCloseCall($call_id, $call_type, 'declined', 0, $actor_id, $endpoint_id)",
+    );
     expect(nativeAction).toContain("$call_action == 'close'");
-    expect(nativeAction).toContain("Wo_ApiLiveKitCloseCall($call_id, $call_type, 'ended', $duration, $actor_id)");
+    expect(nativeAction).toContain(
+      "Wo_ApiLiveKitCloseCall($call_id, $call_type, 'ended', $duration, $actor_id, $endpoint_id)",
+    );
   });
 
   it('supports native action answer, decline, and close for group calls', () => {
@@ -97,5 +103,24 @@ describe('backend LiveKit call payload and native action state', () => {
     expect(direct).toContain("Wo_ApiLiveKitPublishRealtime($final_status == 'declined' ? 'declined' : 'closed'");
     expect(group).toContain("Wo_ApiGroupCallPublishRealtime('sync'");
     expect(group).toContain("Wo_ApiGroupCallPublishRealtime(!empty($group_call['status']) && $group_call['status'] === 'ended' ? 'closed' : 'sync'");
+  });
+
+  it('sends terminal call controls silently while retaining iOS PushKit delivery', () => {
+    const direct = read('phtml/api/v2/endpoints/livekit.php');
+    const pushDelivery = read(
+      'phtml/assets/includes/vnseea_push_delivery.php',
+    );
+
+    expect(direct).toContain("array('priority' => 5, 'ttl' => 20)");
+    expect(direct).toContain("'direct',\n            true,");
+    expect(pushDelivery).toContain("$request_data['silent'] = true");
+    expect(pushDelivery).toContain("$request['content_available'] = true");
+    expect(pushDelivery).toContain(
+      "$request['apns_push_type_override'] = 'background'",
+    );
+    expect(pushDelivery).toContain("? array('content-available' => 1)");
+    expect(pushDelivery).not.toContain(
+      'Cuộc gọi đã được xử lý trên thiết bị khác',
+    );
   });
 });

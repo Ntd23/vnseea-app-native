@@ -280,7 +280,7 @@ function Wo_ApiLiveKitSendClosePush($call_source, $call_type, $final_status, $ac
             $display_name,
             $call_type,
             'direct',
-            false,
+            true,
             array('priority' => 5, 'ttl' => 20),
             '',
             true

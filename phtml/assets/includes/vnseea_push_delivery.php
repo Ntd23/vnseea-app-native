@@ -1929,26 +1929,34 @@ if (!function_exists('VNSEEA_BuildOneSignalCallRequestPayload')) {
             $collapse_id = substr((string)$request_data['collapse_id'], 0, 64);
         }
 
+        $is_silent = !empty($request_data['silent']);
         $request = array(
             'app_id' => (string)$app_id,
             'include_subscription_ids' => array((string)$token),
             'idempotency_key' => (string)$idempotency_key,
-            'headings' => array(
-                'en' => !empty($payload['title']) ? $payload['title'] : 'VNSEEA',
-                'vi' => !empty($payload['title']) ? $payload['title'] : 'VNSEEA'
-            ),
-            'contents' => array(
-                'en' => !empty($payload['body']) ? $payload['body'] : 'Incoming call',
-                'vi' => !empty($payload['body']) ? $payload['body'] : 'Cuoc goi den'
-            ),
             'data' => $payload,
             'priority' => $priority,
             'ttl' => $ttl,
             'collapse_id' => $collapse_id
         );
-        if ($platform === 'android') {
-            $request['existing_android_channel_id'] = 'vnseea_calls_fullscreen_v6_system_ringtone';
+        if ($is_silent) {
+            $request['content_available'] = true;
+            if ($platform === 'ios') {
+                $request['apns_push_type_override'] = 'background';
+            }
         } else {
+            $request['headings'] = array(
+                'en' => !empty($payload['title']) ? $payload['title'] : 'VNSEEA',
+                'vi' => !empty($payload['title']) ? $payload['title'] : 'VNSEEA'
+            );
+            $request['contents'] = array(
+                'en' => !empty($payload['body']) ? $payload['body'] : 'Incoming call',
+                'vi' => !empty($payload['body']) ? $payload['body'] : 'Cuoc goi den'
+            );
+        }
+        if (!$is_silent && $platform === 'android') {
+            $request['existing_android_channel_id'] = 'vnseea_calls_fullscreen_v6_system_ringtone';
+        } elseif (!$is_silent) {
             $request['ios_sound'] = 'default';
         }
         return $request;
@@ -2085,16 +2093,22 @@ if (!function_exists('VNSEEA_PrepareApnsVoipCallRequest')) {
             'iat' => time()
         ), $private_key, 'ES256', $key_id);
         $body_prefix = $context === 'group' ? 'Group ' : '';
-        $payload = array_merge($notification_data, array(
-            'aps' => array(
+        $is_control = !empty($notification_data['event_type']) &&
+            strpos((string)$notification_data['event_type'], 'livekit_') === 0 &&
+            (strpos((string)$notification_data['event_type'], '_closed') !== false ||
+                strpos((string)$notification_data['event_type'], '_cancel') !== false ||
+                strpos((string)$notification_data['event_type'], '_declined') !== false);
+        $aps = $is_control
+            ? array('content-available' => 1)
+            : array(
                 'alert' => array(
                     'title' => $display_name,
                     'body' => $body_prefix . ($call_type === 'video' ? 'Video call' : 'Audio call')
                 ),
                 'sound' => 'default',
                 'content-available' => 1
-            )
-        ));
+            );
+        $payload = array_merge($notification_data, array('aps' => $aps));
         $endpoint = $environment === 'sandbox'
             ? 'https://api.sandbox.push.apple.com/3/device/'
             : 'https://api.push.apple.com/3/device/';
@@ -2298,7 +2312,7 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
     {
         $recipient_id = (int)$recipient_id;
         $call_type = $call_type === 'audio' ? 'audio' : 'video';
-        $allow_voip = $allow_voip && !$is_control;
+        $allow_voip = (bool)$allow_voip;
         $call_id = !empty($notification_data['call_id'])
             ? (string)$notification_data['call_id']
             : 'unknown';
@@ -2319,6 +2333,9 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
             $derived_request_data,
             is_array($request_data) ? $request_data : array()
         );
+        if ($is_control) {
+            $request_data['silent'] = true;
+        }
         if ($expires_at > 0) {
             $request_data['ttl'] = max(1, min((int)$request_data['ttl'], $expires_at - time()));
         }
@@ -2342,9 +2359,9 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
             ));
             $payload = array_merge($notification_data, array(
                 'client_endpoint_id' => $target_endpoint_id,
-                'title' => $display_name !== '' ? $display_name : 'VNSEEA',
+                'title' => $is_control ? '' : ($display_name !== '' ? $display_name : 'VNSEEA'),
                 'body' => $is_control
-                    ? 'Cuộc gọi đã được xử lý trên thiết bị khác'
+                    ? ''
                     : ($context === 'group'
                     ? ($call_type === 'video' ? 'Cuộc gọi nhóm video đến' : 'Cuộc gọi nhóm thoại đến')
                     : ($call_type === 'video' ? 'Cuộc gọi video đến' : 'Cuộc gọi thoại đến'))

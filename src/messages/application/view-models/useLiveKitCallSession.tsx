@@ -3776,9 +3776,11 @@ export function LiveKitCallSessionProvider({
 
   const syncCallStatus = useCallback(async () => {
     const current = sessionRef.current;
-    if (!current || !current.callId || isFinalPhase(current.phase)) return;
+    if (!current || !current.callId || isFinalPhase(current.phase)) {
+      return 'inactive' as const;
+    }
     if (current.phase === 'initializing' || current.phase === 'answering')
-      return;
+      return 'skipped' as const;
 
     const status = await repository
       .checkCall({
@@ -3794,7 +3796,7 @@ export function LiveKitCallSessionProvider({
         });
         return null;
       });
-    if (!status) return;
+    if (!status) return 'unavailable' as const;
     logCallDebug('check_response', {
       callId: current.callId,
       callType: current.callType,
@@ -3817,7 +3819,7 @@ export function LiveKitCallSessionProvider({
     ) {
       closeSentRef.current = true;
       finishSession();
-      return;
+      return 'inactive' as const;
     }
 
     if (current.phase === 'connected' && status.status === 'answered') {
@@ -3828,15 +3830,17 @@ export function LiveKitCallSessionProvider({
         measuredAt,
         current.startedAt,
       );
-      if (Math.abs(startedAt - current.startedAt) < 1200) return;
-      patchSession({
-        startedAt,
-        elapsedSeconds: Math.max(
-          0,
-          Math.floor((Date.now() - startedAt) / 1000),
-        ),
-      });
+      if (Math.abs(startedAt - current.startedAt) >= 1200) {
+        patchSession({
+          startedAt,
+          elapsedSeconds: Math.max(
+            0,
+            Math.floor((Date.now() - startedAt) / 1000),
+          ),
+        });
+      }
     }
+    return 'active' as const;
   }, [finishSession, patchSession, repository]);
 
   useEffect(() => {
@@ -3853,58 +3857,71 @@ export function LiveKitCallSessionProvider({
       const current = sessionRef.current;
       connectLiveKitCallRealtime();
       if (!current) return;
-      syncCallStatus().catch(() => undefined);
       if (current.phase === 'connected') {
-        if (Platform.OS === 'ios' && usesNativeCallUi(current.nativeCallUuid)) {
-          ensureIosCallKitAudioSessionStarted({
-            callId: current.callId,
-            callType: current.callType,
-            callUuid: current.nativeCallUuid,
-            roomName: current.payload?.call.roomName ?? '',
-            stage: 'app_foreground',
-            preferSpeakerOutput: current.audioOutputMode === 'speaker',
-          })
-            .then(() => {
-              const latest = sessionRef.current;
-              if (
-                !latest ||
-                latest.callId !== current.callId ||
-                latest.phase !== 'connected'
-              ) {
-                return undefined;
-              }
-              return applyCallAudioOutputMode(
-                activeRoomRef.current,
-                latest.audioOutputMode,
-              );
-            })
-            .catch(() => undefined);
-          logIosAudioDeviceState({
-            callId: current.callId,
-            callType: current.callType,
-            callUuid: current.nativeCallUuid,
-            roomName: current.payload?.call.roomName ?? '',
-            stage: 'app_foreground',
-            checkpoint: 'app_foreground',
-          });
-        } else {
-          AudioSession.startAudioSession()
-            .then(() => {
-              const latest = sessionRef.current;
-              if (
-                !latest ||
-                latest.callId !== current.callId ||
-                latest.phase !== 'connected'
-              ) {
-                return undefined;
-              }
-              return applyCallAudioOutputMode(
-                activeRoomRef.current,
-                latest.audioOutputMode,
-              );
-            })
-            .catch(() => undefined);
-        }
+        (async () => {
+          const syncResult = await syncCallStatus().catch(
+            () => 'unavailable' as const,
+          );
+          if (syncResult !== 'active') return;
+
+          const latest = sessionRef.current;
+          if (
+            !latest ||
+            latest.callId !== current.callId ||
+            latest.phase !== 'connected'
+          ) {
+            return;
+          }
+
+          if (
+            Platform.OS === 'ios' &&
+            usesNativeCallUi(latest.nativeCallUuid)
+          ) {
+            await ensureIosCallKitAudioSessionStarted({
+              callId: latest.callId,
+              callType: latest.callType,
+              callUuid: latest.nativeCallUuid,
+              roomName: latest.payload?.call.roomName ?? '',
+              stage: 'app_foreground',
+              preferSpeakerOutput: latest.audioOutputMode === 'speaker',
+            });
+            const confirmed = sessionRef.current;
+            if (
+              !confirmed ||
+              confirmed.callId !== current.callId ||
+              confirmed.phase !== 'connected'
+            ) {
+              return;
+            }
+            await applyCallAudioOutputMode(
+              activeRoomRef.current,
+              confirmed.audioOutputMode,
+            );
+            logIosAudioDeviceState({
+              callId: confirmed.callId,
+              callType: confirmed.callType,
+              callUuid: confirmed.nativeCallUuid,
+              roomName: confirmed.payload?.call.roomName ?? '',
+              stage: 'app_foreground',
+              checkpoint: 'app_foreground',
+            });
+            return;
+          }
+
+          await AudioSession.startAudioSession();
+          const confirmed = sessionRef.current;
+          if (
+            !confirmed ||
+            confirmed.callId !== current.callId ||
+            confirmed.phase !== 'connected'
+          ) {
+            return;
+          }
+          await applyCallAudioOutputMode(
+            activeRoomRef.current,
+            confirmed.audioOutputMode,
+          );
+        })().catch(() => undefined);
         return;
       }
       if (current.direction !== 'outgoing' || current.phase !== 'ringing') {

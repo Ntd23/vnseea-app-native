@@ -1664,20 +1664,23 @@ export function GroupLiveKitCallSessionProvider({
 
   const syncGroupCallStatus = useCallback(async () => {
     const current = sessionRef.current;
-    if (!current?.callId || current.phase !== 'connected') return;
+    if (!current?.callId || current.phase !== 'connected') {
+      return 'inactive' as const;
+    }
     const result = await repository
       .syncCall({ callId: current.callId })
       .catch(() => null);
-    if (!result) return;
+    if (!result) return 'unavailable' as const;
     if (result.endpointOwned === false || result.call.status !== 'active') {
       finishSession('sync_inactive');
-      return;
+      return 'inactive' as const;
     }
     patchSession({
       group: result.group,
       progress: result.progress,
     });
     mergeServerParticipantMetadata(result.participants);
+    return 'active' as const;
   }, [finishSession, mergeServerParticipantMetadata, patchSession, repository]);
 
   useEffect(() => {
@@ -1701,26 +1704,38 @@ export function GroupLiveKitCallSessionProvider({
       if (nextState !== 'active') return;
       const current = sessionRef.current;
       if (!current || current.phase !== 'connected') return;
-      syncGroupCallStatus().catch(() => undefined);
       if (Platform.OS === 'ios' && usesNativeCallUi(current.nativeCallUuid)) {
+        syncGroupCallStatus().catch(() => undefined);
         return;
       }
-      AudioSession.startAudioSession()
-        .then(() => {
-          const latest = sessionRef.current;
-          if (
-            !latest ||
-            latest.callId !== current.callId ||
-            latest.phase !== 'connected'
-          ) {
-            return undefined;
-          }
-          return applyCallAudioOutputMode(
-            activeRoomRef.current,
-            latest.audioOutputMode,
-          );
-        })
-        .catch(() => undefined);
+      (async () => {
+        const syncResult = await syncGroupCallStatus().catch(
+          () => 'unavailable' as const,
+        );
+        if (syncResult !== 'active') return;
+
+        const latest = sessionRef.current;
+        if (
+          !latest ||
+          latest.callId !== current.callId ||
+          latest.phase !== 'connected'
+        ) {
+          return;
+        }
+        await AudioSession.startAudioSession();
+        const confirmed = sessionRef.current;
+        if (
+          !confirmed ||
+          confirmed.callId !== current.callId ||
+          confirmed.phase !== 'connected'
+        ) {
+          return;
+        }
+        await applyCallAudioOutputMode(
+          activeRoomRef.current,
+          confirmed.audioOutputMode,
+        );
+      })().catch(() => undefined);
     });
 
     return () => subscription.remove();

@@ -1,5 +1,5 @@
 // Description: Coordinates the dedicated Android call PiP activity with active LiveKit tracks.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   NativeEventEmitter,
   NativeModules,
@@ -21,7 +21,7 @@ type CallPictureInPictureNativeModule = {
     localCameraEnabled: boolean,
     localMirror: boolean,
     localStreamUrl: string,
-    remoteStreamUrl: string,
+    remoteStreamUrls: string[],
     aspectWidth: number,
     aspectHeight: number,
   ): Promise<boolean>;
@@ -41,7 +41,7 @@ export type CallPictureInPictureOptions = {
   localStreamUrl: string;
   onEntered?: () => void;
   onRestore?: () => void;
-  remoteStreamUrl: string;
+  remoteStreamUrls: string[];
   shouldEnter: boolean;
 };
 
@@ -59,7 +59,7 @@ export function useCallPictureInPicture(
     localStreamUrl,
     onEntered,
     onRestore,
-    remoteStreamUrl,
+    remoteStreamUrls,
     shouldEnter,
   }: CallPictureInPictureOptions,
 ) {
@@ -67,6 +67,11 @@ export function useCallPictureInPicture(
   const onEnteredRef = useRef(onEntered);
   const onRestoreRef = useRef(onRestore);
   const didRequestEntryRef = useRef(false);
+  const remoteStreamUrlsKey = remoteStreamUrls.join('\u001f');
+  const stableRemoteStreamUrls = useMemo(
+    () => (remoteStreamUrlsKey ? remoteStreamUrlsKey.split('\u001f') : []),
+    [remoteStreamUrlsKey],
+  );
 
   onEnteredRef.current = onEntered;
   onRestoreRef.current = onRestore;
@@ -80,7 +85,7 @@ export function useCallPictureInPicture(
           false,
           false,
           '',
-          '',
+          [],
           aspectWidth,
           aspectHeight,
         )
@@ -137,7 +142,7 @@ export function useCallPictureInPicture(
         localCameraEnabled,
         localMirror,
         localStreamUrl,
-        remoteStreamUrl,
+        stableRemoteStreamUrls,
         aspectWidth,
         aspectHeight,
       )
@@ -164,7 +169,7 @@ export function useCallPictureInPicture(
     localCameraEnabled,
     localMirror,
     localStreamUrl,
-    remoteStreamUrl,
+    stableRemoteStreamUrls,
   ]);
 
   useEffect(() => {

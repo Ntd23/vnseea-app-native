@@ -33,7 +33,7 @@ describe('native call picture-in-picture contract', () => {
     expect(infoPlist).toContain('<string>audio</string>');
   });
 
-  it('renders system PiP as one native pair with equal horizontal halves', () => {
+  it('renders direct and group system PiP with native video grids', () => {
     const host = read(
       'src/messages/presentation/components/LiveKitCallPresentationHost.tsx',
     );
@@ -55,18 +55,29 @@ describe('native call picture-in-picture contract', () => {
     expect(host).toContain('direct.session?.isMinimized');
     expect(host).toContain('direct.restoreCallRoom');
     expect(host).toContain('AndroidSystemCallPictureInPicture');
+    expect(host).toContain('MAX_GROUP_PIP_REMOTE_VIDEOS = 3');
+    expect(host).toContain('remoteStreamURLs: stableRemoteStreamUrls');
+    expect(host).toContain('GroupPipElementInfo implements ElementInfo');
+    expect(host).toContain('pictureInPicture = true');
+    expect(host).toContain('track.observeElementInfo(elementInfo)');
+    expect(host).toContain('track.stopObservingElementInfo(elementInfo)');
     expect(androidPipActivity).toContain('LinearLayout.HORIZONTAL');
+    expect(androidPipActivity).toContain('LinearLayout.VERTICAL');
+    expect(androidPipActivity).toContain('.chunked(2)');
+    expect(androidPipActivity).toContain('addEmptyGridCell(row)');
+    expect(androidPipActivity).toContain('MAX_REMOTE_VIDEOS = 3');
     expect(androidPipActivity).toContain('WebRTCView(reactContext)');
-    expect(androidPipActivity).toContain('remoteVideoView?.setMirror(false)');
-    expect(androidPipActivity).toContain(
-      'localVideoView?.setMirror(current.localMirror)',
-    );
-    expect(androidPipActivity.match(/WebRTCView\(reactContext\)/g)).toHaveLength(
-      2,
-    );
+    expect(androidPipActivity).toContain('it.setMirror(false)');
+    expect(androidPipActivity).toContain('it.setMirror(current.localMirror)');
+    expect(androidPipActivity).toContain('remoteStreamUrls: List<String>');
     expect(packagePatch).toContain('UIStackView');
     expect(packagePatch).toContain('UILayoutConstraintAxisHorizontal');
+    expect(packagePatch).toContain('UILayoutConstraintAxisVertical');
     expect(packagePatch).toContain('UIStackViewDistributionFillEqually');
+    expect(packagePatch).toContain('gridPlaceholderView');
+    expect(packagePatch).toContain('remoteVideoTracks');
+    expect(packagePatch).toContain('remoteStreamURLs?: string[]');
+    expect(packagePatch).toContain('remoteStreamURLs.count < 3');
     expect(packagePatch).toContain('onRestoreRequested');
     expect(packagePatch).toContain('onPIPRestore');
     expect(packagePatch).toContain('onPIPStarted');
@@ -76,7 +87,9 @@ describe('native call picture-in-picture contract', () => {
     expect(packagePatch).toContain('pipActiveRequested');
     expect(packagePatch).toContain('active?: boolean');
     expect(packagePatch).toContain('params.putInt("rotation", rotation)');
-    expect(packagePatch).toContain('public void setStreamURL(String streamURL)');
+    expect(packagePatch).toContain(
+      'public void setStreamURL(String streamURL)',
+    );
     expect(packagePatch).toContain('rotation?: number');
   });
 
@@ -100,15 +113,17 @@ describe('native call picture-in-picture contract', () => {
     expect(host).toContain('const IOS_CALL_PIP_CONTENT_HEIGHT = 720');
     expect(host).toContain('width: IOS_CALL_PIP_CONTENT_WIDTH');
     expect(host).toContain('height: IOS_CALL_PIP_CONTENT_HEIGHT');
-    expect(host).toContain('aspectWidth: CALL_PIP_ASPECT_WIDTH');
-    expect(host).toContain('aspectHeight: CALL_PIP_ASPECT_HEIGHT');
+    expect(host).toContain('aspectWidth = CALL_PIP_ASPECT_WIDTH');
+    expect(host).toContain('aspectHeight = CALL_PIP_ASPECT_HEIGHT');
     expect(hook).toContain('aspectWidth = 3');
     expect(hook).toContain('aspectHeight = 2');
     expect(mainActivity).toContain(
       'CallPictureInPictureActivity.openForCurrentCall(this)',
     );
     expect(androidPipActivity).toContain('Rational(');
-    expect(androidPipActivity).toContain('.setAutoEnterEnabled(current.enabled)');
+    expect(androidPipActivity).toContain(
+      '.setAutoEnterEnabled(current.enabled)',
+    );
     expect(androidPipActivity).toContain('.setSeamlessResizeEnabled(false)');
     expect(androidPipActivity).not.toContain('.setActions(');
   });
@@ -260,9 +275,20 @@ describe('native call picture-in-picture contract', () => {
       'src/messages/presentation/components/LiveKitCallPresentationHost.tsx',
     );
 
-    expect(directSession).toContain('syncCallStatus().catch(() => undefined)');
+    expect(directSession).toContain(
+      'const syncResult = await syncCallStatus()',
+    );
+    expect(directSession).toContain("if (syncResult !== 'active') return;");
+    expect(
+      directSession.indexOf('const syncResult = await syncCallStatus()'),
+    ).toBeLessThan(
+      directSession.indexOf(
+        'ensureIosCallKitAudioSessionStarted({',
+        directSession.indexOf('const syncResult = await syncCallStatus()'),
+      ),
+    );
     expect(groupSession).toContain(
-      'syncGroupCallStatus().catch(() => undefined)',
+      'const syncResult = await syncGroupCallStatus()',
     );
     expect(host).toContain('dismissInactiveCallRoute');
     expect(host).toContain('stopIOSPIP');
@@ -277,7 +303,7 @@ describe('native call picture-in-picture contract', () => {
     );
 
     expect(host).toContain('onSystemPipStartFailed');
-    expect(host).toContain('isCallMinimized && appState === \'active\'');
+    expect(host).toContain("isCallMinimized && appState === 'active'");
     expect(host).toContain('direct.restoreCallRoom');
     expect(host).toContain('group.restoreCallRoom');
     expect(miniBar).not.toContain(

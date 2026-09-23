@@ -28,8 +28,9 @@ class CallPictureInPictureActivity : Activity() {
   private var hasEnteredPictureInPicture = false
   private var isClosingWithoutRestore = false
   private var renderAttempt = 0
+  private var lastRenderKey = ""
   private var localVideoView: WebRTCView? = null
-  private var remoteVideoView: WebRTCView? = null
+  private val remoteVideoViews = mutableListOf<WebRTCView>()
   private lateinit var videoContainer: LinearLayout
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,10 +73,11 @@ class CallPictureInPictureActivity : Activity() {
       activeActivity.clear()
     }
     mainHandler.removeCallbacksAndMessages(null)
-    remoteVideoView?.setStreamURL(null)
+    remoteVideoViews.forEach { it.setStreamURL(null) }
     localVideoView?.setStreamURL(null)
-    remoteVideoView = null
+    remoteVideoViews.clear()
     localVideoView = null
+    lastRenderKey = ""
     super.onDestroy()
   }
 
@@ -115,29 +117,90 @@ class CallPictureInPictureActivity : Activity() {
       return
     }
 
-    if (remoteVideoView == null || localVideoView == null) {
-      videoContainer.removeAllViews()
-      remoteVideoView = WebRTCView(reactContext).also { view ->
-        view.setObjectFit("cover")
-        view.setMirror(false)
-        videoContainer.addView(view, equalHalfLayoutParams())
+    val current = sharedConfiguration
+    val remoteStreamUrls = current.remoteStreamUrls
+      .filter { it.isNotBlank() }
+      .distinct()
+      .take(MAX_REMOTE_VIDEOS)
+    val localStreamUrl = current.localStreamUrl
+      .takeIf { current.localCameraEnabled && it.isNotBlank() }
+    val renderKey = buildString {
+      append(remoteStreamUrls.joinToString("|"))
+      append("::")
+      append(localStreamUrl.orEmpty())
+      append("::")
+      append(current.localMirror)
+    }
+    if (renderKey == lastRenderKey) return
+    lastRenderKey = renderKey
+
+    remoteVideoViews.forEach { it.setStreamURL(null) }
+    localVideoView?.setStreamURL(null)
+    remoteVideoViews.clear()
+    localVideoView = null
+    videoContainer.removeAllViews()
+
+    val videoViews = mutableListOf<WebRTCView>()
+    remoteStreamUrls.forEach { streamUrl ->
+      val view = WebRTCView(reactContext).also {
+        it.setObjectFit("cover")
+        it.setMirror(false)
+        it.setStreamURL(streamUrl)
       }
-      localVideoView = WebRTCView(reactContext).also { view ->
-        view.setObjectFit("cover")
-        videoContainer.addView(view, equalHalfLayoutParams())
+      remoteVideoViews += view
+      videoViews += view
+    }
+    if (localStreamUrl != null) {
+      localVideoView = WebRTCView(reactContext).also {
+        it.setObjectFit("cover")
+        it.setMirror(current.localMirror)
+        it.setStreamURL(localStreamUrl)
       }
+      videoViews += requireNotNull(localVideoView)
+    }
+    renderVideoGrid(videoViews)
+  }
+
+  private fun renderVideoGrid(videoViews: List<WebRTCView>) {
+    videoContainer.orientation = if (videoViews.size <= 2) {
+      LinearLayout.HORIZONTAL
+    } else {
+      LinearLayout.VERTICAL
+    }
+    if (videoViews.size <= 2) {
+      videoViews.forEach { videoContainer.addView(it, equalCellLayoutParams()) }
+      return
     }
 
-    val current = sharedConfiguration
-    remoteVideoView?.setMirror(false)
-    remoteVideoView?.setStreamURL(current.remoteStreamUrl.ifBlank { null })
-    localVideoView?.setMirror(current.localMirror)
-    localVideoView?.setStreamURL(
-      current.localStreamUrl.takeIf { current.localCameraEnabled && it.isNotBlank() },
+    videoViews.chunked(2).forEach { rowViews ->
+      val row = LinearLayout(this).apply {
+        gravity = Gravity.CENTER
+        orientation = LinearLayout.HORIZONTAL
+        setBackgroundColor(Color.BLACK)
+      }
+      rowViews.forEach { row.addView(it, equalCellLayoutParams()) }
+      if (rowViews.size < GRID_COLUMN_COUNT) {
+        addEmptyGridCell(row)
+      }
+      videoContainer.addView(
+        row,
+        LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          0,
+          1f,
+        ),
+      )
+    }
+  }
+
+  private fun addEmptyGridCell(row: LinearLayout) {
+    row.addView(
+      View(this).apply { setBackgroundColor(Color.BLACK) },
+      equalCellLayoutParams(),
     )
   }
 
-  private fun equalHalfLayoutParams() = LinearLayout.LayoutParams(
+  private fun equalCellLayoutParams() = LinearLayout.LayoutParams(
     0,
     ViewGroup.LayoutParams.MATCH_PARENT,
     1f,
@@ -198,13 +261,15 @@ class CallPictureInPictureActivity : Activity() {
 
     private const val MAX_REACT_CONTEXT_ATTEMPTS = 30
     private const val REACT_CONTEXT_RETRY_MS = 100L
+    private const val MAX_REMOTE_VIDEOS = 3
+    private const val GRID_COLUMN_COUNT = 2
 
     private data class ConfigurationState(
       val enabled: Boolean = false,
       val localCameraEnabled: Boolean = false,
       val localMirror: Boolean = false,
       val localStreamUrl: String = "",
-      val remoteStreamUrl: String = "",
+      val remoteStreamUrls: List<String> = emptyList(),
       val aspectWidth: Int = 3,
       val aspectHeight: Int = 2,
     )
@@ -218,7 +283,7 @@ class CallPictureInPictureActivity : Activity() {
       localCameraEnabled: Boolean,
       localMirror: Boolean,
       localStreamUrl: String,
-      remoteStreamUrl: String,
+      remoteStreamUrls: List<String>,
       aspectWidth: Int,
       aspectHeight: Int,
     ): Boolean {
@@ -228,7 +293,7 @@ class CallPictureInPictureActivity : Activity() {
         localCameraEnabled = localCameraEnabled,
         localMirror = localMirror,
         localStreamUrl = localStreamUrl,
-        remoteStreamUrl = remoteStreamUrl,
+        remoteStreamUrls = remoteStreamUrls,
         aspectWidth = aspectWidth.coerceAtLeast(1),
         aspectHeight = aspectHeight.coerceAtLeast(1),
       )
@@ -245,7 +310,7 @@ class CallPictureInPictureActivity : Activity() {
         localCameraEnabled = current.localCameraEnabled,
         localMirror = current.localMirror,
         localStreamUrl = current.localStreamUrl,
-        remoteStreamUrl = current.remoteStreamUrl,
+        remoteStreamUrls = current.remoteStreamUrls,
         aspectWidth = aspectWidth,
         aspectHeight = aspectHeight,
       )

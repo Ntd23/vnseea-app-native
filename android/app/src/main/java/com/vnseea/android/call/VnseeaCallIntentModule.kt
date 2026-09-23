@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -286,7 +287,7 @@ class VnseeaCallIntentModule(
     localCameraEnabled: Boolean,
     localMirror: Boolean,
     localStreamUrl: String?,
-    remoteStreamUrl: String?,
+    remoteStreamUrls: ReadableArray?,
     aspectWidth: Int,
     aspectHeight: Int,
     promise: Promise,
@@ -299,7 +300,10 @@ class VnseeaCallIntentModule(
             localCameraEnabled = localCameraEnabled,
             localMirror = localMirror,
             localStreamUrl = localStreamUrl.orEmpty(),
-            remoteStreamUrl = remoteStreamUrl.orEmpty(),
+            remoteStreamUrls = remoteStreamUrls
+              ?.toArrayList()
+              ?.mapNotNull { it as? String }
+              .orEmpty(),
             aspectWidth = aspectWidth,
             aspectHeight = aspectHeight,
           ),

@@ -10,13 +10,14 @@ import { AppState, Platform, StyleSheet, View } from 'react-native';
 import {
   RoomContext,
   useTracks,
+  type TrackReference,
 } from '@livekit/react-native';
 import {
   RTCPIPView,
   startIOSPIP,
   stopIOSPIP,
 } from '@livekit/react-native-webrtc';
-import { Track } from 'livekit-client';
+import { RemoteVideoTrack, Track, type ElementInfo } from 'livekit-client';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigationRef } from '../../../navigation/navigationRef';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
@@ -26,11 +27,16 @@ import {
   getRenderableGroupCameraTrack,
 } from '../../application/livekit/groupCallVideoState';
 import { useCallPictureInPicture } from '../utils/useCallPictureInPicture';
+import {
+  getGroupPipGridLayout,
+  type GroupPipGridLayout,
+} from './callPipGridLayout';
 
 const CALL_PIP_ASPECT_WIDTH = 3;
 const CALL_PIP_ASPECT_HEIGHT = 2;
 const IOS_CALL_PIP_CONTENT_WIDTH = 1080;
 const IOS_CALL_PIP_CONTENT_HEIGHT = 720;
+const MAX_GROUP_PIP_REMOTE_VIDEOS = 3;
 
 const IOS_CALL_PIP_OPTIONS = {
   enabled: true,
@@ -96,6 +102,8 @@ type VideoPairProps = {
   onRestore: () => void;
   onSystemPipStartFailed: () => void;
   remoteStreamUrl: string;
+  remoteStreamUrls?: string[];
+  pipGridLayout?: GroupPipGridLayout;
   systemPipRequestKey: string;
   shouldUseSystemPip: boolean;
 };
@@ -107,6 +115,8 @@ function CallVideoPair({
   onRestore,
   onSystemPipStartFailed,
   remoteStreamUrl,
+  remoteStreamUrls = remoteStreamUrl ? [remoteStreamUrl] : [],
+  pipGridLayout,
   systemPipRequestKey,
   shouldUseSystemPip,
 }: VideoPairProps) {
@@ -121,18 +131,32 @@ function CallVideoPair({
   const didReportPipStartFailureRef = useRef(false);
   const onSystemPipStartFailedRef = useRef(onSystemPipStartFailed);
   onSystemPipStartFailedRef.current = onSystemPipStartFailed;
+  const remoteStreamUrlsKey = remoteStreamUrls.join('\u001f');
+  const stableRemoteStreamUrls = useMemo(
+    () => (remoteStreamUrlsKey ? remoteStreamUrlsKey.split('\u001f') : []),
+    [remoteStreamUrlsKey],
+  );
   const iosPip = useMemo(
     () => ({
       ...IOS_CALL_PIP_OPTIONS,
+      preferredSize: pipGridLayout
+        ? {
+            width: pipGridLayout.contentWidth,
+            height: pipGridLayout.contentHeight,
+          }
+        : IOS_CALL_PIP_OPTIONS.preferredSize,
       active: shouldUseSystemPip,
       localStreamURL:
         localCameraEnabled && localStreamUrl ? localStreamUrl : '',
       localMirror,
+      remoteStreamURLs: stableRemoteStreamUrls,
     }),
     [
       localCameraEnabled,
       localMirror,
       localStreamUrl,
+      pipGridLayout,
+      stableRemoteStreamUrls,
       shouldUseSystemPip,
     ],
   );
@@ -224,6 +248,9 @@ function AndroidSystemCallPictureInPicture({
   onEntered,
   onRestore,
   remoteStreamUrl,
+  remoteStreamUrls,
+  aspectHeight = CALL_PIP_ASPECT_HEIGHT,
+  aspectWidth = CALL_PIP_ASPECT_WIDTH,
   shouldEnter,
 }: {
   enabled: boolean;
@@ -232,21 +259,78 @@ function AndroidSystemCallPictureInPicture({
   localStreamUrl: string;
   onEntered: () => void;
   onRestore: () => void;
-  remoteStreamUrl: string;
+  remoteStreamUrl?: string;
+  remoteStreamUrls?: string[];
+  aspectHeight?: number;
+  aspectWidth?: number;
   shouldEnter: boolean;
 }) {
   useCallPictureInPicture({
-    aspectHeight: CALL_PIP_ASPECT_HEIGHT,
-    aspectWidth: CALL_PIP_ASPECT_WIDTH,
+    aspectHeight,
+    aspectWidth,
     enabled,
     localCameraEnabled,
     localMirror,
     localStreamUrl,
     onEntered,
     onRestore,
-    remoteStreamUrl,
+    remoteStreamUrls:
+      remoteStreamUrls ?? (remoteStreamUrl ? [remoteStreamUrl] : []),
     shouldEnter,
   });
+  return null;
+}
+
+class GroupPipElementInfo implements ElementInfo {
+  element = {};
+  visible = true;
+  pictureInPicture = true;
+  visibilityChangedAt: number | undefined = Date.now();
+  handleResize?: () => void;
+  handleVisibilityChanged?: () => void;
+
+  constructor(
+    private readonly tileWidth: number,
+    private readonly tileHeight: number,
+  ) {}
+
+  width() {
+    return this.tileWidth;
+  }
+
+  height() {
+    return this.tileHeight;
+  }
+
+  observe() {
+    this.handleResize?.();
+    this.handleVisibilityChanged?.();
+  }
+
+  stopObserving() {}
+}
+
+function GroupPipAdaptiveTrackKeeper({
+  pipGridLayout,
+  trackRef,
+}: {
+  pipGridLayout: GroupPipGridLayout;
+  trackRef: TrackReference;
+}) {
+  useEffect(() => {
+    const track = trackRef.publication.track;
+    if (!(track instanceof RemoteVideoTrack) || !track.isAdaptiveStream) {
+      return;
+    }
+
+    const elementInfo = new GroupPipElementInfo(
+      pipGridLayout.tileWidth,
+      pipGridLayout.tileHeight,
+    );
+    track.observeElementInfo(elementInfo);
+    return () => track.stopObservingElementInfo(elementInfo);
+  }, [pipGridLayout.tileHeight, pipGridLayout.tileWidth, trackRef]);
+
   return null;
 }
 
@@ -264,35 +348,63 @@ function GroupVideoPair({
     { source: Track.Source.Camera, withPlaceholder: true },
   ]);
   const localTrack = tracks.find(track => track.participant.isLocal);
-  const remoteTrack = tracks.find(
-    track =>
-      !track.participant.isLocal &&
-      Boolean(getRenderableGroupCameraTrack(track)),
-  );
+  const remoteTracks = tracks
+    .filter(track => !track.participant.isLocal)
+    .map(getRenderableGroupCameraTrack)
+    .filter((track): track is TrackReference => Boolean(track))
+    .sort((left, right) =>
+      (left.participant.identity || left.participant.sid).localeCompare(
+        right.participant.identity || right.participant.sid,
+      ),
+    )
+    .slice(0, MAX_GROUP_PIP_REMOTE_VIDEOS);
   const localCameraEnabled = Boolean(
     group.session?.isLocalCameraEnabled &&
       getRenderableGroupCameraTrack(localTrack),
   );
   const localStreamUrl = getGroupCameraStreamUrl(localTrack);
-  const remoteStreamUrl = getGroupCameraStreamUrl(remoteTrack);
+  const remoteStreamUrls = Array.from(
+    new Set(remoteTracks.map(getGroupCameraStreamUrl).filter(Boolean)),
+  );
+  const remoteStreamUrl = remoteStreamUrls[0] ?? '';
+  const visibleVideoCount =
+    remoteStreamUrls.length + (localCameraEnabled && localStreamUrl ? 1 : 0);
+  const pipGridLayout = useMemo(
+    () => getGroupPipGridLayout(visibleVideoCount),
+    [visibleVideoCount],
+  );
+
+  const adaptiveTrackKeepers = remoteTracks.map(track => (
+    <GroupPipAdaptiveTrackKeeper
+      key={track.publication.trackSid || track.participant.sid}
+      pipGridLayout={pipGridLayout}
+      trackRef={track}
+    />
+  ));
 
   if (Platform.OS === 'android') {
     return (
-      <AndroidSystemCallPictureInPicture
-        enabled
-        localCameraEnabled={localCameraEnabled}
-        localMirror={group.session?.localCameraFacingMode === 'user'}
-        localStreamUrl={localStreamUrl}
-        onEntered={group.minimizeCall}
-        onRestore={group.restoreCallRoom}
-        remoteStreamUrl={remoteStreamUrl}
-        shouldEnter={Boolean(group.session?.isMinimized)}
-      />
+      <>
+        {adaptiveTrackKeepers}
+        <AndroidSystemCallPictureInPicture
+          aspectHeight={pipGridLayout.aspectHeight}
+          aspectWidth={pipGridLayout.aspectWidth}
+          enabled
+          localCameraEnabled={localCameraEnabled}
+          localMirror={group.session?.localCameraFacingMode === 'user'}
+          localStreamUrl={localStreamUrl}
+          onEntered={group.minimizeCall}
+          onRestore={group.restoreCallRoom}
+          remoteStreamUrls={remoteStreamUrls}
+          shouldEnter={Boolean(group.session?.isMinimized)}
+        />
+      </>
     );
   }
 
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+      {adaptiveTrackKeepers}
       <CallVideoPair
         localCameraEnabled={localCameraEnabled}
         localMirror={group.session?.localCameraFacingMode === 'user'}
@@ -300,6 +412,8 @@ function GroupVideoPair({
         onRestore={group.restoreCallRoom}
         onSystemPipStartFailed={onSystemPipStartFailed}
         remoteStreamUrl={remoteStreamUrl}
+        remoteStreamUrls={remoteStreamUrls}
+        pipGridLayout={pipGridLayout}
         systemPipRequestKey={systemPipRequestKey}
         shouldUseSystemPip={shouldUseSystemPip}
       />
@@ -362,14 +476,17 @@ function LiveKitCallPresentationHost() {
       return (
         <AndroidSystemCallPictureInPicture
           enabled
-          localCameraEnabled={Boolean(
-            direct.session?.isLocalCameraEnabled,
-          )}
+          localCameraEnabled={Boolean(direct.session?.isLocalCameraEnabled)}
           localMirror={direct.session?.localCameraFacingMode === 'user'}
           localStreamUrl={direct.session?.localVideoStreamUrl ?? ''}
           onEntered={direct.minimizeCall}
           onRestore={direct.restoreCallRoom}
           remoteStreamUrl={direct.session?.remoteVideoStreamUrl ?? ''}
+          remoteStreamUrls={
+            direct.session?.remoteVideoStreamUrl
+              ? [direct.session.remoteVideoStreamUrl]
+              : []
+          }
           shouldEnter={Boolean(direct.session?.isMinimized)}
         />
       );
@@ -386,6 +503,11 @@ function LiveKitCallPresentationHost() {
           }
         }}
         remoteStreamUrl={direct.session?.remoteVideoStreamUrl ?? ''}
+        remoteStreamUrls={
+          direct.session?.remoteVideoStreamUrl
+            ? [direct.session.remoteVideoStreamUrl]
+            : []
+        }
         systemPipRequestKey={appState}
         shouldUseSystemPip={shouldUseIOSSystemPip}
       />
