@@ -1,18 +1,20 @@
 // Description: Coordinates the dedicated Android call PiP activity with active LiveKit tracks.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   NativeEventEmitter,
   NativeModules,
   Platform,
-  type EmitterSubscription,
 } from 'react-native';
 
 const CALL_PIP_MODE_CHANGED_EVENT = 'VNSEEA_CALL_PIP_MODE_CHANGED';
 const CALL_PIP_RESTORE_REQUESTED_EVENT =
   'VNSEEA_CALL_PIP_RESTORE_REQUESTED';
+const RESTORE_REQUEST_RETRY_DELAYS_MS = [0, 100, 300, 700, 1_500] as const;
 
 type CallPictureInPictureEvent = {
   active?: boolean;
+  presentation?: 'host' | 'dedicated';
 };
 
 type CallPictureInPictureNativeModule = {
@@ -27,6 +29,7 @@ type CallPictureInPictureNativeModule = {
   ): Promise<boolean>;
   enterVideoCallPictureInPicture(): Promise<boolean>;
   isInPictureInPictureMode(): Promise<boolean>;
+  consumeCallPictureInPictureRestoreRequest(): Promise<boolean>;
   closeCallPictureInPictureIfActive(): Promise<boolean>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
@@ -102,24 +105,58 @@ export function useCallPictureInPicture(
 
     let isActive = true;
     const emitter = new NativeEventEmitter(callPictureInPictureModule);
-    const subscriptions: EmitterSubscription[] = [
+    let restoreRequestTimers: Array<ReturnType<typeof setTimeout>> = [];
+    const consumePendingRestoreRequest = () => {
+      if (AppState.currentState !== 'active') return;
+      callPictureInPictureModule
+        .consumeCallPictureInPictureRestoreRequest()
+        .then(shouldRestore => {
+          if (!isActive || !shouldRestore) return;
+          setPictureInPictureMode(false);
+          didRequestEntryRef.current = false;
+          onRestoreRef.current?.();
+        })
+        .catch(() => undefined);
+    };
+    const scheduleRestoreRequestChecks = () => {
+      restoreRequestTimers.forEach(clearTimeout);
+      restoreRequestTimers = [];
+      RESTORE_REQUEST_RETRY_DELAYS_MS.forEach(delayMs => {
+        restoreRequestTimers.push(
+          setTimeout(consumePendingRestoreRequest, delayMs),
+        );
+      });
+    };
+    const subscriptions: Array<{ remove(): void }> = [
       emitter.addListener(
         CALL_PIP_MODE_CHANGED_EVENT,
         (event: CallPictureInPictureEvent) => {
           if (!isActive) return;
           const active = event.active === true;
           setPictureInPictureMode(active);
-          if (active) onEnteredRef.current?.();
+          if (active) didRequestEntryRef.current = true;
+          if (!active) didRequestEntryRef.current = false;
+          if (active && event.presentation === 'dedicated') {
+            onEnteredRef.current?.();
+          }
         },
       ),
-      emitter.addListener(CALL_PIP_RESTORE_REQUESTED_EVENT, () => {
+      emitter.addListener(CALL_PIP_RESTORE_REQUESTED_EVENT, event => {
         if (!isActive) return;
-        setPictureInPictureMode(false);
-        didRequestEntryRef.current = false;
-        onRestoreRef.current?.();
+        if (
+          (event as CallPictureInPictureEvent | undefined)?.presentation ===
+          'host'
+        ) {
+          return;
+        }
+        scheduleRestoreRequestChecks();
+      }),
+      AppState.addEventListener('change', nextState => {
+        if (nextState === 'active') scheduleRestoreRequestChecks();
       }),
     ];
 
+    scheduleRestoreRequestChecks();
     callPictureInPictureModule
       .isInPictureInPictureMode()
       .then(isInMode => {
@@ -129,6 +166,7 @@ export function useCallPictureInPicture(
 
     return () => {
       isActive = false;
+      restoreRequestTimers.forEach(clearTimeout);
       subscriptions.forEach(subscription => subscription.remove());
     };
   }, [enabled]);
@@ -169,6 +207,7 @@ export function useCallPictureInPicture(
     localCameraEnabled,
     localMirror,
     localStreamUrl,
+    shouldEnter,
     stableRemoteStreamUrls,
   ]);
 

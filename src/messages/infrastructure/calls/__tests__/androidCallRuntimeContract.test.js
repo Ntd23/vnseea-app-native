@@ -12,28 +12,44 @@ describe('Android call runtime contract', () => {
     const notifier = read(
       'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt',
     );
-    const incomingCallActivity = read(
-      'android/app/src/main/java/com/vnseea/android/call/IncomingCallActivity.kt',
+    const ringer = read(
+      'android/app/src/main/java/com/vnseea/android/call/IncomingCallRinger.kt',
     );
 
-    expect(notifier).toContain(
-      'RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)',
-    );
-    expect(incomingCallActivity).toContain(
+    expect(ringer).toContain(
       'RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)',
     );
     expect(notifier).toContain(
-      'CHANNEL_ID = "vnseea_calls_fullscreen_v6_system_ringtone"',
+      'CHANNEL_ID = "vnseea_calls_fullscreen_v7_managed_ringing"',
     );
     expect(notifier).not.toContain('INCOMING_CALL_RINGTONE_RES_NAME');
-    expect(incomingCallActivity).not.toContain(
-      'INCOMING_CALL_RINGTONE_RES_NAME',
-    );
+    expect(ringer).toContain('isLooping = true');
+    expect(ringer).toContain('VibrationEffect.createWaveform(vibrationPattern, 0)');
     expect(
       fs.existsSync(
         path.join(root, 'android/app/src/main/res/raw/incoming_call_ringtone.mp3'),
       ),
     ).toBe(false);
+  });
+
+  it('keeps incoming call alerts alive only while the call is ringing', () => {
+    const notifier = read('android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt');
+    const service = read('android/app/src/main/java/com/vnseea/android/call/IncomingCallRingingService.kt');
+    const activity = read('android/app/src/main/java/com/vnseea/android/call/IncomingCallActivity.kt');
+    const nativeActions = read('android/app/src/main/java/com/vnseea/android/call/LiveKitCallNativeActions.kt');
+    const manifest = read('android/app/src/main/AndroidManifest.xml');
+
+    expect(notifier).toContain('NotificationCompat.CallStyle.forIncomingCall(');
+    expect(notifier).toContain('IncomingCallRingingService.start(context, data)');
+    expect(notifier).toContain('enableVibration(false)');
+    expect(notifier).not.toContain('vibrationPattern = longArrayOf(0, 700, 350, 700)');
+    expect(service).toContain('FOREGROUND_SERVICE_TYPE_SHORT_SERVICE');
+    expect(service).toContain('expiryDelayMs(data)');
+    expect(manifest).toContain('android:name=".call.IncomingCallRingingService"');
+    expect(activity).toContain('IncomingCallRinger.mute(');
+    expect(nativeActions).toContain('IncomingCallRinger.stop(callId)');
+    expect(nativeActions).toContain('IncomingCallRingingService.stop(context, callId)');
+    expect(activity).toContain('LiveKitCallNativeActions.completeIncomingCall(');
   });
 
   it('uses permission-aware full-screen notifications without launching an activity from the background', () => {

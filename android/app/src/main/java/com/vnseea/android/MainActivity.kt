@@ -22,12 +22,19 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     captureMessagePushOpen(intent)
+    captureCallPictureInPictureRestore(intent)
     preferHighestRefreshRate()
   }
 
   override fun onResume() {
     super.onResume()
+    CallPictureInPictureActivity.onMainHostResumed(this)
     preferHighestRefreshRate()
+  }
+
+  override fun onPause() {
+    CallPictureInPictureActivity.onMainHostPaused(this)
+    super.onPause()
   }
 
   /**
@@ -40,6 +47,7 @@ class MainActivity : ReactActivity() {
     super.onNewIntent(intent)
     setIntent(intent)
     captureMessagePushOpen(intent)
+    captureCallPictureInPictureRestore(intent)
   }
 
   fun setVideoCallPictureInPictureEnabled(
@@ -58,9 +66,21 @@ class MainActivity : ReactActivity() {
   fun closeCallPictureInPictureIfActive(): Boolean =
     CallPictureInPictureActivity.closeIfActive()
 
+  override fun onPictureInPictureRequested(): Boolean {
+    return CallPictureInPictureActivity.openForCurrentCall(this) ||
+      super.onPictureInPictureRequested()
+  }
+
   override fun onUserLeaveHint() {
     super.onUserLeaveHint()
-    CallPictureInPictureActivity.openForCurrentCall(this)
+    if (!CallPictureInPictureActivity.isDedicatedPictureInPictureLaunchPending()) {
+      CallPictureInPictureActivity.openForCurrentCall(this)
+    }
+  }
+
+  override fun onDestroy() {
+    CallPictureInPictureActivity.onMainHostDestroyed(this)
+    super.onDestroy()
   }
 
   /**
@@ -75,6 +95,14 @@ class MainActivity : ReactActivity() {
     val reactContext =
       (application as? ReactApplication)?.reactHost?.currentReactContext
     MessagePushOpenStore.notifyReactContext(reactContext)
+  }
+
+  private fun captureCallPictureInPictureRestore(intent: Intent?) {
+    if (intent?.getBooleanExtra(CallPictureInPictureActivity.EXTRA_RESTORE_CALL, false) != true) {
+      return
+    }
+    intent.removeExtra(CallPictureInPictureActivity.EXTRA_RESTORE_CALL)
+    CallPictureInPictureActivity.markMainHostRestoreIntentReceived()
   }
 
   private fun preferHighestRefreshRate() {

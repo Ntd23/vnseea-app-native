@@ -45,7 +45,7 @@ describe('backend APNs VoIP config wiring', () => {
     expect(source).toContain('ios_voip_apns_environment');
     expect(source).toContain('https://api.sandbox.push.apple.com/3/device/');
     expect(source).toContain('https://api.push.apple.com/3/device/');
-    expect(source).toContain("apns-expiration: ' . (time() + 45)");
+    expect(source).toContain('apns-expiration: 0');
     expect(source).toContain('[voip_apns] context=');
     expect(source).toContain('apns-id');
     expect(source).toContain('Unregistered');
@@ -100,6 +100,7 @@ describe('backend APNs VoIP config wiring', () => {
     );
     expect(livekit).toContain("Wo_ApiLiveKitDebugLog('close_push'");
     expect(livekit).not.toContain('VNSEEA_SendImmediateVoipEvent(');
-    expect(delivery).toContain('$allow_voip = $allow_voip && !$is_control;');
+    expect(delivery).toContain('$allow_voip = (bool)$allow_voip && !$is_control;');
+    expect(delivery.match(/'apns-expiration: 0'/g)).toHaveLength(2);
   });
 });

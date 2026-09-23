@@ -467,4 +467,25 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).not.toContain('AudioDeviceModule.stopRecording()');
     expect(source).not.toContain('AudioDeviceModule.stopPlayout()');
   });
+
+  it('closes an active backend call when the provider is unmounted', () => {
+    const source = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+    const cleanupIndex = source.lastIndexOf('useEffect(() => {');
+    const cleanupEndIndex = source.indexOf(
+      'const statusText = resolveStatusText(session);',
+      cleanupIndex,
+    );
+    const cleanupBlock = source.slice(cleanupIndex, cleanupEndIndex);
+
+    expect(cleanupBlock).toContain('!isFinalPhase(current.phase)');
+    expect(cleanupBlock).toContain('!closeSentRef.current');
+    expect(cleanupBlock).toContain('repository');
+    expect(cleanupBlock).toContain('.closeCall({');
+    expect(cleanupBlock).toContain(
+      "status: current.phase === 'ringing' ? 'cancelled' : 'ended'",
+    );
+    expect(cleanupBlock).toContain("logCallDebug('provider_unmount_close_error'");
+  });
 });

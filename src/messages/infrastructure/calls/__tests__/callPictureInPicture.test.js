@@ -120,12 +120,58 @@ describe('native call picture-in-picture contract', () => {
     expect(mainActivity).toContain(
       'CallPictureInPictureActivity.openForCurrentCall(this)',
     );
+    expect(androidPipActivity).toContain('ActivityOptions.makeLaunchIntoPip');
+    expect(androidPipActivity).toContain(
+      'context.startActivity(intent, launchOptions)',
+    );
+    expect(androidPipActivity).toContain('context.startActivity(intent)');
+    const openForCurrentCall = androidPipActivity.slice(
+      androidPipActivity.indexOf('fun openForCurrentCall'),
+      androidPipActivity.indexOf('fun isActive'),
+    );
+    expect(openForCurrentCall).toContain('return runCatching');
+    expect(openForCurrentCall).toContain(
+      'if (dedicatedPictureInPictureLaunchPending) return true',
+    );
+    expect(openForCurrentCall).toContain('.getOrElse {');
+    expect(openForCurrentCall).toContain(
+      'markDedicatedPictureInPictureStarted()',
+    );
     expect(androidPipActivity).toContain('Rational(');
     expect(androidPipActivity).toContain(
-      '.setAutoEnterEnabled(current.enabled)',
+      '.setAutoEnterEnabled(false)',
     );
     expect(androidPipActivity).toContain('.setSeamlessResizeEnabled(false)');
     expect(androidPipActivity).not.toContain('.setActions(');
+  });
+
+  it('uses the dedicated Android PiP activity for Home without host auto-enter', () => {
+    const mainActivity = read(
+      'android/app/src/main/java/com/vnseea/android/MainActivity.kt',
+    );
+    const androidPipActivity = read(
+      'android/app/src/main/java/com/vnseea/android/call/CallPictureInPictureActivity.kt',
+    );
+
+    expect(androidPipActivity).toContain('.setAutoEnterEnabled(false)');
+    expect(androidPipActivity).not.toContain(
+      '.setAutoEnterEnabled(current.enabled)',
+    );
+    expect(mainActivity).toContain(
+      'CallPictureInPictureActivity.openForCurrentCall(this)',
+    );
+    expect(mainActivity).not.toContain('enterPictureInPictureMode');
+    expect(androidPipActivity).not.toContain('enterFromVisibleHostActivity');
+  });
+
+  it('never hides or replaces the React host while call PiP is active', () => {
+    const androidPipActivity = read(
+      'android/app/src/main/java/com/vnseea/android/call/CallPictureInPictureActivity.kt',
+    );
+
+    expect(androidPipActivity).not.toContain('CallPictureInPictureHostRenderer');
+    expect(androidPipActivity).not.toContain('contentView.visibility');
+    expect(androidPipActivity).not.toContain('activeHostRenderer');
   });
 
   it('turns every call-route back action into a minimized active call', () => {
@@ -177,6 +223,22 @@ describe('native call picture-in-picture contract', () => {
     expect(packagePatch).toContain('localSampleView');
   });
 
+  it('applies the current iOS camera mirror before requesting PiP', () => {
+    const packagePatch = read(
+      'patches/@livekit__react-native-webrtc@144.1.1.patch',
+    );
+    const mirrorIndex = packagePatch.indexOf(
+      '+    BOOL localMirror = [pipOptions[@"localMirror"] boolValue];',
+    );
+    const startIndex = packagePatch.indexOf(
+      '+    if (_pipActiveRequested != active) {',
+    );
+
+    expect(mirrorIndex).toBeGreaterThan(-1);
+    expect(startIndex).toBeGreaterThan(-1);
+    expect(mirrorIndex).toBeLessThan(startIndex);
+  });
+
   it('uses a dedicated Android activity only for an active video call', () => {
     const manifest = read('android/app/src/main/AndroidManifest.xml');
     const mainActivity = read(
@@ -200,12 +262,30 @@ describe('native call picture-in-picture contract', () => {
     );
     expect(manifest).toContain('android:supportsPictureInPicture="true"');
     expect(manifest).toContain('android:resizeableActivity="true"');
+    expect(manifest).toContain('android:taskAffinity="com.vnseea.android.call_pip"');
     expect(mainActivity).toContain('override fun onUserLeaveHint()');
-    expect(mainActivity).not.toContain('enterPictureInPictureMode');
-    expect(mainActivity).not.toContain(
-      'override fun onPictureInPictureModeChanged',
+    expect(mainActivity).toContain('override fun onPictureInPictureRequested()');
+    expect(mainActivity).toContain(
+      'CallPictureInPictureActivity.openForCurrentCall(this) ||',
+    );
+    expect(mainActivity).toContain(
+      'CallPictureInPictureActivity.openForCurrentCall(this)',
+    );
+    expect(mainActivity).not.toContain('override fun onPictureInPictureModeChanged');
+    expect(androidPipActivity).not.toContain('enterFromVisibleHostActivity');
+    expect(androidPipActivity).toContain(
+      'dedicatedPictureInPictureLaunchPending',
+    );
+    expect(androidPipActivity).toContain(
+      'fun isDedicatedPictureInPictureLaunchPending()',
+    );
+    expect(mainActivity).toContain(
+      '!CallPictureInPictureActivity.isDedicatedPictureInPictureLaunchPending()',
     );
     expect(androidPipActivity).toContain('enterPictureInPictureMode');
+    expect(androidPipActivity).toContain(
+      'Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP',
+    );
     expect(androidPipActivity).toContain(
       'override fun onPictureInPictureModeChanged',
     );
@@ -220,8 +300,76 @@ describe('native call picture-in-picture contract', () => {
     expect(hook).toContain('closeCallPictureInPictureIfActive');
     expect(hook).toContain('VNSEEA_CALL_PIP_MODE_CHANGED');
     expect(hook).toContain('VNSEEA_CALL_PIP_RESTORE_REQUESTED');
+    expect(hook).toContain('if (active) didRequestEntryRef.current = true;');
+    expect(hook).not.toContain('allowHostAutoEnter');
     expect(host).toContain('useCallPictureInPicture');
     expect(host).toContain("session?.callType === 'video'");
+  });
+
+  it('restores navigation only after the main host resumes from dedicated PiP', () => {
+    const mainActivity = read(
+      'android/app/src/main/java/com/vnseea/android/MainActivity.kt',
+    );
+    const hook = read(
+      'src/messages/presentation/utils/useCallPictureInPicture.ts',
+    );
+    const androidPipActivity = read(
+      'android/app/src/main/java/com/vnseea/android/call/CallPictureInPictureActivity.kt',
+    );
+    expect(androidPipActivity).toContain(
+      'private const val PIP_PRESENTATION_DEDICATED = "dedicated"',
+    );
+    expect(androidPipActivity).toContain(
+      'putString("presentation", presentation)',
+    );
+    expect(androidPipActivity).toContain('launchMainHostForRestore()');
+    expect(androidPipActivity).toContain('EXTRA_RESTORE_CALL');
+    expect(androidPipActivity).toContain('mainHostRestoreIntentReceived');
+    expect(androidPipActivity).toContain('resumedMainHost.get() != null');
+    expect(mainActivity).toContain('captureCallPictureInPictureRestore(intent)');
+    expect(mainActivity).toContain('onMainHostResumed(this)');
+    expect(hook).toContain("presentation?: 'host' | 'dedicated';");
+    expect(hook).toContain(
+      "if (active && event.presentation === 'dedicated') {",
+    );
+    expect(hook).toContain(
+      'if (!active) didRequestEntryRef.current = false;',
+    );
+  });
+
+  it('persists a dedicated PiP restore until React consumes it after resume', () => {
+    const androidPipActivity = read(
+      'android/app/src/main/java/com/vnseea/android/call/CallPictureInPictureActivity.kt',
+    );
+    const nativeModule = read(
+      'android/app/src/main/java/com/vnseea/android/call/VnseeaCallIntentModule.kt',
+    );
+    const hook = read(
+      'src/messages/presentation/utils/useCallPictureInPicture.ts',
+    );
+
+    expect(androidPipActivity).toContain(
+      'pendingDedicatedRestoreRequest = true',
+    );
+    expect(androidPipActivity).toContain(
+      'fun consumeDedicatedRestoreRequest(): Boolean',
+    );
+    expect(nativeModule).toContain(
+      'fun consumeCallPictureInPictureRestoreRequest(promise: Promise)',
+    );
+    expect(hook).toContain(
+      'consumeCallPictureInPictureRestoreRequest(): Promise<boolean>',
+    );
+    expect(hook).toContain("AppState.addEventListener('change'");
+    expect(hook).toContain("if (nextState === 'active')");
+    expect(hook).toContain('consumePendingRestoreRequest');
+    expect(hook).toContain("if (AppState.currentState !== 'active') return;");
+    expect(hook).toContain(
+      'const RESTORE_REQUEST_RETRY_DELAYS_MS = [0, 100, 300, 700, 1_500] as const;',
+    );
+    expect(hook).toContain(
+      'RESTORE_REQUEST_RETRY_DELAYS_MS.forEach(delayMs =>',
+    );
   });
 
   it('keeps established calls represented by native system call UI', () => {

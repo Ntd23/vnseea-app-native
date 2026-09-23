@@ -76,11 +76,18 @@ object LiveKitCallNativeActions {
     return false
   }
 
-  fun dismissIncomingCall(context: Context, callId: String?) {
+  fun completeIncomingCall(context: Context, callId: String?) {
     if (callId.isNullOrBlank()) return
     markIncomingCallHandled(context, callId)
+    IncomingCallRinger.stop(callId)
+    IncomingCallRingingService.stop(context, callId)
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
     manager?.cancel(callId.hashCode())
+  }
+
+  fun dismissIncomingCall(context: Context, callId: String?) {
+    if (callId.isNullOrBlank()) return
+    completeIncomingCall(context, callId)
     context.sendBroadcast(Intent(ACTION_DISMISS_INCOMING_CALL).apply {
       setPackage(context.packageName)
       putExtra(EXTRA_CALL_ID, callId)

@@ -105,7 +105,7 @@ describe('backend LiveKit call payload and native action state', () => {
     expect(group).toContain("Wo_ApiGroupCallPublishRealtime(!empty($group_call['status']) && $group_call['status'] === 'ended' ? 'closed' : 'sync'");
   });
 
-  it('sends terminal call controls silently while retaining iOS PushKit delivery', () => {
+  it('sends terminal call controls silently without a new iOS PushKit call', () => {
     const direct = read('phtml/api/v2/endpoints/livekit.php');
     const pushDelivery = read(
       'phtml/assets/includes/vnseea_push_delivery.php',
@@ -118,7 +118,9 @@ describe('backend LiveKit call payload and native action state', () => {
     expect(pushDelivery).toContain(
       "$request['apns_push_type_override'] = 'background'",
     );
-    expect(pushDelivery).toContain("? array('content-available' => 1)");
+    expect(pushDelivery).toContain(
+      '$allow_voip = (bool)$allow_voip && !$is_control;',
+    );
     expect(pushDelivery).not.toContain(
       'Cuộc gọi đã được xử lý trên thiết bị khác',
     );

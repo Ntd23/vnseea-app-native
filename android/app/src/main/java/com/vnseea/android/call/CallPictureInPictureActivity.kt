@@ -2,6 +2,7 @@
 package com.vnseea.android.call
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.Intent
@@ -21,6 +22,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.oney.WebRTCModule.WebRTCView
+import com.vnseea.android.MainActivity
 import java.lang.ref.WeakReference
 
 class CallPictureInPictureActivity : Activity() {
@@ -35,6 +37,7 @@ class CallPictureInPictureActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    markDedicatedPictureInPictureStarted()
     window.statusBarColor = Color.BLACK
     window.navigationBarColor = Color.BLACK
     setContentView(buildContentView())
@@ -45,6 +48,7 @@ class CallPictureInPictureActivity : Activity() {
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
+    markDedicatedPictureInPictureStarted()
     setIntent(intent)
     renderCurrentConfiguration()
     videoContainer.post { enterSystemPictureInPicture() }
@@ -61,11 +65,24 @@ class CallPictureInPictureActivity : Activity() {
       return
     }
 
-    if (hasEnteredPictureInPicture && !isClosingWithoutRestore) {
+    if (hasEnteredPictureInPicture && !isClosingWithoutRestore && !isFinishing) {
+      pendingDedicatedRestoreRequest = true
       emitEvent(CALL_PIP_MODE_CHANGED_EVENT, active = false)
-      emitEvent(CALL_PIP_RESTORE_REQUESTED_EVENT, active = false)
+      launchMainHostForRestore()
       finish()
     }
+  }
+
+  private fun launchMainHostForRestore() {
+    val restoreIntent = Intent(this, MainActivity::class.java).apply {
+      addFlags(
+        Intent.FLAG_ACTIVITY_NEW_TASK or
+          Intent.FLAG_ACTIVITY_SINGLE_TOP or
+          Intent.FLAG_ACTIVITY_CLEAR_TOP,
+      )
+      putExtra(EXTRA_RESTORE_CALL, true)
+    }
+    runCatching { startActivity(restoreIntent) }
   }
 
   override fun onDestroy() {
@@ -224,19 +241,7 @@ class CallPictureInPictureActivity : Activity() {
   }
 
   private fun buildPictureInPictureParams(): PictureInPictureParams {
-    val current = sharedConfiguration
-    val builder = PictureInPictureParams.Builder().setAspectRatio(
-      Rational(
-        current.aspectWidth.coerceAtLeast(1),
-        current.aspectHeight.coerceAtLeast(1),
-      ),
-    )
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      builder
-        .setAutoEnterEnabled(current.enabled)
-        .setSeamlessResizeEnabled(false)
-    }
-    return builder.build()
+    return buildPictureInPictureParamsForConfiguration(sharedConfiguration)
   }
 
   private fun finishWithoutRestore() {
@@ -249,6 +254,7 @@ class CallPictureInPictureActivity : Activity() {
       (application as? ReactApplication)?.reactHost?.currentReactContext ?: return
     val payload = Arguments.createMap().apply {
       putBoolean("active", active)
+      putString("presentation", PIP_PRESENTATION_DEDICATED)
     }
     reactContext
       .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
@@ -258,11 +264,14 @@ class CallPictureInPictureActivity : Activity() {
   companion object {
     const val CALL_PIP_MODE_CHANGED_EVENT = "VNSEEA_CALL_PIP_MODE_CHANGED"
     const val CALL_PIP_RESTORE_REQUESTED_EVENT = "VNSEEA_CALL_PIP_RESTORE_REQUESTED"
+    const val EXTRA_RESTORE_CALL = "vnseea_restore_active_call"
 
     private const val MAX_REACT_CONTEXT_ATTEMPTS = 30
     private const val REACT_CONTEXT_RETRY_MS = 100L
     private const val MAX_REMOTE_VIDEOS = 3
     private const val GRID_COLUMN_COUNT = 2
+    private const val DEDICATED_LAUNCH_GUARD_MS = 1_500L
+    private const val PIP_PRESENTATION_DEDICATED = "dedicated"
 
     private data class ConfigurationState(
       val enabled: Boolean = false,
@@ -277,6 +286,33 @@ class CallPictureInPictureActivity : Activity() {
     @Volatile
     private var sharedConfiguration = ConfigurationState()
     private var activeActivity = WeakReference<CallPictureInPictureActivity>(null)
+    @Volatile
+    private var dedicatedPictureInPictureLaunchPending = false
+    @Volatile
+    private var pendingDedicatedRestoreRequest = false
+    private var mainHostRestoreIntentReceived = false
+    private var resumedMainHost = WeakReference<Activity>(null)
+    private val dedicatedLaunchHandler = Handler(Looper.getMainLooper())
+    private val clearDedicatedLaunchPending = Runnable {
+      dedicatedPictureInPictureLaunchPending = false
+    }
+
+    private fun buildPictureInPictureParamsForConfiguration(
+      current: ConfigurationState,
+    ): PictureInPictureParams {
+      val builder = PictureInPictureParams.Builder().setAspectRatio(
+        Rational(
+          current.aspectWidth.coerceAtLeast(1),
+          current.aspectHeight.coerceAtLeast(1),
+        ),
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        builder
+          .setAutoEnterEnabled(false)
+          .setSeamlessResizeEnabled(false)
+      }
+      return builder.build()
+    }
 
     fun configure(
       enabled: Boolean,
@@ -320,6 +356,7 @@ class CallPictureInPictureActivity : Activity() {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !sharedConfiguration.enabled) {
         return false
       }
+      if (dedicatedPictureInPictureLaunchPending) return true
       val current = activeActivity.get()
       if (current != null && !current.isFinishing && !current.isDestroyed) {
         current.runOnUiThread {
@@ -330,25 +367,120 @@ class CallPictureInPictureActivity : Activity() {
       }
 
       val intent = Intent(context, CallPictureInPictureActivity::class.java).apply {
-        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
       }
-      context.startActivity(intent)
-      return true
+      dedicatedPictureInPictureLaunchPending = true
+      dedicatedLaunchHandler.removeCallbacks(clearDedicatedLaunchPending)
+      dedicatedLaunchHandler.postDelayed(
+        clearDedicatedLaunchPending,
+        DEDICATED_LAUNCH_GUARD_MS,
+      )
+      return runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          val launchOptions = ActivityOptions.makeLaunchIntoPip(
+            buildPictureInPictureParamsForConfiguration(sharedConfiguration),
+          ).toBundle()
+          context.startActivity(intent, launchOptions)
+        } else {
+          context.startActivity(intent)
+        }
+        true
+      }.getOrElse {
+        markDedicatedPictureInPictureStarted()
+        false
+      }
+    }
+
+    fun isDedicatedPictureInPictureLaunchPending() =
+      dedicatedPictureInPictureLaunchPending
+
+    private fun markDedicatedPictureInPictureStarted() {
+      dedicatedLaunchHandler.removeCallbacks(clearDedicatedLaunchPending)
+      dedicatedPictureInPictureLaunchPending = false
+      pendingDedicatedRestoreRequest = false
+      mainHostRestoreIntentReceived = false
+    }
+
+    @Synchronized
+    fun consumeDedicatedRestoreRequest(): Boolean {
+      val shouldRestore = pendingDedicatedRestoreRequest &&
+        mainHostRestoreIntentReceived &&
+        resumedMainHost.get() != null
+      if (!shouldRestore) return false
+      pendingDedicatedRestoreRequest = false
+      mainHostRestoreIntentReceived = false
+      return shouldRestore
+    }
+
+    @Synchronized
+    fun markMainHostRestoreIntentReceived() {
+      mainHostRestoreIntentReceived = true
+      resumedMainHost.get()?.let { activity ->
+        emitEvent(
+          activity,
+          CALL_PIP_RESTORE_REQUESTED_EVENT,
+          active = false,
+          presentation = PIP_PRESENTATION_DEDICATED,
+        )
+      }
+    }
+
+    fun onMainHostResumed(activity: Activity) {
+      resumedMainHost = WeakReference(activity)
+      if (!pendingDedicatedRestoreRequest || !mainHostRestoreIntentReceived) return
+      emitEvent(
+        activity,
+        CALL_PIP_RESTORE_REQUESTED_EVENT,
+        active = false,
+        presentation = PIP_PRESENTATION_DEDICATED,
+      )
+    }
+
+    fun onMainHostPaused(activity: Activity) {
+      if (resumedMainHost.get() === activity) resumedMainHost.clear()
+    }
+
+    fun onMainHostDestroyed(activity: Activity) {
+      onMainHostPaused(activity)
+    }
+
+    private fun emitEvent(
+      context: Context,
+      eventName: String,
+      active: Boolean,
+      presentation: String,
+    ) {
+      val reactContext =
+        (context.applicationContext as? ReactApplication)?.reactHost?.currentReactContext
+          ?: return
+      val payload = Arguments.createMap().apply {
+        putBoolean("active", active)
+        putString("presentation", presentation)
+      }
+      reactContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(eventName, payload)
     }
 
     fun isActive(): Boolean {
-      val current = activeActivity.get() ?: return false
-      return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+      val current = activeActivity.get()
+      val dedicatedActivityIsActive = current != null &&
         current.isInPictureInPictureMode &&
         !current.isFinishing
+      return dedicatedActivityIsActive
     }
 
     fun closeIfActive(): Boolean {
       sharedConfiguration = sharedConfiguration.copy(enabled = false)
-      val current = activeActivity.get() ?: return false
-      current.runOnUiThread { current.finishWithoutRestore() }
-      return true
+      pendingDedicatedRestoreRequest = false
+      mainHostRestoreIntentReceived = false
+      var didClose = false
+      activeActivity.get()?.let { current ->
+        current.runOnUiThread { current.finishWithoutRestore() }
+        didClose = true
+      }
+      return didClose
     }
   }
 }

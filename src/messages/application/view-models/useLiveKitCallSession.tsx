@@ -3961,13 +3961,35 @@ export function LiveKitCallSessionProvider({
   useEffect(() => {
     return () => {
       clearRingTimers();
-      const currentCallId = sessionRef.current?.callId;
-      if (currentCallId) {
-        stopCallProgressTone(currentCallId).catch(() => undefined);
+      const current = sessionRef.current;
+      if (current?.callId) {
+        stopCallProgressTone(current.callId).catch(() => undefined);
+      }
+      if (
+        current?.callId &&
+        !isFinalPhase(current.phase) &&
+        !closeSentRef.current
+      ) {
+        closeSentRef.current = true;
+        repository
+          .closeCall({
+            callId: current.callId,
+            callType: current.callType,
+            status: current.phase === 'ringing' ? 'cancelled' : 'ended',
+            duration: durationSeconds(),
+          })
+          .catch(error => {
+            logCallDebug('provider_unmount_close_error', {
+              callId: current.callId,
+              callType: current.callType,
+              phase: current.phase,
+              error: serializeCallDebugError(error),
+            });
+          });
       }
       resetMediaState();
     };
-  }, [clearRingTimers, resetMediaState]);
+  }, [clearRingTimers, durationSeconds, repository, resetMediaState]);
 
   const statusText = resolveStatusText(session);
   const value = useMemo<LiveKitCallSessionContextValue>(

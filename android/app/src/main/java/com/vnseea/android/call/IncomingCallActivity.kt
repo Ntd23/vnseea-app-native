@@ -16,9 +16,6 @@ import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.media.AudioAttributes
-import android.media.Ringtone
-import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -46,7 +43,6 @@ class IncomingCallActivity : Activity() {
   }
 
   private var dismissReceiver: BroadcastReceiver? = null
-  private var ringtone: Ringtone? = null
   private val incomingCallExpiryHandler = Handler(Looper.getMainLooper())
   private val incomingCallExpiryRunnable = Runnable {
     val callId = extra(LiveKitCallNativeActions.EXTRA_CALL_ID)
@@ -233,9 +229,6 @@ class IncomingCallActivity : Activity() {
     applySystemBarAwarePadding(root, content)
     setContentView(root)
 
-    // The fullscreen activity is now the call surface; remove the heads-up card
-    // so the lock-screen UI does not show two incoming-call layers at once.
-    cancelNotification()
     startRingtone()
   }
 
@@ -379,7 +372,9 @@ class IncomingCallActivity : Activity() {
 
   override fun onDestroy() {
     incomingCallExpiryHandler.removeCallbacks(incomingCallExpiryRunnable)
-    stopRingtone()
+    if (!IncomingCallRingingService.isActive(extra(LiveKitCallNativeActions.EXTRA_CALL_ID))) {
+      stopRingtone()
+    }
     dismissReceiver?.let { receiver ->
       try {
         unregisterReceiver(receiver)
@@ -557,39 +552,19 @@ class IncomingCallActivity : Activity() {
   }
 
   private fun startRingtone() {
-    val ringtoneUri = incomingRingtoneUri()
-    try {
-      ringtone = RingtoneManager.getRingtone(this, ringtoneUri)?.apply {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-          audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        }
-        play()
-        LiveKitCallNativeActions.postAction(
-          extra(LiveKitCallNativeActions.EXTRA_API_URL),
-          extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
-          "progress",
-          extra(LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID),
-          "ringing",
-        )
-      }
-    } catch (_: Throwable) {
-      ringtone = null
-    }
+    IncomingCallRinger.start(this, extra(LiveKitCallNativeActions.EXTRA_CALL_ID))
+    LiveKitCallNativeActions.postAction(
+      extra(LiveKitCallNativeActions.EXTRA_API_URL),
+      extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
+      "progress",
+      extra(LiveKitCallNativeActions.EXTRA_CLIENT_ENDPOINT_ID),
+      "ringing",
+    )
   }
 
   private fun stopRingtone() {
-    try {
-      ringtone?.stop()
-    } catch (_: Throwable) {
-    }
-    ringtone = null
+    IncomingCallRinger.stop(extra(LiveKitCallNativeActions.EXTRA_CALL_ID))
   }
-
-  private fun incomingRingtoneUri() =
-    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
 
   private fun statusPill(): LinearLayout {
     return LinearLayout(this).apply {
@@ -640,7 +615,7 @@ class IncomingCallActivity : Activity() {
       })
       addView(utilityButton(R.drawable.ic_call_volume_off_modern, "T\u1eaft chu\u00f4ng").apply {
         setOnClickListener {
-          stopRingtone()
+          IncomingCallRinger.mute(extra(LiveKitCallNativeActions.EXTRA_CALL_ID))
           alpha = 0.72f
           (getChildAt(0) as? FrameLayout)?.background =
             ovalBorder(Color.argb(66, 34, 197, 94), Color.argb(104, 255, 255, 255), dp(1))
@@ -709,7 +684,7 @@ class IncomingCallActivity : Activity() {
         layoutParams = FrameLayout.LayoutParams(mainIconSize, mainIconSize, Gravity.CENTER)
       })
       setOnClickListener {
-        LiveKitCallNativeActions.markIncomingCallHandled(
+        LiveKitCallNativeActions.completeIncomingCall(
           this@IncomingCallActivity,
           extra(LiveKitCallNativeActions.EXTRA_CALL_ID),
         )
@@ -817,7 +792,7 @@ class IncomingCallActivity : Activity() {
                 .translationX(maxSlide.toFloat())
                 .setDuration(120L)
                 .withEndAction {
-                  LiveKitCallNativeActions.markIncomingCallHandled(
+                  LiveKitCallNativeActions.completeIncomingCall(
                     this@IncomingCallActivity,
                     extra(LiveKitCallNativeActions.EXTRA_CALL_ID),
                   )
@@ -870,7 +845,7 @@ class IncomingCallActivity : Activity() {
   }
 
   private fun openMessageThread() {
-    LiveKitCallNativeActions.markIncomingCallHandled(
+    LiveKitCallNativeActions.completeIncomingCall(
       this,
       extra(LiveKitCallNativeActions.EXTRA_CALL_ID),
     )

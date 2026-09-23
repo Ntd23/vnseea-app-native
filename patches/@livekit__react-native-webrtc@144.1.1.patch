@@ -960,6 +960,13 @@ index e64005daf3c712dbbe631cd509841307f3b0853e..aef0b8a3ec6b77b522bc18b4e0f682f6
 +        });
 +    }
 +
++    NSString *localStreamURL = [pipOptions[@"localStreamURL"] isKindOfClass:[NSString class]]
++        ? pipOptions[@"localStreamURL"]
++        : @"";
++    BOOL localMirror = [pipOptions[@"localMirror"] boolValue];
++    _pipController.localMirror = localMirror;
++    _pipLocalStreamURL = [localStreamURL copy];
++
 +    if (_pipActiveRequested != active) {
 +        _pipActiveRequested = active;
 +        if (active) {
@@ -968,13 +975,6 @@ index e64005daf3c712dbbe631cd509841307f3b0853e..aef0b8a3ec6b77b522bc18b4e0f682f6
 +            [_pipController stopPIP];
 +        }
 +    }
-+
-+    NSString *localStreamURL = [pipOptions[@"localStreamURL"] isKindOfClass:[NSString class]]
-+        ? pipOptions[@"localStreamURL"]
-+        : @"";
-+    BOOL localMirror = [pipOptions[@"localMirror"] boolValue];
-+    _pipController.localMirror = localMirror;
-+    _pipLocalStreamURL = [localStreamURL copy];
 +
 +    if (localStreamURL.length == 0) {
 +        _pipController.localVideoTrack = nil;

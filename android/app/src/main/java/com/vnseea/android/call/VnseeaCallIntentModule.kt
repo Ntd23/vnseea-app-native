@@ -332,6 +332,11 @@ class VnseeaCallIntentModule(
   }
 
   @ReactMethod
+  fun consumeCallPictureInPictureRestoreRequest(promise: Promise) {
+    promise.resolve(CallPictureInPictureActivity.consumeDedicatedRestoreRequest())
+  }
+
+  @ReactMethod
   fun closeCallPictureInPictureIfActive(promise: Promise) {
     appContext.runOnUiQueueThread {
       try {

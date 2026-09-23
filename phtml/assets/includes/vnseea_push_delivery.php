@@ -1817,7 +1817,7 @@ if (!function_exists('VNSEEA_SendApnsVoipTarget')) {
             'apns-topic: ' . $bundle_id . '.voip',
             'apns-push-type: voip',
             'apns-priority: 10',
-            'apns-expiration: ' . (time() + 45),
+            'apns-expiration: 0',
             'content-type: application/json'
         ));
         curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$response_headers) {
@@ -2120,7 +2120,7 @@ if (!function_exists('VNSEEA_PrepareApnsVoipCallRequest')) {
             'apns-topic: ' . $bundle_id . '.voip',
             'apns-push-type: voip',
             'apns-priority: 10',
-            'apns-expiration: ' . (time() + 45),
+            'apns-expiration: 0',
             'content-type: application/json'
         ));
         curl_setopt($ch, CURLOPT_HEADER, true);
@@ -2312,7 +2312,7 @@ if (!function_exists('VNSEEA_SendImmediateCallPush')) {
     {
         $recipient_id = (int)$recipient_id;
         $call_type = $call_type === 'audio' ? 'audio' : 'video';
-        $allow_voip = (bool)$allow_voip;
+        $allow_voip = (bool)$allow_voip && !$is_control;
         $call_id = !empty($notification_data['call_id'])
             ? (string)$notification_data['call_id']
             : 'unknown';
