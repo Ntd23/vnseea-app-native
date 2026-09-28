@@ -91,6 +91,7 @@ import {
   MessageReactionPicker,
 } from '../components/MessageReactions';
 import type {
+  ChatItem,
   MessageAttachment,
   GroupChatMember,
   MessageItem,
@@ -109,6 +110,9 @@ import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAu
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
+import { showSystemActionSheet } from '../../../shared-kernel/presentation/utils/systemActionSheet';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
@@ -153,8 +157,12 @@ import {
 } from '../../application/mentions/groupMessageMentions';
 import {
   resolveConversationMessageAvatar,
+  resolveGroupSenderNameColor,
   shouldShowConversationMessageAvatar,
+  shouldShowGroupSenderHeader,
 } from '../../application/utils/groupMessagePresentation';
+
+const messagesRepository = createMessagesRepository();
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -281,6 +289,16 @@ const CHAT_COPY: Record<
     recallConfirmAction: string;
     recallSuccess: string;
     recallError: string;
+    memberFallback: string;
+    memberVideoCall: string;
+    memberAudioCall: string;
+    memberViewProfile: string;
+    memberSendMessage: string;
+    memberBlock: string;
+    blockMemberTitle: (name: string) => string;
+    blockMemberMessage: string;
+    blockMemberSuccess: (name: string) => string;
+    blockMemberFailed: string;
   }
 > = {
   vi: {
@@ -328,6 +346,17 @@ const CHAT_COPY: Record<
     recallConfirmAction: 'Thu hồi',
     recallSuccess: 'Đã thu hồi tin nhắn',
     recallError: 'Không thể thu hồi tin nhắn',
+    memberFallback: 'Thành viên',
+    memberVideoCall: 'Gọi video',
+    memberAudioCall: 'Gọi thoại',
+    memberViewProfile: 'Xem trang cá nhân',
+    memberSendMessage: 'Nhắn tin',
+    memberBlock: 'Chặn',
+    blockMemberTitle: name => `Chặn ${name}?`,
+    blockMemberMessage:
+      'Hai người sẽ không thể nhắn tin cho nhau cho đến khi bạn bỏ chặn trong Cài đặt.',
+    blockMemberSuccess: name => `Đã chặn ${name}`,
+    blockMemberFailed: 'Không thể chặn',
   },
   en: {
     today: 'Today',
@@ -374,6 +403,17 @@ const CHAT_COPY: Record<
     recallConfirmAction: 'Unsend',
     recallSuccess: 'Message unsent',
     recallError: 'Could not unsend message',
+    memberFallback: 'Member',
+    memberVideoCall: 'Video call',
+    memberAudioCall: 'Voice call',
+    memberViewProfile: 'View profile',
+    memberSendMessage: 'Message',
+    memberBlock: 'Block',
+    blockMemberTitle: name => `Block ${name}?`,
+    blockMemberMessage:
+      'You will not be able to message each other until you unblock them in Settings.',
+    blockMemberSuccess: name => `${name} has been blocked`,
+    blockMemberFailed: 'Could not block',
   },
 };
 
@@ -1621,6 +1661,10 @@ function MessageBubble({
   avatar,
   chatName,
   showAvatar = true,
+  avatarAtTop = false,
+  senderName,
+  senderNameColor,
+  onPressAvatar,
   onOpenMedia,
   onReply,
   onLongPress,
@@ -1635,6 +1679,12 @@ function MessageBubble({
   avatar: string;
   chatName: string;
   showAvatar?: boolean;
+  /** Group chats pin the avatar to the first bubble of a sender run. */
+  avatarAtTop?: boolean;
+  /** Set on the first incoming bubble of a group sender run. */
+  senderName?: string;
+  senderNameColor?: string;
+  onPressAvatar?: (message: MessageItem) => void;
   onOpenMedia: OpenChatMedia;
   onReply?: (message: MessageItem) => void;
   onLongPress?: (message: MessageItem) => void;
@@ -1699,6 +1749,23 @@ function MessageBubble({
     : APP_COLORS.status.info;
   const usesLightReplyBubble =
     Boolean(replyInfo) && !hasMessageMedia && !isMediaOnly;
+  const senderLabel = !isSentByMe && senderName ? senderName : '';
+  // Text bubbles carry the sender name inside, like the reference design;
+  // cards, media and call rows get it on a line above instead.
+  const showsSenderInsideBubble =
+    Boolean(senderLabel) &&
+    !storyReply &&
+    !sharedPost &&
+    !mapShare &&
+    !message.link &&
+    !orderInquiry &&
+    !productInquiry &&
+    !message.callEvent &&
+    !isMediaOnly &&
+    !hasMessageMedia;
+  const senderLabelStyle = senderNameColor
+    ? { color: senderNameColor }
+    : undefined;
 
   const translateX = useRef(new Animated.Value(0)).current;
   const replyIconOpacity = useRef(new Animated.Value(0)).current;
@@ -1866,12 +1933,20 @@ function MessageBubble({
       >
         {!isSentByMe &&
           (showAvatar ? (
-            <Image
-              source={{ uri: avatar }}
-              className="mr-2 mb-1 h-7 w-7 rounded-full bg-gray-200"
-              fadeDuration={0}
-              resizeMethod="resize"
-            />
+            <TouchableOpacity
+              activeOpacity={0.8}
+              disabled={!onPressAvatar}
+              onPress={() => onPressAvatar?.(message)}
+              hitSlop={6}
+              className={`mr-2 ${avatarAtTop ? 'self-start' : 'mb-1'}`}
+            >
+              <Image
+                source={{ uri: avatar }}
+                className="h-7 w-7 rounded-full bg-gray-200"
+                fadeDuration={0}
+                resizeMethod="resize"
+              />
+            </TouchableOpacity>
           ) : (
             <View className="w-7 mr-2" />
           ))}
@@ -1891,6 +1966,15 @@ function MessageBubble({
             isSentByMe ? 'items-end' : 'items-start'
           }`}
         >
+          {senderLabel && !showsSenderInsideBubble ? (
+            <Text
+              numberOfLines={1}
+              className="mb-1 ml-1 text-[12px] font-semibold text-gray-500"
+              style={senderLabelStyle}
+            >
+              {senderLabel}
+            </Text>
+          ) : null}
           {/* Shared Post Card (renders instead of the raw URL bubble) */}
           {storyReply ? (
             <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}>
@@ -2034,6 +2118,15 @@ function MessageBubble({
                   onDoubleTap={() => !isRecalled && onDoubleTap?.(message)}
                   delayLongPress={350}
                 >
+                  {showsSenderInsideBubble ? (
+                    <Text
+                      numberOfLines={1}
+                      className="mb-0.5 text-[13px] font-semibold text-gray-500"
+                      style={senderLabelStyle}
+                    >
+                      {senderLabel}
+                    </Text>
+                  ) : null}
                   {message.callEvent ? (
                     <CallEventContent
                       message={message}
@@ -2226,7 +2319,11 @@ const MemoizedMessageBubble = React.memo(
         nextProps.message.reactions,
       ) &&
       prevProps.avatar === nextProps.avatar &&
-      prevProps.showAvatar === nextProps.showAvatar
+      prevProps.showAvatar === nextProps.showAvatar &&
+      prevProps.avatarAtTop === nextProps.avatarAtTop &&
+      prevProps.senderName === nextProps.senderName &&
+      prevProps.senderNameColor === nextProps.senderNameColor &&
+      prevProps.onPressAvatar === nextProps.onPressAvatar
     );
   },
 );
@@ -2578,12 +2675,20 @@ function MessageMedia({
 function MediaMessageGroup({
   messages,
   avatar,
+  showAvatar = true,
+  senderName,
+  senderNameColor,
+  onPressAvatar,
   onOpenMedia,
   onLongPress,
   onDoubleTap,
 }: {
   messages: MessageItem[];
   avatar: string;
+  showAvatar?: boolean;
+  senderName?: string;
+  senderNameColor?: string;
+  onPressAvatar?: (message: MessageItem) => void;
   onOpenMedia: OpenChatMedia;
   onLongPress?: (message: MessageItem) => void;
   onDoubleTap?: (message: MessageItem) => void;
@@ -2617,13 +2722,33 @@ function MediaMessageGroup({
         newestMessage.isSentByMe ? 'justify-end' : 'justify-start'
       } ${deliveryState === 'sending' ? 'opacity-70' : ''}`}
     >
-      {!newestMessage.isSentByMe && (
-        <Image
-          source={{ uri: avatar }}
-          className="mr-2 mt-1 h-7 w-7 rounded-full bg-gray-200"
-        />
-      )}
+      {!newestMessage.isSentByMe &&
+        (showAvatar ? (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={!onPressAvatar}
+            onPress={() => onPressAvatar?.(newestMessage)}
+            hitSlop={6}
+            className="mr-2 mt-1"
+          >
+            <Image
+              source={{ uri: avatar }}
+              className="h-7 w-7 rounded-full bg-gray-200"
+            />
+          </TouchableOpacity>
+        ) : (
+          <View className="w-7 mr-2" />
+        ))}
       <View style={styles.imageGalleryBody}>
+        {!newestMessage.isSentByMe && senderName ? (
+          <Text
+            numberOfLines={1}
+            className="mb-1 ml-1 text-[12px] font-semibold text-gray-500"
+            style={senderNameColor ? { color: senderNameColor } : undefined}
+          >
+            {senderName}
+          </Text>
+        ) : null}
         <View style={styles.imageGallery}>
           {visibleMessages.map((message, index) => (
             <DoubleTapTouchable
@@ -3792,6 +3917,23 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     loadGroupInfo().catch(() => undefined);
   }, [chat.chatType, isScreenFocused, loadGroupInfo]);
 
+  const startDirectCall = useCallback(
+    (
+      peer: { id: string; name: string; avatar: string; username?: string },
+      callType: 'audio' | 'video',
+    ) => {
+      const callParams = {
+        recipientId: peer.id,
+        callType,
+        direction: 'outgoing' as const,
+        peer,
+      };
+      startOutgoingCall(callParams);
+      navigation.navigate(ROUTES.CALL_ROOM, callParams);
+    },
+    [navigation, startOutgoingCall],
+  );
+
   const handleStartConversationCall = useCallback(
     (callType: 'audio' | 'video') => {
       if (chat.chatType === 'group') {
@@ -3816,19 +3958,15 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         return;
       }
 
-      const callParams = {
-        recipientId,
-        callType,
-        direction: 'outgoing' as const,
-        peer: {
+      startDirectCall(
+        {
           id: recipientId,
           name: displayChat.name,
           avatar: displayChat.avatar,
           username: chat.username,
         },
-      };
-      startOutgoingCall(callParams);
-      navigation.navigate(ROUTES.CALL_ROOM, callParams);
+        callType,
+      );
     },
     [
       displayChat.avatar,
@@ -3842,14 +3980,155 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       chat.participantId,
       chat.userId,
       chat.username,
+      startDirectCall,
       startGroupCall,
-      startOutgoingCall,
+    ],
+  );
+
+  const confirmBlockGroupMember = useCallback(
+    (member: { id: string; name: string }) => {
+      Alert.alert(copy.blockMemberTitle(member.name), copy.blockMemberMessage, [
+        { text: copy.cancel, style: 'cancel' },
+        {
+          text: copy.memberBlock,
+          style: 'destructive',
+          onPress: () => {
+            messagesRepository
+              .blockConversationUser(member.id)
+              .then(() => {
+                showSnackbar({
+                  message: copy.blockMemberSuccess(member.name),
+                  type: 'success',
+                });
+              })
+              .catch(blockError => {
+                Alert.alert(
+                  copy.blockMemberFailed,
+                  blockError instanceof Error
+                    ? blockError.message
+                    : copy.retryHint,
+                );
+              });
+          },
+        },
+      ]);
+    },
+    [copy],
+  );
+
+  const handlePressGroupSenderAvatar = useCallback(
+    (message: MessageItem) => {
+      if (displayChat.chatType !== 'group' || !message.fromId) return;
+      const currentUserId = sessionStorage.getSession()?.userId ?? '';
+      if (message.fromId === currentUserId) return;
+
+      const member = groupInfo?.members.find(item => item.id === message.fromId);
+      const sender = {
+        id: message.fromId,
+        name:
+          message.senderName ||
+          member?.name ||
+          member?.username ||
+          copy.memberFallback,
+        avatar: message.senderAvatar || member?.avatar || '',
+        username: member?.username || '',
+      };
+
+      showSystemActionSheet({
+        title: sender.name,
+        options: [
+          { label: copy.memberVideoCall },
+          { label: copy.memberAudioCall },
+          { label: copy.memberViewProfile },
+          { label: copy.memberSendMessage },
+          { label: copy.memberBlock, destructive: true },
+        ],
+        cancelLabel: copy.cancel,
+      })
+        .then(selectedIndex => {
+          switch (selectedIndex) {
+            case 0:
+              startDirectCall(sender, 'video');
+              break;
+            case 1:
+              startDirectCall(sender, 'audio');
+              break;
+            case 2:
+              navigateToUserProfile(navigation, sender.id);
+              break;
+            case 3: {
+              const directChat: ChatItem = {
+                id: `user:${sender.id}`,
+                chatId: sender.id,
+                chatType: 'user',
+                participantId: sender.id,
+                userId: sender.id,
+                username: sender.username,
+                name: sender.name,
+                avatar: sender.avatar,
+                lastMessage: '',
+                lastMessageTime: 0,
+                unreadCount: 0,
+                isOnline: false,
+                isVerified: false,
+              };
+              // Push so Back returns to this group conversation.
+              navigation.push(ROUTES.CHAT, { chat: directChat });
+              break;
+            }
+            case 4:
+              confirmBlockGroupMember(sender);
+              break;
+            default:
+              break;
+          }
+        })
+        .catch(sheetError => {
+          console.warn('[ChatScreen] Could not open member actions', sheetError);
+        });
+    },
+    [
+      confirmBlockGroupMember,
+      copy,
+      displayChat.chatType,
+      groupInfo?.members,
+      navigation,
+      startDirectCall,
     ],
   );
 
   const renderMessageItem = useCallback<ListRenderItem<ChatMessageListItem>>(
     ({ item }) => {
+      const isGroupChat = displayChat.chatType === 'group';
+      const resolveGroupSender = (message: MessageItem) => {
+        if (!isGroupChat) return undefined;
+        const currentIndex = messageItems.findIndex(x => x.id === item.id);
+        // The list is inverted, so the message rendered above is the next index.
+        const olderItem =
+          currentIndex >= 0 ? messageItems[currentIndex + 1] : undefined;
+        const olderMessage = olderItem
+          ? olderItem.kind === 'message'
+            ? olderItem.message
+            : olderItem.messages[0]
+          : undefined;
+        if (!shouldShowGroupSenderHeader(displayChat, message, olderMessage)) {
+          return undefined;
+        }
+        const member = groupInfo?.members.find(
+          groupMember => groupMember.id === message.fromId,
+        );
+        return {
+          name:
+            message.senderName ||
+            member?.name ||
+            member?.username ||
+            copy.memberFallback,
+          color: resolveGroupSenderNameColor(message.fromId),
+        };
+      };
+
       if (item.kind === 'media-group') {
+        const groupSender = resolveGroupSender(item.messages[0]);
         return (
           <View
             style={
@@ -3864,6 +4143,12 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                 displayChat,
                 item.messages[0],
               )}
+              showAvatar={!isGroupChat || Boolean(groupSender)}
+              senderName={groupSender?.name}
+              senderNameColor={groupSender?.color}
+              onPressAvatar={
+                isGroupChat ? handlePressGroupSenderAvatar : undefined
+              }
               onOpenMedia={handleOpenMedia}
               onLongPress={setSelectedOptionMessage}
               onDoubleTap={handleDoubleTapMessage}
@@ -3893,8 +4178,10 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         );
       }
 
-      const showAvatar =
-        item.kind === 'message' && !item.message.isSentByMe
+      const groupSender = resolveGroupSender(item.message);
+      const showAvatar = isGroupChat
+        ? Boolean(groupSender)
+        : item.kind === 'message' && !item.message.isSentByMe
           ? (() => {
               const currentIndex = messageItems.findIndex(
                 x => x.id === item.id,
@@ -3930,6 +4217,12 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
             )}
             chatName={displayChat.name}
             showAvatar={showAvatar}
+            avatarAtTop={isGroupChat}
+            senderName={groupSender?.name}
+            senderNameColor={groupSender?.color}
+            onPressAvatar={
+              isGroupChat ? handlePressGroupSenderAvatar : undefined
+            }
             onOpenMedia={handleOpenMedia}
             onReply={setReplyingMessage}
             onLongPress={setSelectedOptionMessage}
@@ -3955,6 +4248,9 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       handleOpenSharedPage,
       handleDoubleTapMessage,
       handleOpenPinnedMessage,
+      handlePressGroupSenderAvatar,
+      copy.memberFallback,
+      groupInfo?.members,
       language,
     ],
   );
