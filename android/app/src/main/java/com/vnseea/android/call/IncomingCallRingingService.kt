@@ -1,6 +1,6 @@
 package com.vnseea.android.call
 
-import android.app.NotificationManager
+import android.app.Notification
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -34,9 +34,13 @@ class IncomingCallRingingService : Service() {
     }
     callId = incomingCallId
     currentCallId = incomingCallId
-    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     try {
-      val notification = LiveKitCallNotifier.buildNotification(this, data, manager, includeFullScreen = false)
+      val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        intent?.getParcelableExtra(EXTRA_NOTIFICATION, Notification::class.java)
+      } else {
+        @Suppress("DEPRECATION")
+        (intent?.getParcelableExtra(EXTRA_NOTIFICATION) as? Notification)
+      } ?: throw IllegalStateException("missing incoming call notification")
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         startForeground(incomingCallId.hashCode(), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
       } else {
@@ -70,11 +74,13 @@ class IncomingCallRingingService : Service() {
   companion object {
     private const val TAG = "LiveKitCallPush"
     private const val EXTRA_DATA = "call_data"
+    private const val EXTRA_NOTIFICATION = "call_notification"
     @Volatile private var currentCallId: String? = null
 
-    fun start(context: Context, data: JSONObject) {
+    fun start(context: Context, data: JSONObject, notification: Notification) {
       val intent = Intent(context, IncomingCallRingingService::class.java).apply {
         putExtra(EXTRA_DATA, data.toString())
+        putExtra(EXTRA_NOTIFICATION, notification)
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         context.startForegroundService(intent)

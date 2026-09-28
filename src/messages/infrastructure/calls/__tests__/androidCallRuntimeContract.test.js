@@ -40,7 +40,7 @@ describe('Android call runtime contract', () => {
     const manifest = read('android/app/src/main/AndroidManifest.xml');
 
     expect(notifier).toContain('NotificationCompat.CallStyle.forIncomingCall(');
-    expect(notifier).toContain('IncomingCallRingingService.start(context, data)');
+    expect(notifier).toContain('IncomingCallRingingService.start(context, data, notification)');
     expect(notifier).toContain('enableVibration(false)');
     expect(notifier).not.toContain('vibrationPattern = longArrayOf(0, 700, 350, 700)');
     expect(service).toContain('FOREGROUND_SERVICE_TYPE_SHORT_SERVICE');
@@ -66,13 +66,37 @@ describe('Android call runtime contract', () => {
 
     expect(notifier).toContain('manager.canUseFullScreenIntent()');
     expect(notifier).toContain(
-      'notificationBuilder.setFullScreenIntent(fullScreenPendingIntent, true)',
+      '.setFullScreenIntent(fullScreenPendingIntent, true)',
     );
     expect(notifier).toContain('using heads-up notification');
     expect(notifier).not.toContain('context.startActivity(intent)');
     expect(notifier).not.toContain('maybeLaunchFullScreen');
     expect(showMethod).toContain('LiveKitCallNotifier.show(appContext, notificationData)');
     expect(showMethod).not.toContain('appContext.startActivity(intent)');
+  });
+
+  it('shows the same CallStyle notification in foreground, background and cold start', () => {
+    const notifier = read('android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt');
+    const extension = read('android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotificationServiceExtension.kt');
+    const intentModule = read('android/app/src/main/java/com/vnseea/android/call/VnseeaCallIntentModule.kt');
+    const application = read('android/app/src/main/java/com/vnseea/android/MainApplication.kt');
+    const ringingService = read('android/app/src/main/java/com/vnseea/android/call/IncomingCallRingingService.kt');
+    const showMethod = intentModule.slice(
+      intentModule.indexOf('fun showIncomingCall'),
+      intentModule.indexOf('fun canUseFullScreenIntent'),
+    );
+
+    // Android 12+ rejects CallStyle without a full-screen intent or a foreground
+    // service, so the full-screen intent must not depend on app state.
+    expect(notifier).not.toContain('includeFullScreen');
+    expect(notifier).not.toContain('CallAppUiState');
+    expect(application).not.toContain('CallAppUiState');
+    expect(notifier).toContain('.setContentIntent(fullScreenPendingIntent)');
+    expect(notifier).toContain('val notification = buildNotification(context, data, manager)');
+    expect(extension).toContain('LiveKitCallNotifier.show(context, data)');
+    expect(showMethod).toContain('LiveKitCallNotifier.show(appContext, notificationData)');
+    expect(showMethod).not.toContain('activity.startActivity(intent)');
+    expect(ringingService).toContain('getParcelableExtra(EXTRA_NOTIFICATION, Notification::class.java)');
   });
 
   it('declares the active call foreground service and wires it to connected calls', () => {

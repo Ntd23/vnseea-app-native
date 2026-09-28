@@ -65,7 +65,7 @@ object LiveKitCallNotifier {
       }
     }, expiryDelayMs(data))
     try {
-      IncomingCallRingingService.start(context, data)
+      IncomingCallRingingService.start(context, data, notification)
     } catch (error: Throwable) {
       Log.w("LiveKitCallPush", "ringing service unavailable call_id=$callId", error)
     }
@@ -77,7 +77,6 @@ object LiveKitCallNotifier {
     context: Context,
     data: JSONObject,
     manager: NotificationManager,
-    includeFullScreen: Boolean = true,
   ): Notification {
     val callId = data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)
     val notificationId = callId.hashCode()
@@ -160,13 +159,16 @@ object LiveKitCallNotifier {
       .setTimeoutAfter(expiryDelayMs(data))
       .setContentIntent(fullScreenPendingIntent)
       .setOnlyAlertOnce(true)
+      // Android rejects a CallStyle notification with neither a full-screen intent nor a
+      // foreground service, so attach it in every app state. The system shows a heads-up
+      // while the device is in use and launches IncomingCallActivity only when locked; if
+      // the permission is denied it keeps the notification as a sticky heads-up instead.
+      .setFullScreenIntent(fullScreenPendingIntent, true)
 
-    if (includeFullScreen && canUseFullScreenIntent(manager)) {
-      notificationBuilder.setFullScreenIntent(fullScreenPendingIntent, true)
-    } else {
+    if (!canUseFullScreenIntent(manager)) {
       Log.i(
         "LiveKitCallPush",
-        "full-screen intent unavailable; using heads-up notification call_id=$callId",
+        "full-screen intent permission denied; using heads-up notification call_id=$callId",
       )
     }
     return notificationBuilder.build()
