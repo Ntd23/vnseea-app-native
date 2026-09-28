@@ -1428,8 +1428,7 @@ if (!function_exists('VNSEEA_SendOneSignalDelivery')) {
             'data' => $payload
         );
         if ($platform === 'android') {
-            $request['existing_android_channel_id'] = 'vnseea_notifications_sound_v1';
-            $request['android_sound'] = 'app_notification_sound';
+            $request['existing_android_channel_id'] = 'vnseea_notifications_v2';
         } else {
             $request['ios_sound'] = 'default';
         }

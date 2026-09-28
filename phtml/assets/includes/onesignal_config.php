@@ -137,8 +137,7 @@ function Wo_SendPushNotification($data = array(), $push_type = 'chat') {
         ));
         return false;
     }
-    $default_mobile_notification_sound = 'app_notification_sound';
-    $default_android_notification_channel = 'vnseea_notifications_sound_v1';
+    $default_android_notification_channel = 'vnseea_notifications_v2';
     $app_id  = '';
     $app_key = '';
     if ($push_type == 'android_messenger') {
@@ -222,9 +221,6 @@ function Wo_SendPushNotification($data = array(), $push_type = 'chat') {
     }
     if (empty($livekit_payload)) {
         if ($push_type == 'android_messenger' || $push_type == 'android_native') {
-            if (empty($final_request_data['android_sound'])) {
-                $final_request_data['android_sound'] = $default_mobile_notification_sound;
-            }
             if (empty($final_request_data['android_channel_id']) && empty($final_request_data['existing_android_channel_id'])) {
                 $final_request_data['existing_android_channel_id'] = $default_android_notification_channel;
             }

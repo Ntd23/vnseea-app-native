@@ -16,6 +16,7 @@ import com.onesignal.notifications.INotificationServiceExtension
 import com.vnseea.android.MainActivity
 import com.vnseea.android.R
 import com.vnseea.android.messages.MessagePushNotification
+import com.vnseea.android.push.VnseeaNotificationChannels
 import org.json.JSONObject
 
 class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
@@ -25,6 +26,11 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
 
   override fun onNotificationReceived(event: INotificationReceivedEvent) {
     val notification = event.notification
+    // Pushes OneSignal displays itself (likes, comments, ...) must use the app channel
+    // whatever channel id the backend sent, so they play the system notification sound.
+    notification.setExtender(NotificationCompat.Extender { builder ->
+      builder.setChannelId(VnseeaNotificationChannels.DEFAULT_PUSH_CHANNEL_ID)
+    })
     Log.i("LiveKitCallPush", "received call notification")
     val data = notification.additionalData ?: parseBodyData(notification.body)
     if (data == null) {

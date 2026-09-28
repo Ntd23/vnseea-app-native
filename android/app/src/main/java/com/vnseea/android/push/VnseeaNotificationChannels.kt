@@ -5,22 +5,28 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
-import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 
 object VnseeaNotificationChannels {
-  const val DEFAULT_PUSH_CHANNEL_ID = "vnseea_notifications_sound_v1"
+  const val DEFAULT_PUSH_CHANNEL_ID = "vnseea_notifications_v2"
 
-  private const val DEFAULT_PUSH_SOUND_RES_NAME = "app_notification_sound"
+  // Android freezes a channel's sound once it is created, so channels that played the
+  // bundled app sound are deleted and replaced instead of being updated in place.
+  private val LEGACY_PUSH_CHANNEL_IDS = listOf("vnseea_notifications_sound_v1")
 
   fun ensure(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
+    LEGACY_PUSH_CHANNEL_IDS.forEach { channelId ->
+      if (manager.getNotificationChannel(channelId) != null) {
+        manager.deleteNotificationChannel(channelId)
+      }
+    }
     if (manager.getNotificationChannel(DEFAULT_PUSH_CHANNEL_ID) != null) return
 
-    val soundUri = customSoundUri(context)
     val soundAttributes = AudioAttributes.Builder()
       .setUsage(AudioAttributes.USAGE_NOTIFICATION)
       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -34,22 +40,9 @@ object VnseeaNotificationChannels {
       description = "VNSEEA message and activity notifications"
       lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
       enableVibration(true)
-      if (soundUri != null) {
-        setSound(soundUri, soundAttributes)
-      }
+      setSound(Settings.System.DEFAULT_NOTIFICATION_URI, soundAttributes)
     }
 
     manager.createNotificationChannel(channel)
-  }
-
-  private fun customSoundUri(context: Context): Uri? {
-    val resourceId = context.resources.getIdentifier(
-      DEFAULT_PUSH_SOUND_RES_NAME,
-      "raw",
-      context.packageName,
-    )
-    if (resourceId == 0) return null
-
-    return Uri.parse("android.resource://${context.packageName}/$resourceId")
   }
 }
