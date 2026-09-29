@@ -5,6 +5,7 @@ import type {
 } from '../../../shared-kernel/domain/types/api.types';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { createAsyncResourceCache } from '../../../shared-kernel/application/utils/asyncResourceCache';
+import { createSharedInFlightRequests } from '../../../shared-kernel/application/utils/sharedInFlightRequests';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -186,6 +187,11 @@ const placeDetailsCache = createAsyncResourceCache<NearbyPlace | null>({
   ttlMs: PLACE_DETAILS_CACHE_TTL_MS,
   maxEntries: 160,
 });
+// Typeahead and an explicit search for the same text send the same payload,
+// so pressing Search joins a backend request that typing already started.
+const inFlightNearbyPages = createSharedInFlightRequests<NearbyPlace[]>();
+const inFlightBackendPredictions =
+  createSharedInFlightRequests<MapPlacePrediction[]>();
 const pagePinStatusCache = createAsyncResourceCache<string | null>({
   ttlMs: PAGE_PIN_STATUS_CACHE_TTL_MS,
   maxEntries: 200,
@@ -502,16 +508,25 @@ async function requestNearbyPages(input?: NearbyPagesInput) {
 async function fetchNearbyPages(input?: NearbyPagesInput) {
   const cacheKey = nearbyPagesCacheKey(input);
   const cachedPages = nearbyPagesCache.get(cacheKey);
+  if (cachedPages !== undefined && input?.revalidate) {
+    input.onCachedPages?.(applyCachedNearbyPageMapPinStatus(cachedPages));
+  }
   const pages =
-    cachedPages !== undefined
+    cachedPages !== undefined && !input?.revalidate
       ? cachedPages
       : input?.signal
-      ? await requestNearbyPages(input).then(result => {
-          if (!input.signal?.aborted) {
-            nearbyPagesCache.set(cacheKey, result);
-          }
-          return result;
-        })
+      ? await inFlightNearbyPages
+          .join(
+            cacheKey,
+            { signal: input.signal, delayMs: input.backendDelayMs },
+            sharedSignal => requestNearbyPages({ ...input, signal: sharedSignal }),
+          )
+          .then(result => {
+            if (!input.signal?.aborted) {
+              nearbyPagesCache.set(cacheKey, result);
+            }
+            return result;
+          })
       : await nearbyPagesCache.getOrLoad(cacheKey, () =>
           requestNearbyPages(input),
         );
@@ -1096,7 +1111,7 @@ export function createUserRepository(): UserRepository {
       };
       const cacheKey = placePredictionCacheKey(normalizedInput);
       const cachedPredictions = placePredictionsCache.get(cacheKey);
-      if (cachedPredictions !== undefined) {
+      if (cachedPredictions !== undefined && !input.revalidate) {
         try {
           input.onPartialPredictions?.(cachedPredictions);
         } catch {
@@ -1106,7 +1121,9 @@ export function createUserRepository(): UserRepository {
       }
 
       let directPredictions: MapPlacePrediction[] = [];
-      let backendPredictions: MapPlacePrediction[] = [];
+      // Cached lists always carry backend coordinates. While revalidating, keep
+      // them (and their map pins) until fresh backend places replace them.
+      let backendPredictions: MapPlacePrediction[] = cachedPredictions ?? [];
       const publishPredictions = () => {
         if (input.signal?.aborted || !input.onPartialPredictions) return;
         try {
@@ -1117,6 +1134,7 @@ export function createUserRepository(): UserRepository {
           // Rendering a partial result must not fail either search source.
         }
       };
+      if (cachedPredictions !== undefined) publishPredictions();
 
       const directPromise = getDirectGooglePlacePredictions(
         normalizedInput,
@@ -1128,29 +1146,35 @@ export function createUserRepository(): UserRepository {
         return predictions;
       });
 
-      const backendPromise =
-        trimmedQuery.length < 2
-          ? Promise.resolve([] as MapPlacePrediction[])
-          : apiBridge
-              .post<PlaceAutocompleteResponse>(
-                apiRoutes.user.mapDiscovery,
-                buildMapBusinessSearchRequest(normalizedInput),
-                {
-                  timeout: MAP_SEARCH_RESPONSE_BUDGET_MS,
-                  signal: input.signal,
-                },
-              )
-              .then(
-                response =>
-                  (response.predictions ?? [])
-                    .map(mapPlacePrediction)
-                    .filter(Boolean) as MapPlacePrediction[],
-              )
-              .then(predictions => {
-                backendPredictions = predictions;
-                publishPredictions();
-                return predictions;
-              });
+      const queriesBackend = trimmedQuery.length >= 2;
+      const backendPromise = !queriesBackend
+        ? Promise.resolve([] as MapPlacePrediction[])
+        : inFlightBackendPredictions
+            .join(
+              cacheKey,
+              { signal: input.signal, delayMs: input.backendDelayMs },
+              sharedSignal =>
+                apiBridge
+                  .post<PlaceAutocompleteResponse>(
+                    apiRoutes.user.mapDiscovery,
+                    buildMapBusinessSearchRequest(normalizedInput),
+                    {
+                      timeout: MAP_SEARCH_RESPONSE_BUDGET_MS,
+                      signal: sharedSignal,
+                    },
+                  )
+                  .then(
+                    response =>
+                      (response.predictions ?? [])
+                        .map(mapPlacePrediction)
+                        .filter(Boolean) as MapPlacePrediction[],
+                  ),
+            )
+            .then(predictions => {
+              backendPredictions = predictions;
+              publishPredictions();
+              return predictions;
+            });
 
       const [directResult, backendResult] = await Promise.allSettled([
         directPromise,
@@ -1169,14 +1193,23 @@ export function createUserRepository(): UserRepository {
       );
       if (
         backendResult.status === 'rejected' &&
-        directPredictions.length === 0 &&
+        predictions.length === 0 &&
         !input.signal?.aborted
       ) {
         throw backendResult.reason;
       }
 
       if (!input.signal?.aborted) {
-        placePredictionsCache.set(cacheKey, predictions);
+        // Only backend places carry coordinates. A list built without them
+        // (backend failed, rate-limited or returned nothing) cannot pin
+        // results on the map, so it is not cached: the next request, such as
+        // pressing Search, asks the backend again.
+        const backendReturnedPlaces =
+          backendResult.status === 'fulfilled' &&
+          backendResult.value.length > 0;
+        if (!queriesBackend || backendReturnedPlaces) {
+          placePredictionsCache.set(cacheKey, predictions);
+        }
         publishPredictions();
       }
       return predictions;
