@@ -151,9 +151,18 @@ describe('Home feed retained media loading', () => {
     const iosHomeIntroSource = read(
       'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
     );
+    // Both platforms draw story covers and previews through these shared files.
+    const storySources = [
+      read('src/feed/presentation/components/HomeStoryCardCover.tsx'),
+      read('src/feed/presentation/components/HomeStoryPeekPreview.tsx'),
+    ];
 
     expect(homeIntroSource).not.toContain('<Image');
-    expect(homeIntroSource.match(/<FeedMediaImage/g)).toHaveLength(5);
+    expect(homeIntroSource.match(/<FeedMediaImage/g)).toHaveLength(4);
+    storySources.forEach(source => {
+      expect(source).not.toContain('<Image');
+      expect(source).toContain('<FeedMediaImage');
+    });
     expect(composerSource.slice(
       composerSource.indexOf('const Avatar = React.memo'),
       composerSource.indexOf('export function ComposerCard'),
@@ -163,7 +172,7 @@ describe('Home feed retained media loading', () => {
       postCardsSource.indexOf('const FeedVideoBackdrop'),
     )).toContain('<FeedMediaImage');
     expect(feedScreenSource.match(/<FeedMediaImage/g)?.length).toBeGreaterThanOrEqual(6);
-    expect(iosHomeIntroSource.match(/resizeMethod="resize"/g)).toHaveLength(4);
+    expect(iosHomeIntroSource.match(/resizeMethod="resize"/g)).toHaveLength(3);
   });
 
   it('downsamples remote images that still use the native Image component in feed rows', () => {

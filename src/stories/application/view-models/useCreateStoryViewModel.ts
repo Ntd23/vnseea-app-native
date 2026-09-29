@@ -18,6 +18,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import type {
   CreateStoryDraft,
@@ -27,6 +28,29 @@ import type {
 import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
 
 const repository = createStoriesRepository();
+
+/**
+ * Video stories upload a frame as their cover, like posts and reels do, so the
+ * home rail can preview them. A missing frame must never block posting.
+ */
+export async function withStoryVideoThumbnail(
+  media: StoryMediaUpload,
+): Promise<StoryMediaUpload> {
+  if (media.fileType !== 'video' || media.thumbnailUri) return media;
+
+  try {
+    const thumbnail = await createVideoUploadThumbnail(media.uri);
+    if (!thumbnail?.uri) return media;
+    return {
+      ...media,
+      thumbnailUri: thumbnail.uri,
+      thumbnailName: thumbnail.name,
+      thumbnailType: thumbnail.type,
+    };
+  } catch {
+    return media;
+  }
+}
 
 // ── Validation limits (mirror create_story.php) ─────────────────────────
 const MAX_TITLE_LENGTH = 100;
@@ -166,15 +190,14 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       return null;
     }
 
-    const draft: CreateStoryDraft = {
-      media,
-      audience,
-      title: title.trim() || undefined,
-      description: description.trim() || undefined,
-    };
-
     setPhase({ type: 'uploading' });
     try {
+      const draft: CreateStoryDraft = {
+        media: await withStoryVideoThumbnail(media),
+        audience,
+        title: title.trim() || undefined,
+        description: description.trim() || undefined,
+      };
       const result = await repository.createStory(draft);
       setPhase({ type: 'success', result });
       // Notify parent FIRST so the rail updates while we're still in

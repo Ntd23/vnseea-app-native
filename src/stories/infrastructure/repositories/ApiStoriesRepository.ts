@@ -516,6 +516,15 @@ export function createStoriesRepository(): StoriesRepository {
       // than duplicating the check here.
       if (draft.title) payload.story_title = draft.title;
       if (draft.description) payload.story_description = draft.description;
+      // create-story.php stores `cover` as a video story's thumbnail; it only
+      // accepts image MIME types there, so default to JPEG.
+      if (draft.media.fileType === 'video' && draft.media.thumbnailUri) {
+        payload.cover = {
+          uri: draft.media.thumbnailUri,
+          name: draft.media.thumbnailName || `story_cover_${Date.now()}.jpg`,
+          type: draft.media.thumbnailType || 'image/jpeg',
+        };
+      }
 
       const response = await backendApi.multipart<{
         api_status: number | string;

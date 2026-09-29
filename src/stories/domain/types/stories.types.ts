@@ -113,6 +113,13 @@ export interface StoryMediaUpload {
   height?: number;
   /** Video duration in seconds — used for the client-side 60s cap check. */
   durationSeconds?: number;
+  /**
+   * A frame uploaded with a video as the story cover. Without it the backend
+   * has no thumbnail and the home rail can only show the publisher avatar.
+   */
+  thumbnailUri?: string;
+  thumbnailName?: string;
+  thumbnailType?: string;
 }
 
 /**
