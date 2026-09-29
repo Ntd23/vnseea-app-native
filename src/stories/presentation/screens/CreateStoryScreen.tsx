@@ -11,17 +11,9 @@
 //   │                                │
 //   └────────────────────────────────┘
 //
-//   PREVIEW (media picked):
-//   ┌────────────────────────────────┐
-//   │ X        Tạo tin       Đăng    │
-//   ├────────────────────────────────┤
-//   │                                │
-//   │   [ full-screen preview ]      │  ← image OR video
-//   │                                │
-//   ├────────────────────────────────┤
-//   │ Tiêu đề (optional)             │
-//   │ Mô tả (optional, 10–300 chars) │
-//   └────────────────────────────────┘
+//   EDITOR (media picked): full-screen StoryEditor — the photo or video
+//   plays behind a tool rail (stickers, text, mention, filter, link) whose
+//   items can be dragged, pinched and rotated; "Chia sẻ" posts the story.
 //
 // On submit success we emit through `storyCreatedEvents` so the FeedScreen
 // can prepend the new story to its rail (Phase 3 wires that listener).
@@ -32,18 +24,14 @@ import {
 } from '../../../shared-kernel/presentation/theme/appColors';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Image,
   Platform,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
   Animated,
 } from 'react-native';
-import VideoPlayer from 'react-native-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   launchImageLibrary,
@@ -52,7 +40,7 @@ import {
 } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronRight, Globe2, ImagePlus, Lock, ShieldCheck, Trash2, Users, Video as VideoIcon, X } from 'lucide-react-native';
+import { ChevronRight, ImagePlus, ShieldCheck, Video as VideoIcon, X } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useCreateStoryViewModel } from '../../application/view-models/useCreateStoryViewModel';
 import { storyCreatedEvents } from '../../application/events/storyCreatedEvents';
@@ -63,6 +51,11 @@ import type {
 } from '../../domain/types/stories.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
+import { showSystemActionSheet } from '../../../shared-kernel/presentation/utils/systemActionSheet';
+import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
+import { StoryEditor } from '../components/overlay/StoryEditor';
+
+const STORY_AUDIENCES: ContentAudience[] = ['public', 'friends', 'followers', 'only_me'];
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -93,7 +86,6 @@ function assetToUpload(
 const CREATE_STORY_COPY = {
   vi: {
     headerTitle: 'Tạo tin',
-    publishButton: 'Đăng',
     illustrationTitle: 'Chia sẻ khoảnh khắc của bạn',
     illustrationDesc: 'Tạo tin ảnh hoặc video.\nTin sẽ tự động biến mất sau 24 giờ.',
     selectPhoto: 'Chọn ảnh',
@@ -107,14 +99,11 @@ const CREATE_STORY_COPY = {
     discard: 'Bỏ',
     publishedMsg: 'Đã đăng tin',
     libraryError: 'Không mở được thư viện',
-    titlePlaceholder: 'Tiêu đề (tuỳ chọn)',
-    descPlaceholder: 'Mô tả (tuỳ chọn, {min}–{max} ký tự)',
-    audience: 'Đối tượng xem',
+    audience: 'Ai có thể xem tin này?',
     audiences: { public: 'Công khai', friends: 'Bạn bè', followers: 'Người theo dõi', only_me: 'Chỉ mình tôi' },
   },
   en: {
     headerTitle: 'Create Story',
-    publishButton: 'Publish',
     illustrationTitle: 'Share your moments',
     illustrationDesc: 'Create a photo or video story.\nStory will automatically disappear after 24 hours.',
     selectPhoto: 'Select photo',
@@ -128,9 +117,7 @@ const CREATE_STORY_COPY = {
     discard: 'Discard',
     publishedMsg: 'Story published',
     libraryError: 'Cannot open library',
-    titlePlaceholder: 'Title (optional)',
-    descPlaceholder: 'Description (optional, {min}–{max} characters)',
-    audience: 'Audience',
+    audience: 'Who can see this story?',
     audiences: { public: 'Public', friends: 'Friends', followers: 'Followers', only_me: 'Only me' },
   },
 };
@@ -223,6 +210,7 @@ function CreateStoryScreen() {
               id: `local-${Date.now()}`,
               type: vm.media.fileType,
               url: vm.media.uri,
+              overlay: vm.overlay,
             },
           ],
           isOwner: true,
@@ -299,9 +287,22 @@ function CreateStoryScreen() {
     }
   }, [navigation, vm]);
 
+  const handleChooseAudience = useCallback(() => {
+    showSystemActionSheet({
+      title: copy.audience,
+      options: STORY_AUDIENCES.map(audience => ({
+        label: copy.audiences[audience],
+      })),
+      cancelLabel: copy.continue,
+    })
+      .then(index => {
+        if (index !== null) vm.setAudience(STORY_AUDIENCES[index]);
+      })
+      .catch(() => undefined);
+  }, [copy, vm]);
+
   const handleDiscard = useCallback(() => {
-    const hasContent =
-      vm.media !== null || vm.title.length > 0 || vm.description.length > 0;
+    const hasContent = vm.media !== null;
     if (!hasContent) {
       navigation.goBack();
       return;
@@ -339,6 +340,23 @@ function CreateStoryScreen() {
     outputRange: [0.94, 1],
   });
 
+  if (vm.media) {
+    return (
+      <StoryEditor
+        media={vm.media}
+        overlay={vm.overlay}
+        onChangeOverlay={vm.setOverlay}
+        audience={vm.audience}
+        audienceLabel={copy.audiences[vm.audience]}
+        onPressAudience={handleChooseAudience}
+        isSharing={vm.isUploading}
+        onShare={handleSubmit}
+        onBack={handleDiscard}
+        errorMessage={vm.error}
+      />
+    );
+  }
+
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: '#ffffff' }} edges={['top']}>
       {/* ── Header ───────────────────────────────────────────────── */}
@@ -361,31 +379,7 @@ function CreateStoryScreen() {
         <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }}>
           {copy.headerTitle}
         </Text>
-        <ScaleButton
-          onPress={handleSubmit}
-          disabled={!vm.canSubmit}
-          activeOpacity={0.8}
-          className="rounded-full px-5 py-2"
-          style={{
-            backgroundColor: vm.canSubmit
-              ? APP_BRAND_COLOR
-              : APP_COLORS.brand.soft,
-          }}
-        >
-          {vm.isUploading ? (
-            <ActivityIndicator color={vm.canSubmit ? '#FFFFFF' : APP_BRAND_COLOR} size="small" />
-          ) : (
-            <Text
-              style={{
-                color: vm.canSubmit ? '#FFFFFF' : APP_BRAND_COLOR,
-                fontWeight: '700',
-                fontSize: 14,
-              }}
-            >
-              {copy.publishButton}
-            </Text>
-          )}
-        </ScaleButton>
+        <View className="w-10" />
       </View>
 
       <ScrollView
@@ -393,72 +387,7 @@ function CreateStoryScreen() {
         contentContainerStyle={{ paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Media area ─────────────────────────────────────────── */}
-        {vm.media ? (
-          /* Preview state */
-          <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
-            <View
-              style={{
-                position: 'relative',
-                borderRadius: 24,
-                overflow: 'hidden',
-                backgroundColor: '#0f172a',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 6 },
-                shadowOpacity: 0.15,
-                shadowRadius: 12,
-                elevation: 6,
-              }}
-            >
-              {vm.media.fileType === 'image' ? (
-                <Image
-                  source={{ uri: vm.media.uri }}
-                  style={{
-                    width: '100%',
-                    height: 440,
-                  }}
-                  resizeMode="contain"
-                />
-              ) : (
-                <View
-                  style={{
-                    width: '100%',
-                    height: 440,
-                  }}
-                >
-                  <VideoPlayer
-                    source={{ uri: vm.media.uri }}
-                    style={{ width: '100%', height: '100%' }}
-                    controls
-                    paused={false}
-                    resizeMode="contain"
-                    repeat
-                  />
-                </View>
-              )}
-
-              {/* Floating delete button to clear the picked media and pick again */}
-              <TouchableOpacity
-                onPress={() => vm.setMedia(null)}
-                activeOpacity={0.85}
-                style={{
-                  position: 'absolute',
-                  top: 16,
-                  right: 16,
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  backgroundColor: 'rgba(0,0,0,0.6)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Trash2 size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          /* Empty state - styled precisely like the mockup */
+        {/* ── Media pickers (the editor takes over once media is picked) ── */}
           <View style={{ paddingTop: 10 }}>
             {/* Overlapping cards illustration */}
             <Animated.View
@@ -716,76 +645,6 @@ function CreateStoryScreen() {
               </View>
             </Animated.View>
           </View>
-        )}
-
-        {/* ── Caption inputs (only when media is picked) ─────────── */}
-        {vm.media ? (
-          <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
-            <Text style={{ color: '#475569', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>
-              {copy.audience}
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-              {(['public', 'friends', 'followers', 'only_me'] as const).map(audience => {
-                const Icon = audience === 'public' ? Globe2 : audience === 'only_me' ? Lock : Users;
-                const selected = vm.audience === audience;
-                return (
-                  <TouchableOpacity
-                    key={audience}
-                    onPress={() => vm.setAudience(audience)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: selected ? APP_BRAND_COLOR : '#e2e8f0', backgroundColor: selected ? APP_COLORS.brand.soft : '#ffffff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}
-                  >
-                    <Icon size={14} color={selected ? APP_BRAND_COLOR : '#64748b'} />
-                    <Text style={{ color: selected ? APP_BRAND_COLOR : '#475569', fontSize: 12, fontWeight: '600' }}>
-                      {copy.audiences[audience]}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TextInput
-              value={vm.title}
-              onChangeText={vm.setTitle}
-              placeholder={copy.titlePlaceholder}
-              placeholderTextColor="#94a3b8"
-              maxLength={vm.maxTitleLength}
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 14,
-                borderRadius: 16,
-                backgroundColor: '#ffffff',
-                borderWidth: 1,
-                borderColor: '#e2e8f0',
-                fontSize: 15,
-                color: '#0f172a',
-                marginBottom: 12,
-              }}
-            />
-            <TextInput
-              value={vm.description}
-              onChangeText={vm.setDescription}
-              placeholder={copy.descPlaceholder
-                .replace('{min}', String(vm.minDescriptionLength))
-                .replace('{max}', String(vm.maxDescriptionLength))}
-              placeholderTextColor="#94a3b8"
-              maxLength={vm.maxDescriptionLength}
-              multiline
-              textAlignVertical="top"
-              style={{
-                paddingHorizontal: 16,
-                paddingTop: 14,
-                paddingBottom: 14,
-                borderRadius: 16,
-                backgroundColor: '#ffffff',
-                borderWidth: 1,
-                borderColor: '#e2e8f0',
-                fontSize: 15,
-                color: '#0f172a',
-                minHeight: 100,
-                lineHeight: 20,
-              }}
-            />
-          </View>
-        ) : null}
 
         {/* ── Error banner ───────────────────────────────────────── */}
         {vm.error ? (

@@ -24,7 +24,9 @@ import type {
   CreateStoryDraft,
   CreateStoryResult,
   StoryMediaUpload,
+  StoryOverlay,
 } from '../../domain/types/stories.types';
+import { EMPTY_STORY_OVERLAY } from '../overlay/storyOverlay';
 import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
 
 const repository = createStoriesRepository();
@@ -107,12 +109,15 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
   const [title, setTitleState] = useState('');
   const [description, setDescriptionState] = useState('');
   const [audience, setAudience] = useState<ContentAudience>('followers');
+  const [overlay, setOverlay] = useState<StoryOverlay>(EMPTY_STORY_OVERLAY);
   const [phase, setPhase] = useState<Phase>({ type: 'idle' });
 
   // ── Draft mutators ────────────────────────────────────────────────────
 
   const setMedia = useCallback((next: StoryMediaUpload | null) => {
     setMediaState(next);
+    // Stickers and text belong to the media they were placed on.
+    setOverlay(EMPTY_STORY_OVERLAY);
     // Clear any prior error when the user picks a new file — gives them
     // a clean attempt without having to dismiss the banner manually.
     setPhase({ type: 'idle' });
@@ -131,6 +136,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     setTitleState('');
     setDescriptionState('');
     setAudience('followers');
+    setOverlay(EMPTY_STORY_OVERLAY);
     setPhase({ type: 'idle' });
   }, []);
 
@@ -197,6 +203,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
         audience,
         title: title.trim() || undefined,
         description: description.trim() || undefined,
+        overlay,
       };
       const result = await repository.createStory(draft);
       setPhase({ type: 'success', result });
@@ -225,7 +232,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       setPhase({ type: 'error', message: friendly });
       return null;
     }
-  }, [media, title, description, audience, validate, onCreated, vmCopy]);
+  }, [media, title, description, audience, overlay, validate, onCreated, vmCopy]);
 
   // Convenience getter so the screen doesn't have to switch on `phase.type`
   // for the most common cases.
@@ -238,6 +245,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     title,
     description,
     audience,
+    overlay,
     phase,
     isUploading,
     error,
@@ -247,6 +255,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     setTitle,
     setDescription,
     setAudience,
+    setOverlay,
     // Lifecycle
     submit,
     reset,

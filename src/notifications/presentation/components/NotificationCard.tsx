@@ -17,6 +17,7 @@ import Animated, {
   SlideOutRight,
 } from 'react-native-reanimated';
 import {
+  AtSign,
   Bell,
   CalendarDays,
   Check,
@@ -74,6 +75,11 @@ const STYLE_BY_TYPE: Record<string, NotificationStyle> = {
   },
   new_story: {
     Icon: CirclePlay,
+    iconColor: APP_BRAND_COLOR,
+    borderColor: APP_BRAND_COLOR,
+  },
+  story_mention: {
+    Icon: AtSign,
     iconColor: APP_BRAND_COLOR,
     borderColor: APP_BRAND_COLOR,
   },
