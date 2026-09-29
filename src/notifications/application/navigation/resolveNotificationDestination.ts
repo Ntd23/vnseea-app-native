@@ -155,7 +155,10 @@ export function resolveNotificationDestination(
 
   if (
     item.storyId &&
-    (type === 'viewed_story' || type === 'reaction' || type === 'new_story')
+    (type === 'viewed_story' ||
+      type === 'reaction' ||
+      type === 'new_story' ||
+      type === 'story_mention')
   ) {
     return { kind: 'story', storyId: item.storyId };
   }

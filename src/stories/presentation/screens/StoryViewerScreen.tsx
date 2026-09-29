@@ -90,6 +90,7 @@ import {
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { StoryOverlayLayer } from '../components/overlay/StoryOverlayLayer';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import { storyDeletedEvents } from '../../application/events/storyDeletedEvents';
 import { storyReactedEvents } from '../../application/events/storyReactedEvents';
@@ -677,6 +678,25 @@ function StoryViewerScreen({ route }: Props) {
     navigation.navigate(ROUTES.POST_DETAIL, { postId: sharedPostId });
   }, [navigation, sharedPostId]);
 
+  const handleOpenMention = useCallback(
+    (userId: string) => {
+      pauseForNavigationRef.current = true;
+      setIsPaused(true);
+      navigateToUserProfile(navigation, userId);
+    },
+    [navigation],
+  );
+
+  const handleOpenStoryLink = useCallback((url: string) => {
+    pauseForNavigationRef.current = true;
+    setIsPaused(true);
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Không mở được liên kết', 'Vui lòng thử lại sau.');
+      pauseForNavigationRef.current = false;
+      setIsPaused(false);
+    });
+  }, []);
+
   const handleOpenAd = useCallback(() => {
     const targetUrl = currentStory?.adTargetUrl?.trim();
     if (!targetUrl) return;
@@ -1035,6 +1055,19 @@ function StoryViewerScreen({ route }: Props) {
               delayLongPress={250}
             />
           </View>
+
+          {/* Stickers, text, mentions and links placed in the editor. Drawn
+              above the tap zones so mentions and links win their taps; every
+              other part of the layer lets touches through. */}
+          {currentSegment.type !== 'shared_post' ? (
+            <StoryOverlayLayer
+              key={`overlay-${segmentPlaybackKey}`}
+              overlay={currentSegment.overlay}
+              idSuffix={segmentPlaybackKey}
+              onPressMention={handleOpenMention}
+              onPressLink={handleOpenStoryLink}
+            />
+          ) : null}
 
           {/* Keep the interactive post card above navigation tap zones. Its
               box-none container lets taps outside the card reach those zones. */}

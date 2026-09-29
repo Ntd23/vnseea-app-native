@@ -1,0 +1,23 @@
+diff --git a/android/src/main/java/com/rnmaps/maps/MapView.java b/android/src/main/java/com/rnmaps/maps/MapView.java
+index ebf87802160a201504a277fff47b7a3801c075b8..885c0943c677f61f18933beb8a81d1f0a1c4501b 100644
+--- a/android/src/main/java/com/rnmaps/maps/MapView.java
++++ b/android/src/main/java/com/rnmaps/maps/MapView.java
+@@ -1179,11 +1179,15 @@ public class MapView extends com.google.android.gms.maps.MapView implements Goog
+             return;
+         }
+ 
+-        // Ensure the list is large enough to set at the given index
+-        while(features.size() <= index){
++        // React inserts children at `index`, so insert rather than replace:
++        // set() dropped the feature already at that index from this list while
++        // it stayed drawn on the map (ghost markers/polylines), and shifted every
++        // later removeFeatureAt(index) onto the wrong feature. Backport of the
++        // react-native-maps 1.29 fix.
++        while(features.size() < index){
+             features.add(null);
+         }
+-        features.set(index, mapFeature);
++        features.add(index, mapFeature);
+     }
+ 
+     public void addFeature(View child, int index) {

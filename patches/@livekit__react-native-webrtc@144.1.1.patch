@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java b/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java
-index bdc9ffc9564995694f199312d9365554b3c54ccd..005fc71b614b0e864615db47d52de7f40a077e0f 100644
+index bdc9ffc9564995694f199312d9365554b3c54ccd..bb9ab6bcf0c2b08c1a236e66c61677e7cfbf9f87 100644
 --- a/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java
 +++ b/android/src/main/java/com/oney/WebRTCModule/WebRTCView.java
 @@ -301,6 +301,7 @@ public class WebRTCView extends ViewGroup {
@@ -10,6 +10,15 @@ index bdc9ffc9564995694f199312d9365554b3c54ccd..005fc71b614b0e864615db47d52de7f4
 
                          // Send the event through React Native's event system
                          reactContext.getJSModule(RCTEventEmitter.class)
+@@ -476,7 +477,7 @@ public class WebRTCView extends ViewGroup {
+      * @param streamURL The URL of the {@code MediaStream} to be rendered by
+      * this {@code WebRTCView} or {@code null}.
+      */
+-    void setStreamURL(String streamURL) {
++    public void setStreamURL(String streamURL) {
+         Log.d(TAG, "Set stream URL " + streamURL + " current: " + this.streamURL);
+         if (Objects.equals(streamURL, this.streamURL)) {
+             return;
 diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDeviceModuleObserver.m
 index 8b42cf11a5de39bd0073cc1f50468bed2dcd7c50..eb062574a5291b2e892207e9765bea0099a923ed 100644
 --- a/ios/RCTWebRTC/AudioDeviceModuleObserver.m
@@ -355,6 +364,675 @@ index 8b42cf11a5de39bd0073cc1f50468bed2dcd7c50..eb062574a5291b2e892207e9765bea00
      return result;
  }
 
+diff --git a/ios/RCTWebRTC/PIPController.h b/ios/RCTWebRTC/PIPController.h
+index 6e81776c595a3a75a0c8e43ed74b4a5bbdbfbb3e..fc996760ce2fa3a7f7688879abd7e6e08299a808 100644
+--- a/ios/RCTWebRTC/PIPController.h
++++ b/ios/RCTWebRTC/PIPController.h
+@@ -9,6 +9,13 @@ API_AVAILABLE(ios(15.0))
+
+ @property(nonatomic, weak) UIView *sourceView;
+ @property(nonatomic, strong) RTCVideoTrack *videoTrack;
++@property(nonatomic, copy) NSArray<RTCVideoTrack *> *remoteVideoTracks;
++@property(nonatomic, strong) RTCVideoTrack *localVideoTrack;
++@property(nonatomic, assign) BOOL localMirror;
++@property(nonatomic, copy) void (^onRestoreRequested)(void);
++@property(nonatomic, copy) void (^onStarted)(void);
++@property(nonatomic, copy) void (^onStopped)(void);
++@property(nonatomic, copy) void (^onStartFailed)(void);
+
+ @property(nonatomic, assign) BOOL startAutomatically;
+ @property(nonatomic, assign) BOOL stopAutomatically;
+diff --git a/ios/RCTWebRTC/PIPController.m b/ios/RCTWebRTC/PIPController.m
+index 5137c71d5a1ab3fe5fbb03d1ebe47482e528c21d..0a086d400e92233004c1b58d55ba645f62bff7a0 100644
+--- a/ios/RCTWebRTC/PIPController.m
++++ b/ios/RCTWebRTC/PIPController.m
+@@ -3,14 +3,21 @@
+ #import "SampleBufferVideoCallView.h"
+
+ @interface PIPController ()
+-
+ @property(nonatomic, strong) AVPictureInPictureVideoCallViewController *pipCallViewController;
+ @property(nonatomic, strong) AVPictureInPictureControllerContentSource *contentSource;
+ @property(nonatomic, strong) AVPictureInPictureController *pipController;
+ @property(nonnull, nonatomic, strong) SampleBufferVideoCallView *sampleView;
+-
++@property(nonnull, nonatomic, strong) SampleBufferVideoCallView *secondRemoteSampleView;
++@property(nonnull, nonatomic, strong) SampleBufferVideoCallView *thirdRemoteSampleView;
++@property(nonnull, nonatomic, strong) SampleBufferVideoCallView *localSampleView;
++@property(nonnull, nonatomic, strong) UIStackView *videoStackView;
++@property(nonatomic, strong) UIStackView *firstVideoRow;
++@property(nonatomic, strong) UIStackView *secondVideoRow;
++@property(nonnull, nonatomic, strong) UIView *gridPlaceholderView;
+ @property(nonnull, nonatomic, strong) UIView *fallbackView;
+-
++@property(nonatomic, assign) BOOL pendingStart;
++@property(nonatomic, assign) BOOL startRequestInFlight;
++@property(nonatomic, assign) RTCVideoViewObjectFit currentObjectFit;
+ @end
+
+ @implementation PIPController
+@@ -18,217 +25,277 @@
+ - (instancetype)initWithSourceView:(UIView *)sourceView {
+     if (self = [super init]) {
+         self.sourceView = sourceView;
+-
+         _fallbackView = [[UIView alloc] initWithFrame:CGRectZero];
+-        _fallbackView.translatesAutoresizingMaskIntoConstraints = false;
+-
+-        SampleBufferVideoCallView *subview = [[SampleBufferVideoCallView alloc] initWithFrame:CGRectZero];
+-        _sampleView = subview;
+-        _sampleView.translatesAutoresizingMaskIntoConstraints = false;
++        _fallbackView.translatesAutoresizingMaskIntoConstraints = NO;
++        _sampleView = [[SampleBufferVideoCallView alloc] initWithFrame:CGRectZero];
++        _sampleView.translatesAutoresizingMaskIntoConstraints = NO;
++        _sampleView.hidden = YES;
++        _secondRemoteSampleView = [[SampleBufferVideoCallView alloc] initWithFrame:CGRectZero];
++        _secondRemoteSampleView.translatesAutoresizingMaskIntoConstraints = NO;
++        _secondRemoteSampleView.hidden = YES;
++        _thirdRemoteSampleView = [[SampleBufferVideoCallView alloc] initWithFrame:CGRectZero];
++        _thirdRemoteSampleView.translatesAutoresizingMaskIntoConstraints = NO;
++        _thirdRemoteSampleView.hidden = YES;
++        _localSampleView = [[SampleBufferVideoCallView alloc] initWithFrame:CGRectZero];
++        _localSampleView.translatesAutoresizingMaskIntoConstraints = NO;
++        _localSampleView.hidden = YES;
++        _videoStackView = [[UIStackView alloc] initWithFrame:CGRectZero];
++        _videoStackView.axis = UILayoutConstraintAxisVertical;
++        _videoStackView.distribution = UIStackViewDistributionFillEqually;
++        _videoStackView.spacing = 2.0;
++        _videoStackView.translatesAutoresizingMaskIntoConstraints = NO;
++        _videoStackView.hidden = YES;
++        _gridPlaceholderView = [[UIView alloc] initWithFrame:CGRectZero];
++        _gridPlaceholderView.backgroundColor = UIColor.blackColor;
++        _currentObjectFit = RTCVideoViewObjectFitCover;
+         _pipCallViewController = [[AVPictureInPictureVideoCallViewController alloc] init];
+-
+         [self addToCallViewController:_fallbackView];
+-
++        [self addToCallViewController:_videoStackView];
+         _contentSource = [[AVPictureInPictureControllerContentSource alloc]
+             initWithActiveVideoCallSourceView:sourceView
+                         contentViewController:_pipCallViewController];
+-
+         _pipController = [[AVPictureInPictureController alloc] initWithContentSource:_contentSource];
+         _pipController.canStartPictureInPictureAutomaticallyFromInline = YES;
+         _pipController.delegate = self;
+-
+-        [_pipController addObserver:self
+-                         forKeyPath:@"pictureInPictureActive"
+-                            options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
+-                            context:nil];
+-
++        [_pipController addObserver:self forKeyPath:@"pictureInPictureActive"
++                            options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:nil];
++        [_pipController addObserver:self forKeyPath:@"pictureInPicturePossible"
++                            options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:nil];
+         [[NSNotificationCenter defaultCenter] addObserver:self
+                                                  selector:@selector(applicationWillEnterForeground:)
+-                                                     name:UIApplicationWillEnterForegroundNotification
+-                                                   object:nil];
++                                                     name:UIApplicationWillEnterForegroundNotification object:nil];
+     }
+-
+     return self;
+ }
+
+-- (void)observeValueForKeyPath:(NSString *)keyPath
+-                      ofObject:(id)object
+-                        change:(NSDictionary *)change
+-                       context:(void *)context {
++- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
++                        change:(NSDictionary *)change context:(void *)context {
+     if ([keyPath isEqualToString:@"pictureInPictureActive"]) {
+-        _sampleView.shouldRender = [change[NSKeyValueChangeNewKey] boolValue];
++        BOOL isActive = [change[NSKeyValueChangeNewKey] boolValue];
++        for (SampleBufferVideoCallView *view in [self allVideoViews]) {
++            view.shouldRender = isActive;
++        }
++    } else if ([keyPath isEqualToString:@"pictureInPicturePossible"]) {
++        [self startPendingPictureInPictureIfPossible];
++    } else {
++        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+     }
+ }
+
+ - (void)applicationWillEnterForeground:(NSNotification *)notification {
+     if (_stopAutomatically) {
+-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+-            [self.pipController stopPictureInPicture];
+-        });
++        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
++                       dispatch_get_main_queue(), ^{ [self.pipController stopPictureInPicture]; });
+     }
+ }
+
+ - (void)addToCallViewController:(UIView *)view {
+     [_pipCallViewController.view addSubview:view];
+-    NSArray *constraints = @[
++    [NSLayoutConstraint activateConstraints:@[
+         [view.leadingAnchor constraintEqualToAnchor:_pipCallViewController.view.leadingAnchor],
+         [view.trailingAnchor constraintEqualToAnchor:_pipCallViewController.view.trailingAnchor],
+         [view.topAnchor constraintEqualToAnchor:_pipCallViewController.view.topAnchor],
+         [view.bottomAnchor constraintEqualToAnchor:_pipCallViewController.view.bottomAnchor]
+-    ];
+-    [NSLayoutConstraint activateConstraints:constraints];
++    ]];
+ }
+
+-- (void)setVideoTrack:(RTCVideoTrack *)videoTrack {
+-    if (_videoTrack != videoTrack) {
+-        [_videoTrack removeRenderer:_sampleView];
++- (NSArray<SampleBufferVideoCallView *> *)remoteSampleViews {
++    return @[_sampleView, _secondRemoteSampleView, _thirdRemoteSampleView];
++}
++
++- (NSArray<SampleBufferVideoCallView *> *)allVideoViews {
++    return @[_sampleView, _secondRemoteSampleView, _thirdRemoteSampleView, _localSampleView];
++}
++
++- (NSArray<RTCVideoTrack *> *)effectiveRemoteVideoTracks {
++    if (_remoteVideoTracks.count > 0) {
++        return [_remoteVideoTracks subarrayWithRange:NSMakeRange(0, MIN((NSUInteger)3, _remoteVideoTracks.count))];
+     }
++    return _videoTrack ? @[_videoTrack] : @[];
++}
+
+-    _videoTrack = videoTrack;
+-    [videoTrack addRenderer:_sampleView];
++- (void)removeRemoteRenderersForTracks:(NSArray<RTCVideoTrack *> *)tracks {
++    NSArray<SampleBufferVideoCallView *> *views = [self remoteSampleViews];
++    NSUInteger count = MIN(tracks.count, views.count);
++    for (NSUInteger index = 0; index < count; index++) {
++        [tracks[index] removeRenderer:views[index]];
++    }
++}
+
+-    if (_videoTrack) {
+-        if (!_sampleView.superview) {
+-            [self addToCallViewController:_sampleView];
+-        }
+-        if (_fallbackView.superview) {
+-            [_fallbackView removeFromSuperview];
++- (void)addRemoteRenderersForTracks:(NSArray<RTCVideoTrack *> *)tracks {
++    NSArray<SampleBufferVideoCallView *> *views = [self remoteSampleViews];
++    NSUInteger count = MIN(tracks.count, views.count);
++    for (NSUInteger index = 0; index < count; index++) {
++        [tracks[index] addRenderer:views[index]];
++    }
++}
++
++- (UIStackView *)horizontalRowWithViews:(NSArray<UIView *> *)views {
++    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:views];
++    row.axis = UILayoutConstraintAxisHorizontal;
++    row.distribution = UIStackViewDistributionFillEqually;
++    row.spacing = 2.0;
++    return row;
++}
++
++- (void)rebuildVideoGrid {
++    for (UIView *view in [_videoStackView.arrangedSubviews copy]) {
++        [_videoStackView removeArrangedSubview:view];
++        [view removeFromSuperview];
++    }
++    _firstVideoRow = nil;
++    _secondVideoRow = nil;
++
++    NSArray<RTCVideoTrack *> *remoteTracks = [self effectiveRemoteVideoTracks];
++    NSArray<SampleBufferVideoCallView *> *remoteViews = [self remoteSampleViews];
++    NSMutableArray<SampleBufferVideoCallView *> *visibleViews = [NSMutableArray array];
++    for (NSUInteger index = 0; index < remoteViews.count; index++) {
++        SampleBufferVideoCallView *view = remoteViews[index];
++        BOOL visible = index < remoteTracks.count;
++        view.hidden = !visible;
++        if (visible) [visibleViews addObject:view];
++    }
++    _localSampleView.hidden = _localVideoTrack == nil;
++    if (_localVideoTrack) [visibleViews addObject:_localSampleView];
++
++    if (visibleViews.count <= 2) {
++        _videoStackView.axis = UILayoutConstraintAxisHorizontal;
++        for (UIView *view in visibleViews) {
++            [_videoStackView addArrangedSubview:view];
+         }
+     } else {
+-        if (!_fallbackView.superview) {
+-            [self addToCallViewController:_fallbackView];
+-        }
+-        if (_sampleView.superview) {
+-            [_sampleView removeFromSuperview];
++        _videoStackView.axis = UILayoutConstraintAxisVertical;
++        NSUInteger splitIndex = MIN((NSUInteger)2, visibleViews.count);
++        _firstVideoRow = [self horizontalRowWithViews:[visibleViews subarrayWithRange:NSMakeRange(0, splitIndex)]];
++        [_videoStackView addArrangedSubview:_firstVideoRow];
++        if (visibleViews.count > splitIndex) {
++            NSMutableArray<UIView *> *secondRowViews = [[visibleViews subarrayWithRange:NSMakeRange(splitIndex, visibleViews.count - splitIndex)] mutableCopy];
++            if (secondRowViews.count == 1) {
++                [secondRowViews addObject:_gridPlaceholderView];
++            }
++            _secondVideoRow = [self horizontalRowWithViews:secondRowViews];
++            [_videoStackView addArrangedSubview:_secondVideoRow];
+         }
+     }
++
++    BOOL hasVideo = visibleViews.count > 0;
++    _videoStackView.hidden = !hasVideo;
++    _fallbackView.hidden = hasVideo;
++}
++
++- (void)setVideoTrack:(RTCVideoTrack *)videoTrack {
++    if (_videoTrack == videoTrack) return;
++    NSArray<RTCVideoTrack *> *oldTracks = [self effectiveRemoteVideoTracks];
++    [self removeRemoteRenderersForTracks:oldTracks];
++    _videoTrack = videoTrack;
++    [self addRemoteRenderersForTracks:[self effectiveRemoteVideoTracks]];
++    [self rebuildVideoGrid];
++}
++
++- (void)setRemoteVideoTracks:(NSArray<RTCVideoTrack *> *)remoteVideoTracks {
++    NSArray<RTCVideoTrack *> *oldTracks = [self effectiveRemoteVideoTracks];
++    [self removeRemoteRenderersForTracks:oldTracks];
++    _remoteVideoTracks = [remoteVideoTracks copy] ?: @[];
++    [self addRemoteRenderersForTracks:[self effectiveRemoteVideoTracks]];
++    [self rebuildVideoGrid];
+ }
+
+-- (void)insertFallbackView:(UIView *)view {
+-    [self.fallbackView addSubview:view];
++- (void)setLocalVideoTrack:(RTCVideoTrack *)localVideoTrack {
++    if (_localVideoTrack == localVideoTrack) return;
++    [_localVideoTrack removeRenderer:_localSampleView];
++    _localVideoTrack = localVideoTrack;
++    [localVideoTrack addRenderer:_localSampleView];
++    [self rebuildVideoGrid];
+ }
+
++- (void)setLocalMirror:(BOOL)localMirror {
++    _localMirror = localMirror;
++    _localSampleView.transform = localMirror ? CGAffineTransformMakeScale(-1.0, 1.0) : CGAffineTransformIdentity;
++}
++
++- (void)insertFallbackView:(UIView *)view { [self.fallbackView addSubview:view]; }
++
+ - (void)setObjectFit:(RTCVideoViewObjectFit)fit {
+-    if (fit == RTCVideoViewObjectFitCover) {
+-        self.sampleView.sampleBufferLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+-    } else {
+-        self.sampleView.sampleBufferLayer.videoGravity = AVLayerVideoGravityResizeAspect;
++    AVLayerVideoGravity gravity = fit == RTCVideoViewObjectFitCover
++        ? AVLayerVideoGravityResizeAspectFill : AVLayerVideoGravityResizeAspect;
++    _currentObjectFit = fit;
++    for (SampleBufferVideoCallView *view in [self allVideoViews]) {
++        view.sampleBufferLayer.videoGravity = gravity;
+     }
+ }
+
+-- (CGSize)preferredSize {
+-    return _pipCallViewController.preferredContentSize;
+-}
++- (CGSize)preferredSize { return _pipCallViewController.preferredContentSize; }
+
+ - (void)setPreferredSize:(CGSize)size {
+     if (!CGSizeEqualToSize(size, _pipCallViewController.preferredContentSize)) {
+         _pipCallViewController.preferredContentSize = size;
+-        [_sampleView requestScaleRecalculation];
++        for (SampleBufferVideoCallView *view in [self allVideoViews]) {
++            [view requestScaleRecalculation];
++        }
+     }
+ }
+
+-- (BOOL)startAutomatically {
+-    return _pipController.canStartPictureInPictureAutomaticallyFromInline;
+-}
++- (BOOL)startAutomatically { return _pipController.canStartPictureInPictureAutomaticallyFromInline; }
++- (void)setStartAutomatically:(BOOL)value { _pipController.canStartPictureInPictureAutomaticallyFromInline = value; }
+
+-- (void)setStartAutomatically:(BOOL)value {
+-    _pipController.canStartPictureInPictureAutomaticallyFromInline = value;
++- (void)startPendingPictureInPictureIfPossible {
++    if (!_pendingStart || _startRequestInFlight || _pipController.isPictureInPictureActive ||
++        !_pipController.isPictureInPicturePossible) return;
++    _startRequestInFlight = YES;
++    [_pipController startPictureInPicture];
+ }
+
+ - (void)togglePIP {
+-    if (_pipController.isPictureInPictureActive) {
+-        [_pipController stopPictureInPicture];
+-    } else if (_pipController.isPictureInPicturePossible) {
+-        [_pipController startPictureInPicture];
+-    }
++    _pipController.isPictureInPictureActive ? [self stopPIP] : [self startPIP];
+ }
+
+ - (void)startPIP {
+-    if (_pipController.isPictureInPicturePossible) {
+-        [_pipController startPictureInPicture];
+-    }
++    _pendingStart = YES;
++    NSLog(@"[VNSEEA_CALL_PIP] start requested possible=%@ active=%@",
++          _pipController.isPictureInPicturePossible ? @"YES" : @"NO",
++          _pipController.isPictureInPictureActive ? @"YES" : @"NO");
++    [self startPendingPictureInPictureIfPossible];
+ }
+
+ - (void)stopPIP {
+-    if (_pipController.isPictureInPictureActive) {
+-        [_pipController stopPictureInPicture];
+-    }
++    _pendingStart = NO;
++    _startRequestInFlight = NO;
++    if (_pipController.isPictureInPictureActive) [_pipController stopPictureInPicture];
+ }
+
+ - (void)dealloc {
+-    [_videoTrack removeRenderer:_sampleView];
++    [self removeRemoteRenderersForTracks:[self effectiveRemoteVideoTracks]];
++    [_localVideoTrack removeRenderer:_localSampleView];
+     [_pipController removeObserver:self forKeyPath:@"pictureInPictureActive"];
+-    [[NSNotificationCenter defaultCenter] removeObserver:self name:UIApplicationDidBecomeActiveNotification object:nil];
++    [_pipController removeObserver:self forKeyPath:@"pictureInPicturePossible"];
++    [[NSNotificationCenter defaultCenter] removeObserver:self];
+ }
+-
+ @end
+
+ @implementation PIPController (AVPictureInPictureControllerDelegate)
+-
+-/*!
+-    @method        pictureInPictureControllerWillStartPictureInPicture:
+-    @param        pictureInPictureController
+-                The Picture in Picture controller.
+-    @abstract    Delegate can implement this method to be notified when Picture in Picture will start.
+- */
+-- (void)pictureInPictureControllerWillStartPictureInPicture:(AVPictureInPictureController *)pictureInPictureController {
+-    NSLog(@"%@", NSStringFromSelector(_cmd));  // Objective-C
+-}
+-
+-/*!
+-    @method        pictureInPictureControllerDidStartPictureInPicture:
+-    @param        pictureInPictureController
+-                The Picture in Picture controller.
+-    @abstract    Delegate can implement this method to be notified when Picture in Picture did start.
+- */
+-- (void)pictureInPictureControllerDidStartPictureInPicture:(AVPictureInPictureController *)pictureInPictureController {
+-    NSLog(@"%@", NSStringFromSelector(_cmd));  // Objective-C
+-}
+-
+-/*!
+-    @method        pictureInPictureController:failedToStartPictureInPictureWithError:
+-    @param        pictureInPictureController
+-                The Picture in Picture controller.
+-    @param        error
+-                An error describing why it failed.
+-    @abstract    Delegate can implement this method to be notified when Picture in Picture failed to start.
+- */
+-- (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController
++- (void)pictureInPictureControllerDidStartPictureInPicture:(AVPictureInPictureController *)controller {
++    _pendingStart = NO;
++    _startRequestInFlight = NO;
++    if (self.onStarted) self.onStarted();
++}
++- (void)pictureInPictureController:(AVPictureInPictureController *)controller
+     failedToStartPictureInPictureWithError:(NSError *)error {
+-    NSLog(@"%@: %@", NSStringFromSelector(_cmd), [error localizedDescription]);  // Objective-C
+-}
+-
+-/*!
+-    @method        pictureInPictureControllerWillStopPictureInPicture:
+-    @param        pictureInPictureController
+-                The Picture in Picture controller.
+-    @abstract    Delegate can implement this method to be notified when Picture in Picture will stop.
+- */
+-- (void)pictureInPictureControllerWillStopPictureInPicture:(AVPictureInPictureController *)pictureInPictureController {
+-    NSLog(@"%@", NSStringFromSelector(_cmd));  // Objective-C
+-}
+-
+-/*!
+-    @method        pictureInPictureControllerDidStopPictureInPicture:
+-    @param        pictureInPictureController
+-                The Picture in Picture controller.
+-    @abstract    Delegate can implement this method to be notified when Picture in Picture did stop.
+- */
+-- (void)pictureInPictureControllerDidStopPictureInPicture:(AVPictureInPictureController *)pictureInPictureController {
+-    NSLog(@"%@", NSStringFromSelector(_cmd));  // Objective-C
+-}
+-
+-/*!
+-    @method        pictureInPictureController:restoreUserInterfaceForPictureInPictureStopWithCompletionHandler:
+-    @param        pictureInPictureController
+-                The Picture in Picture controller.
+-    @param        completionHandler
+-                The completion handler the delegate needs to call after restore.
+-    @abstract    Delegate can implement this method to restore the user interface before Picture in Picture stops.
+- */
+-- (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController
++    _pendingStart = NO;
++    _startRequestInFlight = NO;
++    NSLog(@"[VNSEEA_CALL_PIP] start failed: %@", error.localizedDescription);
++    if (self.onStartFailed) self.onStartFailed();
++}
++- (void)pictureInPictureControllerDidStopPictureInPicture:(AVPictureInPictureController *)controller {
++    _startRequestInFlight = NO;
++    if (self.onStopped) self.onStopped();
++}
++- (void)pictureInPictureController:(AVPictureInPictureController *)controller
+     restoreUserInterfaceForPictureInPictureStopWithCompletionHandler:(void (^)(BOOL restored))completionHandler {
+-    NSLog(@"%@", NSStringFromSelector(_cmd));  // Objective-C
++    if (self.onRestoreRequested) {
++        self.onRestoreRequested();
++        completionHandler(YES);
++    } else {
++        completionHandler(NO);
++    }
+ }
+-
+ @end
+diff --git a/ios/RCTWebRTC/RTCVideoViewManager.m b/ios/RCTWebRTC/RTCVideoViewManager.m
+index e64005daf3c712dbbe631cd509841307f3b0853e..aef0b8a3ec6b77b522bc18b4e0f682f62603256f 100644
+--- a/ios/RCTWebRTC/RTCVideoViewManager.m
++++ b/ios/RCTWebRTC/RTCVideoViewManager.m
+@@ -41,6 +41,7 @@
+ @property(nonatomic) RTCVideoViewObjectFit objectFit;
+
+ @property(nonatomic) BOOL enablePIP;
++@property(nonatomic) BOOL pipActiveRequested;
+
+ @property(nonatomic, strong) API_AVAILABLE(ios(15.0)) PIPController *pipController;
+
+@@ -60,6 +61,8 @@
+  * The {@link RTCVideoTrack}, if any, which this instance renders.
+  */
+ @property(nonatomic, strong) RTCVideoTrack *videoTrack;
++@property(nonatomic, copy) NSString *pipLocalStreamURL;
++@property(nonatomic, copy) NSArray<NSString *> *pipRemoteStreamURLs;
+
+ /**
+  * Reference to the main WebRTC RN module.
+@@ -67,6 +70,10 @@
+ @property(nonatomic, weak) WebRTCModule *module;
+
+ @property(nonatomic, copy) RCTDirectEventBlock onDimensionsChange;
++@property(nonatomic, copy) RCTDirectEventBlock onPIPRestore;
++@property(nonatomic, copy) RCTDirectEventBlock onPIPStarted;
++@property(nonatomic, copy) RCTDirectEventBlock onPIPStopped;
++@property(nonatomic, copy) RCTDirectEventBlock onPIPStartFailed;
+
+ @end
+
+@@ -158,11 +165,16 @@
+
+ - (void)API_AVAILABLE(ios(15.0))setPIPOptions:(NSDictionary *)pipOptions {
+     if (!pipOptions) {
++        [_pipController stopPIP];
++        _pipActiveRequested = NO;
++        _pipLocalStreamURL = nil;
++        _pipRemoteStreamURLs = nil;
+         _pipController = nil;
+         return;
+     }
+
+     BOOL enabled = YES;
++    BOOL active = NO;
+     BOOL startAutomatically = YES;
+     BOOL stopAutomatically = YES;
+
+@@ -171,6 +183,9 @@
+     if ([pipOptions objectForKey:@"enabled"]) {
+         enabled = [pipOptions[@"enabled"] boolValue];
+     }
++    if ([pipOptions objectForKey:@"active"]) {
++        active = [pipOptions[@"active"] boolValue];
++    }
+     if ([pipOptions objectForKey:@"startAutomatically"]) {
+         startAutomatically = [pipOptions[@"startAutomatically"] boolValue];
+     }
+@@ -188,6 +203,10 @@
+     }
+
+     if (!enabled) {
++        [_pipController stopPIP];
++        _pipActiveRequested = NO;
++        _pipLocalStreamURL = nil;
++        _pipRemoteStreamURLs = nil;
+         _pipController = nil;
+         return;
+     }
+@@ -195,12 +214,99 @@
+     if (!_pipController) {
+         _pipController = [[PIPController alloc] initWithSourceView:self];
+         _pipController.videoTrack = _videoTrack;
++        __weak RTCVideoView *weakSelf = self;
++        _pipController.onRestoreRequested = ^{
++            RTCVideoView *strongSelf = weakSelf;
++            if (strongSelf.onPIPRestore) strongSelf.onPIPRestore(@{});
++        };
++        _pipController.onStarted = ^{
++            RTCVideoView *strongSelf = weakSelf;
++            if (strongSelf.onPIPStarted) strongSelf.onPIPStarted(@{});
++        };
++        _pipController.onStopped = ^{
++            RTCVideoView *strongSelf = weakSelf;
++            if (strongSelf.onPIPStopped) strongSelf.onPIPStopped(@{});
++        };
++        _pipController.onStartFailed = ^{
++            RTCVideoView *strongSelf = weakSelf;
++            if (strongSelf.onPIPStartFailed) strongSelf.onPIPStartFailed(@{});
++        };
+     }
+
+     _pipController.startAutomatically = startAutomatically;
+     _pipController.stopAutomatically = stopAutomatically;
+     _pipController.objectFit = _objectFit;
+     _pipController.preferredSize = preferredSize;
++
++    NSArray *remoteStreamURLValues = [pipOptions[@"remoteStreamURLs"] isKindOfClass:[NSArray class]]
++        ? pipOptions[@"remoteStreamURLs"]
++        : @[];
++    NSMutableArray<NSString *> *remoteStreamURLs = [NSMutableArray array];
++    for (id value in remoteStreamURLValues) {
++        if ([value isKindOfClass:[NSString class]] && [value length] > 0 &&
++            ![remoteStreamURLs containsObject:value] && remoteStreamURLs.count < 3) {
++            [remoteStreamURLs addObject:value];
++        }
++    }
++    _pipRemoteStreamURLs = [remoteStreamURLs copy];
++    if (_pipRemoteStreamURLs.count == 0) {
++        _pipController.remoteVideoTracks = @[];
++    } else {
++        NSArray<NSString *> *requestedRemoteStreamURLs = [_pipRemoteStreamURLs copy];
++        WebRTCModule *remoteModule = self.module;
++        __weak RTCVideoView *weakRemoteSelf = self;
++        dispatch_async(remoteModule.workerQueue, ^{
++            NSMutableArray<RTCVideoTrack *> *remoteVideoTracks = [NSMutableArray array];
++            for (NSString *streamURL in requestedRemoteStreamURLs) {
++                RTCMediaStream *stream = [remoteModule streamForReactTag:streamURL];
++                RTCVideoTrack *remoteVideoTrack = [stream.videoTracks firstObject];
++                if (remoteVideoTrack) [remoteVideoTracks addObject:remoteVideoTrack];
++            }
++            dispatch_async(dispatch_get_main_queue(), ^{
++                RTCVideoView *strongSelf = weakRemoteSelf;
++                if (!strongSelf ||
++                    ![strongSelf.pipRemoteStreamURLs isEqualToArray:requestedRemoteStreamURLs]) {
++                    return;
++                }
++                strongSelf.pipController.remoteVideoTracks = remoteVideoTracks;
++            });
++        });
++    }
++
++    NSString *localStreamURL = [pipOptions[@"localStreamURL"] isKindOfClass:[NSString class]]
++        ? pipOptions[@"localStreamURL"]
++        : @"";
++    BOOL localMirror = [pipOptions[@"localMirror"] boolValue];
++    _pipController.localMirror = localMirror;
++    _pipLocalStreamURL = [localStreamURL copy];
++
++    if (_pipActiveRequested != active) {
++        _pipActiveRequested = active;
++        if (active) {
++            [_pipController startPIP];
++        } else {
++            [_pipController stopPIP];
++        }
++    }
++
++    if (localStreamURL.length == 0) {
++        _pipController.localVideoTrack = nil;
++        return;
++    }
++
++    WebRTCModule *module = self.module;
++    __weak RTCVideoView *weakSelf = self;
++    dispatch_async(module.workerQueue, ^{
++        RTCMediaStream *stream = [module streamForReactTag:localStreamURL];
++        RTCVideoTrack *localVideoTrack = [stream.videoTracks firstObject];
++        dispatch_async(dispatch_get_main_queue(), ^{
++            RTCVideoView *strongSelf = weakSelf;
++            if (!strongSelf || ![strongSelf.pipLocalStreamURL isEqualToString:localStreamURL]) {
++                return;
++            }
++            strongSelf.pipController.localVideoTrack = localVideoTrack;
++        });
++    });
+ }
+
+ - (void)API_AVAILABLE(ios(15.0))startPIP {
+@@ -347,6 +453,10 @@ RCT_CUSTOM_VIEW_PROPERTY(objectFit, NSString *, RTCVideoView) {
+ }
+
+ RCT_EXPORT_VIEW_PROPERTY(onDimensionsChange, RCTDirectEventBlock)
++RCT_EXPORT_VIEW_PROPERTY(onPIPRestore, RCTDirectEventBlock)
++RCT_EXPORT_VIEW_PROPERTY(onPIPStarted, RCTDirectEventBlock)
++RCT_EXPORT_VIEW_PROPERTY(onPIPStopped, RCTDirectEventBlock)
++RCT_EXPORT_VIEW_PROPERTY(onPIPStartFailed, RCTDirectEventBlock)
+
+ RCT_CUSTOM_VIEW_PROPERTY(streamURL, NSString *, RTCVideoView) {
+     if (!json) {
+diff --git a/ios/RCTWebRTC/VideoCaptureController.m b/ios/RCTWebRTC/VideoCaptureController.m
+index 8ae5ce19486e832491ab2a6b65623c05d7ce4990..c95216cd4ddd3d97919c1a39e4edc57c81d0bdd9 100644
+--- a/ios/RCTWebRTC/VideoCaptureController.m
++++ b/ios/RCTWebRTC/VideoCaptureController.m
+@@ -66,14 +66,19 @@
+     AVCaptureSession *session = self.capturer.captureSession;
+     if (@available(iOS 16.0, *)) {
+         BOOL enable = self.enableMultitaskingCameraAccess;
++        BOOL supported = session.isMultitaskingCameraAccessSupported;
+         BOOL shouldChange = session.multitaskingCameraAccessEnabled != enable;
+-        BOOL canChange = !enable || (enable && session.isMultitaskingCameraAccessSupported);
++        BOOL canChange = !enable || (enable && supported);
+
+         if (shouldChange && canChange) {
+             [session beginConfiguration];
+             [session setMultitaskingCameraAccessEnabled:enable];
+             [session commitConfiguration];
+         }
++        RCTLog(@"[VNSEEA_CALL_DEBUG] {\"event\":\"native_webrtc_multitasking_camera_access\",\"requested\":%@,\"supported\":%@,\"enabled\":%@}",
++               enable ? @"true" : @"false",
++               supported ? @"true" : @"false",
++               session.isMultitaskingCameraAccessEnabled ? @"true" : @"false");
+     }
+
+     RCTLog(@"[VideoCaptureController] Capture will start");
 diff --git a/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m b/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
 index 0eb3d0aab48d64dc797697bfc11812c50ea82751..3963ae3dfa04e75f139f3a6913090f592c218ce8 100644
 --- a/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
@@ -530,29 +1208,71 @@ index ce54d8db9fafd129b37d0df643dba7e460e75763..6f8114d23f555afc5cdf487ed5dc67b3
              _peerConnectionFactory =
                  [[RTCPeerConnectionFactory alloc] initWithAudioDeviceModuleType:RTCAudioDeviceModuleTypeAudioEngine
 diff --git a/lib/typescript/RTCView.d.ts b/lib/typescript/RTCView.d.ts
-index e316524d7b9ee2e3315c83de5527dad372be4010..83afd18ad11739558adacb47e2d6fd5d8710d9ae 100644
+index e316524d7b9ee2e3315c83de5527dad372be4010..a6076efe0d0135845d9eebefea778c537a9f04ba 100644
 --- a/lib/typescript/RTCView.d.ts
 +++ b/lib/typescript/RTCView.d.ts
-@@ -78,6 +78,7 @@ export interface RTCVideoViewProps extends ViewProps {
+@@ -78,10 +78,23 @@ export interface RTCVideoViewProps extends ViewProps {
          nativeEvent: {
              width: number;
              height: number;
 +            rotation?: number;
          };
      }) => void;
++    /** Called when iOS asks the app to restore the call UI from PiP. */
++    onPIPRestore?: () => void;
++    /** Called after iOS starts system Picture in Picture. */
++    onPIPStarted?: () => void;
++    /** Called after iOS stops system Picture in Picture. */
++    onPIPStopped?: () => void;
++    /** Called when iOS cannot start system Picture in Picture. */
++    onPIPStartFailed?: () => void;
  }
+ export interface RTCIOSPIPOptions {
++    /** Local camera stream rendered as a compact overlay in video-call PiP. */
++    localStreamURL?: string;
++    /** Mirrors the local camera overlay, normally for the front camera. */
++    localMirror?: boolean;
+     /**
+      * Whether PIP can be launched from this view.
+      *
 diff --git a/src/RTCView.ts b/src/RTCView.ts
-index ea97a430f15963b23aa78bd66485aaabf85292c5..aa1e202f43d68126ec56bfe741325767cb56ebc7 100644
+index ea97a430f15963b23aa78bd66485aaabf85292c5..21a0edd4772235cee627472e128223462281766a 100644
 --- a/src/RTCView.ts
 +++ b/src/RTCView.ts
-@@ -80,7 +80,9 @@ export interface RTCVideoViewProps extends ViewProps {
+@@ -80,11 +80,35 @@ export interface RTCVideoViewProps extends ViewProps {
     * @param {number} event.nativeEvent.width - The width of the video.
     * @param {number} event.nativeEvent.height - The height of the video.
     */
 -  onDimensionsChange?: (event: { nativeEvent: { width: number; height: number } }) => void;
-+  onDimensionsChange?: (event: {
-+    nativeEvent: { width: number; height: number; rotation?: number };
-+  }) => void;
++  onDimensionsChange?: (event: { nativeEvent: { width: number; height: number; rotation?: number } }) => void;
++
++  /** Called when iOS asks the app to restore the call UI from PiP. */
++  onPIPRestore?: () => void;
++
++  /** Called after iOS starts system Picture in Picture. */
++  onPIPStarted?: () => void;
++
++  /** Called after iOS stops system Picture in Picture. */
++  onPIPStopped?: () => void;
++
++  /** Called when iOS cannot start system Picture in Picture. */
++  onPIPStartFailed?: () => void;
  }
 
  export interface RTCIOSPIPOptions {
+
++  /** Keeps system PiP in sync with the React call presentation state. */
++  active?: boolean;
++
++  /** Local camera stream rendered as a compact overlay in video-call PiP. */
++  localStreamURL?: string;
++
++  /** Remote streams rendered in a two-column grid for group video-call PiP. */
++  remoteStreamURLs?: string[];
++
++  /** Mirrors the local camera overlay, normally for the front camera. */
++  localMirror?: boolean;
++
+   /**
+    * Whether PIP can be launched from this view.
+    *

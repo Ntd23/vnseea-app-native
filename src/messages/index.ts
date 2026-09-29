@@ -26,6 +26,7 @@ export { default as CallRoomScreen } from './presentation/screens/CallRoomScreen
 export { default as GroupCallRoomScreen } from './presentation/screens/GroupCallRoomScreen';
 export { default as IncomingCallWatcher } from './presentation/components/IncomingCallWatcher';
 export { default as LiveKitMiniCallBar } from './presentation/components/LiveKitMiniCallBar';
+export { default as LiveKitCallPresentationHost } from './presentation/components/LiveKitCallPresentationHost';
 export * from './domain/types/call.types';
 export * from './domain/types/groupCall.types';
 export * from './domain/repositories/LiveKitCallRepository';

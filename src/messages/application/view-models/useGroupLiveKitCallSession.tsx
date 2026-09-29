@@ -1662,31 +1662,34 @@ export function GroupLiveKitCallSessionProvider({
     return () => clearInterval(interval);
   }, [patchSession]);
 
+  const syncGroupCallStatus = useCallback(async () => {
+    const current = sessionRef.current;
+    if (!current?.callId || current.phase !== 'connected') {
+      return 'inactive' as const;
+    }
+    const result = await repository
+      .syncCall({ callId: current.callId })
+      .catch(() => null);
+    if (!result) return 'unavailable' as const;
+    if (result.endpointOwned === false || result.call.status !== 'active') {
+      finishSession('sync_inactive');
+      return 'inactive' as const;
+    }
+    patchSession({
+      group: result.group,
+      progress: result.progress,
+    });
+    mergeServerParticipantMetadata(result.participants);
+    return 'active' as const;
+  }, [finishSession, mergeServerParticipantMetadata, patchSession, repository]);
+
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const current = sessionRef.current;
-      if (!current?.callId || current.phase !== 'connected') return;
-      const result = await repository
-        .syncCall({ callId: current.callId })
-        .catch(() => null);
-      if (!result) return;
-      if (result.endpointOwned === false) {
-        finishSession('sync_inactive');
-        return;
-      }
-      if (result.call.status !== 'active') {
-        finishSession('sync_inactive');
-        return;
-      }
-      patchSession({
-        group: result.group,
-        progress: result.progress,
-      });
-      mergeServerParticipantMetadata(result.participants);
+    const interval = setInterval(() => {
+      syncGroupCallStatus().catch(() => undefined);
     }, GROUP_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [finishSession, mergeServerParticipantMetadata, patchSession, repository]);
+  }, [syncGroupCallStatus]);
 
   useEffect(() => {
     const current = session;
@@ -1702,28 +1705,41 @@ export function GroupLiveKitCallSessionProvider({
       const current = sessionRef.current;
       if (!current || current.phase !== 'connected') return;
       if (Platform.OS === 'ios' && usesNativeCallUi(current.nativeCallUuid)) {
+        syncGroupCallStatus().catch(() => undefined);
         return;
       }
-      AudioSession.startAudioSession()
-        .then(() => {
-          const latest = sessionRef.current;
-          if (
-            !latest ||
-            latest.callId !== current.callId ||
-            latest.phase !== 'connected'
-          ) {
-            return undefined;
-          }
-          return applyCallAudioOutputMode(
-            activeRoomRef.current,
-            latest.audioOutputMode,
-          );
-        })
-        .catch(() => undefined);
+      (async () => {
+        const syncResult = await syncGroupCallStatus().catch(
+          () => 'unavailable' as const,
+        );
+        if (syncResult !== 'active') return;
+
+        const latest = sessionRef.current;
+        if (
+          !latest ||
+          latest.callId !== current.callId ||
+          latest.phase !== 'connected'
+        ) {
+          return;
+        }
+        await AudioSession.startAudioSession();
+        const confirmed = sessionRef.current;
+        if (
+          !confirmed ||
+          confirmed.callId !== current.callId ||
+          confirmed.phase !== 'connected'
+        ) {
+          return;
+        }
+        await applyCallAudioOutputMode(
+          activeRoomRef.current,
+          confirmed.audioOutputMode,
+        );
+      })().catch(() => undefined);
     });
 
     return () => subscription.remove();
-  }, []);
+  }, [syncGroupCallStatus]);
 
   useEffect(() => {
     return () => {

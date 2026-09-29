@@ -18,6 +18,7 @@ import com.vnseea.android.location.CurrentLocationPackage
 import com.vnseea.android.messages.MessageNotificationIdentityPackage
 import com.vnseea.android.navigation.NavigationSpeechPackage
 import com.vnseea.android.push.VnseeaNotificationChannels
+import com.vnseea.android.ui.SystemActionSheetPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -33,6 +34,7 @@ class MainApplication : Application(), ReactApplication {
         add(CurrentLocationPackage())
         add(MessageNotificationIdentityPackage())
         add(NavigationSpeechPackage())
+        add(SystemActionSheetPackage())
       },
     )
   }

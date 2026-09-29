@@ -344,7 +344,9 @@ function Wo_ApiMapDiscoveryRateLimit($action) {
     }
     $limits = array(
         'page_suggestions' => 120,
-        'place_autocomplete' => 45,
+        // The app only calls this once typing pauses, plus one fresh request
+        // per explicit search; 45 was reached during normal repeated searches.
+        'place_autocomplete' => 120,
         'address_autocomplete' => 60,
         'address_geocode' => 20,
         'address_details' => 30,
@@ -356,7 +358,8 @@ function Wo_ApiMapDiscoveryRateLimit($action) {
     $identity = !empty($wo['user']['user_id'])
         ? 'user:' . (int) $wo['user']['user_id']
         : 'ip:' . (!empty($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : 'unknown');
-    $global = Wo_ApiMapDiscoveryConsumeRateBucket($identity, 'all', 120);
+    // Each typing pause sends both place_autocomplete and page_suggestions.
+    $global = Wo_ApiMapDiscoveryConsumeRateBucket($identity, 'all', 240);
     if (empty($global['allowed'])) {
         return $global;
     }

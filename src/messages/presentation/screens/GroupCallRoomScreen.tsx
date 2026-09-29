@@ -201,38 +201,6 @@ function GroupCallGallery({
   const lastVideoRenderStateRef = useRef('');
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [gallerySize, setGallerySize] = useState({ width: 0, height: 0 });
-  const measuredWidth = gallerySize.width || windowWidth;
-  const measuredHeight =
-    gallerySize.height || Math.max(320, windowHeight - 180);
-  const numColumns =
-    participants.length <= 2
-      ? 1
-      : measuredWidth >= 700 && participants.length >= 6
-      ? 3
-      : 2;
-  const gridPadding = 8;
-  const gridGap = 8;
-  const rowCount = Math.max(1, Math.ceil(participants.length / numColumns));
-  const tileWidth = Math.max(
-    1,
-    (measuredWidth - gridPadding * 2 - gridGap * (numColumns - 1)) / numColumns,
-  );
-  const fullRowTileWidth = Math.max(1, measuredWidth - gridPadding * 2);
-  const availableGridHeight = Math.max(
-    1,
-    measuredHeight - gridPadding * 2 - gridGap * (rowCount - 1),
-  );
-  const tileHeight =
-    participants.length <= 4
-      ? Math.max(128, availableGridHeight / rowCount)
-      : Math.max(150, Math.min(250, tileWidth * 0.82));
-  const gridContentContainerStyle = useMemo(
-    () => ({
-      flexGrow: participants.length === 0 ? 1 : undefined,
-      padding: gridPadding,
-    }),
-    [participants.length],
-  );
   const trackByParticipantId = useMemo(() => {
     const next = new Map<string, TrackReferenceOrPlaceholder>();
     cameraTracks.forEach(trackRef => {
@@ -248,6 +216,42 @@ function GroupCallGallery({
     });
     return next;
   }, [cameraTracks]);
+  const visibleParticipants = participants;
+  const measuredWidth = gallerySize.width || windowWidth;
+  const measuredHeight =
+    gallerySize.height || Math.max(320, windowHeight - 180);
+  const numColumns =
+    visibleParticipants.length <= 2
+      ? 1
+      : measuredWidth >= 700 && visibleParticipants.length >= 6
+      ? 3
+      : 2;
+  const gridPadding = 8;
+  const gridGap = 8;
+  const rowCount = Math.max(
+    1,
+    Math.ceil(visibleParticipants.length / numColumns),
+  );
+  const tileWidth = Math.max(
+    1,
+    (measuredWidth - gridPadding * 2 - gridGap * (numColumns - 1)) / numColumns,
+  );
+  const fullRowTileWidth = Math.max(1, measuredWidth - gridPadding * 2);
+  const availableGridHeight = Math.max(
+    1,
+    measuredHeight - gridPadding * 2 - gridGap * (rowCount - 1),
+  );
+  const tileHeight =
+    visibleParticipants.length <= 4
+      ? Math.max(128, availableGridHeight / rowCount)
+      : Math.max(150, Math.min(250, tileWidth * 0.82));
+  const gridContentContainerStyle = useMemo(
+    () => ({
+      flexGrow: visibleParticipants.length === 0 ? 1 : undefined,
+      padding: gridPadding,
+    }),
+    [visibleParticipants.length],
+  );
 
   useEffect(() => {
     const localCameraTracks = cameraTracks.filter(
@@ -317,15 +321,15 @@ function GroupCallGallery({
         contentContainerStyle={gridContentContainerStyle}
         columnWrapperStyle={numColumns > 1 ? { gap: gridGap } : undefined}
         ItemSeparatorComponent={GridRowSeparator}
-        data={participants}
+        data={visibleParticipants}
         keyExtractor={item => item.id}
         numColumns={numColumns}
-        extraData={`${participants.length}-${localCameraFacingMode}-${cameraRenderStateKey}-${tileWidth}-${fullRowTileWidth}-${tileHeight}`}
+        extraData={`${visibleParticipants.length}-${localCameraFacingMode}-${cameraRenderStateKey}-${tileWidth}-${fullRowTileWidth}-${tileHeight}`}
         renderItem={({ item, index }) => {
           const spansFullRow =
             numColumns === 2 &&
-            participants.length % 2 === 1 &&
-            index === participants.length - 1;
+            visibleParticipants.length % 2 === 1 &&
+            index === visibleParticipants.length - 1;
 
           return (
             <ParticipantTile
@@ -571,7 +575,7 @@ function GroupCallControls() {
   );
 }
 
-function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
+function GroupCallRoomScreen({ navigation, route }: GroupCallRoomScreenProps) {
   const {
     session,
     activeRoom,
@@ -581,6 +585,10 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
   } = useGroupLiveKitCallSession();
   const groupName =
     session?.group.name || route.params.groupName || 'Cuộc gọi nhóm';
+  const isMinimizingRef = useRef(false);
+  const ensuredRouteRef = useRef('');
+  const callPhase = session?.phase;
+  const isCallMinimized = Boolean(session?.isMinimized);
   const { chromeProgress, isChromeVisible, toggleChrome } =
     useCallChromeVisibility(session?.phase === 'connected');
   const [headerHeight, setHeaderHeight] = useState(72);
@@ -599,8 +607,33 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
   );
 
   useEffect(() => {
+    if (ensuredRouteRef.current === route.key) return;
+    ensuredRouteRef.current = route.key;
     ensureSessionFromRoute(route.params);
-  }, [ensureSessionFromRoute, route.params]);
+  }, [ensureSessionFromRoute, route.key, route.params]);
+
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', event => {
+        if (
+          !callPhase ||
+          callPhase === 'ended' ||
+          callPhase === 'error' ||
+          isCallMinimized
+        ) {
+          return;
+        }
+        if (isMinimizingRef.current) {
+          isMinimizingRef.current = false;
+          return;
+        }
+
+        event.preventDefault();
+        isMinimizingRef.current = true;
+        minimizeCall();
+      }),
+    [callPhase, isCallMinimized, minimizeCall, navigation],
+  );
 
   useFocusEffect(
     useCallback(() => {

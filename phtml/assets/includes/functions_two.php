@@ -8986,7 +8986,7 @@ if (!function_exists('Wo_ApiSendApnsVoipPush')) {
             'apns-topic: ' . $bundle_id . '.voip',
             'apns-push-type: voip',
             'apns-priority: 10',
-            'apns-expiration: ' . (time() + 45),
+            'apns-expiration: 0',
             'content-type: application/json'
         ));
         curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$response_headers) {

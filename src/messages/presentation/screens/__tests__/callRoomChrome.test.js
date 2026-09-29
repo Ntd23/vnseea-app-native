@@ -20,9 +20,7 @@ describe('active call chrome', () => {
   });
 
   it('uses the same animated chrome for audio and video calls', () => {
-    const source = read(
-      'src/messages/presentation/screens/CallRoomScreen.tsx',
-    );
+    const source = read('src/messages/presentation/screens/CallRoomScreen.tsx');
 
     expect(source.match(/useCallChromeVisibility\(/g)).toHaveLength(2);
     expect(source.match(/onPress=\{toggleChrome\}/g)).toHaveLength(2);

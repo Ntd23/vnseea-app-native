@@ -39,7 +39,7 @@ describe('incoming LiveKit calls native UI routing', () => {
 
     expect(source).toContain("call.ringMode !== 'passive'");
     expect(source).toContain(
-      "loadNativeCallService()?.displayNativeIncomingGroupCall?.(call);",
+      "loadNativeCallService()?.displayNativeIncomingGroupCall?.(call)",
     );
     expect(source).toContain('setActiveIncomingGroupCall(call);');
   });

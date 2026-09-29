@@ -38,6 +38,7 @@ type AndroidCallIntentModule = {
     title: string,
   ) => Promise<boolean>;
   stopCallForegroundService?: () => Promise<boolean>;
+  closeCallPictureInPictureIfActive?: () => Promise<boolean>;
 };
 
 export type NativeMessageAction = {
@@ -57,6 +58,7 @@ type ActiveNativeCall = {
 
 const activeCalls = new Map<string, ActiveNativeCall>();
 const connectedAndroidCallUuids = new Set<string>();
+const nativeEndedCallUuids = new Set<string>();
 
 let isConfigured = false;
 let listeners: NativeCallListeners = {};
@@ -101,13 +103,16 @@ function getAndroidCallIntentModule() {
 
 function stopAndroidCallForegroundServiceIfIdle() {
   if (Platform.OS !== 'android' || connectedAndroidCallUuids.size > 0) return;
-  const stopPromise =
-    getAndroidCallIntentModule()?.stopCallForegroundService?.();
+  const nativeModule = getAndroidCallIntentModule();
+  const stopPromise = nativeModule?.stopCallForegroundService?.();
   stopPromise?.catch(error => {
     console.warn(
       '[LiveKitCall] Could not stop Android call foreground service',
       error,
     );
+  });
+  nativeModule?.closeCallPictureInPictureIfActive?.().catch(error => {
+    console.warn('[LiveKitCall] Could not close Android call PiP', error);
   });
 }
 
@@ -408,6 +413,11 @@ function emitEnd(callUuid: string) {
     return;
   }
   listeners.onEnd(callUuid);
+}
+
+function rememberNativeCallEndedBySystem(callUuid: string) {
+  nativeEndedCallUuids.add(callUuid);
+  emitEnd(callUuid);
 }
 
 function hasRecentWebRTCAudioSessionActivation(callUuid?: string) {
@@ -713,7 +723,7 @@ function replayInitialCallKeepEvents(events: unknown) {
         event.name === 'RNCallKeepPerformEndCallAction' &&
         callUuid
       ) {
-        emitEnd(callUuid);
+        rememberNativeCallEndedBySystem(callUuid);
       } else if (event.name === 'RNCallKeepDidActivateAudioSession') {
         emitAudioSessionActivated(callUuid || undefined);
       } else if (event.name === 'RNCallKeepDidDeactivateAudioSession') {
@@ -747,7 +757,7 @@ export async function configureNativeCallService() {
       emitAnswer(callUUID);
     });
     RNCallKeep.default.addEventListener('endCall', ({ callUUID }: any) => {
-      emitEnd(callUUID);
+      rememberNativeCallEndedBySystem(callUUID);
     });
     RNCallKeep.default.addEventListener(
       'didPerformSetMutedCallAction',
@@ -1283,6 +1293,7 @@ export function answerNativeIncomingCall(callUuid: string) {
 export function endNativeCall(callUuid?: string, reason?: number) {
   if (!callUuid) return;
   const nativeCall = activeCalls.get(callUuid);
+  const alreadyEndedBySystem = nativeEndedCallUuids.delete(callUuid);
   activeCalls.delete(callUuid);
   if (Platform.OS === 'android') {
     connectedAndroidCallUuids.delete(callUuid);
@@ -1290,6 +1301,10 @@ export function endNativeCall(callUuid?: string, reason?: number) {
     return;
   }
   if (!nativeCall?.usesNativeCallUi) return;
+  if (alreadyEndedBySystem) {
+    logNativeCallDebug('callkit_end_skipped_already_ended', { callUuid });
+    return;
+  }
 
   const RNCallKeep = loadCallKeep();
   if (!RNCallKeep?.default) return;
@@ -1298,7 +1313,6 @@ export function endNativeCall(callUuid?: string, reason?: number) {
     callUuid,
     reason ?? endReasons.REMOTE_ENDED ?? 2,
   );
-  RNCallKeep.default.endCall(callUuid);
 }
 
 export function dismissNativeIncomingCall(callId?: string) {

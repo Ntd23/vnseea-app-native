@@ -15,7 +15,7 @@ function isPublishedTrackReference(
   return 'publication' in trackRef && Boolean(trackRef.publication);
 }
 
-function getMediaStreamUrl(
+export function getGroupCameraStreamUrl(
   trackRef: TrackReferenceOrPlaceholder | undefined,
 ): string {
   if (!trackRef || !isPublishedTrackReference(trackRef)) return '';
@@ -40,7 +40,7 @@ export function getRenderableGroupCameraTrack(
     return undefined;
   }
 
-  return getMediaStreamUrl(trackRef) ? trackRef : undefined;
+  return getGroupCameraStreamUrl(trackRef) ? trackRef : undefined;
 }
 
 export function getGroupCameraTrackRenderKey(
@@ -55,7 +55,7 @@ export function getGroupCameraTrackRenderKey(
   }
 
   const trackSid = trackRef.publication.trackSid || 'pending';
-  const streamUrl = getMediaStreamUrl(trackRef) || 'pending';
+  const streamUrl = getGroupCameraStreamUrl(trackRef) || 'pending';
   const muteState = trackRef.publication.isMuted ? 'muted' : 'unmuted';
 
   return `${participantKey}:${trackSid}:${streamUrl}:${muteState}`;

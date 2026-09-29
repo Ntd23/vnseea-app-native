@@ -7,6 +7,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import {
   IncomingCallWatcher,
   GroupLiveKitCallSessionProvider,
+  LiveKitCallPresentationHost,
   LiveKitCallSessionProvider,
   LiveKitMiniCallBar,
 } from './src/messages';
@@ -51,6 +52,7 @@ function App() {
               <AppUpdatePrompt />
               <IncomingCallWatcher />
               <LiveKitMiniCallBar />
+              <LiveKitCallPresentationHost />
             </GroupLiveKitCallSessionProvider>
           </LiveKitCallSessionProvider>
         </SnackbarProvider>

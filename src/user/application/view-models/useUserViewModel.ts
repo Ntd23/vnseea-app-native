@@ -191,6 +191,8 @@ export function useUserViewModel() {
       fast?: boolean;
       globalSearch?: boolean;
       waitForAllSources?: boolean;
+      revalidate?: boolean;
+      backendDelayMs?: number;
       onPartialResults?: (result: {
         pages: NearbyPlace[];
         predictions: MapPlacePrediction[];
@@ -273,6 +275,18 @@ export function useUserViewModel() {
           publishPartialResults();
           resolveWhenUseful();
         };
+        const publishPages = (pages: NearbyPlace[]) => {
+          pagesSnapshot = filterDistanceScopedResults(
+            pages,
+            scopedRadius,
+            page => page.distanceMeters,
+          );
+          if (isLatestRequest()) {
+            setNearbyPlaces(pagesSnapshot);
+          }
+          publishPartialResults();
+          resolveWhenUseful();
+        };
 
         const pagesPromise = repository
           .getNearbyPages({
@@ -284,18 +298,12 @@ export function useUserViewModel() {
             fast: input.fast,
             globalSearch: input.globalSearch,
             signal: abortController.signal,
+            revalidate: input.revalidate,
+            onCachedPages: publishPages,
+            backendDelayMs: input.backendDelayMs,
           })
           .then(pages => {
-            pagesSnapshot = filterDistanceScopedResults(
-              pages,
-              scopedRadius,
-              page => page.distanceMeters,
-            );
-            if (isLatestRequest()) {
-              setNearbyPlaces(pagesSnapshot);
-            }
-            publishPartialResults();
-            resolveWhenUseful();
+            publishPages(pages);
             return pages;
           })
           .catch(caughtError => {
@@ -318,6 +326,8 @@ export function useUserViewModel() {
             fast: input.fast,
             globalSearch: input.globalSearch,
             signal: abortController.signal,
+            revalidate: input.revalidate,
+            backendDelayMs: input.backendDelayMs,
             onPartialPredictions: publishPredictions,
           })
           .then(predictions => {

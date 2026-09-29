@@ -25,7 +25,10 @@ import {
   replaceGroupMentionTokens,
   serializeGroupMentionTokens,
 } from '../../application/mentions/groupMessageMentions';
-import { mapMessageReactionSummary } from '../../domain/reactions/messageReactions';
+import {
+  createEmptyMessageReactionSummary,
+  mapMessageReactionSummary,
+} from '../../domain/reactions/messageReactions';
 import type {
   ChatItem,
   ChatPreviewKind,
@@ -49,6 +52,7 @@ import type {
   MessageLabel,
   MessageLocationReference,
   MessageMention,
+  MessageRecallResult,
   MarketplaceMessageContext,
   MessageSystemEvent,
   PinnedMessageItem,
@@ -196,6 +200,52 @@ function stripGroupVoiceMessageMarker(value: string): string {
 }
 function isRecalledMessageText(value: string): boolean {
   return cleanText(value).startsWith(RECALLED_MESSAGE_PREFIX);
+}
+
+function decodeBase64Utf8(value: string): string {
+  try {
+    const runtimeAtob = (globalThis as unknown as {
+      atob?: (input: string) => string;
+    }).atob;
+    if (!runtimeAtob) return '';
+    const binary = runtimeAtob(value);
+    const encoded = Array.from(binary, character =>
+      `%${character.charCodeAt(0).toString(16).padStart(2, '0')}`,
+    ).join('');
+    return decodeURIComponent(encoded);
+  } catch {
+    return '';
+  }
+}
+
+function parseRecalledMessageText(value: string):
+  | Omit<MessageRecallResult, 'messageId'>
+  | undefined {
+  const text = cleanText(value);
+  if (!text.startsWith(RECALLED_MESSAGE_PREFIX)) return undefined;
+
+  const encodedPayload = text.slice(RECALLED_MESSAGE_PREFIX.length + 1);
+  try {
+    const payload = JSON.parse(decodeBase64Utf8(encodedPayload)) as Record<
+      string,
+      unknown
+    >;
+    return {
+      recalledAt: readNumber(payload, 'recalled_at', 'deleted_at'),
+      recalledByUserId: readString(payload, 'recalled_by', 'deleted_by'),
+      recalledByName: readString(
+        payload,
+        'recalled_by_name',
+        'deleted_by_name',
+      ),
+    };
+  } catch {
+    return {
+      recalledAt: 0,
+      recalledByUserId: '',
+      recalledByName: '',
+    };
+  }
 }
 function normalizeMessageText(value: string, hasMedia: boolean): string {
   const text = stripGroupVoiceMessageMarker(cleanText(value));
@@ -1472,6 +1522,8 @@ function mapMessage(
         readString(raw, 'text', 'message'),
         readNumber(raw, 'time'),
       );
+  const recalledMessage = parseRecalledMessageText(decodedMessage);
+  const isRecalled = Boolean(recalledMessage);
   const rawMentions = Array.isArray(raw.mentions)
     ? raw.mentions
     : Array.isArray(raw.message_mentions)
@@ -1482,14 +1534,16 @@ function mapMessage(
     .filter((item): item is MessageMention => Boolean(item));
   const normalizedMessage = normalizeMessageText(
     replaceGroupMentionTokens(decodedMessage, mentions),
-    Boolean(media),
+    Boolean(media) && !isRecalled,
   );
-  const systemEvent = mapMessageSystemEvent(raw);
+  const systemEvent = isRecalled ? undefined : mapMessageSystemEvent(raw);
   const legacyReply = systemEvent
     ? undefined
     : parseLegacyMessageReply(normalizedMessage, apiConfig.webBaseUrl);
-  const message = legacyReply?.body ?? normalizedMessage;
-  const callEvent = systemEvent
+  const message = isRecalled
+    ? 'Tin nhắn đã thu hồi'
+    : legacyReply?.body ?? normalizedMessage;
+  const callEvent = systemEvent || isRecalled
     ? undefined
     : parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
       parseCallEvent(message, sessionUserId);
@@ -1498,18 +1552,18 @@ function mapMessage(
     : media && message === 'Tin nhắn'
       ? ''
       : message;
-  const marketplaceContext = systemEvent
+  const marketplaceContext = systemEvent || isRecalled
     ? undefined
     : mapMarketplaceMessageContext(raw, displayMessage);
   const semanticMessage =
     marketplaceContext?.type === 'product_inquiry'
       ? marketplaceContext.note ?? ''
       : displayMessage;
-  const storyReply = systemEvent
+  const storyReply = systemEvent || isRecalled
     ? undefined
     : mapStoryReplyReference(raw);
   const textDescriptor =
-    callEvent || systemEvent
+    callEvent || systemEvent || isRecalled
       ? { kind: 'text' as const }
       : describeMessageTextContent(semanticMessage, apiConfig.webBaseUrl);
   const sharedPost = textDescriptor.sharedPost;
@@ -1522,7 +1576,7 @@ function mapMessage(
     location || marketplaceContext?.type === 'product_inquiry'
       ? undefined
       : textDescriptor.link;
-  const mediaType = readMediaType(raw, decodedMessage);
+  const mediaType = isRecalled ? undefined : readMediaType(raw, decodedMessage);
   let contentKind: ChatPreviewKind = textDescriptor.kind;
   if (storyReply) {
     contentKind = 'story';
@@ -1543,7 +1597,8 @@ function mapMessage(
   } else if (location) {
     contentKind = 'location';
   }
-  const nestedReplyRaw = includeNestedReply ? asRecord(raw.reply) : undefined;
+  const nestedReplyRaw =
+    includeNestedReply && !isRecalled ? asRecord(raw.reply) : undefined;
   const nestedReplyMessage = nestedReplyRaw
     ? mapMessage(nestedReplyRaw, false)
     : undefined;
@@ -1572,27 +1627,36 @@ function mapMessage(
     senderName: getRawUserName(messageUser),
     senderAvatar:
       readString(messageUser, 'avatar', 'profile_picture') || undefined,
-    mentions,
+    mentions: isRecalled ? [] : mentions,
     message: callEvent ? '' : semanticMessage,
     callEvent,
     systemEvent,
-    sharedPost,
-    contentKind,
-    link,
-    location,
-    marketplaceContext,
-    storyReply,
-    replyTo,
-    media,
+    sharedPost: isRecalled ? undefined : sharedPost,
+    contentKind: isRecalled ? 'text' : contentKind,
+    link: isRecalled ? undefined : link,
+    location: isRecalled ? undefined : location,
+    marketplaceContext: isRecalled ? undefined : marketplaceContext,
+    storyReply: isRecalled ? undefined : storyReply,
+    replyTo: isRecalled ? undefined : replyTo,
+    media: isRecalled ? undefined : media,
     mediaType,
-    mediaGroupId:
-      readString(raw, 'media_group_id', 'mediaGroupId') || undefined,
-    thumbnail: normalizeRawUrl(
-      readMessageThumbnail(raw),
-      apiConfig.webBaseUrl,
-      apiConfig.mediaBaseUrl,
-    ),
-    reactions: mapMessageReactionSummary(raw.reaction ?? raw.reactions),
+    mediaGroupId: isRecalled
+      ? undefined
+      : readString(raw, 'media_group_id', 'mediaGroupId') || undefined,
+    thumbnail: isRecalled
+      ? undefined
+      : normalizeRawUrl(
+          readMessageThumbnail(raw),
+          apiConfig.webBaseUrl,
+          apiConfig.mediaBaseUrl,
+        ),
+    reactions: isRecalled
+      ? createEmptyMessageReactionSummary()
+      : mapMessageReactionSummary(raw.reaction ?? raw.reactions),
+    isRecalled,
+    recalledAt: recalledMessage?.recalledAt || undefined,
+    recalledByUserId: recalledMessage?.recalledByUserId || undefined,
+    recalledByName: recalledMessage?.recalledByName || undefined,
     time: readNumber(raw, 'time'),
     isSentByMe: callEvent ? callEvent.isInitiator : fromId === sessionUserId,
     seen: readNumber(raw, 'seen'),
@@ -2096,6 +2160,41 @@ export function createMessagesRepository(): MessagesRepository {
       return mapMessageReactionSummary(
         response.reaction ?? nestedData?.reaction ?? response.data,
       );
+    },
+    async recallMessage(messageId: string) {
+      const response = await apiBridge.post<{
+        api_status?: number | string;
+        status?: number | string;
+        message?: string;
+        message_id?: number | string;
+        recalled_at?: number | string;
+        deleted_at?: number | string;
+        recalled_by?: number | string;
+        deleted_by?: number | string;
+        recalled_by_name?: string;
+        deleted_by_name?: string;
+      }>(apiRoutes.messages.recallMessage, { message_id: messageId });
+      const status = String(response.api_status ?? response.status ?? '200');
+      if (status !== '200') {
+        throw new Error(response.message || 'Không thể thu hồi tin nhắn.');
+      }
+
+      return {
+        messageId: readString(response, 'message_id') || messageId,
+        recalledAt:
+          readNumber(response, 'recalled_at', 'deleted_at') ||
+          Math.floor(Date.now() / 1000),
+        recalledByUserId: readString(
+          response,
+          'recalled_by',
+          'deleted_by',
+        ),
+        recalledByName: readString(
+          response,
+          'recalled_by_name',
+          'deleted_by_name',
+        ),
+      };
     },
     async deleteConversation(userId: string) {
       await apiBridge.post(apiRoutes.messages.delete, { user_id: userId });

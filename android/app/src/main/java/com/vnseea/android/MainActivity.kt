@@ -9,10 +9,10 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.vnseea.android.call.CallPictureInPictureActivity
 import com.vnseea.android.messages.MessagePushOpenStore
 
 class MainActivity : ReactActivity() {
-
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
    * rendering of the component.
@@ -22,12 +22,19 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     captureMessagePushOpen(intent)
+    captureCallPictureInPictureRestore(intent)
     preferHighestRefreshRate()
   }
 
   override fun onResume() {
     super.onResume()
+    CallPictureInPictureActivity.onMainHostResumed(this)
     preferHighestRefreshRate()
+  }
+
+  override fun onPause() {
+    CallPictureInPictureActivity.onMainHostPaused(this)
+    super.onPause()
   }
 
   /**
@@ -40,6 +47,40 @@ class MainActivity : ReactActivity() {
     super.onNewIntent(intent)
     setIntent(intent)
     captureMessagePushOpen(intent)
+    captureCallPictureInPictureRestore(intent)
+  }
+
+  fun setVideoCallPictureInPictureEnabled(
+    enabled: Boolean,
+    aspectWidth: Int,
+    aspectHeight: Int,
+  ): Boolean = CallPictureInPictureActivity.setEnabled(
+    enabled = enabled,
+    aspectWidth = aspectWidth,
+    aspectHeight = aspectHeight,
+  )
+
+  fun isCallPictureInPictureActive(): Boolean =
+    CallPictureInPictureActivity.isActive()
+
+  fun closeCallPictureInPictureIfActive(): Boolean =
+    CallPictureInPictureActivity.closeIfActive()
+
+  override fun onPictureInPictureRequested(): Boolean {
+    return CallPictureInPictureActivity.openForCurrentCall(this) ||
+      super.onPictureInPictureRequested()
+  }
+
+  override fun onUserLeaveHint() {
+    super.onUserLeaveHint()
+    if (!CallPictureInPictureActivity.isDedicatedPictureInPictureLaunchPending()) {
+      CallPictureInPictureActivity.openForCurrentCall(this)
+    }
+  }
+
+  override fun onDestroy() {
+    CallPictureInPictureActivity.onMainHostDestroyed(this)
+    super.onDestroy()
   }
 
   /**
@@ -54,6 +95,14 @@ class MainActivity : ReactActivity() {
     val reactContext =
       (application as? ReactApplication)?.reactHost?.currentReactContext
     MessagePushOpenStore.notifyReactContext(reactContext)
+  }
+
+  private fun captureCallPictureInPictureRestore(intent: Intent?) {
+    if (intent?.getBooleanExtra(CallPictureInPictureActivity.EXTRA_RESTORE_CALL, false) != true) {
+      return
+    }
+    intent.removeExtra(CallPictureInPictureActivity.EXTRA_RESTORE_CALL)
+    CallPictureInPictureActivity.markMainHostRestoreIntentReceived()
   }
 
   private fun preferHighestRefreshRate() {

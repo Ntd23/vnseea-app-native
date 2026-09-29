@@ -193,6 +193,14 @@ export type NearbyPagesInput = Pick<
   fast?: boolean;
   globalSearch?: boolean;
   signal?: AbortSignal;
+  /**
+   * An explicit search: hand cached pages to `onCachedPages` right away, but
+   * still fetch fresh ones instead of returning the cache.
+   */
+  revalidate?: boolean;
+  onCachedPages?: (pages: NearbyPlace[]) => void;
+  /** Wait this long before calling the backend; aborting during the wait skips the call. */
+  backendDelayMs?: number;
 };
 
 export type MapPlacePredictionsInput = {
@@ -204,6 +212,16 @@ export type MapPlacePredictionsInput = {
   fast?: boolean;
   globalSearch?: boolean;
   signal?: AbortSignal;
+  /**
+   * An explicit search: publish cached predictions through
+   * `onPartialPredictions` right away, but still ask every source again.
+   */
+  revalidate?: boolean;
+  /**
+   * Wait this long before calling the backend. Direct Google suggestions are not
+   * delayed; aborting during the wait skips the backend call entirely.
+   */
+  backendDelayMs?: number;
   onPartialPredictions?: (predictions: MapPlacePrediction[]) => void;
 };
 
@@ -224,6 +242,22 @@ export type MapPlacePrediction = {
   openNow?: boolean;
   photoUrls?: string[];
 };
+
+/** A recent map search: a submitted keyword or a place the user opened. */
+export type MapSearchHistoryEntry =
+  | { kind: 'query'; id: string; query: string; savedAt: number }
+  | { kind: 'page'; id: string; page: NearbyPlace; savedAt: number }
+  | {
+      kind: 'google';
+      id: string;
+      prediction: MapPlacePrediction;
+      savedAt: number;
+    };
+
+export type MapSearchHistoryInput =
+  | { kind: 'query'; query: string }
+  | { kind: 'page'; page: NearbyPlace }
+  | { kind: 'google'; prediction: MapPlacePrediction };
 
 export type MapRouteInput = {
   originLat: number;

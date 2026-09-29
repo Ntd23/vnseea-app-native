@@ -12,13 +12,15 @@ import { Plus, Radio } from 'lucide-react-native';
 import { ComposerCard } from './ComposerCard';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
-import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import {
   HOME_INTRO_FALLBACK_AVATAR,
   type HomeFeedIntroProps,
   useHomeStoriesRail,
 } from './HomeFeedIntro.shared';
 import { FeedMediaImage } from './FeedMediaImage';
+import { HomeStoryCardCover } from './HomeStoryCardCover';
+import { HomeStoryPeekPreview } from './HomeStoryPeekPreview';
+import { HOME_STORY_PEEK_DELAY_MS, useHomeStoryPeek } from './useHomeStoryPeek';
 
 const DEFAULT_STORY_CARD_WIDTH = 116;
 const DEFAULT_STORY_CARD_HEIGHT = 188;
@@ -54,21 +56,6 @@ function getDefaultStoryRailItemLayout(
 
 function DefaultStoryRailSeparator() {
   return <View style={defaultStyles.storySeparator} />;
-}
-
-function StoryCardCover({ story }: { story: StoryItem }) {
-  const coverUri = useStoryCoverImageUri({
-    story,
-    fallbackUri: story.publisher.avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR,
-  });
-
-  return (
-    <FeedMediaImage
-      uri={coverUri || HOME_INTRO_FALLBACK_AVATAR}
-      style={StyleSheet.absoluteFill}
-      resizeMode="cover"
-    />
-  );
 }
 
 function LiveStoryCard({
@@ -159,28 +146,32 @@ function DefaultStoryCard({
   story,
   storyIndex,
   onPress,
+  onPeek,
+  onPeekRelease,
 }: {
   story: StoryItem;
   storyIndex: number;
   onPress: (index: number) => void;
+  onPeek: (story: StoryItem, index: number) => void;
+  onPeekRelease: () => void;
 }) {
+  // Like Facebook, a watched story stays fully visible; only the ring changes.
   const hasUnseen = story.hasUnseen && !story.isViewed;
 
   return (
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={() => onPress(storyIndex)}
+      onLongPress={() => onPeek(story, storyIndex)}
+      delayLongPress={HOME_STORY_PEEK_DELAY_MS}
+      onPressOut={onPeekRelease}
       style={defaultStyles.storyCard}
-      className={`overflow-hidden rounded-[20px] shadow-sm ${
-        hasUnseen ? '' : 'opacity-80'
-      }`}
+      className="overflow-hidden rounded-[20px] bg-slate-700 shadow-sm"
     >
-      <StoryCardCover story={story} />
-      <View className="absolute inset-0 bg-black/25" />
-      <View className="absolute bottom-0 left-0 right-0 h-20 bg-black/35" />
+      <HomeStoryCardCover story={story} />
       <View
-        className={`absolute left-2 top-2 h-8 w-8 overflow-hidden rounded-full border-2 ${
-          hasUnseen ? 'border-white' : 'border-slate-200'
+        className={`absolute left-2 top-2 h-9 w-9 overflow-hidden rounded-full border-[3px] ${
+          hasUnseen ? 'border-brand' : 'border-slate-300'
         } bg-white p-0.5`}
       >
         <FeedMediaImage
@@ -225,6 +216,8 @@ function DefaultStoriesRow({
     liveStreams: sharedLiveStreams,
     onLivePress,
   });
+  const { peek, openPeek, releasePeek, closePeek, openPeekedStory } =
+    useHomeStoryPeek(goToViewerForGroup);
 
   const railItems = React.useMemo<DefaultStoryRailItem[]>(
     () => [
@@ -267,10 +260,20 @@ function DefaultStoriesRow({
           story={item.story}
           storyIndex={item.storyIndex}
           onPress={goToViewerForGroup}
+          onPeek={openPeek}
+          onPeekRelease={releasePeek}
         />
       );
     },
-    [avatarUrl, copy, goToCreateStory, goToLive, goToViewerForGroup],
+    [
+      avatarUrl,
+      copy,
+      goToCreateStory,
+      goToLive,
+      goToViewerForGroup,
+      openPeek,
+      releasePeek,
+    ],
   );
 
   return (
@@ -289,6 +292,11 @@ function DefaultStoriesRow({
         windowSize={3}
         updateCellsBatchingPeriod={50}
         removeClippedSubviews
+      />
+      <HomeStoryPeekPreview
+        story={peek?.story ?? null}
+        onClose={closePeek}
+        onOpenStory={openPeekedStory}
       />
     </View>
   );

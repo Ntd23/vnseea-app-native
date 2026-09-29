@@ -277,6 +277,7 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     new_orders: '{name} đã gửi cho bạn một yêu cầu mua mới',
     new_post: '{name} vừa đăng một bài viết mới',
     new_story: '{name} vừa đăng một tin mới',
+    story_mention: '{name} đã nhắc đến bạn trong tin',
     default: '{name} có thông báo mới',
   },
   en: {
@@ -302,6 +303,7 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     new_orders: '{name} sent you a new purchase request',
     new_post: '{name} posted a new post',
     new_story: '{name} added a new story',
+    story_mention: '{name} mentioned you in their story',
     default: '{name} has a new notification',
   },
 };

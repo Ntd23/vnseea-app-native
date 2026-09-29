@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -259,6 +260,100 @@ class VnseeaCallIntentModule(
   }
 
   @ReactMethod
+  fun setVideoCallPictureInPictureEnabled(
+    enabled: Boolean,
+    aspectWidth: Int,
+    aspectHeight: Int,
+    promise: Promise,
+  ) {
+    appContext.runOnUiQueueThread {
+      try {
+        promise.resolve(
+          CallPictureInPictureActivity.setEnabled(
+            enabled = enabled,
+            aspectWidth = aspectWidth,
+            aspectHeight = aspectHeight,
+          ),
+        )
+      } catch (error: Throwable) {
+        promise.reject("E_SET_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun configureVideoCallPictureInPicture(
+    enabled: Boolean,
+    localCameraEnabled: Boolean,
+    localMirror: Boolean,
+    localStreamUrl: String?,
+    remoteStreamUrls: ReadableArray?,
+    aspectWidth: Int,
+    aspectHeight: Int,
+    promise: Promise,
+  ) {
+    appContext.runOnUiQueueThread {
+      try {
+        promise.resolve(
+          CallPictureInPictureActivity.configure(
+            enabled = enabled,
+            localCameraEnabled = localCameraEnabled,
+            localMirror = localMirror,
+            localStreamUrl = localStreamUrl.orEmpty(),
+            remoteStreamUrls = remoteStreamUrls
+              ?.toArrayList()
+              ?.mapNotNull { it as? String }
+              .orEmpty(),
+            aspectWidth = aspectWidth,
+            aspectHeight = aspectHeight,
+          ),
+        )
+      } catch (error: Throwable) {
+        promise.reject("E_CONFIGURE_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun enterVideoCallPictureInPicture(promise: Promise) {
+    appContext.runOnUiQueueThread {
+      try {
+        val context = appContext.currentActivity ?: appContext
+        promise.resolve(CallPictureInPictureActivity.openForCurrentCall(context))
+      } catch (error: Throwable) {
+        promise.reject("E_ENTER_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun isInPictureInPictureMode(promise: Promise) {
+    promise.resolve(CallPictureInPictureActivity.isActive())
+  }
+
+  @ReactMethod
+  fun consumeCallPictureInPictureRestoreRequest(promise: Promise) {
+    promise.resolve(CallPictureInPictureActivity.consumeDedicatedRestoreRequest())
+  }
+
+  @ReactMethod
+  fun closeCallPictureInPictureIfActive(promise: Promise) {
+    appContext.runOnUiQueueThread {
+      try {
+        promise.resolve(CallPictureInPictureActivity.closeIfActive())
+      } catch (error: Throwable) {
+        promise.reject("E_CLOSE_CALL_PIP", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun addListener(eventName: String) = Unit
+
+  @ReactMethod
+  fun removeListeners(count: Int) = Unit
+
+  @ReactMethod
   fun showIncomingCall(callData: com.facebook.react.bridge.ReadableMap, promise: Promise) {
     try {
       val callId = try {
@@ -276,27 +371,15 @@ class VnseeaCallIntentModule(
       }
 
       val notificationData = JSONObject()
-      val intent = Intent(appContext, IncomingCallActivity::class.java).apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-          Intent.FLAG_ACTIVITY_CLEAR_TOP or
-          Intent.FLAG_ACTIVITY_SINGLE_TOP
-        val iterator = callData.keySetIterator()
-        while (iterator.hasNextKey()) {
-          val key = iterator.nextKey()
-          try {
-            val value = callData.getString(key).orEmpty()
-            putExtra(key, value)
-            notificationData.put(key, value)
-          } catch (_: Throwable) {
-          }
+      val iterator = callData.keySetIterator()
+      while (iterator.hasNextKey()) {
+        val key = iterator.nextKey()
+        try {
+          notificationData.put(key, callData.getString(key).orEmpty())
+        } catch (_: Throwable) {
         }
       }
-      val activity = appContext.currentActivity
-      if (activity != null) {
-        activity.startActivity(intent)
-      } else {
-        LiveKitCallNotifier.show(appContext, notificationData)
-      }
+      LiveKitCallNotifier.show(appContext, notificationData)
       promise.resolve(true)
     } catch (error: Exception) {
       promise.reject("E_SHOW_INCOMING_CALL", error)

@@ -63,6 +63,7 @@ import {
   Bell,
   Bike,
   Car,
+  Clock,
   Compass,
   CornerUpLeft,
   CornerUpRight,
@@ -143,14 +144,27 @@ import {
   stopNavigationSpeech,
 } from '../../infrastructure/navigation/navigationSpeech';
 import { subscribeNavigationHeading } from '../../infrastructure/navigation/navigationHeading';
+import {
+  addMapSearchHistoryEntry,
+  clearMapSearchHistory,
+  mapSearchHistoryEntryKey,
+  readMapSearchHistory,
+  removeMapSearchHistoryEntry,
+} from '../../infrastructure/storage/mapSearchHistoryStorage';
 import type {
   MapPlaceReview,
   MapPlacePrediction,
   MapRouteInput,
   MapRoute,
   MapRouteStep,
+  MapSearchHistoryEntry,
+  MapSearchHistoryInput,
   NearbyPlace,
 } from '../../domain/types/user.types';
+import {
+  filterMapSearchHistory,
+  mapSearchHistoryEntryTitle,
+} from '../../application/utils/mapSearchHistory';
 import {
   buildMapSharePreview,
   buildMapShareText,
@@ -218,8 +232,14 @@ const NEARBY_RESULT_DISTANCE_METERS = 3000;
 const LOCAL_RESULT_DISTANCE_METERS = 20000;
 const LOCAL_SEARCH_MIN_LENGTH = 1;
 const REMOTE_SEARCH_MIN_LENGTH = 1;
+// Recent searches: the full list on an empty query, a few matches while typing.
+const RECENT_SEARCH_EMPTY_QUERY_LIMIT = 8;
+const RECENT_SEARCH_TYPING_LIMIT = 3;
 const CATEGORY_SEARCH_DEBOUNCE_MS = 80;
 const TEXT_SEARCH_DEBOUNCE_MS = 120;
+// Direct Google suggestions follow the debounces above. Backend searches are
+// rate-limited per user, so typeahead only calls them once typing pauses.
+const TYPEAHEAD_BACKEND_IDLE_MS = 300;
 // Committed search returns at most 20 VNSEEA Pages and 20 Google places.
 const MAX_COMMITTED_SEARCH_RESULTS = 40;
 const MAP_DISCOVERY_PAGE_LIMIT = 40;
@@ -268,6 +288,58 @@ const DEFAULT_REGION = {
   latitudeDelta: 0.03,
   longitudeDelta: 0.03,
 };
+// Address/Page markers are bitmaps anchored by a fraction of their size. The
+// anchor must hit the pin tip exactly: any pixel error stays constant while the
+// map scale changes, so a misplaced anchor makes the pin drift while zooming.
+const ADDRESS_MARKER_LAYOUT = {
+  label: { width: 248, height: 70, pinWidth: 50, pinHeight: 58 },
+  compact: { width: 54, height: 58, pinWidth: 50, pinHeight: 58 },
+  selected: { width: 190, height: 48, pinWidth: 34, pinHeight: 39 },
+} as const;
+const ADDRESS_MARKER_PIN_ICON = { size: 48, strokeWidth: 2.2 } as const;
+const ADDRESS_MARKER_SELECTED_PIN_ICON = { size: 33, strokeWidth: 2.35 } as const;
+// Labels stay within the fixed marker height up to this font scale.
+const ADDRESS_MARKER_LABEL_MAX_FONT_SCALE = 1.3;
+
+function mapPinTipY(icon: { size: number; strokeWidth: number }) {
+  // lucide's MapPin path ends at y≈22 of its 24-unit box; the stroke adds half its width.
+  return ((22 + icon.strokeWidth / 2) / 24) * icon.size;
+}
+
+function addressMarkerAnchor(
+  layout: (typeof ADDRESS_MARKER_LAYOUT)[keyof typeof ADDRESS_MARKER_LAYOUT],
+  icon: { size: number; strokeWidth: number },
+  pinAlign: 'center' | 'end',
+) {
+  // The pin is vertically centred in the marker and sits either centred or at
+  // its right edge, with the icon drawn from the top of the pin box.
+  const pinCenterX =
+    pinAlign === 'end' ? layout.width - layout.pinWidth / 2 : layout.width / 2;
+  const pinTop = (layout.height - layout.pinHeight) / 2;
+  return {
+    x: pinCenterX / layout.width,
+    y: (pinTop + mapPinTipY(icon)) / layout.height,
+  };
+}
+
+const ADDRESS_MARKER_ANCHORS = {
+  label: addressMarkerAnchor(
+    ADDRESS_MARKER_LAYOUT.label,
+    ADDRESS_MARKER_PIN_ICON,
+    'end',
+  ),
+  compact: addressMarkerAnchor(
+    ADDRESS_MARKER_LAYOUT.compact,
+    ADDRESS_MARKER_PIN_ICON,
+    'center',
+  ),
+  selected: addressMarkerAnchor(
+    ADDRESS_MARKER_LAYOUT.selected,
+    ADDRESS_MARKER_SELECTED_PIN_ICON,
+    'end',
+  ),
+};
+
 const ADDRESS_PLACE_MARKER_COLOR = '#0EA5A4';
 const ADDRESS_PLACE_MARKER_DARK = '#0F766E';
 const ADDRESS_PLACE_MARKER_LIGHT = '#E6FFFA';
@@ -530,10 +602,10 @@ function AddressPlaceMapMarker({
     <Marker
       anchor={
         selected
-          ? { x: 0.9, y: 1 }
+          ? ADDRESS_MARKER_ANCHORS.selected
           : compact
-          ? { x: 0.5, y: 1 }
-          : { x: 0.88, y: 1 }
+          ? ADDRESS_MARKER_ANCHORS.compact
+          : ADDRESS_MARKER_ANCHORS.label
       }
       coordinate={coordinate}
       onPress={onPress}
@@ -558,6 +630,7 @@ function AddressPlaceMapMarker({
           >
             <Text
               numberOfLines={2}
+              maxFontSizeMultiplier={ADDRESS_MARKER_LABEL_MAX_FONT_SCALE}
               style={[
                 styles.healthPlaceMarkerLabel,
                 selected && styles.healthPlaceMarkerLabelSelected,
@@ -571,10 +644,10 @@ function AddressPlaceMapMarker({
         {selected ? (
           <View style={styles.healthPlaceSelectedPin}>
             <MapPin
-              size={33}
+              size={ADDRESS_MARKER_SELECTED_PIN_ICON.size}
               color="#FFFFFF"
               fill={ADDRESS_PLACE_MARKER_DARK}
-              strokeWidth={2.35}
+              strokeWidth={ADDRESS_MARKER_SELECTED_PIN_ICON.strokeWidth}
             />
             {badgeText ? (
               <Text style={styles.healthPlaceSelectedPinText}>{badgeText}</Text>
@@ -585,10 +658,10 @@ function AddressPlaceMapMarker({
         ) : (
           <View style={styles.healthPlaceBadgePin}>
             <MapPin
-              size={48}
+              size={ADDRESS_MARKER_PIN_ICON.size}
               color="#FFFFFF"
               fill={ADDRESS_PLACE_MARKER_COLOR}
-              strokeWidth={2.2}
+              strokeWidth={ADDRESS_MARKER_PIN_ICON.strokeWidth}
             />
             {badgeText ? (
               <Text style={styles.healthPlaceBadgeText}>{badgeText}</Text>
@@ -1768,6 +1841,14 @@ function suggestionItemKey(item: SuggestionItem) {
   return `${item.kind}:${item.id}`;
 }
 
+function suggestionItemHasCoordinate(item: SuggestionItem) {
+  if (item.kind === 'page') return Boolean(item.page.coordinate);
+  return (
+    typeof item.prediction.lat === 'number' &&
+    typeof item.prediction.lng === 'number'
+  );
+}
+
 function VnseeaPageBadge({
   logoUrl,
   onLogoError,
@@ -1926,6 +2007,54 @@ function SearchSuggestionRow({
         </Text>
       </View>
       <CornerUpLeft size={22} color="#475569" />
+    </TouchableOpacity>
+  );
+}
+
+function SearchHistoryRow({
+  entry,
+  onPress,
+  onRemove,
+}: {
+  entry: MapSearchHistoryEntry;
+  onPress: () => void;
+  onRemove: () => void;
+}) {
+  const subtitle =
+    entry.kind === 'query'
+      ? 'Đã tìm kiếm'
+      : entry.kind === 'page'
+      ? entry.page.location || 'Page VNSEEA'
+      : entry.prediction.secondaryText || entry.prediction.description;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      style={[styles.typeaheadResultRow, styles.searchHistoryRow]}
+      onPress={onPress}
+    >
+      <View style={styles.searchHistoryIcon}>
+        <Clock size={20} color="#475569" />
+      </View>
+      <View style={styles.typeaheadResultCopy}>
+        <Text style={styles.typeaheadResultTitle} numberOfLines={1}>
+          {mapSearchHistoryEntryTitle(entry)}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.typeaheadResultAddress} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel="Xóa khỏi lịch sử tìm kiếm"
+        onPress={onRemove}
+      >
+        <X size={18} color="#94A3B8" />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -2161,6 +2290,12 @@ export default function NearbyUsersScreen() {
   const pageSelectionRequestIdRef = useRef(0);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchEffectRequestIdRef = useRef(0);
+  const [searchHistory, setSearchHistory] = useState<MapSearchHistoryEntry[]>(
+    () => readMapSearchHistory(),
+  );
+  // Set when a recent keyword starts a committed search, so the typeahead
+  // effect for that same text does not abort the committed request.
+  const queryEffectBypassRef = useRef<string | null>(null);
   const committedSearchRequestIdRef = useRef(0);
   const committedSearchQueryRef = useRef('');
   const wasSearchQueryActiveRef = useRef(false);
@@ -2862,6 +2997,30 @@ export default function NearbyUsersScreen() {
   }, [nearbyTypeaheadResults, query, searchResults, suggestions]);
 
   const isSearchMode = isSearchFocused;
+  const isQueryEmpty = query.trim().length === 0;
+  const recentSearchEntries = useMemo(
+    () =>
+      filterMapSearchHistory(
+        searchHistory,
+        query,
+        isQueryEmpty
+          ? RECENT_SEARCH_EMPTY_QUERY_LIMIT
+          : RECENT_SEARCH_TYPING_LIMIT,
+      ),
+    [isQueryEmpty, query, searchHistory],
+  );
+  const showsRecentSearchSection =
+    isQueryEmpty && recentSearchEntries.length > 0;
+  // A place already listed as a recent search is not repeated below it.
+  const recentSearchPlaceKeys = useMemo(
+    () =>
+      new Set(
+        recentSearchEntries
+          .filter(entry => entry.kind !== 'query')
+          .map(mapSearchHistoryEntryKey),
+      ),
+    [recentSearchEntries],
+  );
   // The typeahead overlay only owns focused input. After submit, keep the
   // search chrome expanded while returning the map and the draggable results
   // sheet underneath it.
@@ -2878,6 +3037,15 @@ export default function NearbyUsersScreen() {
     searchResults.length > 0;
   const shouldShowSearchResultMarkers =
     !isSearchMode && (isSearchResultsVisible || hasRetainedSearchResults);
+  // Results reach the sheet before the server supplies every coordinate; say
+  // so on the map instead of leaving it without pins.
+  const isLocatingSearchResults =
+    shouldShowSearchResultMarkers &&
+    isCommittedSearchLoading &&
+    (displayedSearchResults.length === 0 ||
+      displayedSearchResults.some(
+        item => !suggestionItemHasCoordinate(item),
+      ));
   const shouldShowNearbyPageMarkers =
     !isSearchMode && !shouldShowSearchResultMarkers;
 
@@ -4538,10 +4706,18 @@ export default function NearbyUsersScreen() {
     [selectPoint],
   );
 
+  const recordSearchHistory = useCallback((input: MapSearchHistoryInput) => {
+    setSearchHistory(addMapSearchHistoryEntry(input));
+  }, []);
+
   const handlePerformSearch = useCallback(
-    async (keyword: string) => {
+    async (
+      keyword: string,
+      options: { reuseTypeaheadResults?: boolean } = {},
+    ) => {
       const trimmed = keyword.trim();
       if (trimmed.length < REMOTE_SEARCH_MIN_LENGTH) return;
+      recordSearchHistory({ kind: 'query', query: trimmed });
 
       if (searchTimerRef.current) {
         clearTimeout(searchTimerRef.current);
@@ -4559,7 +4735,10 @@ export default function NearbyUsersScreen() {
       setIsSearchResultsVisible(true);
       openSearchResultsSheet();
       setSearchMessage('');
-      const submittedTypeaheadResults = typeaheadResults;
+      // The visible typeahead belongs to the typed text. A recent keyword
+      // replaces that text, so its stale suggestions must not seed the results.
+      const submittedTypeaheadResults =
+        options.reuseTypeaheadResults === false ? [] : typeaheadResults;
       setSearchResults(submittedTypeaheadResults);
       let latestCombinedResults = submittedTypeaheadResults;
 
@@ -4637,6 +4816,9 @@ export default function NearbyUsersScreen() {
           fast: true,
           globalSearch: true,
           waitForAllSources: true,
+          // Pin cached places at once, but always fetch fresh results; an
+          // in-flight typeahead request for the same text is reused.
+          revalidate: true,
           onPartialResults: publishCommittedSearchResults,
         });
         if (requestId !== committedSearchRequestIdRef.current) return;
@@ -4721,6 +4903,7 @@ export default function NearbyUsersScreen() {
     },
     [
       openSearchResultsSheet,
+      recordSearchHistory,
       resetRouteState,
       searchResultsSheetHeights.half,
       searchNearbyPagesAndPlaces,
@@ -4745,6 +4928,11 @@ export default function NearbyUsersScreen() {
       options: { preserveSearchContext?: boolean } = {},
     ) => {
       const preserveSearchContext = options.preserveSearchContext !== false;
+      recordSearchHistory(
+        item.kind === 'page'
+          ? { kind: 'page', page: item.page }
+          : { kind: 'google', prediction: item.prediction },
+      );
       const trimmedSearchQuery = query.trim();
       const hasSearchContext =
         trimmedSearchQuery.length >= REMOTE_SEARCH_MIN_LENGTH;
@@ -4806,12 +4994,57 @@ export default function NearbyUsersScreen() {
       isSearchFocused,
       openSearchResultsSheet,
       query,
+      recordSearchHistory,
       resolveGooglePredictionPoint,
       selectPage,
       selectPoint,
       typeaheadResults,
     ],
   );
+
+  const handleSelectSearchHistoryEntry = useCallback(
+    (entry: MapSearchHistoryEntry) => {
+      if (entry.kind === 'query') {
+        queryEffectBypassRef.current = entry.query;
+        setQuery(entry.query);
+        handlePerformSearch(entry.query, {
+          reuseTypeaheadResults: false,
+        }).catch(() => undefined);
+        return;
+      }
+
+      const item: SuggestionItem =
+        entry.kind === 'page'
+          ? { id: entry.id, kind: 'page', page: entry.page }
+          : { id: entry.id, kind: 'google', prediction: entry.prediction };
+      handleSelectSearchResult(item, { preserveSearchContext: false }).catch(
+        () => undefined,
+      );
+    },
+    [handlePerformSearch, handleSelectSearchResult],
+  );
+
+  const handleRemoveSearchHistoryEntry = useCallback(
+    (entry: MapSearchHistoryEntry) => {
+      setSearchHistory(removeMapSearchHistoryEntry(entry));
+    },
+    [],
+  );
+
+  const handleClearSearchHistory = useCallback(() => {
+    Alert.alert(
+      'Xóa lịch sử tìm kiếm?',
+      'Các từ khóa và địa điểm gần đây trên thiết bị này sẽ bị xóa.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: () => setSearchHistory(clearMapSearchHistory()),
+        },
+      ],
+    );
+  }, []);
 
   const handleSelectPlaceDetailSuggestion = useCallback(
     (suggestionId: string) => {
@@ -5468,6 +5701,15 @@ export default function NearbyUsersScreen() {
   ]);
 
   useEffect(() => {
+    const bypassQuery = queryEffectBypassRef.current;
+    queryEffectBypassRef.current = null;
+    if (bypassQuery !== null && bypassQuery === query) {
+      // A recent keyword already started the committed search for this text;
+      // a typeahead request now would abort it.
+      wasSearchQueryActiveRef.current = true;
+      return;
+    }
+
     const requestId = ++searchEffectRequestIdRef.current;
     if (searchTimerRef.current) {
       clearTimeout(searchTimerRef.current);
@@ -5515,6 +5757,7 @@ export default function NearbyUsersScreen() {
           limit: 20,
           fast: true,
           globalSearch: true,
+          backendDelayMs: TYPEAHEAD_BACKEND_IDLE_MS,
         })
           .then(result => {
             if (requestId !== searchEffectRequestIdRef.current) return;
@@ -5595,6 +5838,33 @@ export default function NearbyUsersScreen() {
       }
     };
   }, [loadCurrentUser, loadPagesAroundUser]);
+
+  const typeaheadSummaryRow = (
+    <View style={styles.typeaheadSummaryRow}>
+      <View style={styles.typeaheadSummaryCopy}>
+        <Text style={styles.typeaheadSummaryTitle} numberOfLines={1}>
+          {query.trim().length === 0
+            ? 'Địa điểm gần bạn'
+            : query.trim().length < REMOTE_SEARCH_MIN_LENGTH
+            ? 'Gợi ý Page gần bạn'
+            : `Kết quả cho “${query.trim()}”`}
+        </Text>
+        <Text style={styles.typeaheadSummaryText}>
+          {isSearchListLoading
+            ? activeSearchListResults.length > 0
+              ? `Đang cập nhật quanh bạn · hiển thị ${activeSearchListResults.length} kết quả gần nhất`
+              : 'Đang tìm Page VNSEEA và địa điểm quanh bạn...'
+            : activeSearchListResults.length > 0
+            ? searchRankingOrigin
+              ? `${activeSearchListResults.length} kết quả · Page trước · địa chỉ gần đến xa`
+              : `${activeSearchListResults.length} kết quả · Page trước · bật vị trí để xếp theo khoảng cách`
+            : query.trim().length < REMOTE_SEARCH_MIN_LENGTH
+            ? 'Nhập thêm để tìm Page VNSEEA và mọi địa điểm, gần hoặc xa'
+            : 'Chưa có kết quả phù hợp với từ khóa này'}
+        </Text>
+      </View>
+    </View>
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -6230,6 +6500,15 @@ export default function NearbyUsersScreen() {
               </Text>
             </View>
           ) : null}
+
+          {isLocatingSearchResults ? (
+            <View style={styles.locationFallbackNotice}>
+              <ActivityIndicator size="small" color="#1D4ED8" />
+              <Text style={styles.locationFallbackText}>
+                Đang tải vị trí trên bản đồ…
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -6320,30 +6599,7 @@ export default function NearbyUsersScreen() {
 
       {isSearchMode && !isFullScreen ? (
         <View style={typeaheadOverlayStyle}>
-          <View style={styles.typeaheadSummaryRow}>
-            <View style={styles.typeaheadSummaryCopy}>
-              <Text style={styles.typeaheadSummaryTitle} numberOfLines={1}>
-                {query.trim().length === 0
-                  ? 'Địa điểm gần bạn'
-                  : query.trim().length < REMOTE_SEARCH_MIN_LENGTH
-                  ? 'Gợi ý Page gần bạn'
-                  : `Kết quả cho “${query.trim()}”`}
-              </Text>
-              <Text style={styles.typeaheadSummaryText}>
-                {isSearchListLoading
-                  ? activeSearchListResults.length > 0
-                    ? `Đang cập nhật quanh bạn · hiển thị ${activeSearchListResults.length} kết quả gần nhất`
-                    : 'Đang tìm Page VNSEEA và địa điểm quanh bạn...'
-                  : activeSearchListResults.length > 0
-                  ? searchRankingOrigin
-                    ? `${activeSearchListResults.length} kết quả · Page trước · địa chỉ gần đến xa`
-                    : `${activeSearchListResults.length} kết quả · Page trước · bật vị trí để xếp theo khoảng cách`
-                  : query.trim().length < REMOTE_SEARCH_MIN_LENGTH
-                  ? 'Nhập thêm để tìm Page VNSEEA và mọi địa điểm, gần hoặc xa'
-                  : 'Chưa có kết quả phù hợp với từ khóa này'}
-              </Text>
-            </View>
-          </View>
+          {showsRecentSearchSection ? null : typeaheadSummaryRow}
 
           <ScrollView
             style={styles.typeaheadList}
@@ -6351,22 +6607,50 @@ export default function NearbyUsersScreen() {
             keyboardShouldPersistTaps="always"
             showsVerticalScrollIndicator
           >
+            {showsRecentSearchSection ? (
+              <View style={styles.searchHistoryHeader}>
+                <Text style={styles.searchHistoryTitle}>Tìm kiếm gần đây</Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  hitSlop={8}
+                  onPress={handleClearSearchHistory}
+                >
+                  <Text style={styles.searchHistoryClear}>Xóa tất cả</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {recentSearchEntries.map(entry => (
+              <SearchHistoryRow
+                key={`recent:${mapSearchHistoryEntryKey(entry)}`}
+                entry={entry}
+                onPress={() => handleSelectSearchHistoryEntry(entry)}
+                onRemove={() => handleRemoveSearchHistoryEntry(entry)}
+              />
+            ))}
+
+            {showsRecentSearchSection ? typeaheadSummaryRow : null}
+
             {isSearchListLoading ? (
               <TypeaheadSearchSkeleton
                 compact={activeSearchListResults.length > 0}
               />
             ) : null}
 
-            {activeSearchListResults.map(item => (
-              <SearchSuggestionRow
-                key={`typeahead:${item.kind}:${item.id}`}
-                item={item}
-                query={query}
-                vnseeaLogoUrl={visibleVnseeaLogoUrl}
-                onVnseeaLogoError={notifyVnseeaLogoError}
-                onPress={() => handleSelectSearchResult(item)}
-              />
-            ))}
+            {activeSearchListResults
+              .filter(
+                item => !recentSearchPlaceKeys.has(suggestionItemKey(item)),
+              )
+              .map(item => (
+                <SearchSuggestionRow
+                  key={`typeahead:${item.kind}:${item.id}`}
+                  item={item}
+                  query={query}
+                  vnseeaLogoUrl={visibleVnseeaLogoUrl}
+                  onVnseeaLogoError={notifyVnseeaLogoError}
+                  onPress={() => handleSelectSearchResult(item)}
+                />
+              ))}
 
             {!isSearchListLoading && activeSearchListResults.length === 0 ? (
               <View style={styles.typeaheadEmptyState}>
@@ -8607,22 +8891,23 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
   },
+  // Fixed sizes: ADDRESS_MARKER_ANCHORS is computed from them.
   healthPlaceMarkerRoot: {
-    width: 248,
-    minHeight: 70,
+    width: ADDRESS_MARKER_LAYOUT.label.width,
+    height: ADDRESS_MARKER_LAYOUT.label.height,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingRight: 0,
   },
   healthPlaceMarkerRootCompact: {
-    width: 54,
-    minHeight: 58,
+    width: ADDRESS_MARKER_LAYOUT.compact.width,
+    height: ADDRESS_MARKER_LAYOUT.compact.height,
     justifyContent: 'center',
   },
   healthPlaceMarkerRootSelected: {
-    width: 190,
-    minHeight: 48,
+    width: ADDRESS_MARKER_LAYOUT.selected.width,
+    height: ADDRESS_MARKER_LAYOUT.selected.height,
     paddingRight: 0,
   },
   healthPlaceMarkerLabelCard: {
@@ -8666,8 +8951,8 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   healthPlaceBadgePin: {
-    width: 50,
-    height: 58,
+    width: ADDRESS_MARKER_LAYOUT.label.pinWidth,
+    height: ADDRESS_MARKER_LAYOUT.label.pinHeight,
     alignItems: 'center',
     justifyContent: 'flex-start',
     shadowColor: ADDRESS_PLACE_MARKER_DARK,
@@ -8696,8 +8981,8 @@ const styles = StyleSheet.create({
     backgroundColor: ADDRESS_PLACE_MARKER_LIGHT,
   },
   healthPlaceSelectedPin: {
-    width: 34,
-    height: 39,
+    width: ADDRESS_MARKER_LAYOUT.selected.pinWidth,
+    height: ADDRESS_MARKER_LAYOUT.selected.pinHeight,
     alignItems: 'center',
     justifyContent: 'flex-start',
     shadowColor: ADDRESS_PLACE_MARKER_DARK,
@@ -9481,6 +9766,36 @@ const styles = StyleSheet.create({
   },
   typeaheadListContent: {
     paddingBottom: 18,
+  },
+  searchHistoryHeader: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  searchHistoryTitle: {
+    color: '#1F2937',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  searchHistoryClear: {
+    color: BRAND,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  searchHistoryRow: {
+    minHeight: 64,
+  },
+  searchHistoryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
   },
   typeaheadResultRow: {
     minHeight: 84,

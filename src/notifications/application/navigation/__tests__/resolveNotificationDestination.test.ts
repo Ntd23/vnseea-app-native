@@ -67,6 +67,14 @@ describe('resolveNotificationDestination', () => {
     ).toEqual({ kind: 'story', storyId: '146' });
   });
 
+  it('opens the story someone mentioned you in', () => {
+    expect(
+      resolveNotificationDestination(
+        notification({ type: 'story_mention', storyId: '240' }),
+      ),
+    ).toEqual({ kind: 'story', storyId: '240' });
+  });
+
   it('opens the exact post for a new post notification', () => {
     expect(
       resolveNotificationDestination(

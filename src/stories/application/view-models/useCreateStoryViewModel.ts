@@ -18,15 +18,41 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import type {
   CreateStoryDraft,
   CreateStoryResult,
   StoryMediaUpload,
+  StoryOverlay,
 } from '../../domain/types/stories.types';
+import { EMPTY_STORY_OVERLAY } from '../overlay/storyOverlay';
 import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
 
 const repository = createStoriesRepository();
+
+/**
+ * Video stories upload a frame as their cover, like posts and reels do, so the
+ * home rail can preview them. A missing frame must never block posting.
+ */
+export async function withStoryVideoThumbnail(
+  media: StoryMediaUpload,
+): Promise<StoryMediaUpload> {
+  if (media.fileType !== 'video' || media.thumbnailUri) return media;
+
+  try {
+    const thumbnail = await createVideoUploadThumbnail(media.uri);
+    if (!thumbnail?.uri) return media;
+    return {
+      ...media,
+      thumbnailUri: thumbnail.uri,
+      thumbnailName: thumbnail.name,
+      thumbnailType: thumbnail.type,
+    };
+  } catch {
+    return media;
+  }
+}
 
 // ── Validation limits (mirror create_story.php) ─────────────────────────
 const MAX_TITLE_LENGTH = 100;
@@ -83,12 +109,15 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
   const [title, setTitleState] = useState('');
   const [description, setDescriptionState] = useState('');
   const [audience, setAudience] = useState<ContentAudience>('followers');
+  const [overlay, setOverlay] = useState<StoryOverlay>(EMPTY_STORY_OVERLAY);
   const [phase, setPhase] = useState<Phase>({ type: 'idle' });
 
   // ── Draft mutators ────────────────────────────────────────────────────
 
   const setMedia = useCallback((next: StoryMediaUpload | null) => {
     setMediaState(next);
+    // Stickers and text belong to the media they were placed on.
+    setOverlay(EMPTY_STORY_OVERLAY);
     // Clear any prior error when the user picks a new file — gives them
     // a clean attempt without having to dismiss the banner manually.
     setPhase({ type: 'idle' });
@@ -107,6 +136,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     setTitleState('');
     setDescriptionState('');
     setAudience('followers');
+    setOverlay(EMPTY_STORY_OVERLAY);
     setPhase({ type: 'idle' });
   }, []);
 
@@ -166,15 +196,15 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       return null;
     }
 
-    const draft: CreateStoryDraft = {
-      media,
-      audience,
-      title: title.trim() || undefined,
-      description: description.trim() || undefined,
-    };
-
     setPhase({ type: 'uploading' });
     try {
+      const draft: CreateStoryDraft = {
+        media: await withStoryVideoThumbnail(media),
+        audience,
+        title: title.trim() || undefined,
+        description: description.trim() || undefined,
+        overlay,
+      };
       const result = await repository.createStory(draft);
       setPhase({ type: 'success', result });
       // Notify parent FIRST so the rail updates while we're still in
@@ -202,7 +232,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       setPhase({ type: 'error', message: friendly });
       return null;
     }
-  }, [media, title, description, audience, validate, onCreated, vmCopy]);
+  }, [media, title, description, audience, overlay, validate, onCreated, vmCopy]);
 
   // Convenience getter so the screen doesn't have to switch on `phase.type`
   // for the most common cases.
@@ -215,6 +245,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     title,
     description,
     audience,
+    overlay,
     phase,
     isUploading,
     error,
@@ -224,6 +255,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     setTitle,
     setDescription,
     setAudience,
+    setOverlay,
     // Lifecycle
     submit,
     reset,

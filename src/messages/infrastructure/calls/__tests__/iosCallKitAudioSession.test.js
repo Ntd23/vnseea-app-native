@@ -159,6 +159,28 @@ describe('iOS CallKit audio session configuration', () => {
     );
   });
 
+  it('ends each iOS CallKit call through one idempotent provider path', () => {
+    const serviceSource = read(
+      'src/messages/infrastructure/calls/nativeCallService.ts',
+    );
+    const endNativeCallStart = serviceSource.indexOf(
+      'export function endNativeCall',
+    );
+    const endNativeCallEnd = serviceSource.indexOf(
+      'export function dismissNativeIncomingCall',
+      endNativeCallStart,
+    );
+    const endNativeCallBlock = serviceSource.slice(
+      endNativeCallStart,
+      endNativeCallEnd,
+    );
+
+    expect(endNativeCallBlock).toContain('reportEndCallWithUUID');
+    expect(endNativeCallBlock).not.toContain('.endCall(callUuid)');
+    expect(serviceSource).toContain('nativeEndedCallUuids');
+    expect(serviceSource).toContain('rememberNativeCallEndedBySystem');
+  });
+
   it('acknowledges PushKit delivery and provides native caller progress tones', () => {
     const appDelegate = read('ios/VNSEEA/AppDelegate.swift');
     const toneSource = read('ios/VNSEEA/NavigationSpeechModule.swift');

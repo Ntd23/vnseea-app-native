@@ -1,6 +1,6 @@
 // Description: Renders the Messages LiveKit call room from the app-level call session.
 import { APP_BRAND_COLOR } from '../../../shared-kernel/presentation/theme/appColors';
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -246,7 +246,11 @@ function WaitingRoom({
           </Text>
         ) : null}
         {canShowSpinner ? (
-          <ActivityIndicator className="mt-8" color={APP_BRAND_COLOR} size="large" />
+          <ActivityIndicator
+            className="mt-8"
+            color={APP_BRAND_COLOR}
+            size="large"
+          />
         ) : null}
       </View>
       <View className="items-center pb-8">
@@ -297,48 +301,48 @@ function AudioRoom({
           edges={ROOT_SAFE_AREA_EDGES}
         >
           <View className="items-center justify-center pb-10">
-          <View className="items-center justify-center rounded-full border border-white/15 bg-white/5 p-2">
-            {peerAvatar ? (
-              <Image
-                source={{ uri: peerAvatar }}
-                className="h-36 w-36 rounded-full bg-slate-800"
-              />
-            ) : (
-              <View className="h-36 w-36 items-center justify-center rounded-full bg-brand">
-                <Text className="text-5xl font-bold text-white">
-                  {avatarInitial}
-                </Text>
-              </View>
-            )}
-          </View>
-          <Text
-            className="mt-7 max-w-[300px] text-center text-3xl font-bold text-white"
-            numberOfLines={2}
-          >
-            {peerName}
-          </Text>
-          <View className="mt-3 flex-row items-center rounded-full bg-emerald-400/10 px-3 py-2">
-            <View className="h-2 w-2 rounded-full bg-emerald-400" />
-            <Text className="ml-2 text-sm font-semibold text-emerald-100">
-              Đang trong cuộc gọi
+            <View className="items-center justify-center rounded-full border border-white/15 bg-white/5 p-2">
+              {peerAvatar ? (
+                <Image
+                  source={{ uri: peerAvatar }}
+                  className="h-36 w-36 rounded-full bg-slate-800"
+                />
+              ) : (
+                <View className="h-36 w-36 items-center justify-center rounded-full bg-brand">
+                  <Text className="text-5xl font-bold text-white">
+                    {avatarInitial}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text
+              className="mt-7 max-w-[300px] text-center text-3xl font-bold text-white"
+              numberOfLines={2}
+            >
+              {peerName}
             </Text>
-          </View>
-          <Text style={styles.callDuration} className="mt-4 text-white">
-            {formatCallDuration(session?.elapsedSeconds ?? 0)}
-          </Text>
-          {session?.deliveryWarningText ? (
-            <Text className="mt-4 max-w-[320px] text-center text-sm text-amber-200">
-              {session.deliveryWarningText}
-            </Text>
-          ) : null}
-          {session?.isRemoteMicrophoneMuted ? (
-            <View className="mt-4 flex-row items-center rounded-full bg-slate-950/60 px-3 py-2">
-              <MicOff size={16} color="#cbd5e1" />
-              <Text className="ml-2 text-xs font-semibold text-slate-300">
-                Đối phương đang tắt mic
+            <View className="mt-3 flex-row items-center rounded-full bg-emerald-400/10 px-3 py-2">
+              <View className="h-2 w-2 rounded-full bg-emerald-400" />
+              <Text className="ml-2 text-sm font-semibold text-emerald-100">
+                Đang trong cuộc gọi
               </Text>
             </View>
-          ) : null}
+            <Text style={styles.callDuration} className="mt-4 text-white">
+              {formatCallDuration(session?.elapsedSeconds ?? 0)}
+            </Text>
+            {session?.deliveryWarningText ? (
+              <Text className="mt-4 max-w-[320px] text-center text-sm text-amber-200">
+                {session.deliveryWarningText}
+              </Text>
+            ) : null}
+            {session?.isRemoteMicrophoneMuted ? (
+              <View className="mt-4 flex-row items-center rounded-full bg-slate-950/60 px-3 py-2">
+                <MicOff size={16} color="#cbd5e1" />
+                <Text className="ml-2 text-xs font-semibold text-slate-300">
+                  Đối phương đang tắt mic
+                </Text>
+              </View>
+            ) : null}
           </View>
         </SafeAreaView>
       </Pressable>
@@ -407,7 +411,6 @@ function VideoRoom({ peerName }: { peerName: string }) {
     useCallChromeVisibility(session?.phase === 'connected');
   const remoteVideoStreamUrl = session?.remoteVideoStreamUrl ?? '';
   const localVideoStreamUrl = session?.localVideoStreamUrl ?? '';
-
   return (
     <View className="flex-1 bg-black">
       <Pressable className="flex-1" onPress={toggleChrome}>
@@ -509,9 +512,11 @@ function VideoRoom({ peerName }: { peerName: string }) {
   );
 }
 
-function CallRoomScreen({ route }: CallRoomScreenProps) {
+function CallRoomScreen({ navigation, route }: CallRoomScreenProps) {
   const { session, statusText, ensureSessionFromRoute, minimizeCall } =
     useLiveKitCallSession();
+  const isMinimizingRef = useRef(false);
+  const ensuredRouteRef = useRef('');
   const peerName =
     session?.payload?.peer.name ??
     session?.peer?.name ??
@@ -523,10 +528,37 @@ function CallRoomScreen({ route }: CallRoomScreenProps) {
     route.params.peer?.avatar ??
     '';
   const callType = session?.callType ?? route.params.callType;
+  const callPhase = session?.phase;
+  const isCallMinimized = Boolean(session?.isMinimized);
 
   useEffect(() => {
+    if (ensuredRouteRef.current === route.key) return;
+    ensuredRouteRef.current = route.key;
     ensureSessionFromRoute(route.params);
-  }, [ensureSessionFromRoute, route.params]);
+  }, [ensureSessionFromRoute, route.key, route.params]);
+
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', event => {
+        if (
+          !callPhase ||
+          callPhase === 'ended' ||
+          callPhase === 'error' ||
+          isCallMinimized
+        ) {
+          return;
+        }
+        if (isMinimizingRef.current) {
+          isMinimizingRef.current = false;
+          return;
+        }
+
+        event.preventDefault();
+        isMinimizingRef.current = true;
+        minimizeCall();
+      }),
+    [callPhase, isCallMinimized, minimizeCall, navigation],
+  );
 
   useFocusEffect(
     useCallback(() => {

@@ -42,6 +42,10 @@ import {
   audienceToWire,
 } from '../../../shared-kernel/domain/types/contentAudience';
 import { filterActiveStories } from '../../domain/policies/storyExpiration';
+import {
+  parseStoryOverlay,
+  serializeStoryOverlay,
+} from '../../application/overlay/storyOverlay';
 
 // ── Generic readers (mirror the reels repository) ─────────────────────────
 //
@@ -344,10 +348,12 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
 
   const title = readString(raw, 'title') || undefined;
   const description = readString(raw, 'description') || undefined;
+  const overlay = parseStoryOverlay(raw.overlay_data);
   const media = extractMedia(raw, id).map(segment => ({
     ...segment,
     title: segment.title ?? title,
     description: segment.description ?? description,
+    overlay: segment.overlay ?? overlay,
   }));
 
   return {
@@ -516,6 +522,17 @@ export function createStoriesRepository(): StoriesRepository {
       // than duplicating the check here.
       if (draft.title) payload.story_title = draft.title;
       if (draft.description) payload.story_description = draft.description;
+      const storyOverlay = serializeStoryOverlay(draft.overlay);
+      if (storyOverlay) payload.story_overlay = storyOverlay;
+      // create-story.php stores `cover` as a video story's thumbnail; it only
+      // accepts image MIME types there, so default to JPEG.
+      if (draft.media.fileType === 'video' && draft.media.thumbnailUri) {
+        payload.cover = {
+          uri: draft.media.thumbnailUri,
+          name: draft.media.thumbnailName || `story_cover_${Date.now()}.jpg`,
+          type: draft.media.thumbnailType || 'image/jpeg',
+        };
+      }
 
       const response = await backendApi.multipart<{
         api_status: number | string;
@@ -533,9 +550,8 @@ export function createStoriesRepository(): StoriesRepository {
 
       if (!ok) {
         const errMsg =
-          (response.errors &&
-            Array.isArray(response.errors) &&
-            response.errors[0]) ||
+          (Array.isArray(response.errors) && response.errors[0]) ||
+          readErrorText(response.errors) ||
           response.message ||
           response.error ||
           `Status: ${status}`;
@@ -576,6 +592,7 @@ export function createStoriesRepository(): StoriesRepository {
       if (status !== '200' && status !== '220') {
         const errorMessage =
           (Array.isArray(response.errors) && response.errors[0]) ||
+          readErrorText(response.errors) ||
           response.message ||
           response.error ||
           `Status: ${status}`;

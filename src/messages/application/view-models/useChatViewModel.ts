@@ -10,6 +10,7 @@ import type {
   GroupSharedLink,
   MessageAttachment,
   MessageItem,
+  MessageRecallResult,
   PinnedMessageItem,
   SendMessageOptions,
 } from '../../domain/types/messages.types';
@@ -89,6 +90,10 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.isSentByMe === right.isSentByMe &&
     left.seen === right.seen &&
     left.deliveryState === right.deliveryState &&
+    left.isRecalled === right.isRecalled &&
+    left.recalledAt === right.recalledAt &&
+    left.recalledByUserId === right.recalledByUserId &&
+    left.recalledByName === right.recalledByName &&
     left.sharedPost?.postId === right.sharedPost?.postId &&
     left.sharedPost?.url === right.sharedPost?.url &&
     left.sharedPost?.note === right.sharedPost?.note &&
@@ -121,6 +126,39 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     areMessageReactionSummariesEqual(left.reactions, right.reactions) &&
     areCallEventsEqual(left.callEvent, right.callEvent)
   );
+}
+
+function createRecalledMessageTombstone(
+  message: MessageItem,
+  recall?: Partial<MessageRecallResult>,
+): MessageItem {
+  return {
+    ...message,
+    mentions: [],
+    message: 'Tin nhắn đã thu hồi',
+    callEvent: undefined,
+    systemEvent: undefined,
+    media: undefined,
+    mediaType: undefined,
+    mediaGroupId: undefined,
+    thumbnail: undefined,
+    sharedPost: undefined,
+    contentKind: 'text',
+    link: undefined,
+    location: undefined,
+    marketplaceContext: undefined,
+    storyReply: undefined,
+    replyTo: undefined,
+    reactions: createEmptyMessageReactionSummary(),
+    deliveryState: undefined,
+    isRecalled: true,
+    recalledAt: recall?.recalledAt ?? Math.floor(Date.now() / 1000),
+    recalledByUserId:
+      recall?.recalledByUserId ??
+      sessionStorage.getSession()?.userId ??
+      message.fromId,
+    recalledByName: recall?.recalledByName || 'Bạn',
+  };
 }
 
 function areMessageArraysSame(left: MessageItem[], right: MessageItem[]) {
@@ -240,6 +278,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const messageIdsRef = useRef<Set<string>>(new Set());
   const messagesRef = useRef<MessageItem[]>(messages);
   const pendingReactionMessageIdsRef = useRef<Set<string>>(new Set());
+  const pendingRecallMessageIdsRef = useRef<Set<string>>(new Set());
   const isLoadingRef = useRef(isLoading);
   const isSendingRef = useRef(isSending);
   const isLoadingMoreRef = useRef(isLoadingMore);
@@ -399,16 +438,22 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
           const currentById = new Map(
             current.map(message => [message.id, message]),
           );
-          const pageWithPendingReactions = page.map(message => {
-            if (!pendingReactionMessageIdsRef.current.has(message.id)) {
-              return message;
-            }
+          const pageWithPendingMutations = page.map(message => {
             const existing = currentById.get(message.id);
-            return existing
-              ? { ...message, reactions: existing.reactions }
-              : message;
+            if (
+              pendingRecallMessageIdsRef.current.has(message.id) &&
+              existing?.isRecalled
+            ) {
+              return existing;
+            }
+            if (pendingReactionMessageIdsRef.current.has(message.id)) {
+              return existing
+                ? { ...message, reactions: existing.reactions }
+                : message;
+            }
+            return message;
           });
-          const merged = mergeMessages(current, pageWithPendingReactions);
+          const merged = mergeMessages(current, pageWithPendingMutations);
           return areMessageArraysSame(current, merged) ? current : merged;
         });
       } catch (err) {
@@ -563,6 +608,59 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     },
     [],
   );
+
+  const recallMessage = useCallback(async (messageId: string) => {
+    if (!messageId || pendingRecallMessageIdsRef.current.has(messageId)) {
+      return false;
+    }
+    if (chat.chatType === 'page') return false;
+
+    const originalMessage = messagesRef.current.find(
+      message => message.id === messageId,
+    );
+    if (
+      !originalMessage ||
+      !originalMessage.isSentByMe ||
+      originalMessage.isRecalled ||
+      originalMessage.deliveryState
+    ) {
+      return false;
+    }
+
+    pendingRecallMessageIdsRef.current.add(messageId);
+    setMessages(current =>
+      current.map(message =>
+        message.id === messageId
+          ? createRecalledMessageTombstone(message)
+          : message,
+      ),
+    );
+    setError(null);
+
+    try {
+      const result = await repository.recallMessage(messageId);
+      setMessages(current =>
+        current.map(message =>
+          message.id === messageId
+            ? createRecalledMessageTombstone(message, result)
+            : message,
+        ),
+      );
+      return true;
+    } catch (err) {
+      setMessages(current =>
+        current.map(message =>
+          message.id === messageId ? originalMessage : message,
+        ),
+      );
+      const message =
+        err instanceof Error ? err.message : 'Không thể thu hồi tin nhắn.';
+      setError(message);
+      throw err;
+    } finally {
+      pendingRecallMessageIdsRef.current.delete(messageId);
+    }
+  }, [chat.chatType]);
 
   const sendMessage = useCallback(
     async (
@@ -1094,6 +1192,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     loadPinnedMessages,
     setMessagePinned,
     setMessageReaction,
+    recallMessage,
     sendMessage,
     notifyTyping,
     stopTyping,

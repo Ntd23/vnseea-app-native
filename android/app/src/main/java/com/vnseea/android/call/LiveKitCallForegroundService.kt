@@ -54,6 +54,8 @@ class LiveKitCallForegroundService : Service() {
       )
       .setCategory(NotificationCompat.CATEGORY_CALL)
       .setPriority(NotificationCompat.PRIORITY_LOW)
+      .setWhen(System.currentTimeMillis())
+      .setUsesChronometer(true)
       .setOngoing(true)
       .setOnlyAlertOnce(true)
       .setContentIntent(contentIntent)

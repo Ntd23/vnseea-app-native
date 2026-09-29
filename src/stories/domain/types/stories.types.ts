@@ -37,6 +37,57 @@ export interface StoryPublisher {
  */
 export type StoryMediaType = 'image' | 'video' | 'shared_post';
 
+/** Colour wash applied over the whole story (photo or video). */
+export type StoryFilterId =
+  | 'none'
+  | 'warm'
+  | 'cool'
+  | 'rose'
+  | 'vintage'
+  | 'dusk';
+
+/** How a text item is drawn: bare text, a solid pill, or a soft translucent pill. */
+export type StoryTextStyle = 'plain' | 'solid' | 'soft';
+
+interface StoryOverlayPlacement {
+  id: string;
+  /** Centre of the item as a fraction (0–1) of the 9:16 story frame. */
+  x: number;
+  y: number;
+  scale: number;
+  /** Radians, clockwise. */
+  rotation: number;
+}
+
+export type StoryOverlayItem =
+  | (StoryOverlayPlacement & {
+      kind: 'text';
+      text: string;
+      color: string;
+      textStyle: StoryTextStyle;
+    })
+  | (StoryOverlayPlacement & { kind: 'sticker'; emoji: string })
+  | (StoryOverlayPlacement & {
+      kind: 'mention';
+      userId: string;
+      username: string;
+      name: string;
+    })
+  | (StoryOverlayPlacement & { kind: 'link'; url: string });
+
+export type StoryOverlayKind = StoryOverlayItem['kind'];
+
+/**
+ * Stickers, text, mentions, links and a filter placed over a story in the
+ * editor. Stored as JSON in `T_USER_STORY.overlay_data` and redrawn by the
+ * viewer, so mentions and links stay tappable.
+ */
+export interface StoryOverlay {
+  version: 1;
+  filter: StoryFilterId;
+  items: StoryOverlayItem[];
+}
+
 export interface StoryMedia {
   /** Row id from T_USER_STORY_MEDIA — used only for keying lists. */
   id: string;
@@ -53,6 +104,8 @@ export interface StoryMedia {
   /** Per-segment copy. Required because one publisher bubble merges many Stories. */
   title?: string;
   description?: string;
+  /** Per-segment overlay, since one publisher bubble merges many Stories. */
+  overlay?: StoryOverlay;
 }
 
 /**
@@ -113,6 +166,13 @@ export interface StoryMediaUpload {
   height?: number;
   /** Video duration in seconds — used for the client-side 60s cap check. */
   durationSeconds?: number;
+  /**
+   * A frame uploaded with a video as the story cover. Without it the backend
+   * has no thumbnail and the home rail can only show the publisher avatar.
+   */
+  thumbnailUri?: string;
+  thumbnailName?: string;
+  thumbnailType?: string;
 }
 
 /**
@@ -124,6 +184,7 @@ export interface CreateStoryDraft {
   audience?: ContentAudience;
   title?: string;
   description?: string;
+  overlay?: StoryOverlay;
 }
 
 export interface CreateSharedPostStoryDraft {

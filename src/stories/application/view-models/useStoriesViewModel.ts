@@ -250,11 +250,15 @@ export function useStoriesViewModel() {
             });
           }
 
-          // Sort the grouped bubbles: the logged-in user's bubble should always be first
-          // followed by others sorted by postedAt DESC (newest story first)
+          // Sort the grouped bubbles: the logged-in user's bubble should always be first,
+          // then (like Facebook) people with unwatched stories before fully watched
+          // ones, each sorted by postedAt DESC (newest story first)
           grouped.sort((a, b) => {
             if (a.isOwner && !b.isOwner) return -1;
             if (!a.isOwner && b.isOwner) return 1;
+            const aHasUnseen = a.hasUnseen && !a.isViewed;
+            const bHasUnseen = b.hasUnseen && !b.isViewed;
+            if (aHasUnseen !== bHasUnseen) return aHasUnseen ? -1 : 1;
             return (b.postedAt || 0) - (a.postedAt || 0);
           });
 
