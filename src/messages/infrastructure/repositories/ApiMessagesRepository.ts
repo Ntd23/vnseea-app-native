@@ -2045,6 +2045,14 @@ export function createMessagesRepository(): MessagesRepository {
               .join('\n')
           : requestMessage;
       const textPayload = serializeMessageLineBreaks(rawTextPayload);
+      const mediaGroupPayload = options?.mediaGroupId
+        ? {
+            media_group_id: options.mediaGroupId,
+            ...(options.mediaGroupSize
+              ? { media_group_size: options.mediaGroupSize }
+              : {}),
+          }
+        : {};
       const userPayload = {
         user_id: target.id,
         text: textPayload,
@@ -2066,9 +2074,7 @@ export function createMessagesRepository(): MessagesRepository {
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
           : {}),
-        ...(options?.mediaGroupId
-          ? { media_group_id: options.mediaGroupId }
-          : {}),
+        ...mediaGroupPayload,
       };
       const groupPayload = {
         type: 'send',
@@ -2085,9 +2091,7 @@ export function createMessagesRepository(): MessagesRepository {
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
           : {}),
-        ...(options?.mediaGroupId
-          ? { media_group_id: options.mediaGroupId }
-          : {}),
+        ...mediaGroupPayload,
       };
       const route =
         target.type === 'group'

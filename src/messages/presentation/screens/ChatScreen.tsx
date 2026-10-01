@@ -135,6 +135,8 @@ import {
   type ChatMediaPreparationTask,
 } from '../../application/media/chatMediaPreparation';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
+import { formatMediaGroupLabel } from '../utils/mediaGroupLabel';
+import { ChatMediaStack } from '../components/ChatMediaStack';
 import {
   formatMessageSendingStatus,
   getMediaGroupSendProgress,
@@ -209,8 +211,6 @@ type OpenChatMedia = (
 
 const MAX_MEDIA_ATTACHMENTS = 10;
 const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
-const IMAGE_GALLERY_GAP = 3;
-const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 const MAP_SHARE_CARD_WIDTH = Math.min(
   Dimensions.get('window').width * 0.76,
   340,
@@ -2692,6 +2692,7 @@ function MediaMessageGroup({
   showAvatar = true,
   senderName,
   senderNameColor,
+  language,
   onPressAvatar,
   onOpenMedia,
   onLongPress,
@@ -2702,30 +2703,27 @@ function MediaMessageGroup({
   showAvatar?: boolean;
   senderName?: string;
   senderNameColor?: string;
+  language: AppLanguage;
   onPressAvatar?: (message: MessageItem) => void;
   onOpenMedia: OpenChatMedia;
   onLongPress?: (message: MessageItem) => void;
   onDoubleTap?: (message: MessageItem) => void;
 }) {
-  const orderedMessages = [...messages].reverse();
-  const visibleMessages = orderedMessages.slice(0, 6);
-  const hiddenCount = Math.max(
-    0,
-    orderedMessages.length - visibleMessages.length,
-  );
-  const newestMessage = messages[0];
-  const viewerItems: ChatMediaViewerItem[] = orderedMessages.map(message => ({
+  // Messages arrive in the order they were picked: the first one sits on top
+  // of the stack, carries the caption and opens first in the viewer.
+  const firstMessage = messages[0];
+  const lastMessage = messages[messages.length - 1];
+  const isSentByMe = firstMessage.isSentByMe;
+  const viewerItems: ChatMediaViewerItem[] = messages.map(message => ({
     uri: message.media!,
     type:
       message.mediaType === 'video' ? ('video' as const) : ('image' as const),
     thumbnail: message.thumbnail,
   }));
-  const captions = orderedMessages
+  const captions = messages
     .map(message => message.message.trim())
     .filter(Boolean);
-  const captionMentions = orderedMessages.flatMap(
-    message => message.mentions ?? [],
-  );
+  const captionMentions = messages.flatMap(message => message.mentions ?? []);
   const deliveryState = messages.find(
     message => message.deliveryState,
   )?.deliveryState;
@@ -2733,15 +2731,15 @@ function MediaMessageGroup({
   return (
     <View
       className={`mb-2 flex-row px-3 ${
-        newestMessage.isSentByMe ? 'justify-end' : 'justify-start'
+        isSentByMe ? 'justify-end' : 'justify-start'
       } ${deliveryState === 'sending' ? 'opacity-70' : ''}`}
     >
-      {!newestMessage.isSentByMe &&
+      {!isSentByMe &&
         (showAvatar ? (
           <TouchableOpacity
             activeOpacity={0.8}
             disabled={!onPressAvatar}
-            onPress={() => onPressAvatar?.(newestMessage)}
+            onPress={() => onPressAvatar?.(firstMessage)}
             hitSlop={6}
             className="mr-2 mt-1"
           >
@@ -2753,8 +2751,13 @@ function MediaMessageGroup({
         ) : (
           <View className="w-7 mr-2" />
         ))}
-      <View style={styles.imageGalleryBody}>
-        {!newestMessage.isSentByMe && senderName ? (
+      <View
+        style={[
+          styles.mediaGroupBody,
+          isSentByMe ? styles.mediaGroupBodySent : styles.mediaGroupBodyReceived,
+        ]}
+      >
+        {!isSentByMe && senderName ? (
           <Text
             numberOfLines={1}
             className="mb-1 ml-1 text-[12px] font-semibold text-gray-500"
@@ -2763,64 +2766,18 @@ function MediaMessageGroup({
             {senderName}
           </Text>
         ) : null}
-        <View style={styles.imageGallery}>
-          {visibleMessages.map((message, index) => (
-            <DoubleTapTouchable
-              key={message.id}
-              activeOpacity={0.9}
-              delayLongPress={320}
-              onLongPress={() => onLongPress?.(message)}
-              onDoubleTap={() => onDoubleTap?.(message)}
-              onSingleTap={() => {
-                onOpenMedia(
-                  {
-                    uri: message.media!,
-                    type: message.mediaType === 'video' ? 'video' : 'image',
-                    thumbnail: message.thumbnail,
-                  },
-                  viewerItems,
-                );
-              }}
-              style={styles.imageGalleryTile}
-            >
-              {message.mediaType === 'video' ? (
-                <ChatVideoPreview
-                  uri={message.media!}
-                  thumbnail={message.thumbnail}
-                  cacheKey={message.id}
-                  compact
-                  isSending={message.deliveryState === 'sending'}
-                />
-              ) : (
-                <Image
-                  source={{ uri: message.media }}
-                  style={styles.imageGalleryImage}
-                  resizeMode="cover"
-                  fadeDuration={120}
-                />
-              )}
-              {hiddenCount > 0 && index === visibleMessages.length - 1 ? (
-                <View style={styles.imageGalleryMore}>
-                  <Text className="text-2xl font-bold text-white">
-                    +{hiddenCount}
-                  </Text>
-                </View>
-              ) : null}
-              {message.reactions.total > 0 ? (
-                <View style={styles.imageGalleryReactionBadge}>
-                  <MessageReactionBadge
-                    summary={message.reactions}
-                    isSentByMe={message.isSentByMe}
-                  />
-                </View>
-              ) : null}
-            </DoubleTapTouchable>
-          ))}
-        </View>
+        <ChatMediaStack
+          messages={messages}
+          isSentByMe={isSentByMe}
+          label={formatMediaGroupLabel(messages, language)}
+          onOpen={() => onOpenMedia(viewerItems[0], viewerItems)}
+          onLongPress={() => onLongPress?.(firstMessage)}
+          onDoubleTap={() => onDoubleTap?.(firstMessage)}
+        />
         {captions.length > 0 ? (
           <View
             className={`mt-1 rounded-2xl px-3 py-2 ${
-              newestMessage.isSentByMe
+              isSentByMe
                 ? 'rounded-br-md bg-brand'
                 : 'rounded-bl-md border border-gray-200 bg-white'
             }`}
@@ -2828,16 +2785,10 @@ function MediaMessageGroup({
             <LinkifiedText
               text={captions.join('\n')}
               className={`text-[15px] leading-5 ${
-                newestMessage.isSentByMe ? 'text-white' : 'text-gray-900'
+                isSentByMe ? 'text-white' : 'text-gray-900'
               }`}
-              linkColor={
-                newestMessage.isSentByMe
-                  ? '#ffffff'
-                  : APP_COLORS.status.info
-              }
-              mentionColor={
-                newestMessage.isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR
-              }
+              linkColor={isSentByMe ? '#ffffff' : APP_COLORS.status.info}
+              mentionColor={isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR}
               mentions={captionMentions}
             />
           </View>
@@ -2847,7 +2798,7 @@ function MediaMessageGroup({
             ? formatMessageSendingStatus(getMediaGroupSendProgress(messages))
             : deliveryState === 'failed'
             ? 'Gửi thất bại'
-            : formatMessageTime(newestMessage.time)}
+            : formatMessageTime(lastMessage.time)}
         </Text>
       </View>
     </View>
@@ -3580,7 +3531,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               ...(mediaGroupId &&
               (attachment.mediaType === 'image' ||
                 attachment.mediaType === 'video')
-                ? { mediaGroupId }
+                ? { mediaGroupId, mediaGroupSize: groupableAttachmentCount }
                 : {}),
             },
           };
@@ -4164,6 +4115,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               showAvatar={!isGroupChat || Boolean(groupSender)}
               senderName={groupSender?.name}
               senderNameColor={groupSender?.color}
+              language={language}
               onPressAvatar={
                 isGroupChat ? handlePressGroupSenderAvatar : undefined
               }
@@ -5197,41 +5149,14 @@ const styles = StyleSheet.create({
   messageSkeletonRowSent: {
     justifyContent: 'flex-end',
   },
-  imageGallery: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: IMAGE_GALLERY_GAP,
-    width: IMAGE_GALLERY_WIDTH,
-    overflow: 'hidden',
-    borderRadius: 16,
+  mediaGroupBody: {
+    maxWidth: IMAGE_GALLERY_WIDTH + 48,
   },
-  imageGalleryBody: {
-    maxWidth: IMAGE_GALLERY_WIDTH,
+  mediaGroupBodyReceived: {
+    alignItems: 'flex-start',
   },
-  imageGalleryImage: {
-    height: '100%',
-    width: '100%',
-  },
-  imageGalleryMore: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-  },
-  imageGalleryReactionBadge: {
-    position: 'absolute',
-    right: 4,
-    bottom: 4,
-  },
-  imageGalleryTile: {
-    height: IMAGE_GALLERY_TILE_SIZE,
-    width: IMAGE_GALLERY_TILE_SIZE,
-    overflow: 'hidden',
-    backgroundColor: '#E5E7EB',
+  mediaGroupBodySent: {
+    alignItems: 'flex-end',
   },
   productInquiryPanel: {
     paddingHorizontal: 12,

@@ -180,6 +180,16 @@ if (empty($error_code)) {
             if (!empty($mediaThumbFilename)) {
                 $message_data['media_thumb'] = Wo_Secure($mediaThumbFilename);
             }
+            $media_group_id = VNSEEA_NormalizeMessageMediaGroupId(
+                isset($_POST['media_group_id']) ? $_POST['media_group_id'] : ''
+            );
+            if ($media_group_id !== '' && !empty($mediaFilename) && VNSEEA_MessageMediaGroupColumnAvailable()) {
+                $message_data['media_group_id'] = $media_group_id;
+                VNSEEA_MessageMediaGroupSize(
+                    $media_group_id,
+                    isset($_POST['media_group_size']) ? $_POST['media_group_size'] : 0
+                );
+            }
     		if (!empty($_POST['text']) || (isset($_POST['text']) && $_POST['text'] === '0') ) {
     		 	$message_data['text'] = Wo_Secure($_POST['text']);
     		}

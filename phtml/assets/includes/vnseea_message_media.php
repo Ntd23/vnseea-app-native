@@ -25,6 +25,64 @@ if (!function_exists('VNSEEA_MessageImageHasGps')) {
     }
 }
 
+if (!function_exists('VNSEEA_NormalizeMessageMediaGroupId')) {
+    /**
+     * Media picked together share one client-generated id so every client can
+     * render them as a single album. Anything unexpected is dropped.
+     */
+    function VNSEEA_NormalizeMessageMediaGroupId($value)
+    {
+        if (!is_scalar($value)) {
+            return '';
+        }
+        $value = trim((string) $value);
+        return preg_match('/^[A-Za-z0-9_-]{1,64}$/', $value) ? $value : '';
+    }
+}
+
+if (!function_exists('VNSEEA_MessageMediaGroupColumnAvailable')) {
+    /**
+     * Guards the write until the 20261001 migration has run, so deploying the
+     * code before the schema change cannot break media messages.
+     */
+    function VNSEEA_MessageMediaGroupColumnAvailable()
+    {
+        global $sqlConnect;
+
+        static $available = null;
+        if ($available !== null) {
+            return $available;
+        }
+        $available = false;
+        if (!defined('T_MESSAGES') || empty($sqlConnect)) {
+            return $available;
+        }
+        $query = @mysqli_query($sqlConnect, 'SHOW COLUMNS FROM ' . T_MESSAGES . " LIKE 'media_group_id'");
+        $available = $query && mysqli_num_rows($query) > 0;
+        return $available;
+    }
+}
+
+if (!function_exists('VNSEEA_MessageMediaGroupSize')) {
+    /**
+     * Remembers, for this request, how many items the client is sending in an
+     * album so the push queue can notify once the final item arrives.
+     */
+    function VNSEEA_MessageMediaGroupSize($media_group_id, $size = null)
+    {
+        static $sizes = array();
+
+        $media_group_id = (string) $media_group_id;
+        if ($size !== null) {
+            $size = is_numeric($size) ? (int) $size : 0;
+            if ($media_group_id !== '' && $size >= 2 && $size <= 50) {
+                $sizes[$media_group_id] = $size;
+            }
+        }
+        return isset($sizes[$media_group_id]) ? $sizes[$media_group_id] : 0;
+    }
+}
+
 if (!function_exists('VNSEEA_PrepareMessageImageUpload')) {
     /**
      * Prepares an uploaded chat image before Wo_ShareFile stores it.

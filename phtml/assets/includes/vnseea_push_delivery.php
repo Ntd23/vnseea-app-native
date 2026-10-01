@@ -788,7 +788,7 @@ if (!function_exists('VNSEEA_MessagePushRecipients')) {
 }
 
 if (!function_exists('VNSEEA_QueuePushDelivery')) {
-    function VNSEEA_QueuePushDelivery($recipient_id, $target, $delivery_kind, $source_type, $source_id, $payload, $batch_uuid)
+    function VNSEEA_QueuePushDelivery($recipient_id, $target, $delivery_kind, $source_type, $source_id, $payload, $batch_uuid, $options = array())
     {
         global $sqlConnect;
 
@@ -800,9 +800,14 @@ if (!function_exists('VNSEEA_QueuePushDelivery')) {
         $token_hash = !empty($target['token_hash'])
             ? (string)$target['token_hash']
             : hash('sha256', (string)$target['token']);
-        $dedupe_key = hash('sha256', $source_type . ':' . $source_id . ':' . $delivery_kind . ':' . $recipient_id . ':' . $target['provider'] . ':' . $token_hash);
+        $dedupe_key = !empty($options['dedupe_key'])
+            ? (string)$options['dedupe_key']
+            : hash('sha256', $source_type . ':' . $source_id . ':' . $delivery_kind . ':' . $recipient_id . ':' . $target['provider'] . ':' . $token_hash);
         $idempotency_key = VNSEEA_PushUuidV4();
         $now = time();
+        $next_attempt_at = isset($options['next_attempt_at'])
+            ? max($now, (int)$options['next_attempt_at'])
+            : $now;
         $expires_at = $now + 86400;
         $payload_json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
@@ -831,7 +836,7 @@ if (!function_exists('VNSEEA_QueuePushDelivery')) {
             "`lease_until`,`expires_at`,`created_at`,`updated_at`)" .
             " VALUES ('{$dedupe_sql}','{$batch_sql}','{$idempotency_sql}',{$recipient_id},{$installation_sql},{$push_token_sql},'{$platform_sql}','{$provider_sql}'," .
             "'{$token_sql}','{$token_hash_sql}',{$environment_sql},'{$kind_sql}','{$source_type_sql}',{$source_id},'{$payload_sql}'," .
-            "'pending',0,{$now},NULL,{$expires_at},{$now},{$now})"
+            "'pending',0,{$next_attempt_at},NULL,{$expires_at},{$now},{$now})"
         );
         return $query !== false;
     }
@@ -843,6 +848,224 @@ if (!function_exists('VNSEEA_SchedulePushDeliveryDispatch')) {
         // Delivery is drained by the dedicated CLI worker. Web requests only
         // persist queue rows so PHP-FPM never waits on OneSignal or APNs.
         return true;
+    }
+}
+
+if (!function_exists('VNSEEA_PushLanguageIsVietnamese')) {
+    function VNSEEA_PushLanguageIsVietnamese($language)
+    {
+        $language = strtolower((string)$language);
+        return strpos($language, 'vi') === 0 || $language === 'vietnamese';
+    }
+}
+
+if (!function_exists('VNSEEA_MessagePushTitle')) {
+    /**
+     * Group pushes name the group so they cannot be mistaken for a direct
+     * message: "Nguyen Van A đã gửi đến Nhóm bạn thân".
+     */
+    function VNSEEA_MessagePushTitle($sender_name, $conversation_type, $group_name, $language)
+    {
+        $sender_name = trim((string)$sender_name);
+        $group_name = trim((string)$group_name);
+        if ($sender_name === '') {
+            $sender_name = 'VNSEEA';
+        }
+        if ($conversation_type !== 'group' || $group_name === '') {
+            return $sender_name;
+        }
+        return VNSEEA_PushLanguageIsVietnamese($language)
+            ? $sender_name . ' đã gửi đến ' . $group_name
+            : $sender_name . ' sent to ' . $group_name;
+    }
+}
+
+if (!function_exists('VNSEEA_MessagePushGroupName')) {
+    function VNSEEA_MessagePushGroupName($group_id)
+    {
+        global $sqlConnect;
+
+        $group_id = (int)$group_id;
+        if ($group_id < 1 || empty($sqlConnect)) {
+            return '';
+        }
+        $query = mysqli_query(
+            $sqlConnect,
+            "SELECT `group_name` FROM " . T_GROUP_CHAT . " WHERE `group_id`={$group_id} LIMIT 1"
+        );
+        $group = $query ? mysqli_fetch_assoc($query) : null;
+        return !empty($group['group_name'])
+            ? trim(html_entity_decode((string)$group['group_name'], ENT_QUOTES | ENT_HTML5, 'UTF-8'))
+            : '';
+    }
+}
+
+if (!function_exists('VNSEEA_MessageMediaGroupPushText')) {
+    /**
+     * One push describes the whole album: "Đã gửi 5 ảnh và 2 video: caption".
+     */
+    function VNSEEA_MessageMediaGroupPushText($photos, $videos, $caption, $language)
+    {
+        $photos = max(0, (int)$photos);
+        $videos = max(0, (int)$videos);
+        $caption = trim((string)$caption);
+        $is_vi = VNSEEA_PushLanguageIsVietnamese($language);
+        if ($photos + $videos <= 1) {
+            // An album interrupted after its first item.
+            $text = $videos === 1
+                ? ($is_vi ? 'Đã gửi một video' : 'Sent a video')
+                : ($is_vi ? 'Đã gửi một ảnh' : 'Sent a photo');
+        } elseif ($is_vi) {
+            if ($videos === 0) {
+                $text = 'Đã gửi ' . $photos . ' ảnh';
+            } elseif ($photos === 0) {
+                $text = 'Đã gửi ' . $videos . ' video';
+            } else {
+                $text = 'Đã gửi ' . $photos . ' ảnh và ' . $videos . ' video';
+            }
+        } else {
+            $photo_text = $photos . ($photos === 1 ? ' photo' : ' photos');
+            $video_text = $videos . ($videos === 1 ? ' video' : ' videos');
+            if ($videos === 0) {
+                $text = 'Sent ' . $photo_text;
+            } elseif ($photos === 0) {
+                $text = 'Sent ' . $video_text;
+            } else {
+                $text = 'Sent ' . $photo_text . ' and ' . $video_text;
+            }
+        }
+        return $caption !== '' ? $text . ': ' . $caption : $text;
+    }
+}
+
+if (!function_exists('VNSEEA_MessagePushMediaGroupId')) {
+    /** Returns the album id of a photo or video message, or '' otherwise. */
+    function VNSEEA_MessagePushMediaGroupId($message)
+    {
+        if (!is_array($message) || empty($message['media_group_id']) || empty($message['media'])) {
+            return '';
+        }
+        $media_group_id = (string)$message['media_group_id'];
+        if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $media_group_id)) {
+            return '';
+        }
+        $descriptor = VNSEEA_MessagePushDescriptor($message, 'vi', 0);
+        return in_array($descriptor['type'], array('image', 'video'), true) ? $media_group_id : '';
+    }
+}
+
+if (!function_exists('VNSEEA_MessageMediaGroupPushSummary')) {
+    /**
+     * Counts the album items already stored for this conversation; the first
+     * caption in the album becomes the push caption.
+     */
+    function VNSEEA_MessageMediaGroupPushSummary($message, $media_group_id)
+    {
+        global $sqlConnect;
+
+        $summary = array('photos' => 0, 'videos' => 0, 'caption' => '');
+        $group_sql = mysqli_real_escape_string($sqlConnect, $media_group_id);
+        $conversation_sql = !empty($message['group_id'])
+            ? "`group_id`=" . (int)$message['group_id']
+            : "`to_id`=" . (int)$message['to_id'] . " AND IFNULL(`group_id`,0)=0";
+        $query = mysqli_query(
+            $sqlConnect,
+            "SELECT * FROM " . T_MESSAGES .
+            " WHERE `from_id`=" . (int)$message['from_id'] .
+            " AND `media_group_id`='{$group_sql}' AND {$conversation_sql}" .
+            " ORDER BY `id` ASC LIMIT 50"
+        );
+        if (!$query) {
+            return $summary;
+        }
+        while ($item = mysqli_fetch_assoc($query)) {
+            $descriptor = VNSEEA_MessagePushDescriptor($item, 'vi', 0);
+            if ($descriptor['type'] === 'image') {
+                $summary['photos']++;
+            } elseif ($descriptor['type'] === 'video') {
+                $summary['videos']++;
+            } else {
+                continue;
+            }
+            if ($summary['caption'] === '') {
+                $summary['caption'] = VNSEEA_NormalizeMessagePushText(isset($item['text']) ? $item['text'] : '');
+            }
+        }
+        return $summary;
+    }
+}
+
+if (!function_exists('VNSEEA_MessageMediaGroupPushDelay')) {
+    /**
+     * The album push waits for the rest of the album. The final item sends it
+     * at once; if the album stops early it still goes out after the wait.
+     */
+    function VNSEEA_MessageMediaGroupPushDelay($received_count, $expected_count)
+    {
+        $expected_count = (int)$expected_count;
+        if ($expected_count > 0) {
+            return (int)$received_count >= $expected_count ? 0 : 60;
+        }
+        // Older app builds do not announce the album size.
+        return 15;
+    }
+}
+
+if (!function_exists('VNSEEA_UpsertMediaGroupPushDelivery')) {
+    /**
+     * Keeps a single queued push per album, recipient and device. Later items
+     * update the queued row; once it has been sent the album stays silent.
+     */
+    function VNSEEA_UpsertMediaGroupPushDelivery($recipient_id, $target, $message, $media_group_id, $payload, $next_attempt_at, $batch_uuid)
+    {
+        global $sqlConnect;
+
+        if (empty($target['token']) || empty($target['provider'])) {
+            return false;
+        }
+        $token_hash = !empty($target['token_hash'])
+            ? (string)$target['token_hash']
+            : hash('sha256', (string)$target['token']);
+        $dedupe_key = hash(
+            'sha256',
+            'message_media_group:' . (int)$message['from_id'] . ':' . $media_group_id . ':' .
+            (int)$recipient_id . ':' . $target['provider'] . ':' . $token_hash
+        );
+        $dedupe_sql = mysqli_real_escape_string($sqlConnect, $dedupe_key);
+        $existing_query = mysqli_query(
+            $sqlConnect,
+            "SELECT `id`,`status`,`lease_until` FROM " . T_PUSH_DELIVERIES .
+            " WHERE `dedupe_key`='{$dedupe_sql}' LIMIT 1"
+        );
+        $existing = $existing_query ? mysqli_fetch_assoc($existing_query) : null;
+        if (empty($existing)) {
+            return VNSEEA_QueuePushDelivery(
+                $recipient_id,
+                $target,
+                'message',
+                'message',
+                (int)$message['id'],
+                $payload,
+                $batch_uuid,
+                array('dedupe_key' => $dedupe_key, 'next_attempt_at' => $next_attempt_at)
+            );
+        }
+
+        $now = time();
+        $payload_sql = mysqli_real_escape_string(
+            $sqlConnect,
+            json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+        $next_attempt_at = max($now, (int)$next_attempt_at);
+        $updated = mysqli_query(
+            $sqlConnect,
+            "UPDATE " . T_PUSH_DELIVERIES .
+            " SET `payload`='{$payload_sql}',`source_id`=" . (int)$message['id'] .
+            ",`next_attempt_at`={$next_attempt_at},`expires_at`=" . ($now + 86400) . ",`updated_at`={$now}" .
+            " WHERE `id`=" . (int)$existing['id'] .
+            " AND `status` IN ('pending','retry') AND (`lease_until` IS NULL OR `lease_until`<{$now})"
+        );
+        return $updated !== false && mysqli_affected_rows($sqlConnect) === 1;
     }
 }
 
@@ -868,7 +1091,25 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
         }
 
         $sender = Wo_UserData((int)$message['from_id']);
+        $sender_name = !empty($sender['name']) ? $sender['name'] : '';
         $recipients = VNSEEA_MessagePushRecipients($message);
+        $group_name = !empty($message['group_id'])
+            ? VNSEEA_MessagePushGroupName($message['group_id'])
+            : '';
+        $media_group_id = VNSEEA_MessagePushMediaGroupId($message);
+        $media_group = null;
+        if ($media_group_id !== '') {
+            // Clients only attach an album id to two or more items, so the
+            // first item already waits for the rest of its album.
+            $media_group = VNSEEA_MessageMediaGroupPushSummary($message, $media_group_id);
+            $expected_count = function_exists('VNSEEA_MessageMediaGroupSize')
+                ? VNSEEA_MessageMediaGroupSize($media_group_id)
+                : 0;
+            $media_group['next_attempt_at'] = time() + VNSEEA_MessageMediaGroupPushDelay(
+                $media_group['photos'] + $media_group['videos'],
+                $expected_count
+            );
+        }
         $batch_uuid = VNSEEA_PushUuidV4();
         $queued = false;
         foreach ($recipients as $recipient_id) {
@@ -877,11 +1118,23 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
                 continue;
             }
             $recipient = Wo_UserData($recipient_id);
+            $language = !empty($recipient['language']) ? $recipient['language'] : 'vi';
             $descriptor = VNSEEA_MessagePushDescriptor(
                 $message,
-                !empty($recipient['language']) ? $recipient['language'] : 'vi',
+                $language,
                 $recipient_id
             );
+            if ($media_group !== null) {
+                $descriptor = array(
+                    'type' => 'media_group',
+                    'text' => VNSEEA_MessageMediaGroupPushText(
+                        $media_group['photos'],
+                        $media_group['videos'],
+                        $media_group['caption'],
+                        $language
+                    )
+                );
+            }
             $payload = array(
                 'push_kind' => 'message',
                 'payload_kind' => 'message',
@@ -890,11 +1143,12 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
                 'message_id' => (string)$message_id,
                 'message_type' => $descriptor['type'],
                 'sender_id' => (string)$message['from_id'],
-                'sender_name' => !empty($sender['name']) ? $sender['name'] : '',
+                'sender_name' => $sender_name,
                 'sender_avatar' => !empty($sender['avatar']) ? $sender['avatar'] : '',
                 'recipient_id' => (string)$recipient_id,
                 'conversation_type' => $conversation['type'],
                 'conversation_id' => (string)$conversation['id'],
+                'conversation_title' => $conversation['type'] === 'group' ? $group_name : '',
                 'user_id' => $conversation['type'] === 'user'
                     ? (string)$message['from_id']
                     : '',
@@ -904,9 +1158,13 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
                 'group_id' => $conversation['type'] === 'group'
                     ? (string)$message['group_id']
                     : '',
-                'title' => !empty($sender['name']) ? $sender['name'] : 'VNSEEA',
+                'title' => VNSEEA_MessagePushTitle($sender_name, $conversation['type'], $group_name, $language),
                 'body' => $descriptor['text']
             );
+            if ($media_group !== null) {
+                $payload['media_group_id'] = $media_group_id;
+                $payload['media_count'] = (string)($media_group['photos'] + $media_group['videos']);
+            }
             $targets = VNSEEA_GetUserPushTargets($recipient_id, 'onesignal');
             if (empty($targets)) {
                 VNSEEA_PushDeliveryDebugLog('push_targets_missing', array(
@@ -918,6 +1176,18 @@ if (!function_exists('VNSEEA_EnqueueMessagePush')) {
                 ));
             }
             foreach ($targets as $target) {
+                if ($media_group !== null) {
+                    $queued = VNSEEA_UpsertMediaGroupPushDelivery(
+                        $recipient_id,
+                        $target,
+                        $message,
+                        $media_group_id,
+                        $payload,
+                        $media_group['next_attempt_at'],
+                        $batch_uuid
+                    ) || $queued;
+                    continue;
+                }
                 $queued = VNSEEA_QueuePushDelivery(
                     $recipient_id,
                     $target,

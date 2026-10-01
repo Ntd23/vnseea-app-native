@@ -185,6 +185,8 @@ export interface SendMessageOptions {
   mentions?: MessageMention[];
   /** Identifier shared by media selected in one send action. */
   mediaGroupId?: string;
+  /** Number of items in that album, so the server can notify once. */
+  mediaGroupSize?: number;
   productInquiry?: {
     productId: string;
     note?: string;
