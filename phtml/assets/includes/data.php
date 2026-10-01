@@ -665,6 +665,11 @@ $wo["employment_type"]    = array(
 );
 
 $wo['encryptedKeys'] = [
+        'vnseea_bunny_stream_public_api_key',
+        'vnseea_bunny_stream_public_readonly_key',
+        'vnseea_bunny_stream_private_api_key',
+        'vnseea_bunny_stream_private_readonly_key',
+        'vnseea_bunny_stream_private_token_key',
         'authy_token',
         'recaptcha_secret_key',
         'exchangerate_key',

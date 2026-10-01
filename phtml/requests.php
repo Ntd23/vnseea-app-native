@@ -16,6 +16,10 @@ if (isset($_GET['f'], $_GET['s']) && $_GET['f'] === 'sepay' && $_GET['s'] === 'w
     mysqli_close($sqlConnect);
     exit();
 }
+if (isset($_GET['f'], $_GET['s']) && $_GET['f'] === 'bunny_stream_webhook' && $_GET['s'] === 'events') {
+    include 'xhr/bunny_stream_webhook.php';  // verifies the Bunny HMAC signature itself
+    exit();
+}
 if (isset($_GET['f'], $_GET['s']) && $_GET['f'] === 'livekit_webhook' && $_GET['s'] === 'events') {
     include 'xhr/livekit_webhook.php';
     mysqli_close($sqlConnect);

@@ -2309,6 +2309,7 @@ const MemoizedMessageBubble = React.memo(
         nextProps.message.sendProgress?.phase &&
       prevProps.message.sendProgress?.progress ===
         nextProps.message.sendProgress?.progress &&
+      prevProps.message.mediaStatus === nextProps.message.mediaStatus &&
       prevProps.message.isRecalled === nextProps.message.isRecalled &&
       prevProps.message.recalledAt === nextProps.message.recalledAt &&
       prevProps.message.seen === nextProps.message.seen &&
@@ -2421,18 +2422,32 @@ function ChatImage({ uri }: { uri: string }) {
   );
 }
 
+function alertStreamedVideoUnavailable(status: 'processing' | 'failed') {
+  if (status === 'processing') {
+    Alert.alert(
+      'Video đang được xử lý',
+      'Video vừa được tải lên và đang được chuyển đổi để phát mượt hơn. Vui lòng thử lại sau ít phút.',
+    );
+    return;
+  }
+  Alert.alert('Không phát được video', 'Máy chủ không xử lý được video này.');
+}
+
 function ChatVideoPreview({
   uri,
   thumbnail,
   cacheKey,
   compact = false,
   isSending = false,
+  status,
 }: {
   uri: string;
   thumbnail?: string;
   cacheKey?: string;
   compact?: boolean;
   isSending?: boolean;
+  /** Set while a streamed video is still encoding or failed to encode. */
+  status?: 'processing' | 'failed';
 }) {
   const { width: viewportWidth, height: viewportHeight } =
     useWindowDimensions();
@@ -2582,6 +2597,15 @@ function ChatVideoPreview({
           <View style={styles.videoSendingOverlay}>
             <ActivityIndicator size={compact ? 'small' : 'large'} color="#fff" />
           </View>
+        ) : status ? (
+          <View style={styles.videoSendingOverlay}>
+            {status === 'processing' ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : null}
+            <Text className="mt-2 px-3 text-center text-[12px] font-semibold text-white">
+              {status === 'processing' ? 'Đang xử lý video' : 'Không xử lý được video'}
+            </Text>
+          </View>
         ) : null}
       </View>
     </View>
@@ -2655,13 +2679,17 @@ function MessageMedia({
       <DoubleTapTouchable
         activeOpacity={0.9}
         delayLongPress={320}
-        onSingleTap={() =>
+        onSingleTap={() => {
+          if (message.mediaStatus) {
+            alertStreamedVideoUnavailable(message.mediaStatus);
+            return;
+          }
           onOpenMedia({
             uri: message.media!,
             type: 'video',
             thumbnail: message.thumbnail,
-          })
-        }
+          });
+        }}
         onLongPress={onLongPress}
         onDoubleTap={onDoubleTap}
       >
@@ -2670,6 +2698,7 @@ function MessageMedia({
           thumbnail={message.thumbnail}
           cacheKey={message.id}
           isSending={message.deliveryState === 'sending'}
+          status={message.mediaStatus}
         />
       </DoubleTapTouchable>
     );

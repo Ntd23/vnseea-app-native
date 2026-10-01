@@ -102,9 +102,17 @@ function StackCard({
         )}
         {isVideo && layer === 0 ? (
           <View style={styles.playOverlay}>
-            <View style={styles.playButton}>
-              <Play size={22} color="#111827" fill="#111827" style={styles.playIcon} />
-            </View>
+            {message.mediaStatus ? (
+              <Text className="rounded-full bg-black/60 px-3 py-1.5 text-[12px] font-semibold text-white">
+                {message.mediaStatus === 'processing'
+                  ? 'Đang xử lý video'
+                  : 'Không xử lý được video'}
+              </Text>
+            ) : (
+              <View style={styles.playButton}>
+                <Play size={22} color="#111827" fill="#111827" style={styles.playIcon} />
+              </View>
+            )}
           </View>
         ) : null}
       </View>

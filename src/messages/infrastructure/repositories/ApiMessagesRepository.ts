@@ -13,6 +13,10 @@ import {
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
 import { prepareImageForUpload } from '../../../shared-kernel/application/services/imageProcessing';
+import {
+  getLocalFileSize,
+  uploadToBunnyStream,
+} from '../../../shared-kernel/infrastructure/upload/bunnyTusUpload';
 import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
 import {
@@ -198,6 +202,70 @@ async function prepareAttachmentForUpload(
   }
   return attachment;
 }
+type MediaUploadTicketResponse = {
+  provider?: string;
+  upload_id?: string | number;
+  tus?: {
+    endpoint?: string;
+    library_id?: string | number;
+    video_id?: string;
+    expires?: string | number;
+    signature?: string;
+  };
+};
+
+/**
+ * Sends a chat video straight to Bunny Stream when the server hands out an
+ * upload ticket. Returns the ticket id to attach to the message, or null when
+ * the video must go through the regular multipart upload instead.
+ */
+async function uploadVideoToBunnyStream(
+  attachment: MessageAttachment,
+  onUploadProgress: ((progress: number) => void) | undefined,
+): Promise<string | null> {
+  if (!/^(file:\/\/|\/)/i.test(attachment.uri)) return null;
+  const fileSize = await getLocalFileSize(attachment.uri);
+  if (fileSize <= 0) return null;
+
+  let ticket: MediaUploadTicketResponse;
+  try {
+    ticket = await apiBridge.post<MediaUploadTicketResponse>(
+      apiRoutes.media.uploadTicket,
+      {
+        purpose: 'chat',
+        file_type: attachment.type || 'video/mp4',
+        file_size: fileSize,
+        file_name: attachment.name,
+      },
+    );
+  } catch {
+    // Older servers have no ticket endpoint; Bunny may also be unreachable.
+    return null;
+  }
+  const tus = ticket.tus;
+  if (
+    ticket.provider !== 'bunny_stream' ||
+    !ticket.upload_id ||
+    !tus?.video_id ||
+    !tus.signature
+  ) {
+    return null;
+  }
+
+  await uploadToBunnyStream(
+    attachment,
+    {
+      endpoint: tus.endpoint || 'https://video.bunnycdn.com/tusupload',
+      libraryId: String(tus.library_id ?? ''),
+      videoId: tus.video_id,
+      expires: Number(tus.expires),
+      signature: tus.signature,
+    },
+    { onProgress: onUploadProgress },
+  );
+  return String(ticket.upload_id);
+}
+
 function createUploadProgressConfig(
   onUploadProgress: ((progress: number) => void) | undefined,
 ): AxiosRequestConfig | undefined {
@@ -1669,6 +1737,7 @@ function mapMessage(
     replyTo: isRecalled ? undefined : replyTo,
     media: isRecalled ? undefined : media,
     mediaType,
+    mediaStatus: isRecalled ? undefined : readMediaStatus(raw),
     mediaGroupId: isRecalled
       ? undefined
       : readString(raw, 'media_group_id', 'mediaGroupId') || undefined,
@@ -1870,6 +1939,13 @@ function mapSharedAssets(raw: RawRecord): GroupSharedAssets {
       .filter(item => item.id && item.url),
   };
 }
+function readMediaStatus(
+  raw: Record<string, unknown>,
+): MessageItem['mediaStatus'] {
+  const status = readString(raw, 'media_status', 'mediaStatus').toLowerCase();
+  return status === 'processing' || status === 'failed' ? status : undefined;
+}
+
 function readMediaType(
   raw: Record<string, unknown>,
   decodedMessage = '',
@@ -1929,7 +2005,7 @@ function readMediaType(
   }
   if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(media)) return 'image';
   if (/\.(mp3|wav|ogg|m4a)(\?|$)/i.test(media)) return 'audio';
-  if (/\.(mp4|mov|avi|mkv)(\?|$)/i.test(media)) return 'video';
+  if (/\.(mp4|mov|avi|mkv|m3u8)(\?|$)/i.test(media)) return 'video';
   return undefined;
 }
 
@@ -2098,6 +2174,23 @@ export function createMessagesRepository(): MessagesRepository {
           ? apiRoutes.messages.groupChat
           : apiRoutes.messages.send;
       const payload = target.type === 'group' ? groupPayload : userPayload;
+      const bunnyUploadId =
+        uploadAttachment?.mediaType === 'video'
+          ? await uploadVideoToBunnyStream(
+              uploadAttachment,
+              options?.onUploadProgress,
+            )
+          : null;
+      const videoThumb =
+        uploadAttachment?.mediaType === 'video' && uploadAttachment.thumbnailUri
+          ? {
+              uri: uploadAttachment.thumbnailUri,
+              name:
+                uploadAttachment.thumbnailName ||
+                `video-thumb-${Date.now()}.jpg`,
+              type: uploadAttachment.thumbnailType || 'image/jpeg',
+            }
+          : undefined;
       const multipartPayload = uploadAttachment
         ? {
             ...payload,
@@ -2108,24 +2201,20 @@ export function createMessagesRepository(): MessagesRepository {
                   type_two: uploadAttachment.mediaType,
                 }
               : {}),
-            file: uploadAttachment,
-            ...(uploadAttachment.mediaType === 'video' &&
-            uploadAttachment.thumbnailUri
-              ? {
-                  video_thumb: {
-                    uri: uploadAttachment.thumbnailUri,
-                    name:
-                      uploadAttachment.thumbnailName ||
-                      `video-thumb-${Date.now()}.jpg`,
-                    type: uploadAttachment.thumbnailType || 'image/jpeg',
-                  },
-                }
-              : {}),
+            // A video already on Bunny Stream is referenced by its ticket.
+            ...(bunnyUploadId
+              ? { bunny_upload_id: bunnyUploadId }
+              : { file: uploadAttachment }),
+            ...(videoThumb ? { video_thumb: videoThumb } : {}),
           }
         : undefined;
-      const uploadConfig = createUploadProgressConfig(options?.onUploadProgress);
+      const uploadConfig = bunnyUploadId
+        ? undefined
+        : createUploadProgressConfig(options?.onUploadProgress);
       const response = multipartPayload
-        ? uploadConfig
+        ? bunnyUploadId && !videoThumb
+          ? await apiBridge.post<SendMessageResponse>(route, multipartPayload)
+          : uploadConfig
           ? await apiBridge.multipart<SendMessageResponse>(
               route,
               multipartPayload,

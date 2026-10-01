@@ -15,6 +15,9 @@ export const apiRoutes = {
     me: 'get-current-user',
     siteSettings: 'get-site-settings',
   },
+  media: {
+    uploadTicket: 'media-upload-ticket',
+  },
   user: {
     get: 'get-user-data',
     update: 'update-user-data',

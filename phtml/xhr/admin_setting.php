@@ -3823,6 +3823,11 @@ if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
         echo json_encode($data);
         exit();
     }
+    if ($s == 'test_bunny_stream') {
+        header('Content-Type: application/json');
+        echo json_encode(array('status' => 200, 'results' => VNSEEA_BunnyStreamSelfTest()));
+        exit();
+    }
     if ($s == 'test_wasabi') {
         include_once('assets/libraries/s3-lib/vendor/autoload.php');
         try {

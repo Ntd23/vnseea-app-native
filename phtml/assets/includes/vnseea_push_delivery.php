@@ -699,6 +699,9 @@ if (!function_exists('VNSEEA_MessagePushDescriptor')) {
         if ($type_two === 'audio' || in_array($extension, array('m4a', 'aac', 'mp3', 'wav', 'ogg'), true)) {
             return array('type' => 'audio', 'text' => $is_vi ? 'Đã gửi một tin nhắn thoại' : 'Sent a voice message');
         }
+        if (strpos($media, 'bunny-stream://') === 0) {
+            return array('type' => 'video', 'text' => $is_vi ? 'Đã gửi một video' : 'Sent a video');
+        }
         if (in_array($extension, array('jpg', 'jpeg', 'png', 'webp', 'heic'), true)) {
             return array('type' => 'image', 'text' => $is_vi ? 'Đã gửi một ảnh' : 'Sent a photo');
         }

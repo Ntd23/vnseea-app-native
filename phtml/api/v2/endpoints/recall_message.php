@@ -69,6 +69,13 @@ if ($idempotent_replay) {
         return;
     }
 
+    $bunny_reference = VNSEEA_BunnyParseMediaRef(html_entity_decode((string)$message->media, ENT_QUOTES, 'UTF-8'));
+    // Forwarded copies point at the same Bunny video, so only delete it once
+    // no other message still shows it.
+    if ($bunny_reference !== null && (int)$db->where('media', $message->media)->getValue(T_MESSAGES, 'COUNT(*)') === 0) {
+        VNSEEA_BunnyApiRequest($bunny_reference['kind'], 'DELETE', '/videos/' . $bunny_reference['guid'], null, 5);
+    }
+
     try {
         VNSEEA_PublishRealtimeMessageChange($message_id, $message);
     } catch (Throwable $exception) {

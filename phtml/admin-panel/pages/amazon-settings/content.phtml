@@ -234,6 +234,184 @@ if (!isEnabled('shell_exec')) {
                 </div>
             </div>
         </div>
+        <?php
+        $bunny_cdn_host = VNSEEA_BunnyNormalizeHostname(VNSEEA_BunnyConfig('vnseea_bunny_cdn_hostname'));
+        $bunny_cdn_enabled = VNSEEA_BunnyConfig('vnseea_bunny_cdn_enabled', '0') === '1';
+        $bunny_origin_base = VNSEEA_GetOriginMediaBaseUrl();
+        $bunny_stream_enabled = VNSEEA_BunnyConfig('vnseea_bunny_stream_enabled', '0') === '1';
+        $bunny_libraries = array(
+            'public' => 'Thư viện công khai (bài viết, reels, story)',
+            'private' => 'Thư viện riêng tư (video tin nhắn)'
+        );
+        ?>
+        <div class="col-lg-12 col-md-12">
+            <h3>Bunny CDN &amp; Bunny Stream<hr></h3>
+        </div>
+        <div class="col-lg-6 col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">Bunny CDN cho ảnh và video hiện có</h6>
+                    <form class="bunny-settings" method="POST" autocomplete="off">
+                        <div class="float-left">
+                            <label for="vnseea_bunny_cdn_enabled" class="main-label">Phát media qua Bunny CDN</label>
+                            <br><small class="admin-info">Khi bật, đường dẫn tới media origin dùng chung sẽ đi qua Pull Zone của Bunny. Tắt thì quay về phát trực tiếp từ server như cũ.</small>
+                        </div>
+                        <div class="form-group float-right switcher">
+                            <input type="hidden" name="vnseea_bunny_cdn_enabled" value="0" />
+                            <input type="checkbox" name="vnseea_bunny_cdn_enabled" id="chck-vnseea_bunny_cdn_enabled" value="1" <?php echo $bunny_cdn_enabled ? 'checked' : ''; ?>>
+                            <label for="chck-vnseea_bunny_cdn_enabled" class="check-trail"><span class="check-handler"></span></label>
+                        </div>
+                        <div class="clearfix"></div>
+                        <hr>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">Hostname CDN</label>
+                                <input type="text" id="vnseea_bunny_cdn_hostname" name="vnseea_bunny_cdn_hostname" class="form-control" value="<?php echo htmlspecialchars(VNSEEA_BunnyConfig('vnseea_bunny_cdn_hostname'), ENT_QUOTES, 'UTF-8'); ?>" placeholder="cdn.vnseea.vn">
+                                <small class="admin-info">Hostname của Pull Zone, ví dụ <code>cdn.vnseea.vn</code> hoặc <code>vnseea-media.b-cdn.net</code>. Không cần https://.</small>
+                            </div>
+                        </div>
+                        <?php if ($bunny_cdn_enabled && $bunny_cdn_host === ''): ?>
+                            <div class="alert alert-danger">Đang bật nhưng hostname CDN trống hoặc không hợp lệ, nên media vẫn phát trực tiếp từ server.</div>
+                        <?php elseif ($bunny_cdn_enabled && $bunny_origin_base === ''): ?>
+                            <div class="alert alert-warning">Môi trường này chưa có media origin dùng chung (MEDIA_BASE_URL), nên CDN chưa được áp dụng.</div>
+                        <?php elseif ($bunny_cdn_enabled): ?>
+                            <div class="alert alert-success">Đang phát media qua <strong>https://<?php echo htmlspecialchars($bunny_cdn_host, ENT_QUOTES, 'UTF-8'); ?></strong> (origin: <?php echo htmlspecialchars($bunny_origin_base, ENT_QUOTES, 'UTF-8'); ?>).</div>
+                        <?php endif; ?>
+                        <div class="alert alert-info">
+                            Trước khi bật: thêm hostname CDN vào biến <code>NUXT_IMAGE_EXTRA_DOMAINS</code> của web Nuxt và deploy lại web, nếu không ảnh qua <code>_ipx</code> trên web sẽ bị chặn.
+                        </div>
+                        <input type="hidden" name="hash_id" value="<?php echo Wo_CreateSession();?>">
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">Bunny Stream cho video mới</h6>
+                    <form class="bunny-settings" method="POST" autocomplete="off">
+                        <div class="float-left">
+                            <label for="vnseea_bunny_stream_enabled" class="main-label">Upload video mới lên Bunny Stream</label>
+                            <br><small class="admin-info">Chỉ có hiệu lực khi thư viện tương ứng đã điền đủ thông tin. Tắt thì video mới quay về upload lên server như cũ; video đã có trên Bunny vẫn phát được.</small>
+                        </div>
+                        <div class="form-group float-right switcher">
+                            <input type="hidden" name="vnseea_bunny_stream_enabled" value="0" />
+                            <input type="checkbox" name="vnseea_bunny_stream_enabled" id="chck-vnseea_bunny_stream_enabled" value="1" <?php echo $bunny_stream_enabled ? 'checked' : ''; ?>>
+                            <label for="chck-vnseea_bunny_stream_enabled" class="check-trail"><span class="check-handler"></span></label>
+                        </div>
+                        <div class="clearfix"></div>
+                        <hr>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">Không nén trên máy với video dài hơn (giây)</label>
+                                <input type="number" min="0" id="vnseea_bunny_stream_compress_max_seconds" name="vnseea_bunny_stream_compress_max_seconds" class="form-control" value="<?php echo (int) VNSEEA_BunnyConfig('vnseea_bunny_stream_compress_max_seconds', '180'); ?>">
+                                <small class="admin-info">Video ngắn hơn ngưỡng này vẫn được nén trên điện thoại trước khi upload; video dài hơn được upload file gốc để Bunny tự encode.</small>
+                            </div>
+                        </div>
+                        <?php foreach ($bunny_libraries as $bunny_kind => $bunny_label): ?>
+                            <?php $bunny_missing = VNSEEA_BunnyStreamMissingFields($bunny_kind); ?>
+                            <?php if (empty($bunny_missing)): ?>
+                                <div class="alert alert-success"><?php echo $bunny_label; ?>: đã đủ cấu hình<?php echo $bunny_stream_enabled ? ', đang dùng cho video mới.' : '.'; ?></div>
+                            <?php else: ?>
+                                <div class="alert alert-warning"><?php echo $bunny_label; ?>: còn thiếu <?php echo htmlspecialchars(implode(', ', $bunny_missing), ENT_QUOTES, 'UTF-8'); ?>.</div>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">Dung lượng tối đa mỗi video (MB)</label>
+                                <input type="number" min="1" id="vnseea_bunny_stream_max_upload_mb" name="vnseea_bunny_stream_max_upload_mb" class="form-control" value="<?php echo (int) VNSEEA_BunnyConfig('vnseea_bunny_stream_max_upload_mb', '10240'); ?>">
+                                <small class="admin-info">Video lớn hơn mức này sẽ upload lên server như cũ.</small>
+                            </div>
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">Webhook URL (dán vào mục Webhook của cả 2 thư viện trên Bunny)</label>
+                                <input type="text" readonly class="form-control" onclick="this.select()" value="<?php echo htmlspecialchars(rtrim($wo['config']['site_url'], '/') . '/requests.php?f=bunny_stream_webhook&s=events', ENT_QUOTES, 'UTF-8'); ?>">
+                            </div>
+                        </div>
+                        <div class="alert alert-info">Hiện áp dụng cho video tin nhắn. Video bài viết, reels và story sẽ dùng Bunny Stream từ giai đoạn C.</div>
+                        <div class="bunny-stream-test-results"></div>
+                        <button type="button" class="btn btn-success" onclick="Wo_TestBunnyStream(this)">Kiểm tra kết nối Bunny Stream</button>
+                        <input type="hidden" name="hash_id" value="<?php echo Wo_CreateSession();?>">
+                    </form>
+                </div>
+            </div>
+        </div>
+        <?php foreach ($bunny_libraries as $bunny_kind => $bunny_label): ?>
+        <div class="col-lg-6 col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title"><?php echo $bunny_label; ?></h6>
+                    <form class="bunny-settings" method="POST" autocomplete="off">
+                        <?php foreach (VNSEEA_BunnyStreamLibraryFields($bunny_kind) as $bunny_field): ?>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label"><?php echo $bunny_field['label']; ?></label>
+                                <?php if ($bunny_field['secret']): ?>
+                                <input type="password" autocomplete="new-password" name="<?php echo $bunny_field['key']; ?>" class="form-control bunny-secret" value="" placeholder="<?php echo htmlspecialchars(VNSEEA_BunnySecretHint($bunny_field['key']), ENT_QUOTES, 'UTF-8'); ?>">
+                                <?php else: ?>
+                                <input type="text" name="<?php echo $bunny_field['key']; ?>" class="form-control" value="<?php echo htmlspecialchars(VNSEEA_BunnyConfig($bunny_field['key']), ENT_QUOTES, 'UTF-8'); ?>">
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                        <?php if ($bunny_kind === 'private'): ?>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">Thời hạn link video tin nhắn (giây)</label>
+                                <input type="number" min="300" id="vnseea_bunny_stream_private_url_ttl" name="vnseea_bunny_stream_private_url_ttl" class="form-control" value="<?php echo (int) VNSEEA_BunnyConfig('vnseea_bunny_stream_private_url_ttl', '21600'); ?>">
+                                <small class="admin-info">Mặc định 21600 giây (6 giờ). Link hết hạn thì ứng dụng tự xin link mới khi mở lại cuộc trò chuyện.</small>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        <small class="admin-info">Các key bí mật được mã hoá khi lưu và không hiển thị lại. Ô key được lưu khi rời khỏi ô.</small>
+                        <input type="hidden" name="hash_id" value="<?php echo Wo_CreateSession();?>">
+                    </form>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <script>
+        function Wo_TestBunnyStream(button) {
+            var results = $('.bunny-stream-test-results');
+            $(button).prop('disabled', true).text('Vui lòng chờ...');
+            results.empty();
+            $.get(Wo_Ajax_Requests_File(), {f: 'admin_setting', s: 'test_bunny_stream'}, function (data) {
+                $.each((data && data.results) || [], function (_, item) {
+                    results.append($('<div class="alert"></div>').addClass(item.ok ? 'alert-success' : 'alert-danger').text(item.message));
+                });
+            }).fail(function () {
+                results.append('<div class="alert alert-danger">Không gọi được máy chủ để kiểm tra.</div>');
+            }).always(function () {
+                $(button).prop('disabled', false).text('Kiểm tra kết nối Bunny Stream');
+            });
+        }
+        $(function () {
+            // Secret inputs never echo their stored value, so they save on blur
+            // instead of on every keystroke and clear themselves once saved.
+            $('form.bunny-settings input.bunny-secret').on('change', function () {
+                var input = $(this);
+                var value = $.trim(input.val());
+                if (value === '') {
+                    return;
+                }
+                var data = { hash_id: input.closest('form').find('input[name=hash_id]').val() };
+                data[input.attr('name')] = value;
+                input.removeClass('success error').addClass('warning');
+                $.post(Wo_Ajax_Requests_File() + '?f=admin_setting&s=update_general_setting', data, function (response) {
+                    input.removeClass('warning');
+                    if (response.status == 200) {
+                        input.val('').attr('placeholder', 'Đã lưu (…' + value.slice(-4) + ') — nhập giá trị mới để thay').addClass('success');
+                    } else {
+                        input.addClass('error');
+                    }
+                    setTimeout(function () {
+                        input.removeClass('success error');
+                    }, 2000);
+                });
+            });
+        });
+        </script>
         <div class="col-lg-12 col-md-12">
             <h3>Cài đặt trình chuyển đổi video FFMPEG<hr></h3>
         </div>

@@ -1,6 +1,7 @@
 import type { MessageAttachment } from '../../domain/types/messages.types';
 import { prepareImageForUpload } from '../../../shared-kernel/application/services/imageProcessing';
 import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
+import { getChatVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 import {
   createVideoUploadThumbnail,
   type GeneratedVideoThumbnail,
@@ -108,16 +109,24 @@ export function startChatMediaPreparation(
     thumbnail = createVideoUploadThumbnail(attachment.uri).catch(
       () => undefined,
     );
-    const compressed = runVideoPreparation(() =>
-      controller.signal.aborted
-        ? Promise.resolve(attachment)
-        : prepareVideoForUpload(attachment, {
-            // Chat always normalises picked MOV/HEVC files to MP4.
-            minimumFileSizeForCompress: 0,
-            signal: controller.signal,
-            onProgress: publishProgress,
-          }),
-    );
+    const compressed = runVideoPreparation(async () => {
+      if (controller.signal.aborted) return attachment;
+      // Bunny Stream encodes the original itself; compressing an hour-long
+      // video on a phone would take far longer than uploading it.
+      const policy = await getChatVideoUploadPolicy();
+      if (
+        policy.provider === 'bunny_stream' &&
+        (attachment.duration ?? 0) > policy.compressMaxSeconds
+      ) {
+        return attachment;
+      }
+      return prepareVideoForUpload(attachment, {
+        // Chat otherwise normalises picked MOV/HEVC files to MP4.
+        minimumFileSizeForCompress: 0,
+        signal: controller.signal,
+        onProgress: publishProgress,
+      });
+    });
     prepared = Promise.all([compressed, thumbnail]).then(([video, poster]) =>
       readyAttachment(withThumbnail(video, poster)),
     );

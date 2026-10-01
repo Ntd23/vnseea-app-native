@@ -20,7 +20,7 @@ $required_fields = array(
 
 if (empty($_POST['product_id'])) {
     if (empty($_POST['text']) && $_POST['text'] != 0 && empty($_POST['lat']) && empty($_POST['lng'])) {
-    	if (empty($_FILES['file']['name']) && empty($_POST['image_url']) && empty($_POST['gif'])) {
+    	if (empty($_FILES['file']['name']) && empty($_POST['bunny_upload_id']) && empty($_POST['image_url']) && empty($_POST['gif'])) {
     	    $error_code    = 3;
     	    $error_message = 'file (STREAM FILE) AND text (POST) AND image_url AND gif (POST) are missing, at least one is required';
 	    }
@@ -121,6 +121,21 @@ if (empty($error_code)) {
                     $mediaName = $_FILES['file']['name'];
                 }
             }
+            $bunny_upload = null;
+            if (!isset($_FILES['file']['name']) && !empty($_POST['bunny_upload_id'])) {
+                // The client already uploaded this video to Bunny Stream with a ticket
+                // from media-upload-ticket; only the caller's own unused upload counts.
+                $bunny_upload = $is_video_message
+                    ? VNSEEA_BunnyClaimUpload($wo['user']['user_id'], $_POST['bunny_upload_id'], 'chat')
+                    : null;
+                if (empty($bunny_upload)) {
+                    $error_code = 7;
+                    $error_message = 'Could not attach the uploaded video.';
+                } else {
+                    $mediaFilename = VNSEEA_BunnyMediaRef('private', $bunny_upload['video_guid']);
+                    $mediaName = !empty($bunny_upload['file_name']) ? $bunny_upload['file_name'] : 'video.mp4';
+                }
+            }
             if (empty($error_message) && $is_video_message && isset($_FILES['video_thumb']['name'])) {
                 $thumb_extension = strtolower(pathinfo($_FILES['video_thumb']['name'], PATHINFO_EXTENSION));
                 $thumb_is_valid = !empty($_FILES['video_thumb']['tmp_name']) &&
@@ -194,7 +209,7 @@ if (empty($error_code)) {
     		 	$message_data['text'] = Wo_Secure($_POST['text']);
     		}
             else{
-                if (empty($lng) && empty($lat) && empty($_FILES['file']['name']) && empty($_POST['image_url']) && empty($_POST['gif'])) {
+                if (empty($lng) && empty($lat) && empty($_FILES['file']['name']) && empty($_POST['bunny_upload_id']) && empty($_POST['image_url']) && empty($_POST['gif'])) {
                     $error_code    = 5;
                     $error_message = 'Please check your details.';
                 }
@@ -212,9 +227,15 @@ if (empty($error_code)) {
             if (empty($error_message)) {
                 $last_id      = Wo_RegisterMessage($message_data);
             }
+            if (!empty($last_id) && !empty($bunny_upload)) {
+                VNSEEA_BunnyAttachUpload($bunny_upload['id'], $last_id);
+            }
             if (empty($last_id) && (!empty($mediaFilename) || !empty($mediaThumbFilename))) {
                 foreach (array($mediaFilename, $mediaThumbFilename) as $failed_upload) {
                     if (empty($failed_upload)) {
+                        continue;
+                    }
+                    if (VNSEEA_BunnyParseMediaRef($failed_upload) !== null) {
                         continue;
                     }
                     @unlink($failed_upload);
@@ -286,6 +307,10 @@ if (empty($error_code)) {
                     $message['file_size'] = '0MB';
                     if (file_exists($message['file_size'])) {
                         $message['file_size'] = Wo_SizeFormat(filesize($message['media']));
+                    }
+                    $media_status = VNSEEA_BunnyMediaStatus($message['media']);
+                    if ($media_status !== '') {
+                        $message['media_status'] = $media_status;
                     }
                     $message['media']     = Wo_GetMedia($message['media']);
                 }

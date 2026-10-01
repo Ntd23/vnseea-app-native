@@ -134,6 +134,7 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.deliveryState === right.deliveryState &&
     left.sendProgress?.phase === right.sendProgress?.phase &&
     left.sendProgress?.progress === right.sendProgress?.progress &&
+    left.mediaStatus === right.mediaStatus &&
     left.isRecalled === right.isRecalled &&
     left.recalledAt === right.recalledAt &&
     left.recalledByUserId === right.recalledByUserId &&

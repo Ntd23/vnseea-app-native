@@ -242,6 +242,8 @@ export interface MessageItem {
   deliveryState?: 'sending' | 'failed';
   /** Local progress of an outgoing media message while it is being sent. */
   sendProgress?: MessageSendProgress;
+  /** A streamed video that the server is still encoding, or failed to encode. */
+  mediaStatus?: 'processing' | 'failed';
 }
 
 export interface MessageSendProgress {

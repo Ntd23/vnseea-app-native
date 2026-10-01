@@ -1,6 +1,7 @@
 import { prepareImageForUpload } from '../../../../shared-kernel/application/services/imageProcessing';
 import { prepareVideoForUpload } from '../../../../shared-kernel/application/services/videoProcessing';
 import { createVideoUploadThumbnail } from '../../../../shared-kernel/application/utils/videoThumbnails';
+import { getChatVideoUploadPolicy } from '../../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 import type { MessageAttachment } from '../../../domain/types/messages.types';
 import { createTaskQueue, startChatMediaPreparation } from '../chatMediaPreparation';
 
@@ -16,10 +17,15 @@ jest.mock(
   '../../../../shared-kernel/application/utils/videoThumbnails',
   () => ({ createVideoUploadThumbnail: jest.fn() }),
 );
+jest.mock(
+  '../../../../shared-kernel/infrastructure/upload/videoUploadPolicy',
+  () => ({ getChatVideoUploadPolicy: jest.fn() }),
+);
 
 const prepareImage = prepareImageForUpload as jest.Mock;
 const prepareVideo = prepareVideoForUpload as jest.Mock;
 const createThumbnail = createVideoUploadThumbnail as jest.Mock;
+const getPolicy = getChatVideoUploadPolicy as jest.Mock;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -57,6 +63,31 @@ describe('startChatMediaPreparation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     createThumbnail.mockResolvedValue(thumbnail);
+    getPolicy.mockResolvedValue({ provider: 'local', compressMaxSeconds: 0 });
+  });
+
+  it('uploads long videos uncompressed when Bunny Stream encodes them', async () => {
+    getPolicy.mockResolvedValue({ provider: 'bunny_stream', compressMaxSeconds: 180 });
+    const longVideo = { ...video, duration: 3600 };
+
+    await expect(startChatMediaPreparation(longVideo).result).resolves.toEqual({
+      ...longVideo,
+      thumbnailUri: thumbnail.uri,
+      thumbnailName: thumbnail.name,
+      thumbnailType: thumbnail.type,
+      uploadReady: true,
+    });
+    expect(prepareVideo).not.toHaveBeenCalled();
+  });
+
+  it('still compresses short videos with Bunny Stream and every video without it', async () => {
+    prepareVideo.mockImplementation(async (source: MessageAttachment) => source);
+    getPolicy.mockResolvedValue({ provider: 'bunny_stream', compressMaxSeconds: 180 });
+    await startChatMediaPreparation({ ...video, duration: 30 }).result;
+    getPolicy.mockResolvedValue({ provider: 'local', compressMaxSeconds: 0 });
+    await startChatMediaPreparation({ ...video, duration: 3600 }).result;
+
+    expect(prepareVideo).toHaveBeenCalledTimes(2);
   });
 
   it('marks a downscaled image as upload-ready', async () => {
