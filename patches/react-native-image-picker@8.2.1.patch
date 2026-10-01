@@ -1,0 +1,45 @@
+diff --git a/android/src/main/java/com/imagepicker/Utils.java b/android/src/main/java/com/imagepicker/Utils.java
+index 9b035ac97e477ade3e171ad37615a1dc1c9eb32d..cd5d15c63084cd689f02e82a11ce272b2276be8c 100644
+--- a/android/src/main/java/com/imagepicker/Utils.java
++++ b/android/src/main/java/com/imagepicker/Utils.java
+@@ -449,8 +449,9 @@ public class Utils {
+     static String getOriginalFilePath(Uri uri, Context context) {
+         String originPath;
+         if (uri.getScheme().contains("content")) {
++            // VNSEEA: upstream copied the whole file here again and discarded
++            // the result; only the original path is needed.
+             originPath = getFilePathFromContent(uri, context);
+-            uri = getAppSpecificStorageUri(uri, context);
+         } else {
+             originPath = uri.toString();
+         }
+@@ -564,19 +565,20 @@ public class Utils {
+         for (int i = 0; i < fileUris.size(); ++i) {
+             Uri uri = fileUris.get(i);
+ 
+-            Uri appSpecificUrl = uri;
+-            if (uri.getScheme().contains("content")) {
+-                appSpecificUrl = getAppSpecificStorageUri(uri, context);
+-            }
+-
+-            // Call getAppSpecificStorageUri in the if block to avoid copying unsupported files
++            // VNSEEA: copy shared-storage content exactly once, after the type
++            // check. Upstream copied every content URI up front and then copied
++            // videos a second time, doubling the wait for large videos and
++            // leaving an orphaned copy in the cache.
+             if (isImageType(uri, context)) {
++                Uri appSpecificUrl = uri.getScheme().contains("content")
++                        ? getAppSpecificStorageUri(uri, context)
++                        : uri;
+                 appSpecificUrl = resizeOrConvertImage(appSpecificUrl, context, options);
+                 assets.pushMap(getImageResponseMap(uri, appSpecificUrl, options, context));
+             } else if (isVideoType(uri, context)) {
+-                if (uri.getScheme().contains("content")) {
+-                    appSpecificUrl = getAppSpecificStorageUri(uri, context);
+-                }
++                Uri appSpecificUrl = uri.getScheme().contains("content")
++                        ? getAppSpecificStorageUri(uri, context)
++                        : uri;
+                 assets.pushMap(getVideoResponseMap(uri, appSpecificUrl, options, context));
+             } else {
+                 throw new RuntimeException("Unsupported file type");

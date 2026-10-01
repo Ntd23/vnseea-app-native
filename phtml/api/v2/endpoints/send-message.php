@@ -8,6 +8,7 @@
 // | WoWonder - The Ultimate Social Networking Platform
 // | Copyright (c) 2018 WoWonder. All rights reserved.
 // +------------------------------------------------------------------------+
+require_once 'assets/includes/vnseea_message_media.php';
 $response_data = array(
     'api_status' => 400
 );
@@ -107,6 +108,9 @@ if (empty($error_code)) {
                         $media = Wo_ShareFile($fileInfo);
                     }
                 } else {
+                    if (!$is_video_message) {
+                        $fileInfo = VNSEEA_PrepareMessageImageUpload($fileInfo);
+                    }
                     $media = Wo_ShareFile($fileInfo);
                 }
                 if ($media === false || empty($media['filename'])) {
@@ -124,13 +128,13 @@ if (empty($error_code)) {
                     (!isset($_FILES['video_thumb']['error']) || (int)$_FILES['video_thumb']['error'] === UPLOAD_ERR_OK) &&
                     in_array($thumb_extension, array('jpg', 'jpeg', 'png', 'webp'));
                 if ($thumb_is_valid) {
-                    $thumb_media = Wo_ShareFile(array(
+                    $thumb_media = Wo_ShareFile(VNSEEA_PrepareMessageImageUpload(array(
                         'file' => $_FILES['video_thumb']['tmp_name'],
                         'name' => $_FILES['video_thumb']['name'],
                         'size' => $_FILES['video_thumb']['size'],
                         'type' => $_FILES['video_thumb']['type'],
                         'types' => 'jpg,jpeg,png,webp'
-                    ));
+                    )));
                 } else {
                     $thumb_media = false;
                 }

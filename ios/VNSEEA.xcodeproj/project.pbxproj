@@ -25,6 +25,8 @@
 		E1D4A0230000000000000023 /* VnseeaAudioRecorder.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0250000000000000025 /* VnseeaAudioRecorder.m */; };
 		E1D4A0260000000000000026 /* NavigationSpeechModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0280000000000000028 /* NavigationSpeechModule.swift */; };
 		E1D4A0270000000000000027 /* NavigationSpeechModule.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0290000000000000029 /* NavigationSpeechModule.m */; };
+		E1D4A0300000000000000030 /* VnseeaUploadImageProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0320000000000000032 /* VnseeaUploadImageProcessor.swift */; };
+		E1D4A0310000000000000031 /* VnseeaUploadImageProcessor.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0330000000000000033 /* VnseeaUploadImageProcessor.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +52,8 @@
 		E1D4A0250000000000000025 /* VnseeaAudioRecorder.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VnseeaAudioRecorder.m; path = VNSEEA/VnseeaAudioRecorder.m; sourceTree = "<group>"; };
 		E1D4A0280000000000000028 /* NavigationSpeechModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationSpeechModule.swift; path = VNSEEA/NavigationSpeechModule.swift; sourceTree = "<group>"; };
 		E1D4A0290000000000000029 /* NavigationSpeechModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = NavigationSpeechModule.m; path = VNSEEA/NavigationSpeechModule.m; sourceTree = "<group>"; };
+		E1D4A0320000000000000032 /* VnseeaUploadImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VnseeaUploadImageProcessor.swift; path = VNSEEA/VnseeaUploadImageProcessor.swift; sourceTree = "<group>"; };
+		E1D4A0330000000000000033 /* VnseeaUploadImageProcessor.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VnseeaUploadImageProcessor.m; path = VNSEEA/VnseeaUploadImageProcessor.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -83,6 +87,8 @@
 				E1D4A0250000000000000025 /* VnseeaAudioRecorder.m */,
 				E1D4A0280000000000000028 /* NavigationSpeechModule.swift */,
 				E1D4A0290000000000000029 /* NavigationSpeechModule.m */,
+				E1D4A0320000000000000032 /* VnseeaUploadImageProcessor.swift */,
+				E1D4A0330000000000000033 /* VnseeaUploadImageProcessor.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				A1B2C3D4E5F60718293A4B5C /* VNSEEA.entitlements */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -305,6 +311,8 @@
 				E1D4A0230000000000000023 /* VnseeaAudioRecorder.m in Sources */,
 				E1D4A0260000000000000026 /* NavigationSpeechModule.swift in Sources */,
 				E1D4A0270000000000000027 /* NavigationSpeechModule.m in Sources */,
+				E1D4A0300000000000000030 /* VnseeaUploadImageProcessor.swift in Sources */,
+				E1D4A0310000000000000031 /* VnseeaUploadImageProcessor.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

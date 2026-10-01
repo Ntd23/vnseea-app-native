@@ -73,7 +73,10 @@ import {
 } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
-import { useChatViewModel } from '../../application/view-models/useChatViewModel';
+import {
+  useChatViewModel,
+  type OutgoingChatMessage,
+} from '../../application/view-models/useChatViewModel';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
@@ -92,7 +95,6 @@ import {
 } from '../components/MessageReactions';
 import type {
   ChatItem,
-  MessageAttachment,
   GroupChatMember,
   MessageItem,
   MessageMention,
@@ -117,18 +119,26 @@ import { KeyboardSafeView } from '../../../shared-kernel/presentation/components
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   createCachedVideoPosterThumbnail,
-  createVideoUploadThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
 import {
   applyComposerVideoThumbnail,
   createComposerMediaDrafts,
   isComposerMediaAttachment,
-  markComposerMediaPreparationFailed,
+  markComposerMediaPrepared,
+  toMessageAttachment,
+  updateComposerMediaPreparationProgress,
   type ChatComposerAttachment,
-  type ComposerMediaAttachment,
 } from '../../application/media/messageComposerMediaDraft';
+import {
+  startChatMediaPreparation,
+  type ChatMediaPreparationTask,
+} from '../../application/media/chatMediaPreparation';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
+import {
+  formatMessageSendingStatus,
+  getMediaGroupSendProgress,
+} from '../utils/messageSendStatus';
 import {
   buildMapShareUrl,
   buildStaticMapPreviewUrl,
@@ -2237,7 +2247,7 @@ function MessageBubble({
                       }`}
                     >
                       {message.deliveryState === 'sending'
-                        ? 'Đang gửi...'
+                        ? formatMessageSendingStatus(message.sendProgress)
                         : message.deliveryState === 'failed'
                         ? 'Gửi thất bại'
                         : formatMessageTime(message.time)}
@@ -2295,6 +2305,10 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.replyTo?.storyReply?.available ===
         nextProps.message.replyTo?.storyReply?.available &&
       prevProps.message.deliveryState === nextProps.message.deliveryState &&
+      prevProps.message.sendProgress?.phase ===
+        nextProps.message.sendProgress?.phase &&
+      prevProps.message.sendProgress?.progress ===
+        nextProps.message.sendProgress?.progress &&
       prevProps.message.isRecalled === nextProps.message.isRecalled &&
       prevProps.message.recalledAt === nextProps.message.recalledAt &&
       prevProps.message.seen === nextProps.message.seen &&
@@ -2830,7 +2844,7 @@ function MediaMessageGroup({
         ) : null}
         <Text className="mt-1 text-right text-[10px] text-gray-500">
           {deliveryState === 'sending'
-            ? 'Đang gửi...'
+            ? formatMessageSendingStatus(getMediaGroupSendProgress(messages))
             : deliveryState === 'failed'
             ? 'Gửi thất bại'
             : formatMessageTime(newestMessage.time)}
@@ -2859,7 +2873,6 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     groupInfo,
     isLoading,
     isLoadingMore,
-    isSending,
     hasMore,
     isTyping,
     isRecording,
@@ -2873,6 +2886,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     setMessageReaction,
     recallMessage,
     sendMessage,
+    sendMessageBatch,
     notifyTyping,
     stopTyping,
     loadGroupInfo,
@@ -2961,8 +2975,17 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   }, [navigation, notifyTyping, route.params?.initialText]);
   const [attachments, setAttachments] = useState<ChatComposerAttachment[]>([]);
   const mediaPreparationTasksRef = useRef(
-    new Map<string, Promise<ComposerMediaAttachment>>(),
+    new Map<string, ChatMediaPreparationTask>(),
   );
+  const [isPickingMedia, setIsPickingMedia] = useState(false);
+  const isPickingMediaRef = useRef(false);
+  useEffect(() => {
+    const preparationTasks = mediaPreparationTasksRef.current;
+    return () => {
+      preparationTasks.forEach(task => task.cancel());
+      preparationTasks.clear();
+    };
+  }, []);
   const [viewerMediaItems, setViewerMediaItems] = useState<
     ChatMediaViewerItem[]
   >([]);
@@ -3004,7 +3027,6 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   const loadingOlderRef = useRef(false);
   const sendAnim = useRef(new Animated.Value(1)).current;
   const canSend =
-    !isSending &&
     !isPickingCurrentLocation &&
     (Boolean(text.trim()) ||
       attachments.length > 0 ||
@@ -3447,33 +3469,8 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     }, [activeGroupMention, notifyTyping, selectedMentions, text],
   );
 
-  const resolvePreparedAttachments = useCallback(
-    async (pending: ChatComposerAttachment[]): Promise<MessageAttachment[]> =>
-      Promise.all(
-        pending.map(async attachment => {
-          if (!isComposerMediaAttachment(attachment)) return attachment;
-
-          const preparationTask = mediaPreparationTasksRef.current.get(
-            attachment.draftId,
-          );
-          if (!preparationTask) return attachment;
-
-          try {
-            return await preparationTask;
-          } finally {
-            mediaPreparationTasksRef.current.delete(attachment.draftId);
-          }
-        }),
-      ),
-    [],
-  );
-
   const handleSend = useCallback(async () => {
-    if (
-      sendInFlightRef.current ||
-      isSending ||
-      isPickingCurrentLocationRef.current
-    ) {
+    if (sendInFlightRef.current || isPickingCurrentLocationRef.current) {
       return;
     }
     sendInFlightRef.current = true;
@@ -3553,10 +3550,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       );
       if (replyingMessage) setReplyingMessage(undefined);
 
-      const nextAttachments = await resolvePreparedAttachments(
-        pendingAttachments,
-      );
-      const groupableAttachmentCount = nextAttachments.filter(
+      const groupableAttachmentCount = pendingAttachments.filter(
         attachment =>
           attachment.mediaType === 'image' || attachment.mediaType === 'video',
       ).length;
@@ -3564,46 +3558,60 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         groupableAttachmentCount > 1
           ? `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
           : undefined;
+      // Hand each picked item's background preparation to the send queue so
+      // the composer clears immediately instead of waiting for compression.
+      const outgoingMessages: OutgoingChatMessage[] = pendingAttachments.map(
+        (attachment, index) => {
+          let preparation: ChatMediaPreparationTask | undefined;
+          if (isComposerMediaAttachment(attachment)) {
+            preparation = mediaPreparationTasksRef.current.get(
+              attachment.draftId,
+            );
+            mediaPreparationTasksRef.current.delete(attachment.draftId);
+          }
+          return {
+            text: index === 0 ? nextText : '',
+            attachment: toMessageAttachment(attachment),
+            preparation,
+            options: {
+              ...(index === 0 && replyTo ? { replyTo } : {}),
+              ...(index === 0 && mentions.length ? { mentions } : {}),
+              ...(index === 0 && productInquiry ? { productInquiry } : {}),
+              ...(mediaGroupId &&
+              (attachment.mediaType === 'image' ||
+                attachment.mediaType === 'video')
+                ? { mediaGroupId }
+                : {}),
+            },
+          };
+        },
+      );
+      // Anything still queued belongs to drafts that are not being sent.
+      mediaPreparationTasksRef.current.forEach(task => task.cancel());
+      mediaPreparationTasksRef.current.clear();
       setText('');
       setComposerSelection({ start: 0, end: 0 });
       setSelectedMentions([]);
       stopTyping();
       setAttachments([]);
 
-      if (nextAttachments.length === 0) {
-        await sendMessage(nextText, undefined, {
+      if (outgoingMessages.length === 0) {
+        sendMessage(nextText, undefined, {
           ...(replyTo ? { replyTo } : {}),
           ...(mentions.length ? { mentions } : {}),
           ...(productInquiry ? { productInquiry } : {}),
-        });
+        }).catch(() => undefined);
       } else {
-        for (const [index, attachment] of nextAttachments.entries()) {
-          const attachmentOptions: SendMessageOptions = {
-            ...(index === 0 && replyTo ? { replyTo } : {}),
-            ...(index === 0 && mentions.length ? { mentions } : {}),
-            ...(index === 0 && productInquiry ? { productInquiry } : {}),
-            ...(mediaGroupId &&
-            (attachment.mediaType === 'image' ||
-              attachment.mediaType === 'video')
-              ? { mediaGroupId }
-              : {}),
-          };
-          await sendMessage(
-            index === 0 ? nextText : '',
-            attachment,
-            attachmentOptions,
-          );
-        }
+        sendMessageBatch(outgoingMessages).catch(() => undefined);
       }
     } finally {
       sendInFlightRef.current = false;
     }
   }, [
     attachments,
-    isSending,
     recorder,
-    resolvePreparedAttachments,
     sendMessage,
+    sendMessageBatch,
     stopTyping,
     text,
     sendAnim,
@@ -3756,11 +3764,26 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   );
 
   const handlePickMedia = useCallback(async () => {
-    const result = await launchImageLibrary({
-      mediaType: 'mixed' as MediaType,
-      selectionLimit: MAX_MEDIA_ATTACHMENTS,
-      quality: 0.8,
-    });
+    if (isPickingMediaRef.current) return;
+    isPickingMediaRef.current = true;
+    setIsPickingMedia(true);
+
+    let result: Awaited<ReturnType<typeof launchImageLibrary>>;
+    try {
+      result = await launchImageLibrary({
+        mediaType: 'mixed' as MediaType,
+        selectionLimit: MAX_MEDIA_ATTACHMENTS,
+        // Return the original files immediately. A quality below 1 makes the
+        // picker re-encode every photo at full resolution before it returns;
+        // resizing happens in the background instead.
+        quality: 1,
+        // Skip the iOS picker's own HEIC/HEVC transcode for the same reason.
+        assetRepresentationMode: 'current',
+      });
+    } finally {
+      isPickingMediaRef.current = false;
+      setIsPickingMedia(false);
+    }
 
     if (result.didCancel || result.errorCode) return;
 
@@ -3776,50 +3799,45 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       createDraftId: index => `${selectionId}-${index}`,
     }).slice(0, availableSlots);
 
-    if (validSelected.length > 0) {
-      setSharedMapLocation(undefined);
-      setAttachments(current => {
-        const filtered = current.filter(a => a.mediaType !== 'audio');
-        return [...filtered, ...validSelected].slice(0, MAX_MEDIA_ATTACHMENTS);
-      });
+    if (validSelected.length === 0) return;
 
-      validSelected.forEach(draft => {
-        if (draft.mediaType !== 'video') return;
+    setSharedMapLocation(undefined);
+    setAttachments(current => {
+      const filtered = current.filter(a => a.mediaType !== 'audio');
+      return [...filtered, ...validSelected].slice(0, MAX_MEDIA_ATTACHMENTS);
+    });
 
-        const markFailed = () => {
-          setAttachments(current =>
-            markComposerMediaPreparationFailed(current, draft.draftId),
-          );
-          return markComposerMediaPreparationFailed(
-            [draft],
-            draft.draftId,
-          )[0] as ComposerMediaAttachment;
-        };
-        const preparationTask = createVideoUploadThumbnail(draft.uri)
-          .then(thumbnail => {
-            if (!thumbnail) return markFailed();
+    validSelected.forEach(draft => {
+      const task = startChatMediaPreparation(toMessageAttachment(draft));
+      mediaPreparationTasksRef.current.set(draft.draftId, task);
 
-            setAttachments(current =>
-              applyComposerVideoThumbnail(current, draft.draftId, thumbnail),
-            );
-            return applyComposerVideoThumbnail(
-              [draft],
-              draft.draftId,
-              thumbnail,
-            )[0] as ComposerMediaAttachment;
-          })
-          .catch(markFailed);
-        mediaPreparationTasksRef.current.set(
-          draft.draftId,
-          preparationTask,
+      task.thumbnail.then(thumbnail => {
+        if (!thumbnail) return;
+        setAttachments(current =>
+          applyComposerVideoThumbnail(current, draft.draftId, thumbnail),
         );
       });
-    }
+      task.subscribeProgress(progress => {
+        setAttachments(current =>
+          updateComposerMediaPreparationProgress(
+            current,
+            draft.draftId,
+            progress,
+          ),
+        );
+      });
+      task.result.then(() => {
+        setAttachments(current =>
+          markComposerMediaPrepared(current, draft.draftId),
+        );
+      });
+    });
   }, [visualAttachments.length]);
 
   const handleRemoveAttachment = useCallback(
     (attachment: ChatComposerAttachment) => {
       if (isComposerMediaAttachment(attachment)) {
+        mediaPreparationTasksRef.current.get(attachment.draftId)?.cancel();
         mediaPreparationTasksRef.current.delete(attachment.draftId);
       }
       setAttachments(current =>
@@ -4555,7 +4573,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         )}
 
         {/* Attachments Preview */}
-        {visualAttachments.length > 0 && (
+        {(visualAttachments.length > 0 || isPickingMedia) && (
           <View className="border-t border-gray-200 bg-white px-3 pt-2">
             <ScrollView
               horizontal
@@ -4594,7 +4612,14 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                       <View className="absolute inset-0 items-center justify-center bg-black/30">
                         {isComposerMediaAttachment(att) &&
                         att.preparationState === 'preparing' ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <View className="items-center">
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                            {att.preparationProgress !== undefined ? (
+                              <Text className="mt-1 text-[11px] font-semibold text-white">
+                                {Math.round(att.preparationProgress * 100)}%
+                              </Text>
+                            ) : null}
+                          </View>
                         ) : (
                           <Play size={16} color="#fff" fill="#fff" />
                         )}
@@ -4609,6 +4634,11 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                   </TouchableOpacity>
                 </View>
               ))}
+              {isPickingMedia ? (
+                <View className="h-20 w-20 items-center justify-center rounded-xl bg-gray-100">
+                  <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
+                </View>
+              ) : null}
             </ScrollView>
           </View>
         )}
@@ -4860,7 +4890,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
           <TouchableOpacity
             className="mr-2 h-10 w-10 items-center justify-center rounded-full"
             activeOpacity={0.7}
-            disabled={isPickingCurrentLocation || isSending}
+            disabled={isPickingCurrentLocation || isPickingMedia}
             onPress={() => handlePickMedia().catch(() => undefined)}
           >
             <ImagePlus size={22} color="#9DA9BE" />
@@ -4871,9 +4901,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               isPickingCurrentLocation ? 'bg-info-soft' : ''
             }`}
             activeOpacity={0.7}
-            disabled={
-              isPickingCurrentLocation || isSending || recorder.isRecording
-            }
+            disabled={isPickingCurrentLocation || recorder.isRecording}
             onPress={() => handleShareCurrentLocation().catch(() => undefined)}
           >
             {isPickingCurrentLocation ? (
@@ -4909,7 +4937,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               recorder.isRecording ? 'bg-red-100' : 'bg-brand/10'
             }`}
             activeOpacity={0.7}
-            disabled={isPickingCurrentLocation || isSending}
+            disabled={isPickingCurrentLocation}
             onPress={() => handleToggleRecording().catch(() => undefined)}
           >
             {recorder.isRecording ? (
@@ -4928,11 +4956,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               disabled={!canSend}
               onPress={() => handleSend().catch(() => undefined)}
             >
-              {isSending ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Send size={18} color="#fff" />
-              )}
+              <Send size={18} color="#fff" />
             </TouchableOpacity>
           </Animated.View>
         </View>

@@ -27,6 +27,7 @@ import {
   preloadMessagesStartupChats,
   setMessagesStartupSnapshot,
 } from '../services/messagesStartupCache';
+import { startChatMediaPreparation } from '../media/chatMediaPreparation';
 
 const repository = createMessagesRepository();
 const CHAT_SYNC_INTERVAL_MS = 3500;
@@ -620,13 +621,20 @@ export function useMessagesViewModel() {
       setState(prev => ({ ...prev, isSending: true, error: null }));
 
       try {
+        // Compress each file once; every recipient receives the same upload.
+        const uploadAttachments = await Promise.all(
+          attachments.map(
+            attachment => startChatMediaPreparation(attachment).result,
+          ),
+        );
+
         for (const userId of recipients) {
-          if (attachments.length === 0) {
+          if (uploadAttachments.length === 0) {
             await repository.sendMessage(userId, text);
             continue;
           }
 
-          for (const [index, attachment] of attachments.entries()) {
+          for (const [index, attachment] of uploadAttachments.entries()) {
             await repository.sendMessage(
               userId,
               index === 0 ? text : '',

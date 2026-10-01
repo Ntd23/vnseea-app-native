@@ -1,13 +1,12 @@
 import type { MessageAttachment } from '../../domain/types/messages.types';
 
-export type ComposerMediaPreparationState =
-  | 'preparing'
-  | 'ready'
-  | 'failed';
+export type ComposerMediaPreparationState = 'preparing' | 'ready';
 
 export interface ComposerMediaAttachment extends MessageAttachment {
   draftId: string;
   preparationState: ComposerMediaPreparationState;
+  /** On-device compression progress between 0 and 1, for videos. */
+  preparationProgress?: number;
 }
 
 export type ChatComposerAttachment =
@@ -71,7 +70,8 @@ export function createComposerMediaDrafts(
     return [
       {
         draftId: options.createDraftId(index),
-        preparationState: video ? 'preparing' : 'ready',
+        // Both kinds are compressed in the background before upload.
+        preparationState: 'preparing',
         uri: normalizeLocalMediaUri(asset.uri, options.platform),
         name:
           asset.fileName ??
@@ -86,40 +86,67 @@ export function createComposerMediaDrafts(
   });
 }
 
+function updateComposerDraft(
+  attachments: ChatComposerAttachment[],
+  draftId: string,
+  patch: Partial<ComposerMediaAttachment>,
+) {
+  const index = attachments.findIndex(
+    item => isComposerMediaAttachment(item) && item.draftId === draftId,
+  );
+  if (index < 0) return attachments;
+
+  const next = [...attachments];
+  next[index] = { ...next[index], ...patch };
+  return next;
+}
+
 export function applyComposerVideoThumbnail(
   attachments: ChatComposerAttachment[],
   draftId: string,
   thumbnail: ComposerVideoThumbnail,
 ) {
-  const index = attachments.findIndex(
-    item => isComposerMediaAttachment(item) && item.draftId === draftId,
-  );
-  if (index < 0) return attachments;
-
-  const next = [...attachments];
-  next[index] = {
-    ...next[index],
+  return updateComposerDraft(attachments, draftId, {
     thumbnailUri: thumbnail.uri,
     thumbnailName: thumbnail.name,
     thumbnailType: thumbnail.type,
-    preparationState: 'ready',
-  };
-  return next;
+  });
 }
 
-export function markComposerMediaPreparationFailed(
+export function updateComposerMediaPreparationProgress(
+  attachments: ChatComposerAttachment[],
+  draftId: string,
+  progress: number,
+) {
+  return updateComposerDraft(attachments, draftId, {
+    preparationProgress: progress,
+  });
+}
+
+export function markComposerMediaPrepared(
   attachments: ChatComposerAttachment[],
   draftId: string,
 ) {
-  const index = attachments.findIndex(
-    item => isComposerMediaAttachment(item) && item.draftId === draftId,
-  );
-  if (index < 0) return attachments;
+  return updateComposerDraft(attachments, draftId, {
+    preparationState: 'ready',
+    preparationProgress: 1,
+  });
+}
 
-  const next = [...attachments];
-  next[index] = {
-    ...next[index],
-    preparationState: 'failed',
-  };
-  return next;
+/** Drops composer-only draft fields before the attachment leaves the screen. */
+export function toMessageAttachment(
+  attachment: ChatComposerAttachment,
+): MessageAttachment {
+  if (!isComposerMediaAttachment(attachment)) return attachment;
+  const messageAttachment: MessageAttachment &
+    Partial<
+      Pick<
+        ComposerMediaAttachment,
+        'draftId' | 'preparationState' | 'preparationProgress'
+      >
+    > = { ...attachment };
+  delete messageAttachment.draftId;
+  delete messageAttachment.preparationState;
+  delete messageAttachment.preparationProgress;
+  return messageAttachment;
 }

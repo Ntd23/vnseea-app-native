@@ -7,13 +7,17 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 describe('chat video thumbnail lifecycle contract', () => {
   it('creates one thumbnail at selection and sends it with direct or group video', () => {
     const chat = read('src/messages/presentation/screens/ChatScreen.tsx');
+    const preparation = read(
+      'src/messages/application/media/chatMediaPreparation.ts',
+    );
     const types = read('src/messages/domain/types/messages.types.ts');
     const repository = read(
       'src/messages/infrastructure/repositories/ApiMessagesRepository.ts',
     );
 
     expect(types).toContain('thumbnailUri?: string');
-    expect(chat).toContain('createVideoUploadThumbnail');
+    expect(chat).toContain('startChatMediaPreparation');
+    expect(preparation).toContain('createVideoUploadThumbnail');
     expect(chat).toContain('createComposerMediaDrafts');
     expect(chat).not.toContain('const selected = await Promise.all');
     expect(chat).toContain("att.preparationState === 'preparing'");

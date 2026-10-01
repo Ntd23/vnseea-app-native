@@ -1,4 +1,5 @@
 // Description: Implements the Messages API repository through the WoWonder mobile API bridge.
+import type { AxiosRequestConfig } from 'axios';
 import CryptoJS from 'crypto-js';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { assertNotSelfGroupMemberRemoval } from '../../../shared-kernel/application/utils/groupMemberRemoval';
@@ -11,6 +12,7 @@ import {
   type ReactionType,
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
+import { prepareImageForUpload } from '../../../shared-kernel/application/services/imageProcessing';
 import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
 import {
@@ -181,6 +183,33 @@ function restoreMessageLineBreaks(value: string): string {
 }
 function serializeMessageLineBreaks(value: string): string {
   return value.replace(/\r\n?/g, '\n').replace(/\n/g, '\\n');
+}
+async function prepareAttachmentForUpload(
+  attachment: MessageAttachment | undefined,
+): Promise<MessageAttachment | undefined> {
+  // The chat composer prepares media while the user is still typing; only
+  // callers that skipped that step pay for compression here.
+  if (!attachment || attachment.uploadReady) return attachment;
+  if (attachment.mediaType === 'video') {
+    return prepareVideoForUpload(attachment, { minimumFileSizeForCompress: 0 });
+  }
+  if (attachment.mediaType === 'image') {
+    return prepareImageForUpload(attachment);
+  }
+  return attachment;
+}
+function createUploadProgressConfig(
+  onUploadProgress: ((progress: number) => void) | undefined,
+): AxiosRequestConfig | undefined {
+  if (!onUploadProgress) return undefined;
+  return {
+    onUploadProgress: event => {
+      const progress =
+        event.progress ?? (event.total ? event.loaded / event.total : undefined);
+      if (progress === undefined || !Number.isFinite(progress)) return;
+      onUploadProgress(Math.min(1, Math.max(0, progress)));
+    },
+  };
 }
 function cleanText(value: string): string {
   return restoreMessageLineBreaks(decodeLegacyLinkMarkup(value))
@@ -2001,12 +2030,7 @@ export function createMessagesRepository(): MessagesRepository {
       options?: SendMessageOptions,
     ) {
       const target = getChatTarget(chat);
-      const uploadAttachment =
-        attachment?.mediaType === 'video'
-          ? await prepareVideoForUpload(attachment, {
-              minimumFileSizeForCompress: 0,
-            })
-          : attachment;
+      const uploadAttachment = await prepareAttachmentForUpload(attachment);
       const messageHashId = `${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
@@ -2070,8 +2094,8 @@ export function createMessagesRepository(): MessagesRepository {
           ? apiRoutes.messages.groupChat
           : apiRoutes.messages.send;
       const payload = target.type === 'group' ? groupPayload : userPayload;
-      const response = uploadAttachment
-        ? await apiBridge.multipart<SendMessageResponse>(route, {
+      const multipartPayload = uploadAttachment
+        ? {
             ...payload,
             ...(uploadAttachment.mediaType
               ? {
@@ -2093,7 +2117,20 @@ export function createMessagesRepository(): MessagesRepository {
                   },
                 }
               : {}),
-          })
+          }
+        : undefined;
+      const uploadConfig = createUploadProgressConfig(options?.onUploadProgress);
+      const response = multipartPayload
+        ? uploadConfig
+          ? await apiBridge.multipart<SendMessageResponse>(
+              route,
+              multipartPayload,
+              uploadConfig,
+            )
+          : await apiBridge.multipart<SendMessageResponse>(
+              route,
+              multipartPayload,
+            )
         : await apiBridge.post<SendMessageResponse>(route, payload);
       discoveryCache = undefined;
       const rawSentMessages =

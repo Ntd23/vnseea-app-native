@@ -126,4 +126,26 @@ describe('ApiMessagesRepository video thumbnails', () => {
       'https://media.vnseea.vn/upload/photos/server-thumb.jpg',
     );
   });
+
+  it('uploads media prepared by the composer as-is and reports progress', async () => {
+    multipart.mockResolvedValueOnce({ message_data: [rawVideoMessage()] });
+    const readyAttachment = { ...preparedAttachment, uploadReady: true };
+    const progress: number[] = [];
+
+    await createMessagesRepository().sendMessage('2', '', readyAttachment, {
+      onUploadProgress: value => progress.push(value),
+    });
+
+    expect(prepareVideo).not.toHaveBeenCalled();
+    expect(multipart).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ file: readyAttachment }),
+      expect.objectContaining({ onUploadProgress: expect.any(Function) }),
+    );
+    const config = multipart.mock.calls[0]?.[2];
+    config.onUploadProgress({ loaded: 25, total: 100 });
+    config.onUploadProgress({ progress: 1.2, loaded: 0 });
+    config.onUploadProgress({ loaded: 10 });
+    expect(progress).toEqual([0.25, 1]);
+  });
 });

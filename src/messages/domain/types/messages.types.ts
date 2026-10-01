@@ -194,6 +194,8 @@ export interface SendMessageOptions {
     location?: string;
   };
   storyReply?: StoryReplyMessageReference;
+  /** Receives the multipart upload progress, between 0 and 1. */
+  onUploadProgress?: (progress: number) => void;
 }
 
 export interface MessageSystemEvent {
@@ -236,6 +238,15 @@ export interface MessageItem {
   isSentByMe: boolean;
   seen: number;
   deliveryState?: 'sending' | 'failed';
+  /** Local progress of an outgoing media message while it is being sent. */
+  sendProgress?: MessageSendProgress;
+}
+
+export interface MessageSendProgress {
+  /** `preparing` covers on-device compression, `uploading` the network transfer. */
+  phase: 'preparing' | 'uploading';
+  /** Between 0 and 1 when known. */
+  progress?: number;
 }
 
 export interface PinnedMessageItem extends MessageItem {
@@ -271,6 +282,8 @@ export interface MessageAttachment {
   width?: number;
   height?: number;
   duration?: number;
+  /** Already compressed on device; the repository uploads it as-is. */
+  uploadReady?: boolean;
 }
 
 export interface GetMessagesOptions {
