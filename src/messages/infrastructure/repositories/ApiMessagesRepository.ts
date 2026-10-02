@@ -13,10 +13,7 @@ import {
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
 import { prepareImageForUpload } from '../../../shared-kernel/application/services/imageProcessing';
-import {
-  getLocalFileSize,
-  uploadToBunnyStream,
-} from '../../../shared-kernel/infrastructure/upload/bunnyTusUpload';
+import { uploadVideoWithTicket } from '../../../shared-kernel/infrastructure/upload/bunnyVideoUpload';
 import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
 import {
@@ -202,70 +199,6 @@ async function prepareAttachmentForUpload(
   }
   return attachment;
 }
-type MediaUploadTicketResponse = {
-  provider?: string;
-  upload_id?: string | number;
-  tus?: {
-    endpoint?: string;
-    library_id?: string | number;
-    video_id?: string;
-    expires?: string | number;
-    signature?: string;
-  };
-};
-
-/**
- * Sends a chat video straight to Bunny Stream when the server hands out an
- * upload ticket. Returns the ticket id to attach to the message, or null when
- * the video must go through the regular multipart upload instead.
- */
-async function uploadVideoToBunnyStream(
-  attachment: MessageAttachment,
-  onUploadProgress: ((progress: number) => void) | undefined,
-): Promise<string | null> {
-  if (!/^(file:\/\/|\/)/i.test(attachment.uri)) return null;
-  const fileSize = await getLocalFileSize(attachment.uri);
-  if (fileSize <= 0) return null;
-
-  let ticket: MediaUploadTicketResponse;
-  try {
-    ticket = await apiBridge.post<MediaUploadTicketResponse>(
-      apiRoutes.media.uploadTicket,
-      {
-        purpose: 'chat',
-        file_type: attachment.type || 'video/mp4',
-        file_size: fileSize,
-        file_name: attachment.name,
-      },
-    );
-  } catch {
-    // Older servers have no ticket endpoint; Bunny may also be unreachable.
-    return null;
-  }
-  const tus = ticket.tus;
-  if (
-    ticket.provider !== 'bunny_stream' ||
-    !ticket.upload_id ||
-    !tus?.video_id ||
-    !tus.signature
-  ) {
-    return null;
-  }
-
-  await uploadToBunnyStream(
-    attachment,
-    {
-      endpoint: tus.endpoint || 'https://video.bunnycdn.com/tusupload',
-      libraryId: String(tus.library_id ?? ''),
-      videoId: tus.video_id,
-      expires: Number(tus.expires),
-      signature: tus.signature,
-    },
-    { onProgress: onUploadProgress },
-  );
-  return String(ticket.upload_id);
-}
-
 function createUploadProgressConfig(
   onUploadProgress: ((progress: number) => void) | undefined,
 ): AxiosRequestConfig | undefined {
@@ -2176,8 +2109,9 @@ export function createMessagesRepository(): MessagesRepository {
       const payload = target.type === 'group' ? groupPayload : userPayload;
       const bunnyUploadId =
         uploadAttachment?.mediaType === 'video'
-          ? await uploadVideoToBunnyStream(
+          ? await uploadVideoWithTicket(
               uploadAttachment,
+              'chat',
               options?.onUploadProgress,
             )
           : null;

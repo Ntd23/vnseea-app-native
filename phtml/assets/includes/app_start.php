@@ -73,6 +73,7 @@ $required_config_defaults = array(
     'vnseea_bunny_cdn_enabled' => '0',
     'vnseea_bunny_cdn_hostname' => '',
     'vnseea_bunny_stream_enabled' => '0',
+    'vnseea_bunny_stream_public_enabled' => '0',
     'vnseea_bunny_stream_public_library_id' => '',
     'vnseea_bunny_stream_public_api_key' => '',
     'vnseea_bunny_stream_public_readonly_key' => '',

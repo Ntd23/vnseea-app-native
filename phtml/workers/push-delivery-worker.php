@@ -28,6 +28,9 @@ $batch_size = max(1, min(200, $batch_size));
 $idle_ms = max(100, min(5000, $idle_ms));
 $max_memory_bytes = max(64, $max_memory_mb) * 1024 * 1024;
 $running = true;
+// Bunny Stream upkeep (missed webhooks, unused videos) rides on this worker
+// instead of a cron job.
+$bunny_maintenance_due = 0;
 
 if (function_exists('cli_set_process_title')) {
     cli_set_process_title('vnseea-push-delivery-worker');
@@ -52,6 +55,15 @@ do {
         ? VNSEEA_ProcessFollowerContentNotificationQueue(2, 50)
         : 0;
     $processed = VNSEEA_ProcessPushDeliveryQueue($batch_size);
+    if (function_exists('VNSEEA_BunnyRunMaintenance') && time() >= $bunny_maintenance_due) {
+        $bunny_maintenance_due = time() + 60;
+        try {
+            VNSEEA_BunnyReloadConfig();
+            VNSEEA_BunnyRunMaintenance(10);
+        } catch (Throwable $caught) {
+            fwrite(STDERR, 'bunny stream maintenance failed: ' . $caught->getMessage() . "\n");
+        }
+    }
     if ($run_once) {
         break;
     }

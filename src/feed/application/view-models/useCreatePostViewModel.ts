@@ -35,9 +35,42 @@ import type {
 import type { GetTaggableUsersInput } from '../../domain/repositories/FeedRepository';
 
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { createVideoPublishJob } from '../../../shared-kernel/application/services/videoPublishJob';
+import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
+import { getVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 
 const repository = createFeedRepository();
+
+/**
+ * A video post going to Bunny Stream uploads in the background: the composer
+ * closes at once and the post appears once the server has encoded the video.
+ */
+function enqueueBunnyVideoPost(
+  apiDraft: CreatePostDraft & { video: PostVideoAttachment },
+  policy: Awaited<ReturnType<typeof getVideoUploadPolicy>>,
+  onPublished?: (post: FeedPost) => void,
+) {
+  videoPublishQueue.enqueue(
+    createVideoPublishJob({
+      purpose: 'post',
+      video: apiDraft.video,
+      thumbnailUri: apiDraft.video.thumbnailUri,
+      policy,
+      createFromUpload: (video, uploadId) =>
+        repository.createPostWithUploadedVideo({ ...apiDraft, video }, uploadId),
+      createDirectly: async video => {
+        const result = await repository.createPost({ ...apiDraft, video });
+        return { postId: result.post.id, needsReview: false };
+      },
+      onPublished: async ({ postId, needsReview }) => {
+        if (!postId || needsReview) return;
+        const { post } = await repository.getPostById(postId, { fetchComments: false });
+        onPublished?.(post);
+      },
+    }),
+  );
+}
 
 // ── Caption mention/hashtag helpers (mirror useCreateReelViewModel) ──────
 
@@ -165,13 +198,20 @@ export type UseCreatePostOptions = {
    * post to the home feed without a full refetch.
    */
   onCreated?: (post: FeedPost) => void;
+  /**
+   * Called instead of `onCreated` when a video post moved to the background
+   * upload queue; the composer can close right away.
+   */
+  onQueued?: () => void;
+  /** Called once a background video post is encoded and visible. */
+  onPublishedInBackground?: (post: FeedPost) => void;
   pageId?: string;
   groupId?: string;
   eventId?: string;
 };
 
 export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
-  const { onCreated, pageId, groupId, eventId } = options;
+  const { onCreated, onQueued, onPublishedInBackground, pageId, groupId, eventId } = options;
   const language = useAppLanguage();
   const copy = useMemo(() => VIEW_MODEL_COPY[language], [language]);
 
@@ -541,6 +581,19 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
           captionMentionReplacements,
         ),
       };
+      if (apiDraft.video) {
+        const policy = await getVideoUploadPolicy('post');
+        if (policy.provider === 'bunny_stream') {
+          enqueueBunnyVideoPost(
+            { ...apiDraft, video: apiDraft.video },
+            policy,
+            onPublishedInBackground,
+          );
+          onQueued?.();
+          setDraft({ ...DEFAULT_DRAFT, pageId, groupId, eventId });
+          return null;
+        }
+      }
       const result = await repository.createPost(apiDraft);
       // Notify the parent FIRST (so the feed updates) then reset our
       // own state. Order matters: if we reset before notifying, the
@@ -564,7 +617,18 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [captionMentionReplacements, copy, draft, eventId, groupId, onCreated, pageId, validate]);
+  }, [
+    captionMentionReplacements,
+    copy,
+    draft,
+    eventId,
+    groupId,
+    onCreated,
+    onPublishedInBackground,
+    onQueued,
+    pageId,
+    validate,
+  ]);
 
   return {
     // State

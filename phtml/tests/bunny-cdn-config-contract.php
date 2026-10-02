@@ -85,6 +85,7 @@ bunny_equals(VNSEEA_GetMediaBaseUrl(), '', 'an environment without a shared orig
 // Bunny Stream needs a fully filled library before it is used.
 bunny_config(array(
     'vnseea_bunny_stream_enabled' => '1',
+    'vnseea_bunny_stream_public_enabled' => '1',
     'vnseea_bunny_stream_public_library_id' => '12345',
     'vnseea_bunny_stream_public_api_key' => 'public-api-key-abcd',
     'vnseea_bunny_stream_public_readonly_key' => 'public-readonly-key-wxyz',
@@ -102,7 +103,7 @@ bunny_equals(
     'invalid ids, encrypted values and blanks count as missing'
 );
 bunny_assert(!VNSEEA_BunnyStreamUploadsEnabled('private'), 'an incomplete library is never used');
-$GLOBALS['wo']['config']['vnseea_bunny_stream_enabled'] = '0';
+$GLOBALS['wo']['config']['vnseea_bunny_stream_public_enabled'] = '0';
 bunny_assert(!VNSEEA_BunnyStreamUploadsEnabled('public'), 'the switch turns new uploads off');
 bunny_assert(VNSEEA_BunnyStreamLibraryConfigured('public'), 'existing Bunny videos keep a usable library while switched off');
 

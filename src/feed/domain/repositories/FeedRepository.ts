@@ -19,6 +19,7 @@ import type {
   PostReactionCount,
   PostReactionUser,
 } from '../types/reactions.types';
+import type { VideoPublishStatus } from '../../../shared-kernel/domain/types/videoPublish.types';
 
 export type FeedSource = 'all' | 'following';
 export type FeedShareDestination = 'timeline' | 'page' | 'group' | 'message';
@@ -217,6 +218,16 @@ export interface FeedRepository {
    * optimistically prepend it to the feed without a refetch.
    */
   createPost(draft: CreatePostDraft): Promise<CreatePostResult>;
+
+  /**
+   * Creates a video post whose video was already uploaded to Bunny Stream
+   * with ticket `videoUploadId`. The server holds the post back until the
+   * video is encoded, so this returns where publishing stands, not a post.
+   */
+  createPostWithUploadedVideo(
+    draft: CreatePostDraft,
+    videoUploadId: string,
+  ): Promise<VideoPublishStatus>;
 
   getTaggableUsers(
     input: GetTaggableUsersInput,

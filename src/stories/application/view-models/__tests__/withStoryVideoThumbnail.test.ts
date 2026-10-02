@@ -9,6 +9,15 @@ jest.mock('../../../infrastructure/repositories/ApiStoriesRepository', () => ({
   createStoriesRepository: () => ({ createStory: jest.fn() }),
 }));
 
+jest.mock('../../../../shared-kernel/infrastructure/upload/videoUploadPolicy', () => ({
+  getVideoUploadPolicy: jest.fn(),
+}));
+
+jest.mock('../../../../shared-kernel/infrastructure/upload/bunnyVideoUpload', () => ({
+  fetchVideoPublishStatuses: jest.fn(),
+  uploadVideoWithTicket: jest.fn(),
+}));
+
 import { withStoryVideoThumbnail } from '../useCreateStoryViewModel';
 
 const video = {

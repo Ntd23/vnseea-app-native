@@ -17,6 +17,7 @@ export const apiRoutes = {
   },
   media: {
     uploadTicket: 'media-upload-ticket',
+    uploadStatus: 'media-upload-status',
   },
   user: {
     get: 'get-user-data',

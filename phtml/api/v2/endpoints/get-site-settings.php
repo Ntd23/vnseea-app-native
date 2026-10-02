@@ -23,13 +23,21 @@ $get_config['logo_url'] = $config['theme_url'] . '/img/logo.' . $get_config['log
 $theme_url = $config['theme_url'];
 $logo_extension = !empty($get_config['logo_extension']) ? $get_config['logo_extension'] : 'png';
 $favicon_extension = !empty($get_config['favicon_extension']) ? $get_config['favicon_extension'] : 'png';
+$bunny_compress_max_seconds = max(0, (int) VNSEEA_BunnyConfig('vnseea_bunny_stream_compress_max_seconds', '180'));
+$bunny_public_video_upload = array(
+    'provider' => VNSEEA_BunnyStreamUploadsEnabled('public') && VNSEEA_BunnyPublishColumnsAvailable() ? 'bunny_stream' : 'local',
+    'compress_max_seconds' => $bunny_compress_max_seconds,
+);
 $public_config = array(
-    // No secrets: clients only learn where chat videos go and when to skip compression.
+    // No secrets: clients only learn where videos go and when to skip compression.
     'video_upload' => array(
         'chat' => array(
             'provider' => VNSEEA_BunnyStreamUploadsEnabled('private') ? 'bunny_stream' : 'local',
-            'compress_max_seconds' => max(0, (int) VNSEEA_BunnyConfig('vnseea_bunny_stream_compress_max_seconds', '180')),
+            'compress_max_seconds' => $bunny_compress_max_seconds,
         ),
+        'post' => $bunny_public_video_upload,
+        'reel' => $bunny_public_video_upload,
+        'story' => $bunny_public_video_upload,
     ),
     'siteName' => !empty($get_config['siteName']) ? $get_config['siteName'] : 'VNSEEA',
     'siteTitle' => !empty($get_config['siteTitle']) ? $get_config['siteTitle'] : (!empty($get_config['siteName']) ? $get_config['siteName'] : 'VNSEEA'),

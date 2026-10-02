@@ -73,6 +73,7 @@ import { mapJobQuestions } from '../../../jobs/application/mappers/jobQuestions'
 import { buildSharedPostPreviewModel } from '../../application/sharing/sharedPostPreview';
 import { mapProfileMediaActivity } from '../../application/mappers/profileMediaActivity';
 import { createSafeUploadFileName } from '../../../shared-kernel/application/utils/uploadFileName';
+import { readVideoPublishStatus } from '../../../shared-kernel/infrastructure/upload/bunnyVideoUpload';
 import {
   CONTENT_AUDIENCE_CONTRACT,
   audienceFromWire,
@@ -2767,6 +2768,183 @@ async function fetchVideoFeedPostsPage(
   };
 }
 
+/**
+ * Multipart fields for new_post. Keys MUST match WoWonder's expected POST
+ * fields (see phtml/api/phone/new_post.php). Empty optional fields are
+ * omitted entirely so the backend defaults kick in. With `videoUploadId` the
+ * video already sits on Bunny Stream and only its ticket is sent.
+ */
+function buildCreatePostPayload(
+  draft: CreatePostDraft,
+  videoUploadId?: string,
+): Record<string, unknown> {
+  const context = resolveCreatePostContext(draft);
+  const payload: Record<string, unknown> = {};
+  const uploadBatchId = String(Date.now());
+
+  if (context === 'personal' || context === 'page') {
+    payload.postPrivacy = PRIVACY_TO_WIRE(draft.privacy);
+    payload.privacy_contract = CONTENT_AUDIENCE_CONTRACT;
+  }
+  if (context === 'personal') {
+    payload.is_anonymous = '0';
+  }
+
+  if (draft.pageId) {
+    payload.page_id = draft.pageId;
+  }
+
+  if (draft.groupId) {
+    payload.group_id = draft.groupId;
+  }
+
+  if (draft.eventId) {
+    payload.event_id = draft.eventId;
+  }
+
+  const taggedUserIds = normalizeDraftTaggedUserIds(draft);
+  if (taggedUserIds.length > 0) {
+    payload.tagged_user_ids = JSON.stringify(taggedUserIds);
+  }
+
+  const locationLabel = draft.location?.label?.trim();
+  if (locationLabel) {
+    payload.postMap = locationLabel;
+  }
+
+  // Text — only send if non-empty after trim. WoWonder treats
+  // whitespace-only `postText` as "no text" so we mirror that.
+  const trimmedText = draft.text.trim();
+  if (trimmedText) {
+    payload.postText = trimmedText;
+  }
+
+  // Photos — single OR multi. The multipart helper appends each
+  // file under `postPhotos[]` so PHP receives them as
+  // `$_FILES['postPhotos']['name'][i]` regardless of count.
+  if (draft.photos.length > 0) {
+    const photoMediaGeometry = draft.photos.map(photo => {
+      const width = Math.round(Number(photo.width));
+      const height = Math.round(Number(photo.height));
+      return width > 0 && height > 0 ? { width, height } : null;
+    });
+    payload.postPhotos = draft.photos.map((photo, index) => ({
+      uri: photo.uri,
+      name: createSafeUploadFileName({
+        originalName: photo.name,
+        mimeType: photo.type,
+        prefix: 'photo',
+        uniqueSuffix: `${uploadBatchId}-${index}`,
+      }),
+      type: photo.type,
+    }));
+    if (photoMediaGeometry.some(Boolean)) {
+      payload.photo_media_geometry = JSON.stringify(photoMediaGeometry);
+    }
+    if (draft.photos.length === 1 && photoMediaGeometry[0]) {
+      payload.media_width = photoMediaGeometry[0].width;
+      payload.media_height = photoMediaGeometry[0].height;
+    }
+    // When uploading >1 photo, WoWonder requires an `album_name` so
+    // it can group the files. The album_name is shown as the post
+    // title on the website but our mobile UI ignores it — we pass a
+    // timestamped placeholder to satisfy the server check.
+    if (draft.photos.length > 1) {
+      payload.album_name = `Post ${new Date().toISOString()}`;
+    }
+  }
+
+  if (draft.audio) {
+    payload.postMusic = {
+      uri: draft.audio.uri,
+      name: createSafeUploadFileName({
+        originalName: draft.audio.name,
+        mimeType: draft.audio.type,
+        prefix: 'audio',
+        uniqueSuffix: uploadBatchId,
+      }),
+      type: draft.audio.type,
+    };
+  }
+
+  // Video — single only. WoWonder's `new_post` accepts at most
+  // one primary media type per post (photos / video / audio) —
+  // the view-model guarantees the draft only contains one of
+  // those buckets at a time, so we just add `postVideo` here.
+  //
+  // The multipart helper appends it under `postVideo` (not
+  // `postVideo[]`) since WoWonder expects a single file under
+  // that key.
+  if (draft.video) {
+    const mediaWidth = Math.round(Number(draft.video.width));
+    const mediaHeight = Math.round(Number(draft.video.height));
+    payload.video_thumbnail_contract = 'preserve_aspect_v1';
+    if (videoUploadId) {
+      // The video already sits on Bunny Stream; send its ticket instead.
+      payload.bunny_upload_id = videoUploadId;
+    } else {
+      payload.postVideo = {
+        uri: draft.video.uri,
+        name: createSafeUploadFileName({
+          originalName: draft.video.name,
+          mimeType: draft.video.type,
+          prefix: 'video',
+          uniqueSuffix: uploadBatchId,
+        }),
+        type: draft.video.type,
+      };
+    }
+    if (draft.video.thumbnailUri) {
+      payload.video_thumb = {
+        uri: draft.video.thumbnailUri,
+        name: createSafeUploadFileName({
+          originalName: draft.video.thumbnailName,
+          mimeType: draft.video.thumbnailType || 'image/jpeg',
+          prefix: 'video-thumb',
+          uniqueSuffix: uploadBatchId,
+        }),
+        type: draft.video.thumbnailType || 'image/jpeg',
+      };
+    }
+    // Mark this as a video post so the feed mapper and the
+    // homepage's `looksLikeVideo` classifier both pick it up.
+    payload.postType = 'video';
+    if (mediaWidth > 0 && mediaHeight > 0) {
+      payload.media_width = mediaWidth;
+      payload.media_height = mediaHeight;
+    }
+  }
+
+  if (draft.linkPreview) {
+    payload.url_link = draft.linkPreview.url;
+    payload.url_title = draft.linkPreview.title || draft.linkPreview.url;
+    payload.url_content = draft.linkPreview.description || '';
+    if (draft.linkPreview.image) {
+      payload.url_image = draft.linkPreview.image;
+    }
+    // WoWonder's `Wo_RegisterPost` does not count `postLink*` fields
+    // as post content, so a pure link-preview post is rejected as empty.
+    // `postMap` is accepted as content by the backend but is not rendered
+    // as a visible caption in our feed cards, which keeps shared map
+    // locations as a clean preview card instead of a long URL blob.
+    if (!trimmedText && !locationLabel) {
+      payload.postMap =
+        draft.linkPreview.title?.trim() ||
+        draft.linkPreview.description?.trim() ||
+        'Shared location';
+    }
+  }
+
+  // Feeling — two-field combo. `feeling_type` selects the bucket,
+  // `feeling` is the value within that bucket.
+  if (draft.feeling) {
+    payload.feeling_type = draft.feeling.type;
+    payload.feeling = draft.feeling.value;
+  }
+
+  return payload;
+}
+
 export function createFeedRepository(): FeedRepository {
   return {
     /**
@@ -3071,167 +3249,7 @@ export function createFeedRepository(): FeedRepository {
     },
 
     async createPost(draft: CreatePostDraft): Promise<CreatePostResult> {
-      // Build the multipart payload. Keys MUST match WoWonder's expected
-      // POST fields (see phtml/api/phone/new_post.php). Empty optional
-      // fields are omitted entirely so the backend defaults kick in.
-      const context = resolveCreatePostContext(draft);
-      const payload: Record<string, unknown> = {};
-      const uploadBatchId = String(Date.now());
-
-      if (context === 'personal' || context === 'page') {
-        payload.postPrivacy = PRIVACY_TO_WIRE(draft.privacy);
-        payload.privacy_contract = CONTENT_AUDIENCE_CONTRACT;
-      }
-      if (context === 'personal') {
-        payload.is_anonymous = '0';
-      }
-
-      if (draft.pageId) {
-        payload.page_id = draft.pageId;
-      }
-
-      if (draft.groupId) {
-        payload.group_id = draft.groupId;
-      }
-
-      if (draft.eventId) {
-        payload.event_id = draft.eventId;
-      }
-
-      const taggedUserIds = normalizeDraftTaggedUserIds(draft);
-      if (taggedUserIds.length > 0) {
-        payload.tagged_user_ids = JSON.stringify(taggedUserIds);
-      }
-
-      const locationLabel = draft.location?.label?.trim();
-      if (locationLabel) {
-        payload.postMap = locationLabel;
-      }
-
-      // Text — only send if non-empty after trim. WoWonder treats
-      // whitespace-only `postText` as "no text" so we mirror that.
-      const trimmedText = draft.text.trim();
-      if (trimmedText) {
-        payload.postText = trimmedText;
-      }
-
-      // Photos — single OR multi. The multipart helper appends each
-      // file under `postPhotos[]` so PHP receives them as
-      // `$_FILES['postPhotos']['name'][i]` regardless of count.
-      if (draft.photos.length > 0) {
-        const photoMediaGeometry = draft.photos.map(photo => {
-          const width = Math.round(Number(photo.width));
-          const height = Math.round(Number(photo.height));
-          return width > 0 && height > 0 ? { width, height } : null;
-        });
-        payload.postPhotos = draft.photos.map((photo, index) => ({
-          uri: photo.uri,
-          name: createSafeUploadFileName({
-            originalName: photo.name,
-            mimeType: photo.type,
-            prefix: 'photo',
-            uniqueSuffix: `${uploadBatchId}-${index}`,
-          }),
-          type: photo.type,
-        }));
-        if (photoMediaGeometry.some(Boolean)) {
-          payload.photo_media_geometry = JSON.stringify(photoMediaGeometry);
-        }
-        if (draft.photos.length === 1 && photoMediaGeometry[0]) {
-          payload.media_width = photoMediaGeometry[0].width;
-          payload.media_height = photoMediaGeometry[0].height;
-        }
-        // When uploading >1 photo, WoWonder requires an `album_name` so
-        // it can group the files. The album_name is shown as the post
-        // title on the website but our mobile UI ignores it — we pass a
-        // timestamped placeholder to satisfy the server check.
-        if (draft.photos.length > 1) {
-          payload.album_name = `Post ${new Date().toISOString()}`;
-        }
-      }
-
-      if (draft.audio) {
-        payload.postMusic = {
-          uri: draft.audio.uri,
-          name: createSafeUploadFileName({
-            originalName: draft.audio.name,
-            mimeType: draft.audio.type,
-            prefix: 'audio',
-            uniqueSuffix: uploadBatchId,
-          }),
-          type: draft.audio.type,
-        };
-      }
-
-      // Video — single only. WoWonder's `new_post` accepts at most
-      // one primary media type per post (photos / video / audio) —
-      // the view-model guarantees the draft only contains one of
-      // those buckets at a time, so we just add `postVideo` here.
-      //
-      // The multipart helper appends it under `postVideo` (not
-      // `postVideo[]`) since WoWonder expects a single file under
-      // that key.
-      if (draft.video) {
-        const mediaWidth = Math.round(Number(draft.video.width));
-        const mediaHeight = Math.round(Number(draft.video.height));
-        payload.video_thumbnail_contract = 'preserve_aspect_v1';
-        payload.postVideo = {
-          uri: draft.video.uri,
-          name: createSafeUploadFileName({
-            originalName: draft.video.name,
-            mimeType: draft.video.type,
-            prefix: 'video',
-            uniqueSuffix: uploadBatchId,
-          }),
-          type: draft.video.type,
-        };
-        if (draft.video.thumbnailUri) {
-          payload.video_thumb = {
-            uri: draft.video.thumbnailUri,
-            name: createSafeUploadFileName({
-              originalName: draft.video.thumbnailName,
-              mimeType: draft.video.thumbnailType || 'image/jpeg',
-              prefix: 'video-thumb',
-              uniqueSuffix: uploadBatchId,
-            }),
-            type: draft.video.thumbnailType || 'image/jpeg',
-          };
-        }
-        // Mark this as a video post so the feed mapper and the
-        // homepage's `looksLikeVideo` classifier both pick it up.
-        payload.postType = 'video';
-        if (mediaWidth > 0 && mediaHeight > 0) {
-          payload.media_width = mediaWidth;
-          payload.media_height = mediaHeight;
-        }
-      }
-
-      if (draft.linkPreview) {
-        payload.url_link = draft.linkPreview.url;
-        payload.url_title = draft.linkPreview.title || draft.linkPreview.url;
-        payload.url_content = draft.linkPreview.description || '';
-        if (draft.linkPreview.image) {
-          payload.url_image = draft.linkPreview.image;
-        }
-        // WoWonder's `Wo_RegisterPost` does not count `postLink*` fields
-        // as post content, so a pure link-preview post is rejected as empty.
-        // `postMap` is accepted as content by the backend but is not rendered
-        // as a visible caption in our feed cards, which keeps shared map
-        // locations as a clean preview card instead of a long URL blob.
-        if (!trimmedText && !locationLabel) {
-          payload.postMap =
-            draft.linkPreview.title?.trim() ||
-            draft.linkPreview.description?.trim() ||
-            'Shared location';
-        }
-      }
-
-      // Feeling — two-field combo. `feeling_type` selects the bucket,
-      // `feeling` is the value within that bucket.
-      if (draft.feeling) {
-        payload.feeling_type = draft.feeling.type;
-        payload.feeling = draft.feeling.value;
-      }
+      const payload = buildCreatePostPayload(draft);
 
       const response = await backendApi.multipart<{
         api_status: number | string;
@@ -3267,6 +3285,31 @@ export function createFeedRepository(): FeedRepository {
           : mappedPost;
 
       return { postId: post.id, post };
+    },
+
+    async createPostWithUploadedVideo(draft, videoUploadId) {
+      const response = await backendApi.multipart<{
+        api_status: number | string;
+        bunny_upload?: unknown;
+        message?: string;
+        errors?: {
+          error_id?: number | string;
+          error_text?: string;
+        };
+      }>(apiRoutes.feed.newPost, buildCreatePostPayload(draft, videoUploadId));
+
+      const pending =
+        String(response.api_status) === '200'
+          ? readVideoPublishStatus(response.bunny_upload)
+          : null;
+      if (!pending) {
+        throw new Error(
+          response.errors?.error_text ??
+            response.message ??
+            'Không đăng được bài. Vui lòng thử lại.',
+        );
+      }
+      return pending;
     },
 
     async getTaggableUsers(input) {

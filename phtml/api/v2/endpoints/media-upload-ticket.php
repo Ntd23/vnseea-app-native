@@ -1,12 +1,12 @@
 <?php
-// English description: Issues a presigned Bunny Stream TUS upload for a chat video, or tells the client to upload to this server.
+// English description: Issues a presigned Bunny Stream TUS upload for a chat, post, reel or story video, or tells the client to upload to this server.
 
 $purpose = !empty($_POST['purpose']) ? strtolower(trim((string) $_POST['purpose'])) : '';
 $file_type = !empty($_POST['file_type']) ? strtolower(trim((string) $_POST['file_type'])) : '';
 $file_size = !empty($_POST['file_size']) && is_numeric($_POST['file_size']) ? (int) $_POST['file_size'] : 0;
 $file_name = !empty($_POST['file_name']) ? (string) $_POST['file_name'] : 'video.mp4';
 
-if ($purpose !== 'chat') {
+if (VNSEEA_BunnyPurposeKind($purpose) === '') {
     $error_code = 4;
     $error_message = 'purpose is invalid.';
     return;

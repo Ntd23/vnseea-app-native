@@ -20,6 +20,7 @@
 //     the first Story rail page can still open directly.
 
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
+import { readVideoPublishStatus } from '../../../shared-kernel/infrastructure/upload/bunnyVideoUpload';
 import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import {
@@ -269,7 +270,7 @@ function extractMedia(raw: Record<string, unknown>, storyId: string): StoryMedia
       readString(raw, 'thumbnail', 'cover_image'),
     );
     if (thumbnail && thumbnail.length > 0) {
-      const isVideo = /\.(mp4|mov|3gp|webm|avi|mkv)$/i.test(thumbnail);
+      const isVideo = /\.(mp4|mov|3gp|webm|avi|mkv|m3u8)$/i.test(thumbnail);
       out.push({
         id: `thumb-fallback-${storyId}`,
         type: isVideo ? 'video' : 'image',
@@ -381,6 +382,55 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
 }
 
 // ── Repository factory ────────────────────────────────────────────────────
+
+/**
+ * Multipart fields for /api/create-story (see the field name caveat in
+ * createStory). With `videoUploadId` the video already sits on Bunny Stream
+ * and only its ticket is sent.
+ */
+function buildCreateStoryPayload(
+  draft: CreateStoryDraft,
+  videoUploadId?: string,
+): Record<string, unknown> {
+  const storyPrivacy = audienceToWire(draft.audience ?? 'followers');
+  const payload: Record<string, unknown> = {
+    // WoWonder API v2 endpoints typically require a `type` field in the body
+    type: 'create_story',
+    file_type: draft.media.fileType,
+    postPrivacy: storyPrivacy,
+    privacy: storyPrivacy,
+    privacy_contract: CONTENT_AUDIENCE_CONTRACT,
+  };
+  if (videoUploadId) {
+    // The video already sits on Bunny Stream; send its ticket instead.
+    payload.bunny_upload_id = videoUploadId;
+  } else {
+    // ⚠ MUST be 'file' to satisfy v2 endpoint's $_FILES['file'] check.
+    payload.file = {
+      uri: draft.media.uri,
+      name: draft.media.name,
+      type: draft.media.type,
+    };
+  }
+
+  // Title / description are optional. PHP enforces length limits
+  // (title ≤ 100, description ≤ 300) so we let it validate rather
+  // than duplicating the check here.
+  if (draft.title) payload.story_title = draft.title;
+  if (draft.description) payload.story_description = draft.description;
+  const storyOverlay = serializeStoryOverlay(draft.overlay);
+  if (storyOverlay) payload.story_overlay = storyOverlay;
+  // create-story.php stores `cover` as a video story's thumbnail; it only
+  // accepts image MIME types there, so default to JPEG.
+  if (draft.media.fileType === 'video' && draft.media.thumbnailUri) {
+    payload.cover = {
+      uri: draft.media.thumbnailUri,
+      name: draft.media.thumbnailName || `story_cover_${Date.now()}.jpg`,
+      type: draft.media.thumbnailType || 'image/jpeg',
+    };
+  }
+  return payload;
+}
 
 export function createStoriesRepository(): StoriesRepository {
   return {
@@ -501,38 +551,7 @@ export function createStoriesRepository(): StoriesRepository {
       // a `file (STREAM FILE) is missing` error because the upload lands
       // in `$_FILES['image']` while line 15 of v2 checks `$_FILES['file']`.
       // The title/description fields silently get dropped.
-      const storyPrivacy = audienceToWire(draft.audience ?? 'followers');
-      const payload: Record<string, unknown> = {
-        // WoWonder API v2 endpoints typically require a `type` field in the body
-        type: 'create_story',
-        file_type: draft.media.fileType,
-        postPrivacy: storyPrivacy,
-        privacy: storyPrivacy,
-        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
-        // ⚠ MUST be 'file' to satisfy v2 endpoint's $_FILES['file'] check.
-        file: {
-          uri: draft.media.uri,
-          name: draft.media.name,
-          type: draft.media.type,
-        },
-      };
-
-      // Title / description are optional. PHP enforces length limits
-      // (title ≤ 100, description ≤ 300) so we let it validate rather
-      // than duplicating the check here.
-      if (draft.title) payload.story_title = draft.title;
-      if (draft.description) payload.story_description = draft.description;
-      const storyOverlay = serializeStoryOverlay(draft.overlay);
-      if (storyOverlay) payload.story_overlay = storyOverlay;
-      // create-story.php stores `cover` as a video story's thumbnail; it only
-      // accepts image MIME types there, so default to JPEG.
-      if (draft.media.fileType === 'video' && draft.media.thumbnailUri) {
-        payload.cover = {
-          uri: draft.media.thumbnailUri,
-          name: draft.media.thumbnailName || `story_cover_${Date.now()}.jpg`,
-          type: draft.media.thumbnailType || 'image/jpeg',
-        };
-      }
+      const payload = buildCreateStoryPayload(draft);
 
       const response = await backendApi.multipart<{
         api_status: number | string;
@@ -565,6 +584,30 @@ export function createStoriesRepository(): StoriesRepository {
             : undefined,
         message: response.message ?? 'Đã đăng tin.',
       };
+    },
+
+    async createStoryWithUploadedVideo(draft, videoUploadId) {
+      const response = await backendApi.multipart<{
+        api_status: number | string;
+        bunny_upload?: unknown;
+        errors?: unknown;
+        message?: string;
+      }>(apiRoutes.stories.create, buildCreateStoryPayload(draft, videoUploadId));
+      const pending =
+        String(response.api_status) === '200'
+          ? readVideoPublishStatus(response.bunny_upload)
+          : null;
+      if (!pending) {
+        throw new Error(
+          String(
+            (Array.isArray(response.errors) && response.errors[0]) ||
+              readErrorText(response.errors) ||
+              response.message ||
+              'Không đăng được tin. Vui lòng thử lại.',
+          ),
+        );
+      }
+      return pending;
     },
 
     async createSharedPostStory(

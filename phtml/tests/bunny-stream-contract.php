@@ -1,5 +1,5 @@
 <?php
-// English description: Verifies Bunny Stream signing, playback links, status mapping, webhook checks and how endpoints attach uploaded chat videos.
+// English description: Verifies Bunny Stream signing, playback links, status mapping, webhook checks, how endpoints attach uploaded chat videos, and how posts, reels and stories wait for their encoded video.
 
 $root = dirname(__DIR__);
 putenv('MEDIA_BASE_URL');
@@ -171,5 +171,84 @@ stream_assert(strpos($sources['group'], "OR `media` LIKE 'bunny-stream://%')") !
 stream_assert(strpos($sources['group'], "AND `media` NOT LIKE 'bunny-stream://%'") !== false, 'Bunny videos are not listed as group files');
 stream_assert(strpos($sources['api_functions'], "if (strpos(\$file, 'bunny-stream://') === 0) {") !== false, 'API message types treat Bunny references as videos');
 stream_assert(strpos($sources['recall'], "getValue(T_MESSAGES, 'COUNT(*)') === 0") !== false, 'recalls keep videos that forwarded copies still show');
+
+// Posts, reels and stories use the public library behind their own switch.
+stream_equals(VNSEEA_BunnyPurposeKind('chat'), 'private', 'chat videos stay in the private library');
+foreach (array('post', 'REEL', ' story ') as $purpose) {
+    stream_equals(VNSEEA_BunnyPurposeKind($purpose), 'public', "{$purpose} videos go to the public library");
+}
+stream_equals(VNSEEA_BunnyPurposeKind('avatar'), '', 'unknown purposes get no ticket');
+stream_assert(!VNSEEA_BunnyStreamUploadsEnabled('public'), 'the chat switch alone does not send post videos to Bunny');
+$GLOBALS['wo']['config']['vnseea_bunny_stream_public_enabled'] = '1';
+$GLOBALS['wo']['config']['vnseea_bunny_stream_enabled'] = '0';
+stream_assert(VNSEEA_BunnyStreamUploadsEnabled('public') && !VNSEEA_BunnyStreamUploadsEnabled('private'), 'the chat and public switches are independent');
+$GLOBALS['wo']['config']['vnseea_bunny_stream_enabled'] = '1';
+stream_assert(VNSEEA_BunnyCreateUploadTicket(1, 'post', 'a.mp4', 1000) === null, 'public tickets need the migrated uploads table');
+stream_assert(VNSEEA_BunnyReservePublishUpload(1, 5, 'chat') === null, 'chat uploads are never reserved for posts');
+stream_equals(VNSEEA_BunnyRunMaintenance(), array('finalized' => 0, 'deleted' => 0), 'upkeep does nothing before the migration');
+stream_equals(VNSEEA_BunnyClientUploadStatus('uploaded'), 'processing', 'uploaded videos are still processing for the app');
+stream_equals(VNSEEA_BunnyClientUploadStatus('ready'), 'ready', 'encoded videos are ready');
+stream_equals(VNSEEA_BunnyClientUploadStatus('deleted'), 'failed', 'deleted videos never play');
+stream_assert(strpos(VNSEEA_BunnyOwnerNoticeText('reel', 'published', 'vi'), 'reel đã được đăng') !== false, 'authors learn their reel is live');
+stream_assert(strpos(VNSEEA_BunnyOwnerNoticeText('post', 'review', 'vi'), 'chờ duyệt') !== false, 'authors learn their post waits for review');
+stream_assert(strpos(VNSEEA_BunnyOwnerNoticeText('story', 'failed', 'english'), 'story was not published') !== false, 'English authors read English notices');
+
+// Bunny blocks requests without a Referer when "Block direct URL file access" is on; the apps send none.
+$requests = array();
+$GLOBALS['vnseea_bunny_http'] = function ($method, $url, $headers, $body) use (&$requests, $guid) {
+    $requests[] = $method . ' ' . $url;
+    if (strpos($url, 'video.bunnycdn.com/library/') !== false) {
+        return array('status' => 200, 'body' => json_encode(array('items' => array(array('guid' => $guid, 'status' => 4)))));
+    }
+    foreach ($headers as $header) {
+        if (stripos($header, 'Referer:') === 0) {
+            return array('status' => 200, 'body' => '#EXTM3U');
+        }
+    }
+    return array('status' => 403, 'body' => '');
+};
+$results = VNSEEA_BunnyStreamSelfTest();
+stream_equals(count($results), 4, 'both libraries report the API and playback checks');
+stream_assert(in_array('GET https://vz-public.b-cdn.net/' . $guid . '/playlist.m3u8', $requests, true), 'the public library is probed like the apps request it');
+stream_assert(!$results[1]['ok'] && strpos($results[1]['message'], 'Block direct URL file access') !== false, 'public referrer blocking is named');
+stream_assert(!$results[3]['ok'] && strpos($results[3]['message'], 'Block direct URL file access') !== false, 'chat referrer blocking is not blamed on the token key');
+unset($GLOBALS['vnseea_bunny_http']);
+
+// Without the file on this server, posts take their display size from Bunny.
+require_once $root . '/assets/includes/vnseea_post_media.php';
+$GLOBALS['vnseea_bunny_http'] = function ($method, $url, $headers, $body) use ($guid) {
+    return strpos($url, 'library/123/videos/' . $guid) !== false
+        ? array('status' => 200, 'body' => json_encode(array('guid' => $guid, 'width' => 1080, 'height' => 1920)))
+        : array('status' => 404, 'body' => '');
+};
+stream_equals(
+    VNSEEA_BunnyVideoGeometry(array('library_kind' => 'public', 'video_guid' => $guid)),
+    array('width' => 1080, 'height' => 1920, 'aspect_ratio' => 0.5625),
+    'encoded videos report their display size'
+);
+stream_assert(VNSEEA_BunnyVideoGeometry(array('library_kind' => 'public', 'video_guid' => 'missing')) === null, 'unknown videos have no size');
+unset($GLOBALS['vnseea_bunny_http']);
+
+$publish_sources = array(
+    'new_post' => file_get_contents($root . '/api/v2/endpoints/new_post.php'),
+    'story' => file_get_contents($root . '/api/v2/endpoints/create-story.php'),
+    'status' => file_get_contents($root . '/api/v2/endpoints/media-upload-status.php'),
+    'worker' => file_get_contents($root . '/workers/push-delivery-worker.php'),
+    'functions_three' => file_get_contents($root . '/assets/includes/functions_three.php'),
+    'migration' => file_get_contents($root . '/database/migrations/20261003_bunny_stream_publish_uploads.sql'),
+);
+stream_assert(strpos($publish_sources['new_post'], 'VNSEEA_BunnyReservePublishUpload(') !== false, 'posts and reels take their Bunny upload atomically');
+stream_assert(strpos($publish_sources['new_post'], "'post_data' => \$post_data,") !== false, 'posts are held back with everything Wo_RegisterPost needs');
+stream_assert(strpos($publish_sources['new_post'], "VNSEEA_BunnyReleaseReservation(\$bunny_upload['id']);") !== false, 'failed posts free their upload for a retry');
+stream_assert(strpos($publish_sources['new_post'], "strpos(\$mediaFilename, 'bunny-stream://') !== 0") !== false, 'failed posts never unlink a Bunny reference');
+stream_assert(strpos($publish_sources['story'], "VNSEEA_BunnyReservePublishUpload(\$wo['user']['id'], \$bunny_story_upload_id, 'story')") !== false, 'stories take their Bunny upload atomically');
+stream_assert(strpos($publish_sources['story'], "'mention_user_ids' => array_values(\$bunny_mentions)") !== false, 'story mentions wait for the story');
+stream_assert(strpos($publish_sources['status'], "(int) \$row['user_id'] !== (int) \$wo['user']['user_id']") !== false, 'only the uploader reads an upload status');
+stream_assert(strpos($publish_sources['worker'], 'VNSEEA_BunnyReloadConfig();') !== false && strpos($publish_sources['worker'], 'VNSEEA_BunnyRunMaintenance(10);') !== false, 'the push worker runs Bunny upkeep with fresh, decrypted settings');
+stream_assert(strpos($sources['functions'], "VNSEEA_BunnyReleaseVideo(\$fetched_data['postFile'], array('post_id' => (int) \$fetched_data['id']));") !== false, 'deleting a post removes its Bunny video');
+stream_assert(strpos($sources['functions'], "\$story['postFile'] = \$story['postFile_full'];") !== false, 'post data hands clients the playlist, never the Bunny reference');
+stream_assert(strpos($publish_sources['functions_three'], "VNSEEA_BunnyReleaseVideo(\$path, array('story_id' => (int) \$id));") !== false, 'deleting a story removes its Bunny video');
+stream_assert(strpos($publish_sources['migration'], 'ADD COLUMN IF NOT EXISTS `publish_state`') !== false, 'the migration adds the publish state');
+stream_assert(strpos($sources['settings'], "'story' => \$bunny_public_video_upload,") !== false, 'clients learn where post, reel and story videos go');
 
 fwrite(STDOUT, "bunny stream contract: ok\n");

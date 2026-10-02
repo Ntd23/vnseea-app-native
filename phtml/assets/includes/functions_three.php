@@ -5704,6 +5704,10 @@ function Wo_DeleteStatus($id)
 	}
 	if (count($data) > 0) {
 		foreach ($data as $key => $path) {
+			if (strpos((string) $path, 'bunny-stream://') === 0) {
+				VNSEEA_BunnyReleaseVideo($path, array('story_id' => (int) $id));
+				continue;
+			}
 			$explode2 = @end(explode('.', $path));
 			$explode3 = @explode('.', $path);
 			$media_2  = $explode3[0] . '_small.' . $explode2;

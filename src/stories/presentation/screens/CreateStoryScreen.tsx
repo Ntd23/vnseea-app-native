@@ -46,6 +46,7 @@ import { useCreateStoryViewModel } from '../../application/view-models/useCreate
 import { storyCreatedEvents } from '../../application/events/storyCreatedEvents';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
+  CreateStoryDraft,
   StoryMediaUpload,
   StoryItem,
 } from '../../domain/types/stories.types';
@@ -176,6 +177,50 @@ function ScaleButton({
   );
 }
 
+/**
+ * Builds an optimistic `StoryItem` so the home rail can prepend without
+ * waiting for a refetch. We DON'T have the canonical server response shape —
+ * just an id — so we synthesise from the cached profile + the local draft. The
+ * next reload will overwrite this with the authoritative version.
+ */
+function emitOptimisticStory(
+  storyId: string,
+  draft: Pick<CreateStoryDraft, 'media' | 'title' | 'description' | 'overlay'>,
+) {
+  const profile = sessionStorage.getUserProfile();
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  if (!sessionUserId) return;
+  const optimistic: StoryItem = {
+    id: storyId,
+    publisher: {
+      userId: sessionUserId,
+      username: profile?.username ?? '',
+      name: profile?.name ?? 'Bạn',
+      avatarUrl: profile?.avatarUrl,
+      isVerified: false,
+    },
+    title: draft.title,
+    description: draft.description,
+    postedAt: Math.floor(Date.now() / 1000), // CRITICAL: Always use current timestamp
+    expiresAt: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
+    thumbnailUrl: draft.media.uri, // local URI — replaced on next fetch
+    media: [
+      {
+        id: `local-${Date.now()}`,
+        type: draft.media.fileType,
+        url: draft.media.uri,
+        overlay: draft.overlay,
+      },
+    ],
+    isOwner: true,
+    isViewed: false,
+    hasUnseen: true,
+    myReaction: null,
+    reactionCount: 0,
+  };
+  storyCreatedEvents.emit(optimistic);
+}
+
 function CreateStoryScreen() {
   const navigation = useNavigation<Nav>();
   const language = useAppLanguage();
@@ -183,45 +228,17 @@ function CreateStoryScreen() {
 
   const vm = useCreateStoryViewModel({
     onCreated: result => {
-      // Build an optimistic `StoryItem` so the home rail can prepend
-      // without waiting for a refetch. We DON'T have the canonical
-      // server response shape — just an id + message — so we synthesise
-      // from the cached profile + the local draft. The next reload will
-      // overwrite this with the authoritative version.
-      const profile = sessionStorage.getUserProfile();
-      const sessionUserId = sessionStorage.getSession()?.userId;
-      if (vm.media && result.storyId && sessionUserId) {
-        const optimistic: StoryItem = {
-          id: result.storyId,
-          publisher: {
-            userId: sessionUserId,
-            username: profile?.username ?? '',
-            name: profile?.name ?? 'Bạn',
-            avatarUrl: profile?.avatarUrl,
-            isVerified: false,
-          },
+      if (vm.media && result.storyId) {
+        emitOptimisticStory(result.storyId, {
+          media: vm.media,
           title: vm.title.trim() || undefined,
           description: vm.description.trim() || undefined,
-          postedAt: Math.floor(Date.now() / 1000), // CRITICAL: Always use current timestamp
-          expiresAt: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
-          thumbnailUrl: vm.media.uri, // local URI — replaced on next fetch
-          media: [
-            {
-              id: `local-${Date.now()}`,
-              type: vm.media.fileType,
-              url: vm.media.uri,
-              overlay: vm.overlay,
-            },
-          ],
-          isOwner: true,
-          isViewed: false,
-          hasUnseen: true,
-          myReaction: null,
-          reactionCount: 0,
-        };
-        storyCreatedEvents.emit(optimistic);
+          overlay: vm.overlay,
+        });
       }
     },
+    // A video story on Bunny Stream only exists once its video is encoded.
+    onPublishedInBackground: (storyId, draft) => emitOptimisticStory(storyId, draft),
   });
 
   // Animation for mounting empty state layout elements

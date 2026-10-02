@@ -2545,6 +2545,17 @@ export function CreatePostModal({
       onCreated?.();
       onClose();
     },
+    // Video posts on Bunny Stream finish uploading in the background; the
+    // feed shows their progress and receives the post once it is encoded.
+    onQueued: () => {
+      onCreated?.();
+      onClose();
+    },
+    onPublishedInBackground: post => {
+      if (!targetGroupId && !eventId) {
+        postCreatedEvents.emit(post);
+      }
+    },
   });
   const wavRecorder = useWavAudioRecorder();
   const insets = useSafeAreaInsets();

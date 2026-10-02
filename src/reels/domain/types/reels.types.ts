@@ -178,6 +178,12 @@ export interface ReelDraft {
   videoType: string;
   /** Original filename */
   videoName: string;
+  /**
+   * Display size reported by the picker. The server needs it to lay the reel
+   * out in feeds when it cannot measure the file itself (Bunny Stream uploads).
+   */
+  videoWidth?: number;
+  videoHeight?: number;
   /** Local URI of thumbnail image (optional) */
   thumbnailUri?: string;
   /** Caption / post text */

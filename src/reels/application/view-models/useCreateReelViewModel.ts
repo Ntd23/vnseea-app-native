@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { createVideoPublishJob } from '../../../shared-kernel/application/services/videoPublishJob';
+import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
+import { getVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
 import type {
   ReelCaptionSuggestion,
@@ -17,12 +20,14 @@ const VM_COPY = {
     timeoutError: 'Tải video quá lâu. Vui lòng kiểm tra kết nối hoặc chọn video nhẹ hơn rồi thử lại.',
     networkError: 'Không kết nối được máy chủ. Vui lòng kiểm tra Wi-Fi/4G rồi thử lại.',
     unknownError: 'Đã xảy ra lỗi không xác định.',
+    backgroundUpload: 'Đang đăng reel. Reel sẽ hiện khi video xử lý xong.',
   },
   en: {
     selectVideoError: 'Please choose or record a video before publishing.',
     timeoutError: 'Video upload took too long. Please check your connection or choose a lighter video and try again.',
     networkError: 'Cannot connect to the server. Please check your Wi-Fi/4G and try again.',
     unknownError: 'An unknown error occurred.',
+    backgroundUpload: 'Posting your reel. It will appear once the video is processed.',
   },
 };
 
@@ -77,7 +82,13 @@ function serializeCaptionForBackend(
   );
 }
 
-export function useCreateReelViewModel() {
+export type UseCreateReelOptions = {
+  /** Called once a reel uploaded in the background is encoded and visible. */
+  onPublishedInBackground?: (postId: string) => void;
+};
+
+export function useCreateReelViewModel(options: UseCreateReelOptions = {}) {
+  const { onPublishedInBackground } = options;
   const language = useAppLanguage();
   const vmCopy = VM_COPY[language];
 
@@ -97,8 +108,20 @@ export function useCreateReelViewModel() {
   >([]);
 
   const setVideo = useCallback(
-    (videoUri: string, videoType: string, videoName: string) => {
-      setDraftState(prev => ({ ...prev, videoUri, videoType, videoName }));
+    (
+      videoUri: string,
+      videoType: string,
+      videoName: string,
+      size?: { width?: number; height?: number },
+    ) => {
+      setDraftState(prev => ({
+        ...prev,
+        videoUri,
+        videoType,
+        videoName,
+        videoWidth: size?.width,
+        videoHeight: size?.height,
+      }));
       setUploadState({ phase: 'idle' });
     },
     [],
@@ -210,6 +233,42 @@ export function useCreateReelViewModel() {
           captionMentionReplacements,
         ),
       } as ReelDraft;
+      const policy = await getVideoUploadPolicy('reel');
+      if (policy.provider === 'bunny_stream') {
+        // Uploads in the background; the reel appears once Bunny encodes it.
+        videoPublishQueue.enqueue(
+          createVideoPublishJob({
+            purpose: 'reel',
+            video: { uri: apiDraft.videoUri, name: apiDraft.videoName, type: apiDraft.videoType },
+            thumbnailUri: apiDraft.thumbnailUri,
+            policy,
+            createFromUpload: (video, uploadId) =>
+              repository.createReelWithUploadedVideo(
+                { ...apiDraft, videoUri: video.uri, videoName: video.name, videoType: video.type },
+                uploadId,
+              ),
+            createDirectly: async video => {
+              const result = await repository.createReel({
+                ...apiDraft,
+                videoUri: video.uri,
+                videoName: video.name,
+                videoType: video.type,
+              });
+              return result.status === 'created'
+                ? { postId: result.postId, needsReview: false }
+                : { needsReview: result.status === 'review' };
+            },
+            onPublished: ({ postId, needsReview }) => {
+              if (postId && !needsReview) onPublishedInBackground?.(postId);
+            },
+          }),
+        );
+        setUploadState({
+          phase: 'success',
+          result: { status: 'processing', message: vmCopy.backgroundUpload },
+        });
+        return;
+      }
       const result = await repository.createReel(apiDraft);
       setUploadState({ phase: 'success', result });
     } catch (caughtError) {
@@ -229,7 +288,7 @@ export function useCreateReelViewModel() {
 
       setUploadState({ phase: 'error', message: friendlyMessage });
     }
-  }, [captionMentionReplacements, draft, vmCopy]);
+  }, [captionMentionReplacements, draft, onPublishedInBackground, vmCopy]);
 
   return {
     draft,
