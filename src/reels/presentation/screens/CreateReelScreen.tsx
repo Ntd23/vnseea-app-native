@@ -494,7 +494,8 @@ export default function CreateReelScreen() {
           if (!thumbnail || selectedVideoUriRef.current !== videoUri) {
             return;
           }
-          vm.setThumbnail(thumbnail.uri);
+          // The frame is rendered upright, unlike the picker's size.
+          vm.setThumbnail(thumbnail.uri, thumbnail);
         })
         .catch(() => undefined);
       setPaused(false);

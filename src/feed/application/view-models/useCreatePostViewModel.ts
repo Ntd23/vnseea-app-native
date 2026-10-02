@@ -38,6 +38,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { createVideoPublishJob } from '../../../shared-kernel/application/services/videoPublishJob';
 import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
+import { orientVideoSize } from '../../../shared-kernel/application/utils/videoDisplaySize';
 import { getVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 
 const repository = createFeedRepository();
@@ -153,6 +154,7 @@ async function ensureDraftVideoThumbnail(
     ...draft,
     video: {
       ...video,
+      ...orientVideoSize(video, thumbnail),
       thumbnailUri: thumbnail.uri,
       thumbnailName: thumbnail.name,
       thumbnailType: thumbnail.type,

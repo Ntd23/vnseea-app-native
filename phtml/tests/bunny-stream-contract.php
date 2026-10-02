@@ -214,19 +214,30 @@ stream_assert(!$results[1]['ok'] && strpos($results[1]['message'], 'Block direct
 stream_assert(!$results[3]['ok'] && strpos($results[3]['message'], 'Block direct URL file access') !== false, 'chat referrer blocking is not blamed on the token key');
 unset($GLOBALS['vnseea_bunny_http']);
 
-// Without the file on this server, posts take their display size from Bunny.
+// Without the file on this server, posts take their upright display size from what Bunny encoded.
 require_once $root . '/assets/includes/vnseea_post_media.php';
-$GLOBALS['vnseea_bunny_http'] = function ($method, $url, $headers, $body) use ($guid) {
+$playlist_ok = true;
+$GLOBALS['vnseea_bunny_http'] = function ($method, $url, $headers, $body) use ($guid, &$playlist_ok) {
+    if ($url === 'https://vz-public.b-cdn.net/' . $guid . '/playlist.m3u8') {
+        return $playlist_ok
+            ? array('status' => 200, 'body' => "#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=360x640\n360p/video.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=1080x1920\n1080p/video.m3u8\n")
+            : array('status' => 404, 'body' => '');
+    }
     return strpos($url, 'library/123/videos/' . $guid) !== false
-        ? array('status' => 200, 'body' => json_encode(array('guid' => $guid, 'width' => 1080, 'height' => 1920)))
+        ? array('status' => 200, 'body' => json_encode(array('guid' => $guid, 'width' => 1920, 'height' => 1080)))
         : array('status' => 404, 'body' => '');
 };
 stream_equals(
     VNSEEA_BunnyVideoGeometry(array('library_kind' => 'public', 'video_guid' => $guid)),
     array('width' => 1080, 'height' => 1920, 'aspect_ratio' => 0.5625),
-    'encoded videos report their display size'
+    'portrait recordings read upright from the largest encoded rendition'
 );
-stream_assert(VNSEEA_BunnyVideoGeometry(array('library_kind' => 'public', 'video_guid' => 'missing')) === null, 'unknown videos have no size');
+$playlist_ok = false;
+stream_equals(
+    VNSEEA_BunnyVideoGeometry(array('library_kind' => 'public', 'video_guid' => $guid))['width'],
+    1920,
+    'the video API is the fallback when the playlist cannot be read'
+);
 unset($GLOBALS['vnseea_bunny_http']);
 
 $publish_sources = array(

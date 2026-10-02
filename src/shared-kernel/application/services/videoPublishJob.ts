@@ -37,10 +37,16 @@ export function createVideoPublishJob<T extends VideoProcessingAttachment>(
       progress.setPhase('preparing');
       // Compressing an hour-long video on a phone takes far longer than
       // uploading the original, which Bunny encodes itself.
-      const video =
-        (options.video.duration ?? 0) > options.policy.compressMaxSeconds
-          ? options.video
-          : await prepareVideoForUpload(options.video, {
+      const keepOriginal = (options.video.duration ?? 0) > options.policy.compressMaxSeconds;
+      if (__DEV__ && keepOriginal) {
+        console.log('[video-processing] kept original', {
+          purpose: options.purpose,
+          durationSeconds: options.video.duration,
+        });
+      }
+      const video = keepOriginal
+        ? options.video
+        : await prepareVideoForUpload(options.video, {
               maxDimension: PUBLIC_VIDEO_MAX_DIMENSION,
               onProgress: value => progress.setProgress(value),
             });

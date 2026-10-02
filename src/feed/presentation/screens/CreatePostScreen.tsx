@@ -75,6 +75,7 @@ import {
   formatAudioDuration,
 } from '../../../shared-kernel/application/utils/audioFiles';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
+import { orientVideoSize } from '../../../shared-kernel/application/utils/videoDisplaySize';
 import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
@@ -2751,6 +2752,7 @@ export function CreatePostModal({
         const thumbnail = await createVideoUploadThumbnail(attachment.uri);
         vmRef.current.setVideo({
           ...attachment,
+          ...orientVideoSize(attachment, thumbnail),
           thumbnailUri: thumbnail?.uri,
           thumbnailName: thumbnail?.name,
           thumbnailType: thumbnail?.type,

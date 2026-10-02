@@ -118,6 +118,12 @@ export function startChatMediaPreparation(
         policy.provider === 'bunny_stream' &&
         (attachment.duration ?? 0) > policy.compressMaxSeconds
       ) {
+        if (__DEV__) {
+          console.log('[video-processing] kept original', {
+            purpose: 'chat',
+            durationSeconds: attachment.duration,
+          });
+        }
         return attachment;
       }
       return prepareVideoForUpload(attachment, {

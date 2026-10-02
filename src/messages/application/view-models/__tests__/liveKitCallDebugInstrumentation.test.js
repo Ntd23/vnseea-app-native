@@ -177,7 +177,7 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(source).toContain('publication.setSubscribed(true)');
     expect(source).toContain('autoSubscribe: false');
     expect(connectBlock.indexOf('.on(RoomEvent.Connected')).toBeLessThan(
-      connectBlock.indexOf('await nextRoom.connect'),
+      connectBlock.indexOf('await connectRoomWithRetry'),
     );
   });
 
@@ -204,7 +204,7 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(source).toContain('function shouldUseIosDirectCallAudioGate');
     expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
     expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
-    expect(connectBlock).toContain('await nextRoom.connect(');
+    expect(connectBlock).toContain('await connectRoomWithRetry(');
     expect(connectBlock).toContain('nextPayload.wsUrl,');
     expect(connectBlock).toContain('nextPayload.token,');
     expect(connectBlock).toContain('LIVEKIT_CONNECT_OPTIONS,');

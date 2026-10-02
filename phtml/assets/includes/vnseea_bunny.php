@@ -815,11 +815,32 @@ if (!function_exists('VNSEEA_BunnySafely')) {
 }
 
 if (!function_exists('VNSEEA_BunnyVideoGeometry')) {
-    /** Display width and height Bunny measured for an encoded video, or null. */
+    /**
+     * Upright display size of an encoded video, or null. The playlist lists
+     * the renditions Bunny produced after applying the rotation flag, so a
+     * portrait phone recording reads 1080x1920 there even though the file and
+     * the iOS picker report 1920x1080.
+     */
     function VNSEEA_BunnyVideoGeometry($row)
     {
+        if (!function_exists('VNSEEA_NormalizeMediaGeometry')) {
+            return null;
+        }
+        $reference = VNSEEA_BunnyMediaRef((string) $row['library_kind'], (string) $row['video_guid']);
+        $playlist = VNSEEA_BunnyHttpRequest('GET', VNSEEA_BunnyPlaybackUrl($reference), array(), null, 5);
+        if ((int) $playlist['status'] === 200 &&
+            preg_match_all('/RESOLUTION=([0-9]+)x([0-9]+)/', (string) $playlist['body'], $renditions, PREG_SET_ORDER)
+        ) {
+            $largest = null;
+            foreach ($renditions as $rendition) {
+                if ($largest === null || (int) $rendition[1] * (int) $rendition[2] > (int) $largest[1] * (int) $largest[2]) {
+                    $largest = $rendition;
+                }
+            }
+            return VNSEEA_NormalizeMediaGeometry($largest[1], $largest[2]);
+        }
         $video = VNSEEA_BunnyApiRequest((string) $row['library_kind'], 'GET', '/videos/' . rawurlencode((string) $row['video_guid']), null, 5);
-        if ($video['status'] !== 200 || !is_array($video['data']) || !function_exists('VNSEEA_NormalizeMediaGeometry')) {
+        if ($video['status'] !== 200 || !is_array($video['data'])) {
             return null;
         }
         return VNSEEA_NormalizeMediaGeometry(
@@ -853,11 +874,10 @@ if (!function_exists('VNSEEA_BunnyPublishPost')) {
                 // The stored values were escaped by new_post.php, as Wo_RegisterPost expects.
                 $post_data['postFile'] = VNSEEA_BunnyMediaRef('public', $row['video_guid']);
                 $post_data['time'] = time();
-                if ((empty($post_data['media_width']) || empty($post_data['media_height'])) &&
-                    function_exists('VNSEEA_PostMediaGeometryColumnsAvailable') && VNSEEA_PostMediaGeometryColumnsAvailable()
-                ) {
-                    // The file never reached this server, so ffprobe cannot size it;
-                    // Bunny measured it while encoding. Feeds lay videos out by it.
+                if (function_exists('VNSEEA_PostMediaGeometryColumnsAvailable') && VNSEEA_PostMediaGeometryColumnsAvailable()) {
+                    // The file never reached this server, so ffprobe cannot size it,
+                    // and the size the app sent may ignore the rotation flag. Feeds
+                    // lay videos out by what Bunny actually encoded.
                     $geometry = VNSEEA_BunnyVideoGeometry($row);
                     if ($geometry) {
                         $post_data['media_width'] = $geometry['width'];

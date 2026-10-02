@@ -72,6 +72,7 @@ function clampProgress(value: number) {
 export function createVideoPublishQueue(deps: VideoPublishQueueDeps) {
   let tasks: VideoPublishTask[] = [];
   const jobs = new Map<string, VideoPublishJob>();
+  const enqueuedAt = new Map<string, number>();
   const listeners = new Set<() => void>();
   let sequence = 0;
 
@@ -95,11 +96,20 @@ export function createVideoPublishQueue(deps: VideoPublishQueueDeps) {
     if (!isActive(id)) return;
     tasks = tasks.filter(task => task.id !== id);
     jobs.delete(id);
+    enqueuedAt.delete(id);
     notify();
   };
 
   async function finish(id: string, job: VideoPublishJob, result: VideoPublishResult) {
     update(id, { phase: result.needsReview ? 'review' : 'published', progress: 1 });
+    if (__DEV__) {
+      console.log('[video-publish] published', {
+        purpose: job.purpose,
+        postId: result.postId,
+        storyId: result.storyId,
+        secondsSincePost: (deps.now() - (enqueuedAt.get(id) ?? deps.now())) / 1000,
+      });
+    }
     try {
       await job.onPublished?.(result);
     } catch (caught) {
@@ -166,6 +176,7 @@ export function createVideoPublishQueue(deps: VideoPublishQueueDeps) {
       sequence += 1;
       const id = `video-publish-${sequence}-${deps.now()}`;
       jobs.set(id, job);
+      enqueuedAt.set(id, deps.now());
       tasks = [
         ...tasks,
         { id, purpose: job.purpose, phase: 'preparing', progress: 0, thumbnailUri: job.thumbnailUri },

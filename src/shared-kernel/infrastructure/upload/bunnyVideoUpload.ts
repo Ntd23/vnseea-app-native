@@ -60,6 +60,7 @@ export async function uploadVideoWithTicket(
     return null;
   }
 
+  const startedAt = Date.now();
   await uploadToBunnyStream(
     file,
     {
@@ -71,6 +72,14 @@ export async function uploadVideoWithTicket(
     },
     { onProgress },
   );
+  if (__DEV__) {
+    console.log('[video-upload] uploaded', {
+      purpose,
+      uploadId: String(ticket.upload_id),
+      megabytes: Math.round((fileSize / 1048576) * 10) / 10,
+      seconds: (Date.now() - startedAt) / 1000,
+    });
+  }
   return String(ticket.upload_id);
 }
 

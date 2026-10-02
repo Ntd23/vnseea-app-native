@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { orientVideoSize } from '../../../shared-kernel/application/utils/videoDisplaySize';
 import { createVideoPublishJob } from '../../../shared-kernel/application/services/videoPublishJob';
 import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
 import { getVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
@@ -127,9 +128,23 @@ export function useCreateReelViewModel(options: UseCreateReelOptions = {}) {
     [],
   );
 
-  const setThumbnail = useCallback((thumbnailUri: string) => {
-    setDraftState(prev => ({ ...prev, thumbnailUri }));
-  }, []);
+  const setThumbnail = useCallback(
+    (thumbnailUri: string, frame?: { width?: number; height?: number }) => {
+      setDraftState(prev => {
+        const size = orientVideoSize(
+          { width: prev.videoWidth, height: prev.videoHeight },
+          frame,
+        );
+        return {
+          ...prev,
+          thumbnailUri,
+          videoWidth: size.width,
+          videoHeight: size.height,
+        };
+      });
+    },
+    [],
+  );
 
   const setCaption = useCallback((caption: string) => {
     setDraftState(prev => ({ ...prev, caption }));
