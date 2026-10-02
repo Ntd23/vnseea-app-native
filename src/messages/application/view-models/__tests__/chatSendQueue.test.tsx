@@ -7,7 +7,11 @@ import type {
   SendMessageOptions,
 } from '../../../domain/types/messages.types';
 import type { ChatMediaPreparationHandle } from '../../media/chatMediaPreparation';
-import { compareMessageIds, useChatViewModel } from '../useChatViewModel';
+import {
+  compareMessageIds,
+  OUTGOING_ORDER_WAIT_MS,
+  useChatViewModel,
+} from '../useChatViewModel';
 
 jest.mock('../../../infrastructure/repositories/ApiMessagesRepository', () => {
   const repository = {
@@ -277,6 +281,108 @@ describe('useChatViewModel send queue', () => {
     expect(failed[0]?.media).toBe('file:///picked-1.jpg');
     expect(failed[0]?.sendProgress).toBeUndefined();
     expect(get().messages.map(message => message.id)).toContain('301');
+    await act(async () => renderer.unmount());
+  });
+});
+
+describe('useChatViewModel send order', () => {
+  const slowVideo: MessageAttachment = {
+    uri: 'file:///long.mov',
+    name: 'long.mov',
+    type: 'video/quicktime',
+    mediaType: 'video',
+  };
+
+  function preparing(result: Promise<MessageAttachment>): ChatMediaPreparationHandle {
+    return { result, getProgress: () => 0, subscribeProgress: () => () => undefined };
+  }
+
+  async function settle() {
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+  }
+
+  const sentTexts = () =>
+    mockRepository.sendMessage.mock.calls.map(([, text, attachment]) => attachment?.uri ?? text);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    mockRepository.sendMessage.mockReset();
+    mockRepository.sendMessage.mockImplementation(async (_chat, text: string) => ({
+      sentMessages: [{ ...serverMessage(`s-${text || 'media'}`, ''), message: text }],
+    }));
+    mockRepository.getMessages.mockResolvedValue([]);
+    mockRepository.markAsSeen.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('stops holding up later messages behind a video that keeps uploading', async () => {
+    const upload = deferred<MessageAttachment>();
+    const { get, renderer } = await renderViewModel();
+
+    await act(async () => {
+      get().sendMessageBatch([{ text: '', attachment: slowVideo, preparation: preparing(upload.promise) }]);
+      get().sendMessage('Gửi sau video');
+      await settle();
+    });
+    expect(mockRepository.sendMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      jest.advanceTimersByTime(OUTGOING_ORDER_WAIT_MS);
+      await settle();
+    });
+    expect(sentTexts()).toEqual(['Gửi sau video']);
+
+    await act(async () => {
+      upload.resolve({ ...slowVideo, uploadReady: true });
+      await settle();
+    });
+    expect(sentTexts()).toEqual(['Gửi sau video', 'file:///long.mov']);
+    await act(async () => renderer.unmount());
+  });
+
+  it('keeps a message behind media that is only briefly being prepared', async () => {
+    const prepared = deferred<MessageAttachment>();
+    const { get, renderer } = await renderViewModel();
+
+    await act(async () => {
+      get().sendMessageBatch([{ text: '', attachment: photo(1), preparation: preparing(prepared.promise) }]);
+      get().sendMessage('Chú thích');
+      jest.advanceTimersByTime(OUTGOING_ORDER_WAIT_MS / 2);
+      await settle();
+    });
+    expect(mockRepository.sendMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      prepared.resolve({ ...photo(1), uploadReady: true });
+      await settle();
+    });
+    expect(sentTexts()).toEqual(['file:///picked-1.jpg', 'Chú thích']);
+    await act(async () => renderer.unmount());
+  });
+
+  it('keeps the items of one album in order however long one takes', async () => {
+    const upload = deferred<MessageAttachment>();
+    const { get, renderer } = await renderViewModel();
+
+    await act(async () => {
+      get().sendMessageBatch([
+        { text: '', attachment: slowVideo, preparation: preparing(upload.promise), options: { mediaGroupId: 'g' } },
+        { text: '', attachment: photo(2), options: { mediaGroupId: 'g' } },
+      ]);
+      jest.advanceTimersByTime(OUTGOING_ORDER_WAIT_MS * 2);
+      await settle();
+    });
+    expect(mockRepository.sendMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      upload.resolve({ ...slowVideo, uploadReady: true });
+      await settle();
+    });
+    expect(sentTexts()).toEqual(['file:///long.mov', 'file:///picked-2.jpg']);
     await act(async () => renderer.unmount());
   });
 });

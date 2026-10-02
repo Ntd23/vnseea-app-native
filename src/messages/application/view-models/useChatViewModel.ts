@@ -50,8 +50,13 @@ const TYPING_EMIT_THROTTLE_MS = 1200;
 const TYPING_IDLE_DONE_MS = 1800;
 const TYPING_REMOTE_IDLE_MS = 2600;
 const WEB_GROUP_TYPING_STATUS_SYNC_MS = 2000;
+/** How long a message waits for earlier ones that are still being prepared. */
+export const OUTGOING_ORDER_WAIT_MS = 10000;
 const URL_REGEX = /https?:\/\/[^\s)>]+/gi;
 const repository = createMessagesRepository();
+
+const wait = (milliseconds: number) =>
+  new Promise<void>(resolve => setTimeout(resolve, milliseconds));
 
 export interface OutgoingChatMessage {
   text: string;
@@ -325,6 +330,9 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const pendingReactionMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingRecallMessageIdsRef = useRef<Set<string>>(new Set());
   const outgoingQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const lastOutgoingTurnRef = useRef<{ turn: Promise<void>; mediaGroupId?: string }>({
+    turn: Promise.resolve(),
+  });
   const isLoadingRef = useRef(isLoading);
   const isSendingRef = useRef(isSending);
   const isLoadingMoreRef = useRef(isLoadingMore);
@@ -826,27 +834,37 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     [chat, stopTyping],
   );
 
-  const deliverOutgoingMessage = useCallback(
+  const prepareOutgoingAttachment = useCallback(
     async (pending: PendingOutgoingMessage) => {
-      const { tempId, message, options, optimisticMessage } = pending;
+      if (!pending.preparation) return pending.attachment;
       let stopPreparationProgress: (() => void) | undefined;
+      if (pending.attachment?.mediaType === 'video') {
+        const reportPreparation = createProgressReporter(
+          pending.tempId,
+          'preparing',
+        );
+        reportPreparation(pending.preparation.getProgress() ?? 0);
+        stopPreparationProgress =
+          pending.preparation.subscribeProgress(reportPreparation);
+      }
+      try {
+        return await pending.preparation.result;
+      } finally {
+        stopPreparationProgress?.();
+      }
+    },
+    [createProgressReporter],
+  );
+
+  const deliverOutgoingMessage = useCallback(
+    async (
+      pending: PendingOutgoingMessage,
+      prepared: Promise<MessageAttachment | undefined>,
+    ) => {
+      const { tempId, message, options, optimisticMessage } = pending;
 
       try {
-        let attachment = pending.attachment;
-        if (pending.preparation) {
-          if (attachment?.mediaType === 'video') {
-            const reportPreparation = createProgressReporter(
-              tempId,
-              'preparing',
-            );
-            reportPreparation(pending.preparation.getProgress() ?? 0);
-            stopPreparationProgress =
-              pending.preparation.subscribeProgress(reportPreparation);
-          }
-          attachment = await pending.preparation.result;
-          stopPreparationProgress?.();
-          stopPreparationProgress = undefined;
-        }
+        const attachment = await prepared;
 
         const preparedThumbnail = attachment?.thumbnailUri;
         if (preparedThumbnail && preparedThumbnail !== optimisticMessage.thumbnail) {
@@ -908,7 +926,6 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         );
         return false;
       } finally {
-        stopPreparationProgress?.();
         setPendingSendCount(current => Math.max(0, current - 1));
       }
     },
@@ -917,15 +934,32 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
 
   const enqueueOutgoingMessage = useCallback(
     (pending: PendingOutgoingMessage) => {
-      // Deliveries run one at a time so the server stores messages in the
-      // order they were sent, while every bubble is already on screen.
-      const delivery = outgoingQueueRef.current.then(() =>
-        deliverOutgoingMessage(pending),
+      // Every bubble is on screen at once. A message waits for the ones sent
+      // before it to be ready, but only briefly: a video still compressing or
+      // uploading after OUTGOING_ORDER_WAIT_MS no longer holds up what was
+      // sent after it, like WhatsApp. Items of one album always keep their
+      // order, and sends run one at a time so the server stores them in the
+      // order they went out.
+      const prepared = prepareOutgoingAttachment(pending);
+      const previous = lastOutgoingTurnRef.current;
+      const mediaGroupId = pending.options?.mediaGroupId;
+      const earlierTurn =
+        mediaGroupId && previous.mediaGroupId === mediaGroupId
+          ? previous.turn
+          : Promise.race([previous.turn, wait(OUTGOING_ORDER_WAIT_MS)]);
+      let delivery: Promise<boolean> = Promise.resolve(false);
+      const turn = Promise.all([prepared.catch(() => undefined), earlierTurn]).then(
+        () => {
+          delivery = outgoingQueueRef.current.then(() =>
+            deliverOutgoingMessage(pending, prepared),
+          );
+          outgoingQueueRef.current = delivery.catch(() => undefined);
+        },
       );
-      outgoingQueueRef.current = delivery.catch(() => undefined);
-      return delivery;
+      lastOutgoingTurnRef.current = { turn, mediaGroupId };
+      return turn.then(() => delivery);
     },
-    [deliverOutgoingMessage],
+    [deliverOutgoingMessage, prepareOutgoingAttachment],
   );
 
   const sendMessage = useCallback(
