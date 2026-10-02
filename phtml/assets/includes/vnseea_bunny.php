@@ -305,6 +305,18 @@ if (!function_exists('VNSEEA_BunnyPlaybackUrl')) {
     }
 }
 
+if (!function_exists('VNSEEA_BunnyPosterUrl')) {
+    /**
+     * Poster frame Bunny renders for a stored reference, next to the playlist
+     * (signed the same way for chat videos), or '' when it is not a Bunny video.
+     */
+    function VNSEEA_BunnyPosterUrl($media, $now = null)
+    {
+        $playlist = VNSEEA_BunnyPlaybackUrl($media, $now);
+        return $playlist === '' ? '' : substr($playlist, 0, -strlen('playlist.m3u8')) . 'thumbnail.jpg';
+    }
+}
+
 if (!function_exists('VNSEEA_BunnyUploadsTableAvailable')) {
     function VNSEEA_BunnyUploadsTableAvailable()
     {
@@ -850,6 +862,201 @@ if (!function_exists('VNSEEA_BunnyVideoGeometry')) {
     }
 }
 
+if (!function_exists('VNSEEA_BunnyHttpGetMany')) {
+    /**
+     * GET requests sent side by side, keyed like $urls. The test stub in
+     * $GLOBALS['vnseea_bunny_http'] sees them one at a time.
+     */
+    function VNSEEA_BunnyHttpGetMany($urls, $headers = array(), $timeout = 4)
+    {
+        $results = array();
+        if ((isset($GLOBALS['vnseea_bunny_http']) && is_callable($GLOBALS['vnseea_bunny_http'])) || !function_exists('curl_multi_init')) {
+            foreach ($urls as $key => $url) {
+                $results[$key] = VNSEEA_BunnyHttpRequest('GET', $url, $headers, null, $timeout);
+            }
+            return $results;
+        }
+        $multi = curl_multi_init();
+        $handles = array();
+        foreach ($urls as $key => $url) {
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, min(5, (int) $timeout));
+            curl_setopt($ch, CURLOPT_TIMEOUT, (int) $timeout);
+            curl_multi_add_handle($multi, $ch);
+            $handles[$key] = $ch;
+        }
+        do {
+            $state = curl_multi_exec($multi, $running);
+            if ($running) {
+                curl_multi_select($multi, 1.0);
+            }
+        } while ($running && $state === CURLM_OK);
+        foreach ($handles as $key => $ch) {
+            $results[$key] = array(
+                'status' => (int) curl_getinfo($ch, CURLINFO_HTTP_CODE),
+                'body' => (string) curl_multi_getcontent($ch),
+            );
+            curl_multi_remove_handle($multi, $ch);
+            curl_close($ch);
+        }
+        curl_multi_close($multi);
+        return $results;
+    }
+}
+
+if (!function_exists('VNSEEA_BunnyPlaylistEntries')) {
+    /** Absolute URLs of the entries (renditions or segments) an HLS playlist lists. */
+    function VNSEEA_BunnyPlaylistEntries($playlist_url, $body)
+    {
+        $path = strtok((string) $playlist_url, '?');
+        $base = substr($path, 0, strrpos($path, '/') + 1);
+        $entries = array();
+        foreach (preg_split('/\r?\n/', (string) $body) as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] === '#') {
+                continue;
+            }
+            $entries[] = preg_match('~^https?://~i', $line) ? $line : $base . ltrim($line, '/');
+        }
+        return $entries;
+    }
+}
+
+if (!function_exists('VNSEEA_BunnyH264Renditions')) {
+    /**
+     * Renditions of a master playlist that every player decodes: the H.264
+     * ones, which are also the ones just-in-time encoding serves first.
+     * Premium encoding lists VP9, HEVC and AV1 renditions once they are fully
+     * encoded, and players pick those only when they support them. A playlist
+     * that names no H.264 codec counts in full.
+     */
+    function VNSEEA_BunnyH264Renditions($playlist_url, $body)
+    {
+        $all = array();
+        $h264 = array();
+        $codecs = '';
+        foreach (preg_split('/\r?\n/', (string) $body) as $line) {
+            $line = trim($line);
+            if (stripos($line, '#EXT-X-STREAM-INF:') === 0) {
+                $codecs = preg_match('/CODECS="([^"]*)"/i', $line, $matches) ? strtolower($matches[1]) : '';
+                continue;
+            }
+            if ($line === '' || $line[0] === '#') {
+                continue;
+            }
+            $entries = VNSEEA_BunnyPlaylistEntries($playlist_url, $line);
+            $all[] = $entries[0];
+            if (strpos($codecs, 'avc1') !== false) {
+                $h264[] = $entries[0];
+            }
+            $codecs = '';
+        }
+        return !empty($h264) ? $h264 : $all;
+    }
+}
+
+if (!function_exists('VNSEEA_BunnyPlaybackReady')) {
+    /**
+     * True once viewers can start the video: the first segment of every H.264
+     * rendition loads from the CDN. With Premium (just-in-time) encoding Bunny
+     * calls a video ready as soon as its playlists exist, yet its segments can
+     * still answer 404 for half a minute.
+     */
+    function VNSEEA_BunnyPlaybackReady($media, $timeout = 4)
+    {
+        $started = microtime(true);
+        $remaining = function () use ($started, $timeout) {
+            return max(1, (int) ceil($timeout - (microtime(true) - $started)));
+        };
+        $playlist_url = VNSEEA_BunnyPlaybackUrl($media);
+        if ($playlist_url === '') {
+            return false;
+        }
+        $master = VNSEEA_BunnyHttpRequest('GET', $playlist_url, array(), null, $timeout);
+        $renditions = (int) $master['status'] === 200 ? VNSEEA_BunnyH264Renditions($playlist_url, $master['body']) : array();
+        if (empty($renditions)) {
+            return false;
+        }
+        $first_segments = array();
+        foreach (VNSEEA_BunnyHttpGetMany($renditions, array(), $remaining()) as $key => $rendition) {
+            $segments = (int) $rendition['status'] === 200 ? VNSEEA_BunnyPlaylistEntries($renditions[$key], $rendition['body']) : array();
+            if (empty($segments)) {
+                return false;
+            }
+            $first_segments[$key] = $segments[0];
+        }
+        if (microtime(true) - $started >= $timeout) {
+            return false;
+        }
+        // The first kilobyte is enough to know the CDN serves the segment.
+        foreach (VNSEEA_BunnyHttpGetMany($first_segments, array('Range: bytes=0-1023'), $remaining()) as $segment) {
+            if (!in_array((int) $segment['status'], array(200, 206), true)) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+if (!function_exists('VNSEEA_BunnyPlaybackWaitStep')) {
+    /**
+     * Next step for an item waiting for its video to play: 'check' it now,
+     * check again 'later' (at most every few seconds, however often the app
+     * polls), or 'publish' anyway once it has waited $limit seconds, so a CDN
+     * problem never strands a post.
+     */
+    function VNSEEA_BunnyPlaybackWaitStep($waiting_since, $checked_at, $now, $limit = 300, $interval = 3)
+    {
+        if ((int) $waiting_since > 0 && (int) $now - (int) $waiting_since >= (int) $limit) {
+            return 'publish';
+        }
+        if ((int) $checked_at > 0 && (int) $now - (int) $checked_at < (int) $interval) {
+            return 'later';
+        }
+        return 'check';
+    }
+}
+
+if (!function_exists('VNSEEA_BunnyReadyToPublish')) {
+    /**
+     * Whether a held-back post or story whose video Bunny calls ready can go
+     * out now. When its video does not play yet, the wait start and the last
+     * check are kept in the publish payload.
+     */
+    function VNSEEA_BunnyReadyToPublish($row, $now = null)
+    {
+        global $sqlConnect;
+
+        $now = $now === null ? time() : (int) $now;
+        $payload = json_decode((string) $row['publish_payload'], true);
+        $payload = is_array($payload) ? $payload : array();
+        $waiting_since = isset($payload['playback_wait_since']) ? (int) $payload['playback_wait_since'] : 0;
+        $checked_at = isset($payload['playback_checked_at']) ? (int) $payload['playback_checked_at'] : 0;
+        $step = VNSEEA_BunnyPlaybackWaitStep($waiting_since, $checked_at, $now);
+        if ($step === 'publish') {
+            error_log('[vnseea-bunny] publishing_unverified upload_id=' . (int) $row['id'] . ' waited=' . ($now - $waiting_since));
+            return true;
+        }
+        if ($step === 'later') {
+            return false;
+        }
+        if (VNSEEA_BunnyPlaybackReady(VNSEEA_BunnyMediaRef((string) $row['library_kind'], (string) $row['video_guid']))) {
+            return true;
+        }
+        $payload['playback_wait_since'] = $waiting_since > 0 ? $waiting_since : $now;
+        $payload['playback_checked_at'] = time();
+        mysqli_query(
+            $sqlConnect,
+            "UPDATE " . T_VNSEEA_MEDIA_UPLOADS .
+            " SET `publish_payload`='" . mysqli_real_escape_string($sqlConnect, json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) . "'" .
+            " WHERE `id`=" . (int) $row['id'] . " AND `publish_state`='pending'"
+        );
+        return false;
+    }
+}
+
 if (!function_exists('VNSEEA_BunnyPublishPost')) {
     /**
      * Creates the post or reel that new_post.php held back while its video
@@ -1074,6 +1281,11 @@ if (!function_exists('VNSEEA_BunnyFinalizePublish')) {
         }
         $status = (string) $row['status'];
         if (!in_array($status, array('ready', 'failed', 'deleted'), true)) {
+            return $row;
+        }
+        // Bunny calls a just-in-time encoded video ready before its segments
+        // load; hold the item back until people can actually play it.
+        if ($status === 'ready' && !VNSEEA_BunnyReadyToPublish($row)) {
             return $row;
         }
         $working_state = $status === 'ready' ? 'publishing' : 'discarding';

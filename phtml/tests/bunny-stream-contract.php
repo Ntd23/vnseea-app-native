@@ -240,6 +240,59 @@ stream_equals(
 );
 unset($GLOBALS['vnseea_bunny_http']);
 
+// Held-back posts and stories publish only once their video plays: the first
+// segment of every rendition loads (just-in-time encoding lists them earlier).
+$segment_status = 404;
+$requests = array();
+$GLOBALS['vnseea_bunny_http'] = function ($method, $url, $headers, $body) use ($guid, &$segment_status, &$requests) {
+    $requests[] = $url . (in_array('Range: bytes=0-1023', $headers, true) ? ' [range]' : '');
+    $base = 'https://vz-public.b-cdn.net/' . $guid . '/';
+    if ($url === $base . 'playlist.m3u8') {
+        return array('status' => 200, 'body' => "#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=360x640\nvideo/360p/video.m3u8\n#EXT-X-STREAM-INF:RESOLUTION=720x1280\nvideo/720p/video.m3u8\n");
+    }
+    if ($url === $base . 'video/360p/video.m3u8' || $url === $base . 'video/720p/video.m3u8') {
+        return array('status' => 200, 'body' => "#EXTM3U\n#EXTINF:4,\nvideo0.ts\n#EXTINF:4,\nvideo1.ts\n#EXT-X-ENDLIST\n");
+    }
+    if (preg_match('~/video/(360|720)p/video0\.ts$~', $url)) {
+        return array('status' => $segment_status, 'body' => '');
+    }
+    return array('status' => 404, 'body' => '');
+};
+$public_reference = VNSEEA_BunnyMediaRef('public', $guid);
+stream_assert(!VNSEEA_BunnyPlaybackReady($public_reference), 'a video whose segments still answer 404 is not ready to publish');
+$segment_status = 206;
+stream_assert(VNSEEA_BunnyPlaybackReady($public_reference), 'a video whose first segments load is ready to publish');
+stream_assert(in_array('https://vz-public.b-cdn.net/' . $guid . '/video/720p/video0.ts [range]', $requests, true), 'every rendition is checked with a small range request');
+unset($GLOBALS['vnseea_bunny_http']);
+$signed_playlist = VNSEEA_BunnyPlaybackUrl(VNSEEA_BunnyMediaRef('private', $guid), 1790000000);
+stream_equals(
+    VNSEEA_BunnyPlaylistEntries($signed_playlist, "#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=360x640\n360p/video.m3u8\n"),
+    array(substr($signed_playlist, 0, -strlen('playlist.m3u8')) . '360p/video.m3u8'),
+    'renditions of signed chat playlists stay under the token path'
+);
+stream_equals(
+    VNSEEA_BunnyH264Renditions(
+        'https://vz-public.b-cdn.net/' . $guid . '/playlist.m3u8',
+        "#EXTM3U\n#EXT-X-STREAM-INF:CODECS=\"vp09.00.40.08,mp4a.40.2\",RESOLUTION=886x1920\nvp9_1080p/video.m3u8\n" .
+        "#EXT-X-STREAM-INF:CODECS=\"hvc1.1.6.L90.90,mp4a.40.2\",RESOLUTION=394x854\nhevc_480p/video.m3u8\n" .
+        "#EXT-X-STREAM-INF:CODECS=\"avc1.4d401e,mp4a.40.2\",RESOLUTION=360x780\nvideo/360p/video.m3u8\n"
+    ),
+    array('https://vz-public.b-cdn.net/' . $guid . '/video/360p/video.m3u8'),
+    'only the H.264 renditions every player decodes are checked'
+);
+stream_equals(VNSEEA_BunnyPlaybackWaitStep(0, 0, 1000), 'check', 'the first attempt checks playback');
+stream_equals(VNSEEA_BunnyPlaybackWaitStep(1000, 1001, 1002), 'later', 'checks are spaced however often the app polls');
+stream_equals(VNSEEA_BunnyPlaybackWaitStep(1000, 1001, 1005), 'check', 'a later poll checks again');
+stream_equals(VNSEEA_BunnyPlaybackWaitStep(1000, 1290, 1300), 'publish', 'after five minutes the item publishes anyway');
+
+// Story rails show Bunny's poster frame when a video story has no cover.
+stream_equals(
+    VNSEEA_BunnyPosterUrl($public_reference),
+    'https://vz-public.b-cdn.net/' . $guid . '/thumbnail.jpg',
+    'video stories without a cover show the poster Bunny renders'
+);
+stream_assert(VNSEEA_BunnyPosterUrl('upload/videos/a.mp4') === '', 'local videos have no Bunny poster');
+
 $publish_sources = array(
     'new_post' => file_get_contents($root . '/api/v2/endpoints/new_post.php'),
     'story' => file_get_contents($root . '/api/v2/endpoints/create-story.php'),
@@ -261,5 +314,11 @@ stream_assert(strpos($sources['functions'], "\$story['postFile'] = \$story['post
 stream_assert(strpos($publish_sources['functions_three'], "VNSEEA_BunnyReleaseVideo(\$path, array('story_id' => (int) \$id));") !== false, 'deleting a story removes its Bunny video');
 stream_assert(strpos($publish_sources['migration'], 'ADD COLUMN IF NOT EXISTS `publish_state`') !== false, 'the migration adds the publish state');
 stream_assert(strpos($sources['settings'], "'story' => \$bunny_public_video_upload,") !== false, 'clients learn where post, reel and story videos go');
+
+stream_assert(
+    strpos(file_get_contents($root . '/assets/includes/vnseea_bunny.php'), "if (\$status === 'ready' && !VNSEEA_BunnyReadyToPublish(\$row)) {") !== false,
+    'held-back items publish only once their video plays'
+);
+stream_assert(strpos($publish_sources['functions_three'], "VNSEEA_BunnyPosterUrl(\$video['filename'])") !== false, 'story thumbnails fall back to the Bunny poster');
 
 fwrite(STDOUT, "bunny stream contract: ok\n");

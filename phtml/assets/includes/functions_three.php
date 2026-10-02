@@ -5592,6 +5592,14 @@ function Wo_GetStoryThumb($story_id = 0, $thumbnail = '')
 	if ($video_query && mysqli_num_rows($video_query) > 0) {
 		$video = mysqli_fetch_assoc($video_query);
 		if (!empty($video['filename'])) {
+			// Bunny Stream videos are not on this server; Bunny renders their poster frame.
+			$bunny_poster = function_exists('VNSEEA_BunnyPosterUrl') ? VNSEEA_BunnyPosterUrl($video['filename']) : '';
+			if ($bunny_poster !== '') {
+				return array(
+					'type' => 'image',
+					'filename' => $bunny_poster
+				);
+			}
 			if ($wo['config']['ffmpeg_system'] == 'on' && !empty($wo['config']['ffmpeg_binary_file']) && file_exists($video['filename'])) {
 				$ffmpeg_b = $wo['config']['ffmpeg_binary_file'];
 				$dir = "upload/photos/" . date('Y') . '/' . date('m');
