@@ -70,6 +70,7 @@ import {
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
+import { getHlsPlaybackRetryDelay } from '../../../shared-kernel/application/utils/hlsPlaybackRetry';
 import { parseMapShareUrl } from '../../../user/application/utils/mapShare';
 import {
   FeedCardContent,
@@ -2165,6 +2166,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [videoPlayerGeneration, setVideoPlayerGeneration] = useState(0);
   const videoPlayerGenerationRef = useRef(videoPlayerGeneration);
   videoPlayerGenerationRef.current = videoPlayerGeneration;
+  const videoErrorRetryCountRef = useRef(0);
+  const videoErrorRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const videoMetricsPlayerId = useMemo(
     () => `${videoMetricsSurface}:${post.id}:${videoPlayerGeneration}`,
     [post.id, videoMetricsSurface, videoPlayerGeneration],
@@ -2228,6 +2233,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     firstFrameProgressStartRef.current = null;
     videoSurfaceRecoveryCountRef.current = 0;
     videoSurfaceRecoveryInFlightRef.current = false;
+    videoErrorRetryCountRef.current = 0;
+    if (videoErrorRetryTimerRef.current) {
+      clearTimeout(videoErrorRetryTimerRef.current);
+      videoErrorRetryTimerRef.current = null;
+    }
     setSeekTime(savedTime > 0.05 ? savedTime : undefined);
     setManuallyPaused(false);
     setIsReady(false);
@@ -2250,6 +2260,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         frameCoverTimeoutRef.current = null;
       }
       clearVideoQualityRamp();
+      if (videoErrorRetryTimerRef.current) {
+        clearTimeout(videoErrorRetryTimerRef.current);
+        videoErrorRetryTimerRef.current = null;
+      }
       if (hasUserWatchedRef.current) {
         setVideoPlaybackTime(post.id, currentTimeRef.current);
       }
@@ -2321,6 +2335,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     (callbackGeneration: number, data: any) => {
       if (callbackGeneration !== videoPlayerGenerationRef.current) return;
       if (mediaIdentity !== mediaIdentityRef.current) return;
+      videoErrorRetryCountRef.current = 0;
       const clientMeasurement = videoClientLoadMeasurementRef.current;
       if (clientMeasurement.surface) {
         recordClientMediaLoad(
@@ -2773,14 +2788,34 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       hasRenderedFrameRef.current = false;
       firstFrameProgressStartRef.current = null;
       videoSurfaceRecoveryInFlightRef.current = false;
-      setHasVideoError(true);
+      // Bunny playlists can answer 404 for a short while after the post
+      // appears: keep the poster up and remount the player a few times first.
+      const retryDelay = getHlsPlaybackRetryDelay(
+        post.videoUrl,
+        videoErrorRetryCountRef.current,
+      );
+      if (retryDelay === null) {
+        setHasVideoError(true);
+      } else {
+        videoErrorRetryCountRef.current += 1;
+        if (videoErrorRetryTimerRef.current) {
+          clearTimeout(videoErrorRetryTimerRef.current);
+        }
+        videoErrorRetryTimerRef.current = setTimeout(() => {
+          videoErrorRetryTimerRef.current = null;
+          if (mediaIdentity !== mediaIdentityRef.current) return;
+          setVideoPlayerGeneration(generation => generation + 1);
+        }, retryDelay);
+      }
       setIsReady(false);
       setHasRenderedFrame(false);
       setWarmPreviewReady(false);
       frameCoverOpacity.value = 1;
       setFrameCoverVisible(true);
       console.warn(
-        '[HomeVideoPostCard] video error',
+        retryDelay === null
+          ? '[HomeVideoPostCard] video error'
+          : '[HomeVideoPostCard] video error, retrying',
         post.id,
         post.videoUrl,
         error,

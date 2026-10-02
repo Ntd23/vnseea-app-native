@@ -104,6 +104,7 @@ import {
   FEED_REACTION_TYPES,
 } from '../../../feed/presentation/components/FeedReactionAssets';
 import { parseSharedPostIdFromStoryDescription } from './storySharedPostLink';
+import { getHlsPlaybackRetryDelay } from '../../../shared-kernel/application/utils/hlsPlaybackRetry';
 import { SharedPostStorySegment } from '../components/SharedPostStorySegment';
 import { calculateSharedPostStoryAvailableHeight } from '../../application/sharing/sharedPostStoryLayout';
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
@@ -258,6 +259,10 @@ function StoryViewerScreen({ route }: Props) {
   // Set by VideoPlayer's onLoad — null while waiting for metadata so we
   // know NOT to start the progress timer yet for video segments.
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
+  // Remounts the segment's player to retry a Bunny playlist that failed to load.
+  const [videoAttempt, setVideoAttempt] = useState(0);
+  const videoRetryCountRef = useRef(0);
+  const videoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [readySharedPostSegmentKey, setReadySharedPostSegmentKey] = useState<
     string | null
   >(null);
@@ -351,6 +356,12 @@ function StoryViewerScreen({ route }: Props) {
   // for the next video.
   useEffect(() => {
     setVideoDurationMs(null);
+    setVideoAttempt(0);
+    videoRetryCountRef.current = 0;
+    if (videoRetryTimerRef.current) {
+      clearTimeout(videoRetryTimerRef.current);
+      videoRetryTimerRef.current = null;
+    }
     progress.stopAnimation();
     progressFractionRef.current = 0;
     progress.setValue(0);
@@ -358,6 +369,13 @@ function StoryViewerScreen({ route }: Props) {
     setIsReplyComposerOpen(false);
     Keyboard.dismiss();
   }, [progress, segmentPlaybackKey]);
+
+  useEffect(
+    () => () => {
+      if (videoRetryTimerRef.current) clearTimeout(videoRetryTimerRef.current);
+    },
+    [],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -1014,7 +1032,7 @@ function StoryViewerScreen({ route }: Props) {
                 // `key` ensures the player remounts when we move to a new
                 // video segment — otherwise the old VideoPlayer instance
                 // would keep playing the previous URL until React reconciles.
-                key={`vid-${currentStory.id}-${segmentIndex}`}
+                key={`vid-${currentStory.id}-${segmentIndex}-${videoAttempt}`}
                 source={{ uri: currentSegment.url }}
                 style={styles.media}
                 paused={shouldPausePlayback}
@@ -1026,9 +1044,27 @@ function StoryViewerScreen({ route }: Props) {
                   setVideoDurationMs(ms);
                 }}
                 onError={() => {
-                  // If the video fails to load, fall back to the default
-                  // duration and proceed. The user sees a black frame for
-                  // ~15s — worse than ideal but better than getting stuck.
+                  // A Bunny playlist can answer 404 for a short while after
+                  // the story appears: the story timer waits (it starts on
+                  // load) while the player retries a few times.
+                  const retryDelay = getHlsPlaybackRetryDelay(
+                    currentSegment.url,
+                    videoRetryCountRef.current,
+                  );
+                  if (retryDelay !== null) {
+                    videoRetryCountRef.current += 1;
+                    if (videoRetryTimerRef.current) {
+                      clearTimeout(videoRetryTimerRef.current);
+                    }
+                    videoRetryTimerRef.current = setTimeout(() => {
+                      videoRetryTimerRef.current = null;
+                      setVideoAttempt(attempt => attempt + 1);
+                    }, retryDelay);
+                    return;
+                  }
+                  // Otherwise fall back to the default duration and proceed.
+                  // The user sees a black frame for ~15s — worse than ideal
+                  // but better than getting stuck.
                   setVideoDurationMs(VIDEO_FALLBACK_MS);
                 }}
               />

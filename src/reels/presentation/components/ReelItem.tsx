@@ -84,6 +84,7 @@ import {
   updateVideoPlayerRole,
 } from '../../../shared/performance/videoPlaybackMetrics';
 import { iosPagerSwipeLock } from '../../../navigation/iosPagerSwipeLock';
+import { getHlsPlaybackRetryDelay } from '../../../shared-kernel/application/utils/hlsPlaybackRetry';
 import {
   getContainedReelVideoRect,
   getReelVideoNaturalAspectRatio,
@@ -450,19 +451,26 @@ function ReelItemBase({
     setHasRenderedFirstFrame(false);
     setIsBuffering(false);
 
-    if (shouldMount && videoRetryCountRef.current < REEL_VIDEO_RETRY_LIMIT) {
+    // Bunny playlists get a few slower retries: their segments can answer
+    // 404 for a short while after the reel appears.
+    const retryDelay =
+      getHlsPlaybackRetryDelay(item.videoUrl, videoRetryCountRef.current) ??
+      (videoRetryCountRef.current < REEL_VIDEO_RETRY_LIMIT
+        ? REEL_VIDEO_RETRY_DELAY_MS
+        : null);
+    if (shouldMount && retryDelay !== null) {
       videoRetryCountRef.current += 1;
       clearVideoRetry();
       videoRetryTimerRef.current = setTimeout(() => {
         videoRetryTimerRef.current = null;
         setHasError(false);
         setPlayerAttempt(previous => previous + 1);
-      }, REEL_VIDEO_RETRY_DELAY_MS);
+      }, retryDelay);
       return;
     }
 
     setHasError(true);
-  }, [clearVideoRetry, shouldMount, videoMetricsPlayerId]);
+  }, [clearVideoRetry, item.videoUrl, shouldMount, videoMetricsPlayerId]);
 
   const startEndSuppression = useCallback(() => {
     suppressNextEndRef.current = true;
