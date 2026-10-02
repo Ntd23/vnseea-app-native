@@ -1,6 +1,7 @@
 import { prepareImageForUpload } from '../../../../shared-kernel/application/services/imageProcessing';
 import { prepareVideoForUpload } from '../../../../shared-kernel/application/services/videoProcessing';
 import { createVideoUploadThumbnail } from '../../../../shared-kernel/application/utils/videoThumbnails';
+import { uploadVideoWithTicket } from '../../../../shared-kernel/infrastructure/upload/bunnyVideoUpload';
 import { getChatVideoUploadPolicy } from '../../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 import type { MessageAttachment } from '../../../domain/types/messages.types';
 import { createTaskQueue, startChatMediaPreparation } from '../chatMediaPreparation';
@@ -21,11 +22,16 @@ jest.mock(
   '../../../../shared-kernel/infrastructure/upload/videoUploadPolicy',
   () => ({ getChatVideoUploadPolicy: jest.fn() }),
 );
+jest.mock(
+  '../../../../shared-kernel/infrastructure/upload/bunnyVideoUpload',
+  () => ({ uploadVideoWithTicket: jest.fn() }),
+);
 
 const prepareImage = prepareImageForUpload as jest.Mock;
 const prepareVideo = prepareVideoForUpload as jest.Mock;
 const createThumbnail = createVideoUploadThumbnail as jest.Mock;
 const getPolicy = getChatVideoUploadPolicy as jest.Mock;
+const uploadWithTicket = uploadVideoWithTicket as jest.Mock;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -64,6 +70,47 @@ describe('startChatMediaPreparation', () => {
     jest.clearAllMocks();
     createThumbnail.mockResolvedValue(thumbnail);
     getPolicy.mockResolvedValue({ provider: 'local', compressMaxSeconds: 0 });
+    uploadWithTicket.mockResolvedValue(null);
+  });
+
+  it('uploads to Bunny Stream while composing so sending only references the ticket', async () => {
+    getPolicy.mockResolvedValue({ provider: 'bunny_stream', compressMaxSeconds: 180 });
+    const compressedVideo = { ...video, uri: 'file:///small.mp4', type: 'video/mp4' };
+    prepareVideo.mockImplementationOnce(async (_source, options) => {
+      options.onProgress(0.5);
+      return compressedVideo;
+    });
+    uploadWithTicket.mockImplementationOnce(async (_file, _purpose, onProgress) => {
+      onProgress(0.5);
+      return '91';
+    });
+
+    const task = startChatMediaPreparation({ ...video, duration: 20 });
+    const progress: number[] = [];
+    task.subscribeProgress(value => progress.push(value));
+
+    await expect(task.result).resolves.toEqual(
+      expect.objectContaining({ uri: 'file:///small.mp4', bunnyUploadId: '91', uploadReady: true }),
+    );
+    expect(uploadWithTicket).toHaveBeenCalledWith(
+      compressedVideo,
+      'chat',
+      expect.any(Function),
+      expect.any(Object),
+    );
+    // Transcoding fills the first fifth of the bar, the upload the rest.
+    expect(progress.map(value => Math.round(value * 100) / 100)).toEqual([0.1, 0.6, 1]);
+  });
+
+  it('keeps the attachment sendable when the early upload fails', async () => {
+    getPolicy.mockResolvedValue({ provider: 'bunny_stream', compressMaxSeconds: 180 });
+    prepareVideo.mockImplementationOnce(async (source: MessageAttachment) => source);
+    uploadWithTicket.mockRejectedValueOnce(new Error('offline'));
+
+    const ready = await startChatMediaPreparation(video).result;
+
+    expect(ready.bunnyUploadId).toBeUndefined();
+    expect(ready.uploadReady).toBe(true);
   });
 
   it('uploads long videos uncompressed when Bunny Stream encodes them', async () => {
@@ -78,6 +125,26 @@ describe('startChatMediaPreparation', () => {
       uploadReady: true,
     });
     expect(prepareVideo).not.toHaveBeenCalled();
+  });
+
+  it('never holds up short clips behind a long original that is still uploading', async () => {
+    getPolicy.mockResolvedValue({ provider: 'bunny_stream', compressMaxSeconds: 180 });
+    prepareVideo.mockImplementation(async (source: MessageAttachment) => source);
+    const longUpload = deferred<string | null>();
+    uploadWithTicket
+      .mockImplementationOnce(() => longUpload.promise)
+      .mockResolvedValueOnce('31')
+      .mockResolvedValueOnce('32');
+
+    const longTask = startChatMediaPreparation({ ...video, duration: 380 });
+    await flush();
+    const firstClip = startChatMediaPreparation({ ...video, uri: 'file:///clip-1.mov', duration: 20 });
+    const secondClip = startChatMediaPreparation({ ...video, uri: 'file:///clip-2.mov', duration: 10 });
+
+    await expect(firstClip.result).resolves.toEqual(expect.objectContaining({ bunnyUploadId: '31' }));
+    await expect(secondClip.result).resolves.toEqual(expect.objectContaining({ bunnyUploadId: '32' }));
+    longUpload.resolve('30');
+    await expect(longTask.result).resolves.toEqual(expect.objectContaining({ bunnyUploadId: '30' }));
   });
 
   it('still compresses short videos with Bunny Stream and every video without it', async () => {

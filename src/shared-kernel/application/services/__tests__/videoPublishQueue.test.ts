@@ -112,14 +112,15 @@ describe('videoPublishQueue', () => {
   });
 
   it('hands over to the server notification when encoding takes very long', async () => {
-    const { queue, waits } = setup(Array.from({ length: 200 }, () => [status()]));
+    const { queue, waits } = setup(Array.from({ length: 300 }, () => [status()]));
     queue.enqueue(job(async () => ({ kind: 'pending', status: status() })));
-    for (let index = 0; index < 50; index += 1) await flush();
+    for (let index = 0; index < 80; index += 1) await flush();
 
     expect(queue.getTasks()[0]).toEqual(
       expect.objectContaining({ phase: 'processing', waitingInBackground: true }),
     );
-    expect(waits[0]).toBe(5000);
+    expect(waits[0]).toBe(2000);
+    expect(waits).toContain(5000);
     expect(waits).toContain(15000);
     expect(waits).toContain(30000);
   });

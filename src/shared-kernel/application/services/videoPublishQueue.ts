@@ -60,6 +60,8 @@ const MAX_FOLLOW_MS = 45 * 60 * 1000;
 const DONE_VISIBLE_MS = 4000;
 
 function followDelay(elapsedMs: number) {
+  // Short videos usually finish within the first minute: notice it quickly.
+  if (elapsedMs < 60 * 1000) return 2000;
   if (elapsedMs < 2 * 60 * 1000) return 5000;
   if (elapsedMs < 15 * 60 * 1000) return 15000;
   return 30000;

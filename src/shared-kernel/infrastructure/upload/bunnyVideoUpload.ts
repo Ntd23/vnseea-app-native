@@ -30,6 +30,7 @@ export async function uploadVideoWithTicket(
   file: BunnyTusFile,
   purpose: VideoUploadPurpose,
   onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   if (!/^(file:\/\/|\/)/i.test(file.uri)) return null;
   const fileSize = await getLocalFileSize(file.uri);
@@ -70,7 +71,7 @@ export async function uploadVideoWithTicket(
       expires: Number(tus.expires),
       signature: tus.signature,
     },
-    { onProgress },
+    signal ? { onProgress, signal } : { onProgress },
   );
   if (__DEV__) {
     console.log('[video-upload] uploaded', {

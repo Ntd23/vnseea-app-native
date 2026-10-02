@@ -35,7 +35,11 @@ import type {
 import type { GetTaggableUsersInput } from '../../domain/repositories/FeedRepository';
 
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { createVideoPublishJob } from '../../../shared-kernel/application/services/videoPublishJob';
+import {
+  createVideoPublishJob,
+  startVideoPreUpload,
+  type VideoPreUpload,
+} from '../../../shared-kernel/application/services/videoPublishJob';
 import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { orientVideoSize } from '../../../shared-kernel/application/utils/videoDisplaySize';
@@ -50,6 +54,7 @@ const repository = createFeedRepository();
 function enqueueBunnyVideoPost(
   apiDraft: CreatePostDraft & { video: PostVideoAttachment },
   policy: Awaited<ReturnType<typeof getVideoUploadPolicy>>,
+  preUpload: VideoPreUpload<PostVideoAttachment> | null,
   onPublished?: (post: FeedPost) => void,
 ) {
   videoPublishQueue.enqueue(
@@ -58,6 +63,7 @@ function enqueueBunnyVideoPost(
       video: apiDraft.video,
       thumbnailUri: apiDraft.video.thumbnailUri,
       policy,
+      preUpload,
       createFromUpload: (video, uploadId) =>
         repository.createPostWithUploadedVideo({ ...apiDraft, video }, uploadId),
       createDirectly: async video => {
@@ -392,6 +398,22 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
    * WoWonder accepts only one media type per post. Passing `undefined`
    * removes the video (used by the X button on the preview card).
    */
+  // Upload the picked video while the user writes the post.
+  const preUploadRef = useRef<VideoPreUpload<PostVideoAttachment> | null>(null);
+  const pickedVideo = draft.video;
+  useEffect(() => {
+    if (preUploadRef.current?.source.uri === pickedVideo?.uri) return;
+    preUploadRef.current?.cancel();
+    preUploadRef.current = pickedVideo ? startVideoPreUpload(pickedVideo, 'post') : null;
+  }, [pickedVideo]);
+  useEffect(
+    () => () => {
+      preUploadRef.current?.cancel();
+      preUploadRef.current = null;
+    },
+    [],
+  );
+
   const setVideo = useCallback((video: PostVideoAttachment | undefined) => {
     setError(null);
     setDraft(prev => ({
@@ -586,9 +608,13 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       if (apiDraft.video) {
         const policy = await getVideoUploadPolicy('post');
         if (policy.provider === 'bunny_stream') {
+          // The queue takes over the upload started when the video was picked.
+          const preUpload = preUploadRef.current;
+          preUploadRef.current = null;
           enqueueBunnyVideoPost(
             { ...apiDraft, video: apiDraft.video },
             policy,
+            preUpload,
             onPublishedInBackground,
           );
           onQueued?.();

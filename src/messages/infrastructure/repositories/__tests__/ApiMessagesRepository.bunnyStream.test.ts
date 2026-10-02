@@ -158,6 +158,43 @@ describe('ApiMessagesRepository Bunny Stream videos', () => {
     expect(multipart.mock.calls[0]![1]).not.toHaveProperty('bunny_upload_id');
   });
 
+  it('only references a video uploaded while composing', async () => {
+    routeTicket(bunnyTicket);
+
+    await createMessagesRepository().sendMessage('2', '', { ...video, bunnyUploadId: '70' });
+
+    expect(post).not.toHaveBeenCalledWith('media-upload-ticket', expect.anything());
+    expect(tusUpload).not.toHaveBeenCalled();
+    expect(multipart.mock.calls[0]![1]).toEqual(expect.objectContaining({ bunny_upload_id: '70' }));
+  });
+
+  it('uploads again when the ticket from composing can no longer be attached', async () => {
+    routeTicket(bunnyTicket);
+    multipart
+      .mockRejectedValueOnce(new Error('Could not attach the uploaded video'))
+      .mockResolvedValueOnce(sentVideo);
+
+    const result = await createMessagesRepository().sendMessage('2', '', {
+      ...video,
+      bunnyUploadId: '70',
+    });
+
+    expect(tusUpload).toHaveBeenCalledTimes(1);
+    expect(multipart).toHaveBeenCalledTimes(2);
+    expect(multipart.mock.calls[1]![1]).toEqual(expect.objectContaining({ bunny_upload_id: '77' }));
+    expect(result.sentMessages?.[0]?.id).toBe('501');
+  });
+
+  it('does not upload again for other send errors', async () => {
+    routeTicket(bunnyTicket);
+    multipart.mockRejectedValueOnce(new Error('You are blocked'));
+
+    await expect(
+      createMessagesRepository().sendMessage('2', '', { ...video, bunnyUploadId: '70' }),
+    ).rejects.toThrow('You are blocked');
+    expect(tusUpload).not.toHaveBeenCalled();
+  });
+
   it('never asks for a ticket for photos or unreadable files', async () => {
     routeTicket(bunnyTicket);
     await createMessagesRepository().sendMessage('2', '', {

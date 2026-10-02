@@ -2107,58 +2107,77 @@ export function createMessagesRepository(): MessagesRepository {
           ? apiRoutes.messages.groupChat
           : apiRoutes.messages.send;
       const payload = target.type === 'group' ? groupPayload : userPayload;
-      const bunnyUploadId =
+      const uploadVideo = () =>
         uploadAttachment?.mediaType === 'video'
-          ? await uploadVideoWithTicket(
+          ? uploadVideoWithTicket(
               uploadAttachment,
               'chat',
               options?.onUploadProgress,
             )
+          : Promise.resolve(null);
+      // Usually uploaded while the user was composing (chatMediaPreparation).
+      const preUploadedId =
+        uploadAttachment?.mediaType === 'video'
+          ? uploadAttachment.bunnyUploadId ?? null
           : null;
-      const videoThumb =
-        uploadAttachment?.mediaType === 'video' && uploadAttachment.thumbnailUri
+      const submit = async (bunnyUploadId: string | null) => {
+        const videoThumb =
+          uploadAttachment?.mediaType === 'video' && uploadAttachment.thumbnailUri
+            ? {
+                uri: uploadAttachment.thumbnailUri,
+                name:
+                  uploadAttachment.thumbnailName ||
+                  `video-thumb-${Date.now()}.jpg`,
+                type: uploadAttachment.thumbnailType || 'image/jpeg',
+              }
+            : undefined;
+        const multipartPayload = uploadAttachment
           ? {
-              uri: uploadAttachment.thumbnailUri,
-              name:
-                uploadAttachment.thumbnailName ||
-                `video-thumb-${Date.now()}.jpg`,
-              type: uploadAttachment.thumbnailType || 'image/jpeg',
+              ...payload,
+              ...(uploadAttachment.mediaType
+                ? {
+                    message_type: uploadAttachment.mediaType,
+                    media_type: uploadAttachment.mediaType,
+                    type_two: uploadAttachment.mediaType,
+                  }
+                : {}),
+              // A video already on Bunny Stream is referenced by its ticket.
+              ...(bunnyUploadId
+                ? { bunny_upload_id: bunnyUploadId }
+                : { file: uploadAttachment }),
+              ...(videoThumb ? { video_thumb: videoThumb } : {}),
             }
           : undefined;
-      const multipartPayload = uploadAttachment
-        ? {
-            ...payload,
-            ...(uploadAttachment.mediaType
-              ? {
-                  message_type: uploadAttachment.mediaType,
-                  media_type: uploadAttachment.mediaType,
-                  type_two: uploadAttachment.mediaType,
-                }
-              : {}),
-            // A video already on Bunny Stream is referenced by its ticket.
-            ...(bunnyUploadId
-              ? { bunny_upload_id: bunnyUploadId }
-              : { file: uploadAttachment }),
-            ...(videoThumb ? { video_thumb: videoThumb } : {}),
-          }
-        : undefined;
-      const uploadConfig = bunnyUploadId
-        ? undefined
-        : createUploadProgressConfig(options?.onUploadProgress);
-      const response = multipartPayload
-        ? bunnyUploadId && !videoThumb
-          ? await apiBridge.post<SendMessageResponse>(route, multipartPayload)
-          : uploadConfig
-          ? await apiBridge.multipart<SendMessageResponse>(
-              route,
-              multipartPayload,
-              uploadConfig,
-            )
-          : await apiBridge.multipart<SendMessageResponse>(
-              route,
-              multipartPayload,
-            )
-        : await apiBridge.post<SendMessageResponse>(route, payload);
+        const uploadConfig = bunnyUploadId
+          ? undefined
+          : createUploadProgressConfig(options?.onUploadProgress);
+        return multipartPayload
+          ? bunnyUploadId && !videoThumb
+            ? await apiBridge.post<SendMessageResponse>(route, multipartPayload)
+            : uploadConfig
+            ? await apiBridge.multipart<SendMessageResponse>(
+                route,
+                multipartPayload,
+                uploadConfig,
+              )
+            : await apiBridge.multipart<SendMessageResponse>(
+                route,
+                multipartPayload,
+              )
+          : await apiBridge.post<SendMessageResponse>(route, payload);
+      };
+      let response: SendMessageResponse;
+      try {
+        response = await submit(preUploadedId ?? (await uploadVideo()));
+      } catch (error) {
+        // A ticket from composing can be unusable by now (expired, or used by
+        // an earlier attempt that reached the server): upload once more.
+        const message = error instanceof Error ? error.message : String(error);
+        if (!preUploadedId || !/could not attach the uploaded video/i.test(message)) {
+          throw error;
+        }
+        response = await submit(await uploadVideo());
+      }
       discoveryCache = undefined;
       const rawSentMessages =
         response.message_data ?? (response as { data?: unknown[] }).data ?? [];

@@ -16,9 +16,13 @@
 // We expose `phase` so the UI can show 'Đang đăng...' / 'Đăng' / error
 // states without juggling its own loading bool.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { createVideoPublishJob } from '../../../shared-kernel/application/services/videoPublishJob';
+import {
+  createVideoPublishJob,
+  startVideoPreUpload,
+  type VideoPreUpload,
+} from '../../../shared-kernel/application/services/videoPublishJob';
 import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { getVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
@@ -57,17 +61,25 @@ export async function withStoryVideoThumbnail(
   }
 }
 
+type StoryUploadVideo = StoryMediaUpload & { duration?: number };
+
+function toUploadVideo(media: StoryMediaUpload): StoryUploadVideo {
+  return { ...media, duration: media.durationSeconds };
+}
+
 function enqueueBunnyVideoStory(
   draft: CreateStoryDraft,
   policy: Awaited<ReturnType<typeof getVideoUploadPolicy>>,
+  preUpload: VideoPreUpload<StoryUploadVideo> | null,
   onPublished?: (storyId: string, draft: CreateStoryDraft) => void,
 ) {
   videoPublishQueue.enqueue(
     createVideoPublishJob({
       purpose: 'story',
-      video: { ...draft.media, duration: draft.media.durationSeconds },
+      video: toUploadVideo(draft.media),
       thumbnailUri: draft.media.thumbnailUri,
       policy,
+      preUpload,
       createFromUpload: (video, uploadId) =>
         repository.createStoryWithUploadedVideo({ ...draft, media: video }, uploadId),
       createDirectly: async video => {
@@ -141,6 +153,24 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
   const { onCreated, onPublishedInBackground } = options;
 
   const [media, setMediaState] = useState<StoryMediaUpload | null>(null);
+
+  // Upload a picked video while the user decorates the story.
+  const preUploadRef = useRef<VideoPreUpload<StoryUploadVideo> | null>(null);
+  useEffect(() => {
+    const pickedVideo = media?.fileType === 'video' ? media : null;
+    if (preUploadRef.current?.source.uri === pickedVideo?.uri) return;
+    preUploadRef.current?.cancel();
+    preUploadRef.current = pickedVideo
+      ? startVideoPreUpload(toUploadVideo(pickedVideo), 'story')
+      : null;
+  }, [media]);
+  useEffect(
+    () => () => {
+      preUploadRef.current?.cancel();
+      preUploadRef.current = null;
+    },
+    [],
+  );
   const [title, setTitleState] = useState('');
   const [description, setDescriptionState] = useState('');
   const [audience, setAudience] = useState<ContentAudience>('followers');
@@ -244,7 +274,10 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
         ? await getVideoUploadPolicy('story')
         : null;
       if (policy?.provider === 'bunny_stream') {
-        enqueueBunnyVideoStory(draft, policy, onPublishedInBackground);
+        // The queue takes over the upload started when the video was picked.
+        const preUpload = preUploadRef.current;
+        preUploadRef.current = null;
+        enqueueBunnyVideoStory(draft, policy, preUpload, onPublishedInBackground);
         // No story id yet: the parent closes the composer without a placeholder.
         const queued: CreateStoryResult = { message: vmCopy.backgroundUpload };
         setPhase({ type: 'success', result: queued });

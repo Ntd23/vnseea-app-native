@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { orientVideoSize } from '../../../shared-kernel/application/utils/videoDisplaySize';
-import { createVideoPublishJob } from '../../../shared-kernel/application/services/videoPublishJob';
+import {
+  createVideoPublishJob,
+  startVideoPreUpload,
+  type VideoPreUpload,
+} from '../../../shared-kernel/application/services/videoPublishJob';
+import type { VideoProcessingAttachment } from '../../../shared-kernel/application/services/videoProcessing';
 import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
 import { getVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
@@ -107,6 +112,25 @@ export function useCreateReelViewModel(options: UseCreateReelOptions = {}) {
   const [captionMentionReplacements, setCaptionMentionReplacements] = useState<
     CaptionMentionReplacement[]
   >([]);
+
+  // Upload the picked video while the user writes the caption.
+  const preUploadRef = useRef<VideoPreUpload<VideoProcessingAttachment> | null>(null);
+  const { videoUri: pickedUri, videoName: pickedName, videoType: pickedType } = draft;
+  useEffect(() => {
+    if (preUploadRef.current?.source.uri === pickedUri) return;
+    preUploadRef.current?.cancel();
+    preUploadRef.current =
+      pickedUri && pickedName && pickedType
+        ? startVideoPreUpload({ uri: pickedUri, name: pickedName, type: pickedType }, 'reel')
+        : null;
+  }, [pickedName, pickedType, pickedUri]);
+  useEffect(
+    () => () => {
+      preUploadRef.current?.cancel();
+      preUploadRef.current = null;
+    },
+    [],
+  );
 
   const setVideo = useCallback(
     (
@@ -250,13 +274,17 @@ export function useCreateReelViewModel(options: UseCreateReelOptions = {}) {
       } as ReelDraft;
       const policy = await getVideoUploadPolicy('reel');
       if (policy.provider === 'bunny_stream') {
-        // Uploads in the background; the reel appears once Bunny encodes it.
+        // Uploads in the background, taking over the upload started when the
+        // video was picked; the reel appears once Bunny encodes it.
+        const preUpload = preUploadRef.current;
+        preUploadRef.current = null;
         videoPublishQueue.enqueue(
           createVideoPublishJob({
             purpose: 'reel',
             video: { uri: apiDraft.videoUri, name: apiDraft.videoName, type: apiDraft.videoType },
             thumbnailUri: apiDraft.thumbnailUri,
             policy,
+            preUpload,
             createFromUpload: (video, uploadId) =>
               repository.createReelWithUploadedVideo(
                 { ...apiDraft, videoUri: video.uri, videoName: video.name, videoType: video.type },

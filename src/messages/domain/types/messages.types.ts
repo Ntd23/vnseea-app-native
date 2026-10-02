@@ -288,6 +288,11 @@ export interface MessageAttachment {
   duration?: number;
   /** Already compressed on device; the repository uploads it as-is. */
   uploadReady?: boolean;
+  /**
+   * Ticket of a video already uploaded to Bunny Stream while the user was
+   * composing; sending only references it.
+   */
+  bunnyUploadId?: string;
 }
 
 export interface GetMessagesOptions {

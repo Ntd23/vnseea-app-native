@@ -1,6 +1,7 @@
 import type { MessageAttachment } from '../../domain/types/messages.types';
 import { prepareImageForUpload } from '../../../shared-kernel/application/services/imageProcessing';
 import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
+import { uploadVideoWithTicket } from '../../../shared-kernel/infrastructure/upload/bunnyVideoUpload';
 import { getChatVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 import {
   createVideoUploadThumbnail,
@@ -12,8 +13,10 @@ import {
  * composing, so pressing send only has to upload.
  *
  * Images are downscaled two at a time; videos are transcoded one at a time
- * because each transcode already saturates the hardware encoder.  Every task
- * is fail-open: when preparation fails, the original file is uploaded.
+ * because each transcode already saturates the hardware encoder.  With Bunny
+ * Stream, videos are also uploaded here, so sending only references them.
+ * Every task is fail-open: when preparation fails, the original file is
+ * uploaded at send time.
  */
 type ProgressListener = (progress: number) => void;
 
@@ -64,6 +67,13 @@ export function createTaskQueue(concurrency: number) {
 
 const runImagePreparation = createTaskQueue(2);
 const runVideoPreparation = createTaskQueue(1);
+// One upload at a time per lane keeps each video's progress meaningful; the
+// next video can transcode meanwhile. Originals past the admin threshold get
+// their own lane so a long one never holds up the clips sent after it.
+const runVideoUpload = createTaskQueue(1);
+const runOriginalVideoUpload = createTaskQueue(1);
+/** Share of the progress bar taken by transcoding when the upload follows. */
+const TRANSCODE_PROGRESS_SHARE = 0.2;
 
 function withThumbnail(
   attachment: MessageAttachment,
@@ -109,15 +119,18 @@ export function startChatMediaPreparation(
     thumbnail = createVideoUploadThumbnail(attachment.uri).catch(
       () => undefined,
     );
+    let uploadsToBunny = false;
+    let keptOriginal = false;
+    let transcodeShare = 1;
     const compressed = runVideoPreparation(async () => {
       if (controller.signal.aborted) return attachment;
-      // Bunny Stream encodes the original itself; compressing an hour-long
-      // video on a phone would take far longer than uploading it.
       const policy = await getChatVideoUploadPolicy();
-      if (
-        policy.provider === 'bunny_stream' &&
-        (attachment.duration ?? 0) > policy.compressMaxSeconds
-      ) {
+      uploadsToBunny = policy.provider === 'bunny_stream';
+      // Bunny Stream encodes the original itself; past the admin threshold
+      // compressing takes longer than uploading the original.
+      if (uploadsToBunny && (attachment.duration ?? 0) > policy.compressMaxSeconds) {
+        keptOriginal = true;
+        transcodeShare = 0;
         if (__DEV__) {
           console.log('[video-processing] kept original', {
             purpose: 'chat',
@@ -126,14 +139,30 @@ export function startChatMediaPreparation(
         }
         return attachment;
       }
+      transcodeShare = uploadsToBunny ? TRANSCODE_PROGRESS_SHARE : 1;
       return prepareVideoForUpload(attachment, {
         // Chat otherwise normalises picked MOV/HEVC files to MP4.
         minimumFileSizeForCompress: 0,
         signal: controller.signal,
-        onProgress: publishProgress,
+        onProgress: progress => publishProgress(progress * transcodeShare),
       });
     });
-    prepared = Promise.all([compressed, thumbnail]).then(([video, poster]) =>
+    const uploaded = compressed.then(async video => {
+      if (!uploadsToBunny || controller.signal.aborted) return video;
+      const runUpload = keptOriginal ? runOriginalVideoUpload : runVideoUpload;
+      const uploadId = await runUpload(async () =>
+        controller.signal.aborted
+          ? null
+          : uploadVideoWithTicket(
+              video,
+              'chat',
+              progress => publishProgress(transcodeShare + progress * (1 - transcodeShare)),
+              controller.signal,
+            ),
+      ).catch(() => null);
+      return uploadId ? { ...video, bunnyUploadId: uploadId } : video;
+    });
+    prepared = Promise.all([uploaded, thumbnail]).then(([video, poster]) =>
       readyAttachment(withThumbnail(video, poster)),
     );
   } else {
