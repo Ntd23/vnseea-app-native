@@ -17,14 +17,15 @@ import {
 } from '@livekit/react-native';
 import {
   ConnectionState,
+  DisconnectReason,
   MediaDeviceFailure,
   ParticipantEvent,
   Room,
   RoomEvent,
   Track,
-  type DisconnectReason,
   type Participant,
 } from 'livekit-client';
+import { connectRoomWithRetry } from '../livekit/connectRoomWithRetry';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigationRef } from '../../../navigation/navigationRef';
 import {
@@ -1084,6 +1085,8 @@ export function GroupLiveKitCallSessionProvider({
       const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS);
       const handleDisconnected = (reason?: DisconnectReason) => {
         if (leaveSentRef.current) return;
+        // An unreachable server during join is retried where the room connects.
+        if (reason === DisconnectReason.JOIN_FAILURE) return;
         patchSession({
           mediaErrorText: reason
             ? `Kết nối media bị ngắt: ${String(reason)}.`
@@ -1207,10 +1210,23 @@ export function GroupLiveKitCallSessionProvider({
           dynacast: LIVEKIT_ROOM_OPTIONS.dynacast,
           singlePeerConnection: LIVEKIT_ROOM_OPTIONS.singlePeerConnection,
         });
-        await nextRoom.connect(
+        await connectRoomWithRetry(
+          nextRoom,
           payload.wsUrl,
           payload.token,
           LIVEKIT_CONNECT_OPTIONS,
+          {
+            shouldContinue: () =>
+              activeRoomRef.current === nextRoom && !leaveSentRef.current,
+            onRetry: (attempt, error) =>
+              logGroupCallDebug('group_room_connect_retry', {
+                callId,
+                callUuid,
+                roomName: payload.call.roomName,
+                attempt,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+          },
         );
         await applyCallAudioOutputMode(
           nextRoom,

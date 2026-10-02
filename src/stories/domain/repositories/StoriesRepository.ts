@@ -17,6 +17,7 @@ import type {
   CreateSharedPostStoryDraft,
   StoryItem,
 } from '../types/stories.types';
+import type { VideoPublishStatus } from '../../../shared-kernel/domain/types/videoPublish.types';
 
 export interface StoriesRepository {
   /**
@@ -45,6 +46,16 @@ export interface StoriesRepository {
    * limits (see `CreateStoryDraft`).
    */
   createStory(draft: CreateStoryDraft): Promise<CreateStoryResult>;
+
+  /**
+   * Create a video story whose video was already uploaded to Bunny Stream with
+   * ticket `videoUploadId`. The server creates the story only once the video
+   * is encoded.
+   */
+  createStoryWithUploadedVideo(
+    draft: CreateStoryDraft,
+    videoUploadId: string,
+  ): Promise<VideoPublishStatus>;
 
   /** Create a virtual Story segment that references a canonical source post. */
   createSharedPostStory(

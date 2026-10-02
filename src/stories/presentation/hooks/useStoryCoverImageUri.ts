@@ -7,7 +7,8 @@ import {
 } from '../../../shared-kernel/application/utils/videoThumbnails';
 
 const STORY_VIDEO_COVER_CACHE_PREFIX = 'story-cover';
-const VIDEO_URL_PATTERN = /\.(mp4|m4v|mov|webm|3gp|avi|mkv)(?:[?#]|$)/i;
+// m3u8: Bunny Stream videos are HLS playlists.
+const VIDEO_URL_PATTERN = /\.(mp4|m4v|mov|webm|3gp|avi|mkv|m3u8)(?:[?#]|$)/i;
 
 export type StoryCoverImageInput = {
   story?: StoryItem | null;

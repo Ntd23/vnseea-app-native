@@ -301,8 +301,17 @@ export default function CreateReelScreen() {
   const language = useAppLanguage();
   const copy = CREATE_REEL_COPY[language];
 
-  const vm = useCreateReelViewModel();
   const feedRepo = useMemo(() => createFeedRepository(), []);
+  // Reels uploaded in the background reach the feed once Bunny has encoded
+  // them, even after this screen closed.
+  const vm = useCreateReelViewModel({
+    onPublishedInBackground: postId => {
+      void feedRepo
+        .getPostById(postId, { fetchComments: false })
+        .then(({ post }) => postCreatedEvents.emit(post))
+        .catch(caught => console.warn('[CreateReel] get published reel failed:', caught));
+    },
+  });
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
@@ -478,13 +487,15 @@ export default function CreateReelScreen() {
         videoUri,
         asset.type || 'video/mp4',
         buildVideoFileName(asset),
+        { width: asset.width, height: asset.height },
       );
       createVideoUploadThumbnail(videoUri)
         .then(thumbnail => {
           if (!thumbnail || selectedVideoUriRef.current !== videoUri) {
             return;
           }
-          vm.setThumbnail(thumbnail.uri);
+          // The frame is rendered upright, unlike the picker's size.
+          vm.setThumbnail(thumbnail.uri, thumbnail);
         })
         .catch(() => undefined);
       setPaused(false);

@@ -144,6 +144,7 @@ import { FeedHeader } from '../components/FeedHeader';
 import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
 import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 import { HomeFeedIntro } from '../components/HomeFeedIntro';
+import { VideoPublishStatusBar } from '../../../shared-kernel/presentation/components/VideoPublishStatusBar';
 import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
 import { FeedFilterTabs } from '../components/FeedFilterTabs';
 import {
@@ -4844,6 +4845,7 @@ function FeedScreen() {
           onLivePress={handleOpenLive}
           copy={copy}
         />
+        <VideoPublishStatusBar />
       </View>
     ),
     [

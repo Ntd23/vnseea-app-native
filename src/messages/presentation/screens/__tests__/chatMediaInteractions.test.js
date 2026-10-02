@@ -23,7 +23,7 @@ describe('Chat media interaction contract', () => {
     );
 
     expect(chat).toContain('groupableAttachmentCount > 1');
-    expect(chat).toContain('? { mediaGroupId }');
+    expect(chat).toContain('? { mediaGroupId, mediaGroupSize: groupableAttachmentCount }');
     expect(viewModel).toContain('mediaGroupId: options?.mediaGroupId');
     expect(viewModel).toContain(
       'mediaGroupId: message.mediaGroupId ?? current.mediaGroupId',

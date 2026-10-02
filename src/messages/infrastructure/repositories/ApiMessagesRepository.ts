@@ -1,4 +1,5 @@
 // Description: Implements the Messages API repository through the WoWonder mobile API bridge.
+import type { AxiosRequestConfig } from 'axios';
 import CryptoJS from 'crypto-js';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { assertNotSelfGroupMemberRemoval } from '../../../shared-kernel/application/utils/groupMemberRemoval';
@@ -11,6 +12,8 @@ import {
   type ReactionType,
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
+import { prepareImageForUpload } from '../../../shared-kernel/application/services/imageProcessing';
+import { uploadVideoWithTicket } from '../../../shared-kernel/infrastructure/upload/bunnyVideoUpload';
 import { prepareVideoForUpload } from '../../../shared-kernel/application/services/videoProcessing';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
 import {
@@ -181,6 +184,33 @@ function restoreMessageLineBreaks(value: string): string {
 }
 function serializeMessageLineBreaks(value: string): string {
   return value.replace(/\r\n?/g, '\n').replace(/\n/g, '\\n');
+}
+async function prepareAttachmentForUpload(
+  attachment: MessageAttachment | undefined,
+): Promise<MessageAttachment | undefined> {
+  // The chat composer prepares media while the user is still typing; only
+  // callers that skipped that step pay for compression here.
+  if (!attachment || attachment.uploadReady) return attachment;
+  if (attachment.mediaType === 'video') {
+    return prepareVideoForUpload(attachment, { minimumFileSizeForCompress: 0 });
+  }
+  if (attachment.mediaType === 'image') {
+    return prepareImageForUpload(attachment);
+  }
+  return attachment;
+}
+function createUploadProgressConfig(
+  onUploadProgress: ((progress: number) => void) | undefined,
+): AxiosRequestConfig | undefined {
+  if (!onUploadProgress) return undefined;
+  return {
+    onUploadProgress: event => {
+      const progress =
+        event.progress ?? (event.total ? event.loaded / event.total : undefined);
+      if (progress === undefined || !Number.isFinite(progress)) return;
+      onUploadProgress(Math.min(1, Math.max(0, progress)));
+    },
+  };
 }
 function cleanText(value: string): string {
   return restoreMessageLineBreaks(decodeLegacyLinkMarkup(value))
@@ -1640,6 +1670,7 @@ function mapMessage(
     replyTo: isRecalled ? undefined : replyTo,
     media: isRecalled ? undefined : media,
     mediaType,
+    mediaStatus: isRecalled ? undefined : readMediaStatus(raw),
     mediaGroupId: isRecalled
       ? undefined
       : readString(raw, 'media_group_id', 'mediaGroupId') || undefined,
@@ -1841,6 +1872,13 @@ function mapSharedAssets(raw: RawRecord): GroupSharedAssets {
       .filter(item => item.id && item.url),
   };
 }
+function readMediaStatus(
+  raw: Record<string, unknown>,
+): MessageItem['mediaStatus'] {
+  const status = readString(raw, 'media_status', 'mediaStatus').toLowerCase();
+  return status === 'processing' || status === 'failed' ? status : undefined;
+}
+
 function readMediaType(
   raw: Record<string, unknown>,
   decodedMessage = '',
@@ -1900,7 +1938,7 @@ function readMediaType(
   }
   if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(media)) return 'image';
   if (/\.(mp3|wav|ogg|m4a)(\?|$)/i.test(media)) return 'audio';
-  if (/\.(mp4|mov|avi|mkv)(\?|$)/i.test(media)) return 'video';
+  if (/\.(mp4|mov|avi|mkv|m3u8)(\?|$)/i.test(media)) return 'video';
   return undefined;
 }
 
@@ -2001,12 +2039,7 @@ export function createMessagesRepository(): MessagesRepository {
       options?: SendMessageOptions,
     ) {
       const target = getChatTarget(chat);
-      const uploadAttachment =
-        attachment?.mediaType === 'video'
-          ? await prepareVideoForUpload(attachment, {
-              minimumFileSizeForCompress: 0,
-            })
-          : attachment;
+      const uploadAttachment = await prepareAttachmentForUpload(attachment);
       const messageHashId = `${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
@@ -2021,6 +2054,14 @@ export function createMessagesRepository(): MessagesRepository {
               .join('\n')
           : requestMessage;
       const textPayload = serializeMessageLineBreaks(rawTextPayload);
+      const mediaGroupPayload = options?.mediaGroupId
+        ? {
+            media_group_id: options.mediaGroupId,
+            ...(options.mediaGroupSize
+              ? { media_group_size: options.mediaGroupSize }
+              : {}),
+          }
+        : {};
       const userPayload = {
         user_id: target.id,
         text: textPayload,
@@ -2042,9 +2083,7 @@ export function createMessagesRepository(): MessagesRepository {
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
           : {}),
-        ...(options?.mediaGroupId
-          ? { media_group_id: options.mediaGroupId }
-          : {}),
+        ...mediaGroupPayload,
       };
       const groupPayload = {
         type: 'send',
@@ -2061,40 +2100,84 @@ export function createMessagesRepository(): MessagesRepository {
         ...(options?.replyTo?.messageId
           ? { reply_id: options.replyTo.messageId }
           : {}),
-        ...(options?.mediaGroupId
-          ? { media_group_id: options.mediaGroupId }
-          : {}),
+        ...mediaGroupPayload,
       };
       const route =
         target.type === 'group'
           ? apiRoutes.messages.groupChat
           : apiRoutes.messages.send;
       const payload = target.type === 'group' ? groupPayload : userPayload;
-      const response = uploadAttachment
-        ? await apiBridge.multipart<SendMessageResponse>(route, {
-            ...payload,
-            ...(uploadAttachment.mediaType
-              ? {
-                  message_type: uploadAttachment.mediaType,
-                  media_type: uploadAttachment.mediaType,
-                  type_two: uploadAttachment.mediaType,
-                }
-              : {}),
-            file: uploadAttachment,
-            ...(uploadAttachment.mediaType === 'video' &&
-            uploadAttachment.thumbnailUri
-              ? {
-                  video_thumb: {
-                    uri: uploadAttachment.thumbnailUri,
-                    name:
-                      uploadAttachment.thumbnailName ||
-                      `video-thumb-${Date.now()}.jpg`,
-                    type: uploadAttachment.thumbnailType || 'image/jpeg',
-                  },
-                }
-              : {}),
-          })
-        : await apiBridge.post<SendMessageResponse>(route, payload);
+      const uploadVideo = () =>
+        uploadAttachment?.mediaType === 'video'
+          ? uploadVideoWithTicket(
+              uploadAttachment,
+              'chat',
+              options?.onUploadProgress,
+            )
+          : Promise.resolve(null);
+      // Usually uploaded while the user was composing (chatMediaPreparation).
+      const preUploadedId =
+        uploadAttachment?.mediaType === 'video'
+          ? uploadAttachment.bunnyUploadId ?? null
+          : null;
+      const submit = async (bunnyUploadId: string | null) => {
+        const videoThumb =
+          uploadAttachment?.mediaType === 'video' && uploadAttachment.thumbnailUri
+            ? {
+                uri: uploadAttachment.thumbnailUri,
+                name:
+                  uploadAttachment.thumbnailName ||
+                  `video-thumb-${Date.now()}.jpg`,
+                type: uploadAttachment.thumbnailType || 'image/jpeg',
+              }
+            : undefined;
+        const multipartPayload = uploadAttachment
+          ? {
+              ...payload,
+              ...(uploadAttachment.mediaType
+                ? {
+                    message_type: uploadAttachment.mediaType,
+                    media_type: uploadAttachment.mediaType,
+                    type_two: uploadAttachment.mediaType,
+                  }
+                : {}),
+              // A video already on Bunny Stream is referenced by its ticket.
+              ...(bunnyUploadId
+                ? { bunny_upload_id: bunnyUploadId }
+                : { file: uploadAttachment }),
+              ...(videoThumb ? { video_thumb: videoThumb } : {}),
+            }
+          : undefined;
+        const uploadConfig = bunnyUploadId
+          ? undefined
+          : createUploadProgressConfig(options?.onUploadProgress);
+        return multipartPayload
+          ? bunnyUploadId && !videoThumb
+            ? await apiBridge.post<SendMessageResponse>(route, multipartPayload)
+            : uploadConfig
+            ? await apiBridge.multipart<SendMessageResponse>(
+                route,
+                multipartPayload,
+                uploadConfig,
+              )
+            : await apiBridge.multipart<SendMessageResponse>(
+                route,
+                multipartPayload,
+              )
+          : await apiBridge.post<SendMessageResponse>(route, payload);
+      };
+      let response: SendMessageResponse;
+      try {
+        response = await submit(preUploadedId ?? (await uploadVideo()));
+      } catch (error) {
+        // A ticket from composing can be unusable by now (expired, or used by
+        // an earlier attempt that reached the server): upload once more.
+        const message = error instanceof Error ? error.message : String(error);
+        if (!preUploadedId || !/could not attach the uploaded video/i.test(message)) {
+          throw error;
+        }
+        response = await submit(await uploadVideo());
+      }
       discoveryCache = undefined;
       const rawSentMessages =
         response.message_data ?? (response as { data?: unknown[] }).data ?? [];

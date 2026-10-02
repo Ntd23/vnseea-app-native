@@ -10,6 +10,7 @@ import {
   WIRE_TO_REACTION,
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
+import { readVideoPublishStatus } from '../../../shared-kernel/infrastructure/upload/bunnyVideoUpload';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { normalizeConfiguredUrl } from '../../../shared-kernel/infrastructure/config/url';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -814,37 +815,60 @@ async function fetchReelsPage(
   return { items, nextCursor };
 }
 
+/**
+ * Multipart fields for a reel, which new_post stores as a post of type
+ * "reel". backendApi.multipart builds the FormData; files are passed as
+ * { uri, name, type }. With `videoUploadId` the video already sits on Bunny
+ * Stream and only its ticket is sent.
+ */
+function buildCreateReelPayload(
+  draft: ReelDraft,
+  videoUploadId?: string,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    postPrivacy: audienceToWire(draft.privacy ?? 'public'),
+    privacy_contract: CONTENT_AUDIENCE_CONTRACT,
+    postType: 'reel',
+  };
+  if (videoUploadId) {
+    payload.bunny_upload_id = videoUploadId;
+  } else {
+    payload.postVideo = {
+      uri: draft.videoUri,
+      type: draft.videoType,
+      name: draft.videoName,
+    };
+  }
+
+  if (draft.thumbnailUri) {
+    payload.video_thumb = {
+      uri: draft.thumbnailUri,
+      type: 'image/jpeg',
+      name: draft.thumbnailUri.split('/').pop() ?? 'thumb.jpg',
+    };
+  }
+
+  if (draft.caption) {
+    payload.postText = draft.caption;
+  }
+
+  // Feeds lay reels out by their size; without the file on the server
+  // (Bunny Stream) nothing else can measure it.
+  const mediaWidth = Math.round(Number(draft.videoWidth));
+  const mediaHeight = Math.round(Number(draft.videoHeight));
+  if (mediaWidth > 0 && mediaHeight > 0) {
+    payload.media_width = mediaWidth;
+    payload.media_height = mediaHeight;
+  }
+  return payload;
+}
+
 export function createReelsRepository(): ReelsRepository {
   return {
     async createReel(draft: ReelDraft): Promise<ReelUploadResult> {
-      // backendApi.multipart accepts a plain object and builds FormData internally.
-      // Files are passed as { uri, name, type } matching BackendFile shape.
-      const payload: Record<string, unknown> = {
-        postVideo: {
-          uri: draft.videoUri,
-          type: draft.videoType,
-          name: draft.videoName,
-        },
-        postPrivacy: audienceToWire(draft.privacy ?? 'public'),
-        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
-        postType: 'reel',
-      };
-
-      if (draft.thumbnailUri) {
-        payload.video_thumb = {
-          uri: draft.thumbnailUri,
-          type: 'image/jpeg',
-          name: draft.thumbnailUri.split('/').pop() ?? 'thumb.jpg',
-        };
-      }
-
-      if (draft.caption) {
-        payload.postText = draft.caption;
-      }
-
       const response = await backendApi.multipart<NewPostResponse>(
         apiRoutes.reels.create,
-        payload,
+        buildCreateReelPayload(draft),
       );
 
       // ffmpeg async path: { status: 200, message: "Your video is in process" }
@@ -875,6 +899,20 @@ export function createReelsRepository(): ReelsRepository {
       }
 
       throw new Error('Đăng video thất bại. Vui lòng thử lại.');
+    },
+
+    async createReelWithUploadedVideo(draft, videoUploadId) {
+      const response = await backendApi.multipart<
+        NewPostResponse & { bunny_upload?: unknown }
+      >(apiRoutes.reels.create, buildCreateReelPayload(draft, videoUploadId));
+      const pending =
+        String(response.api_status) === '200'
+          ? readVideoPublishStatus(response.bunny_upload)
+          : null;
+      if (!pending) {
+        throw new Error('Đăng video thất bại. Vui lòng thử lại.');
+      }
+      return pending;
     },
 
     fetchReels: fetchReelsPage,

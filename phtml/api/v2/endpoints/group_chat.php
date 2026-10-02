@@ -9,6 +9,7 @@
 // | WoWonder - The Ultimate Social Networking Platform
 // | Copyright (c) 2018 WoWonder. All rights reserved.
 // +------------------------------------------------------------------------+
+require_once 'assets/includes/vnseea_message_media.php';
 $response_data = array(
     'api_status' => 400
 );
@@ -41,6 +42,10 @@ function VNSEEA_GroupApiCollectMessages($group_id, $message_ids)
         }
         $message = $messages[0];
         if (!empty($message['media'])) {
+            $media_status = VNSEEA_BunnyMediaStatus($message['media']);
+            if ($media_status !== '') {
+                $message['media_status'] = $media_status;
+            }
             $message['media'] = Wo_GetMedia($message['media']);
         }
         if (!empty($message['user_data'])) {
@@ -168,9 +173,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if ($media_type === 'images') {
                 $type_sql = " AND LOWER(`media`) REGEXP '\\.(jpg|jpeg|png|gif|webp)$'";
             } elseif ($media_type === 'videos') {
-                $type_sql = " AND LOWER(`media`) REGEXP '\\.(mp4|mov|avi|mkv|webm)$'";
+                $type_sql = " AND (LOWER(`media`) REGEXP '\\.(mp4|mov|avi|mkv|webm)$' OR `media` LIKE 'bunny-stream://%')";
             } elseif ($media_type === 'docs') {
-                $type_sql = " AND `media` <> '' AND LOWER(`media`) NOT REGEXP '\\.(jpg|jpeg|png|gif|webp|mp4|mov|avi|mkv|webm|mp3|wav|ogg|m4a|aac)$'";
+                $type_sql = " AND `media` <> '' AND `media` NOT LIKE 'bunny-stream://%' AND LOWER(`media`) NOT REGEXP '\\.(jpg|jpeg|png|gif|webp|mp4|mov|avi|mkv|webm|mp3|wav|ogg|m4a|aac)$'";
             } else {
                 $type_sql = " AND (`text` LIKE '%http://%' OR `text` LIKE '%https://%' OR `text` LIKE '%vnseea://%')";
             }
@@ -670,7 +675,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $error_code    = 7;
             $error_message = 'id must be numeric and greater than 0';
         }
-        if (empty($_FILES['file']) && empty($_POST['text']) && empty($_POST['image_url']) && empty($_POST['gif']) && empty($_POST['lng']) && empty($_POST['lat'])) {
+        if (empty($_FILES['file']) && empty($_POST['bunny_upload_id']) && empty($_POST['text']) && empty($_POST['image_url']) && empty($_POST['gif']) && empty($_POST['lng']) && empty($_POST['lat'])) {
             $error_code    = 12;
             $error_message = 'text and file and image_url and gif can not be empty';
         }
@@ -733,6 +738,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                         $media = Wo_ShareFile($fileInfo);
                     }
                 } else {
+                    if (!$is_video_message) {
+                        $fileInfo = VNSEEA_PrepareMessageImageUpload($fileInfo);
+                    }
                     $media = Wo_ShareFile($fileInfo);
                 }
                 if ($media === false || empty($media['filename'])) {
@@ -743,6 +751,21 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     $mediaName = $_FILES['file']['name'];
                 }
             }
+            $bunny_upload = null;
+            if (!isset($_FILES['file']['name']) && !empty($_POST['bunny_upload_id'])) {
+                // The client already uploaded this video to Bunny Stream with a ticket
+                // from media-upload-ticket; only the caller's own unused upload counts.
+                $bunny_upload = $is_video_message
+                    ? VNSEEA_BunnyClaimUpload($wo['user']['user_id'], $_POST['bunny_upload_id'], 'chat')
+                    : null;
+                if (empty($bunny_upload)) {
+                    $error_code = 15;
+                    $error_message = 'Could not attach the uploaded video.';
+                } else {
+                    $mediaFilename = VNSEEA_BunnyMediaRef('private', $bunny_upload['video_guid']);
+                    $mediaName = !empty($bunny_upload['file_name']) ? $bunny_upload['file_name'] : 'video.mp4';
+                }
+            }
             if (empty($error_message) && $is_video_message && isset($_FILES['video_thumb']['name'])) {
                 $thumb_extension = strtolower(pathinfo($_FILES['video_thumb']['name'], PATHINFO_EXTENSION));
                 $thumb_is_valid = !empty($_FILES['video_thumb']['tmp_name']) &&
@@ -750,13 +773,13 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     (!isset($_FILES['video_thumb']['error']) || (int)$_FILES['video_thumb']['error'] === UPLOAD_ERR_OK) &&
                     in_array($thumb_extension, array('jpg', 'jpeg', 'png', 'webp'));
                 if ($thumb_is_valid) {
-                    $thumb_media = Wo_ShareFile(array(
+                    $thumb_media = Wo_ShareFile(VNSEEA_PrepareMessageImageUpload(array(
                         'file' => $_FILES['video_thumb']['tmp_name'],
                         'name' => $_FILES['video_thumb']['name'],
                         'size' => $_FILES['video_thumb']['size'],
                         'type' => $_FILES['video_thumb']['type'],
                         'types' => 'jpg,jpeg,png,webp'
-                    ));
+                    )));
                 } else {
                     $thumb_media = false;
                 }
@@ -802,6 +825,16 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if (!empty($mediaThumbFilename)) {
                 $message_data['media_thumb'] = Wo_Secure($mediaThumbFilename);
             }
+            $media_group_id = VNSEEA_NormalizeMessageMediaGroupId(
+                isset($_POST['media_group_id']) ? $_POST['media_group_id'] : ''
+            );
+            if ($media_group_id !== '' && !empty($mediaFilename) && VNSEEA_MessageMediaGroupColumnAvailable()) {
+                $message_data['media_group_id'] = $media_group_id;
+                VNSEEA_MessageMediaGroupSize(
+                    $media_group_id,
+                    isset($_POST['media_group_size']) ? $_POST['media_group_size'] : 0
+                );
+            }
             if (!empty($_POST['message_type'])) {
                 $message_data['type_two'] = Wo_Secure(strtolower((string)$_POST['message_type']));
             }
@@ -827,9 +860,15 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if (empty($error_message)) {
                 $last_id = Wo_RegisterMessageGroup($message_data);
             }
+            if (!empty($last_id) && !empty($bunny_upload)) {
+                VNSEEA_BunnyAttachUpload($bunny_upload['id'], $last_id);
+            }
             if (empty($last_id) && (!empty($mediaFilename) || !empty($mediaThumbFilename))) {
                 foreach (array($mediaFilename, $mediaThumbFilename) as $failed_upload) {
                     if (empty($failed_upload)) {
+                        continue;
+                    }
+                    if (VNSEEA_BunnyParseMediaRef($failed_upload) !== null) {
                         continue;
                     }
                     @unlink($failed_upload);
@@ -893,6 +932,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                         $message['file_size'] = '0MB';
                         if (file_exists($message['file_size'])) {
                             $message['file_size'] = Wo_SizeFormat(filesize($message['media']));
+                        }
+                        $media_status = VNSEEA_BunnyMediaStatus($message['media']);
+                        if ($media_status !== '') {
+                            $message['media_status'] = $media_status;
                         }
                         $message['media']     = Wo_GetMedia($message['media']);
                     }
@@ -1071,6 +1114,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     $message['file_size'] = '0MB';
                     if (file_exists($message['file_size'])) {
                         $message['file_size'] = Wo_SizeFormat(filesize($message['media']));
+                    }
+                    $media_status = VNSEEA_BunnyMediaStatus($message['media']);
+                    if ($media_status !== '') {
+                        $message['media_status'] = $media_status;
                     }
                     $message['media']     = Wo_GetMedia($message['media']);
                 }
@@ -1336,6 +1383,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                         $message['file_size'] = '0MB';
                         if (file_exists($message['file_size'])) {
                             $message['file_size'] = Wo_SizeFormat(filesize($message['media']));
+                        }
+                        $media_status = VNSEEA_BunnyMediaStatus($message['media']);
+                        if ($media_status !== '') {
+                            $message['media_status'] = $media_status;
                         }
                         $message['media']     = Wo_GetMedia($message['media']);
                     }

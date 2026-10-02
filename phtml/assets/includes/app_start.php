@@ -69,7 +69,23 @@ $required_config_defaults = array(
     'vnseea_ios_app_version' => '2.0.3',
     'vnseea_android_app_version' => '9.0.17',
     'vnseea_ios_store_url' => 'https://apps.apple.com/vn/app/vnseea/id6767143251?l=vi',
-    'vnseea_android_store_url' => 'https://play.google.com/store/apps/details?id=com.vnseea.android'
+    'vnseea_android_store_url' => 'https://play.google.com/store/apps/details?id=com.vnseea.android',
+    'vnseea_bunny_cdn_enabled' => '0',
+    'vnseea_bunny_cdn_hostname' => '',
+    'vnseea_bunny_stream_enabled' => '0',
+    'vnseea_bunny_stream_public_enabled' => '0',
+    'vnseea_bunny_stream_public_library_id' => '',
+    'vnseea_bunny_stream_public_api_key' => '',
+    'vnseea_bunny_stream_public_readonly_key' => '',
+    'vnseea_bunny_stream_public_cdn_hostname' => '',
+    'vnseea_bunny_stream_private_library_id' => '',
+    'vnseea_bunny_stream_private_api_key' => '',
+    'vnseea_bunny_stream_private_readonly_key' => '',
+    'vnseea_bunny_stream_private_cdn_hostname' => '',
+    'vnseea_bunny_stream_private_token_key' => '',
+    'vnseea_bunny_stream_private_url_ttl' => '21600',
+    'vnseea_bunny_stream_compress_max_seconds' => '180',
+    'vnseea_bunny_stream_max_upload_mb' => '10240'
 );
 foreach ($required_config_defaults as $config_name => $config_value) {
     if (!array_key_exists($config_name, $config)) {

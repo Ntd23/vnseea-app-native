@@ -1,7 +1,9 @@
 import {
   applyComposerVideoThumbnail,
   createComposerMediaDrafts,
-  markComposerMediaPreparationFailed,
+  markComposerMediaPrepared,
+  toMessageAttachment,
+  updateComposerMediaPreparationProgress,
 } from '../messageComposerMediaDraft';
 
 describe('message composer media drafts', () => {
@@ -23,7 +25,7 @@ describe('message composer media drafts', () => {
     },
   ];
 
-  it('creates image and video drafts immediately without waiting for a thumbnail', () => {
+  it('creates image and video drafts immediately and prepares both in the background', () => {
     const drafts = createComposerMediaDrafts(assets, {
       platform: 'android',
       createDraftId: index => `draft-${index}`,
@@ -35,7 +37,7 @@ describe('message composer media drafts', () => {
         draftId: 'draft-0',
         uri: 'file:///photo.jpg',
         mediaType: 'image',
-        preparationState: 'ready',
+        preparationState: 'preparing',
       }),
       expect.objectContaining({
         draftId: 'draft-1',
@@ -47,7 +49,7 @@ describe('message composer media drafts', () => {
     expect(drafts[1]?.thumbnailUri).toBeUndefined();
   });
 
-  it('updates only the matching video when its thumbnail is ready', () => {
+  it('updates only the matching video poster without marking it upload-ready', () => {
     const drafts = createComposerMediaDrafts(assets, {
       platform: 'ios',
       createDraftId: index => `draft-${index}`,
@@ -65,9 +67,61 @@ describe('message composer media drafts', () => {
       expect.objectContaining({
         draftId: 'draft-1',
         thumbnailUri: 'file:///video-thumb.jpg',
-        preparationState: 'ready',
+        preparationState: 'preparing',
       }),
     );
+  });
+
+  it('tracks compression progress until the draft is prepared', () => {
+    const drafts = createComposerMediaDrafts(assets, {
+      platform: 'ios',
+      createDraftId: index => `draft-${index}`,
+      now: 123,
+    });
+
+    const inProgress = updateComposerMediaPreparationProgress(
+      drafts,
+      'draft-1',
+      0.4,
+    );
+    expect(inProgress[1]).toEqual(
+      expect.objectContaining({
+        preparationState: 'preparing',
+        preparationProgress: 0.4,
+      }),
+    );
+
+    const prepared = markComposerMediaPrepared(inProgress, 'draft-1');
+    expect(prepared[0]).toBe(drafts[0]);
+    expect(prepared[1]).toEqual(
+      expect.objectContaining({
+        preparationState: 'ready',
+        preparationProgress: 1,
+      }),
+    );
+  });
+
+  it('drops composer-only fields before a draft leaves the screen', () => {
+    const [draft] = createComposerMediaDrafts(assets, {
+      platform: 'ios',
+      createDraftId: index => `draft-${index}`,
+      now: 123,
+    });
+
+    const attachment = toMessageAttachment({
+      ...draft!,
+      preparationProgress: 0.5,
+    });
+
+    expect(attachment).toEqual({
+      uri: 'file:///photo.jpg',
+      name: 'photo.jpg',
+      type: 'image/jpeg',
+      mediaType: 'image',
+      width: 1200,
+      height: 900,
+      duration: undefined,
+    });
   });
 
   it('ignores a completed task after the user removed that draft', () => {
@@ -84,6 +138,9 @@ describe('message composer media drafts', () => {
         type: 'image/jpeg',
       }),
     ).toBe(drafts);
-    expect(markComposerMediaPreparationFailed(drafts, 'draft-1')).toBe(drafts);
+    expect(markComposerMediaPrepared(drafts, 'draft-1')).toBe(drafts);
+    expect(updateComposerMediaPreparationProgress(drafts, 'draft-1', 0.5)).toBe(
+      drafts,
+    );
   });
 });

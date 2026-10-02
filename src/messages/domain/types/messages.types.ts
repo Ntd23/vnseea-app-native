@@ -185,6 +185,8 @@ export interface SendMessageOptions {
   mentions?: MessageMention[];
   /** Identifier shared by media selected in one send action. */
   mediaGroupId?: string;
+  /** Number of items in that album, so the server can notify once. */
+  mediaGroupSize?: number;
   productInquiry?: {
     productId: string;
     note?: string;
@@ -194,6 +196,8 @@ export interface SendMessageOptions {
     location?: string;
   };
   storyReply?: StoryReplyMessageReference;
+  /** Receives the multipart upload progress, between 0 and 1. */
+  onUploadProgress?: (progress: number) => void;
 }
 
 export interface MessageSystemEvent {
@@ -236,6 +240,17 @@ export interface MessageItem {
   isSentByMe: boolean;
   seen: number;
   deliveryState?: 'sending' | 'failed';
+  /** Local progress of an outgoing media message while it is being sent. */
+  sendProgress?: MessageSendProgress;
+  /** A streamed video that the server is still encoding, or failed to encode. */
+  mediaStatus?: 'processing' | 'failed';
+}
+
+export interface MessageSendProgress {
+  /** `preparing` covers on-device compression, `uploading` the network transfer. */
+  phase: 'preparing' | 'uploading';
+  /** Between 0 and 1 when known. */
+  progress?: number;
 }
 
 export interface PinnedMessageItem extends MessageItem {
@@ -271,6 +286,13 @@ export interface MessageAttachment {
   width?: number;
   height?: number;
   duration?: number;
+  /** Already compressed on device; the repository uploads it as-is. */
+  uploadReady?: boolean;
+  /**
+   * Ticket of a video already uploaded to Bunny Stream while the user was
+   * composing; sending only references it.
+   */
+  bunnyUploadId?: string;
 }
 
 export interface GetMessagesOptions {

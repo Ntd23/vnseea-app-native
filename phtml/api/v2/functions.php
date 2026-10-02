@@ -49,6 +49,9 @@ function Wo_GetFilePosition($file) {
     if (empty($file)) {
         return $file_type;
     }
+    if (strpos($file, 'bunny-stream://') === 0) {
+        return 'video';
+    }
     $file_extension = pathinfo($file, PATHINFO_EXTENSION);
     if ($file_extension == 'jpg' || $file_extension == 'jpeg' || $file_extension == 'png' || $file_extension == 'gif') {
         $file_type = 'image';

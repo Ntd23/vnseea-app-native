@@ -32,25 +32,49 @@ class Cache {
     }
     function read($fileName) {
         $fileName = 'cache/' . $fileName;
-        if (file_exists($fileName)) {
-            $handle   = fopen($fileName, 'rb');
-            if ($handle) {
-                $variable = fread($handle, filesize($fileName));
-                fclose($handle);
-                return unserialize($variable);
-            }
-            return null;
-        } else {
+        if (!is_file($fileName)) {
             return null;
         }
+        $variable = @file_get_contents($fileName);
+        if ($variable === false || $variable === '') {
+            return null;
+        }
+        $invalid = false;
+        set_error_handler(function () use (&$invalid) {
+            $invalid = true;
+            return true;
+        }, E_WARNING | E_NOTICE);
+        try {
+            $value = unserialize($variable);
+        } finally {
+            restore_error_handler();
+        }
+        return ($invalid || ($value === false && $variable !== 'b:0;')) ? null : $value;
     }
     function write($fileName, $variable) {
         $fileName = 'cache/' . $fileName;
-        $handle   = fopen($fileName, 'a');
-        if ($handle) {
-            fwrite($handle, serialize($variable));
-            fclose($handle);
+        $directory = realpath(dirname($fileName));
+        if ($directory === false) {
+            return false;
         }
+        $temporaryFile = @tempnam($directory, '.cache-');
+        if ($temporaryFile === false || dirname($temporaryFile) !== $directory) {
+            if ($temporaryFile !== false) {
+                @unlink($temporaryFile);
+            }
+            return false;
+        }
+        $contents = serialize($variable);
+        if (@file_put_contents($temporaryFile, $contents, LOCK_EX) !== strlen($contents)) {
+            @unlink($temporaryFile);
+            return false;
+        }
+        @chmod($temporaryFile, 0644);
+        if (!@rename($temporaryFile, $fileName)) {
+            @unlink($temporaryFile);
+            return false;
+        }
+        return true;
     }
     function delete($fileName) {
         $fileName = 'cache/' . $fileName;

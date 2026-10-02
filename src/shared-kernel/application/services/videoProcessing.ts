@@ -25,6 +25,8 @@ export type PrepareVideoOptions = {
   signal?: AbortSignal;
   /** Override the native size threshold, for example to normalize chat MOVs. */
   minimumFileSizeForCompress?: number;
+  /** Longest output side in pixels; 1920 keeps public videos at full 1080p. */
+  maxDimension?: number;
 };
 
 type NativeVideoCompressor = {
@@ -134,6 +136,7 @@ export async function prepareVideoForUpload<
 
   let cancellationId: string | undefined;
   let lastProgressAt = 0;
+  const startedAt = Date.now();
   const abortHandler = () => {
     if (cancellationId && compressor.cancelCompression) {
       compressor.cancelCompression(cancellationId);
@@ -153,7 +156,7 @@ export async function prepareVideoForUpload<
       sourceUri,
       {
         compressionMethod: 'auto',
-        maxSize: MAX_VIDEO_DIMENSION,
+        maxSize: options.maxDimension ?? MAX_VIDEO_DIMENSION,
         minimumFileSizeForCompress:
           options.minimumFileSizeForCompress ?? MINIMUM_COMPRESS_SIZE_MB,
         progressDivider: PROGRESS_DIVIDER,
@@ -176,6 +179,14 @@ export async function prepareVideoForUpload<
       return video;
     }
 
+    if (__DEV__) {
+      console.log('[video-processing] compressed', {
+        name: video.name,
+        durationSeconds: video.duration,
+        maxSize: options.maxDimension ?? MAX_VIDEO_DIMENSION,
+        seconds: (Date.now() - startedAt) / 1000,
+      });
+    }
     options.onProgress?.(1);
     return {
       ...video,

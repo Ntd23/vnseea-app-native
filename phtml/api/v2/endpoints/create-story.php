@@ -20,7 +20,11 @@ if (!in_array($story_type, array('media', 'shared_post'), true)) {
     $error_code = 2;
     $error_message = 'Incorrect value for story_type, allowed: media|shared_post';
 }
-if (!$is_shared_post && empty($_FILES["file"]["tmp_name"])) {
+// A video the app already uploaded to Bunny Stream arrives as an upload id instead of a file.
+$bunny_story_upload_id = !$is_shared_post && empty($_FILES["file"]["tmp_name"]) && !empty($_POST['bunny_upload_id'])
+    ? (string) $_POST['bunny_upload_id']
+    : '';
+if (!$is_shared_post && empty($_FILES["file"]["tmp_name"]) && $bunny_story_upload_id === '') {
     $error_code    = 3;
     $error_message = 'file (STREAM FILE) is missing';
 }
@@ -81,6 +85,86 @@ if (empty($error_code)) {
     );
     if ($is_shared_post) {
         $story_data['source_post_id'] = $source_post_id;
+    }
+    if ($bunny_story_upload_id !== '') {
+        // The story is created only once Bunny has encoded the video
+        // (VNSEEA_BunnyPublishStory), so viewers never open one that cannot play.
+        $bunny_upload = $file_type === 'video'
+            ? VNSEEA_BunnyReservePublishUpload($wo['user']['id'], $bunny_story_upload_id, 'story')
+            : null;
+        if (empty($bunny_upload)) {
+            $error_code    = 3;
+            $error_message = 'file (STREAM FILE) is missing';
+            return;
+        }
+        $bunny_thumb = '';
+        $img_types = array('image/png', 'image/jpeg', 'image/jpg', 'image/gif');
+        if (!empty($_FILES["cover"]) && in_array($_FILES["cover"]["type"], $img_types)) {
+            $media = Wo_ShareFile(array(
+                'file' => $_FILES["cover"]["tmp_name"],
+                'name' => $_FILES['cover']['name'],
+                'size' => $_FILES["cover"]["size"],
+                'type' => $_FILES["cover"]["type"]
+            ));
+            if (!empty($media['filename']) && in_array(strtolower(pathinfo($media['filename'], PATHINFO_EXTENSION)), array('gif', 'jpg', 'png', 'jpeg'))) {
+                // Same 9:16 rail thumbnail as uploaded video stories get below.
+                $cover_file = $media['filename'];
+                $cover_parts = explode('.', $cover_file);
+                $cover_extension = end($cover_parts);
+                $bunny_thumb = $cover_parts[0] . '_small.' . $cover_extension;
+                $cover_context = stream_context_create(array('ssl' => array('verify_peer' => false, 'verify_peer_name' => false)));
+                $cover_content = @file_get_contents(Wo_GetMedia($cover_file), false, $cover_context);
+                if (!empty($cover_content)) {
+                    @file_put_contents($cover_file, $cover_content);
+                }
+                Wo_Resize_Crop_Image(540, 960, $cover_file, $bunny_thumb, $wo['config']['images_quality']);
+                Wo_UploadToS3($bunny_thumb);
+            }
+        }
+        $bunny_mentions = array();
+        if (!empty($story_overlay['items']) && is_array($story_overlay['items'])) {
+            foreach ($story_overlay['items'] as $overlay_item) {
+                if (!is_array($overlay_item) || (isset($overlay_item['kind']) ? $overlay_item['kind'] : '') !== 'mention') {
+                    continue;
+                }
+                $mentioned_user_id = isset($overlay_item['userId']) ? (int) $overlay_item['userId'] : 0;
+                if ($mentioned_user_id > 0 && $mentioned_user_id != $wo['user']['id']) {
+                    $bunny_mentions[$mentioned_user_id] = $mentioned_user_id;
+                }
+                if (count($bunny_mentions) >= 10) {
+                    break;
+                }
+            }
+        }
+        $bunny_payload = array(
+            'privacy' => $story_privacy['privacy'],
+            'title' => isset($_POST['story_title']) ? (string) $_POST['story_title'] : '',
+            'description' => isset($_POST['story_description']) ? (string) $_POST['story_description'] : '',
+            'overlay_data' => is_array($story_overlay) && !empty($story_overlay) ? json_encode($story_overlay, JSON_UNESCAPED_SLASHES) : '',
+            'thumbnail' => $bunny_thumb,
+            'mention_user_ids' => array_values($bunny_mentions)
+        );
+        if (!VNSEEA_BunnyAttachPendingPublish($bunny_upload['id'], $bunny_payload)) {
+            VNSEEA_BunnyReleaseReservation($bunny_upload['id']);
+            $error_code    = 11;
+            $error_message = 'Unable to create story.';
+            return;
+        }
+        // Publishes at once when Bunny already finished encoding.
+        $bunny_row = VNSEEA_BunnyFinalizePublish($bunny_upload['id']);
+        $response_data = array(
+            'api_status' => 200,
+            'code' => 'processing',
+            'story_id' => !empty($bunny_row['story_id']) ? (int) $bunny_row['story_id'] : 0,
+            'bunny_upload' => array(
+                'upload_id' => (string) $bunny_upload['id'],
+                'status' => VNSEEA_BunnyClientUploadStatus(!empty($bunny_row['status']) ? (string) $bunny_row['status'] : 'uploaded'),
+                'publish_state' => !empty($bunny_row['publish_state']) ? (string) $bunny_row['publish_state'] : 'pending',
+                'needs_review' => false,
+                'story_id' => !empty($bunny_row['story_id']) ? (string) $bunny_row['story_id'] : ''
+            )
+        );
+        return;
     }
     $last_id           = Wo_InsertUserStory($story_data);
     if ($last_id && is_numeric($last_id) && $is_shared_post) {

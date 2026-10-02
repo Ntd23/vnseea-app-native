@@ -49,7 +49,7 @@ describe('LiveKit group call video-only lifecycle', () => {
     );
     const gateIndex = source.indexOf('await prepareIosCallAudioGate(');
     const roomIndex = source.indexOf('const nextRoom = new Room(');
-    const connectIndex = source.indexOf('await nextRoom.connect(');
+    const connectIndex = source.indexOf('await connectRoomWithRetry(');
 
     expect(source).toContain('prepareIosCallAudioGate');
     expect(source).toContain("owner: 'group-call'");
@@ -108,7 +108,7 @@ describe('LiveKit group call video-only lifecycle', () => {
     const source = read(
       'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
     );
-    const connectIndex = source.indexOf('await nextRoom.connect(');
+    const connectIndex = source.indexOf('await connectRoomWithRetry(');
     const microphoneIndex = source.indexOf(
       'await nextRoom.localParticipant.setMicrophoneEnabled(true)',
       connectIndex,

@@ -87,7 +87,19 @@ object MessagePushNotification {
 
     val data = notification.additionalData ?: JSONObject()
     val type = data.optString("type").lowercase()
-    val senderName = notification.title?.takeIf { it.isNotBlank() } ?: context.getString(R.string.app_name)
+    val isGroupConversation = type == "group"
+    // Group push titles read "A đã gửi đến <nhóm>"; the Android conversation
+    // style shows the group as the title and the sender on each line instead.
+    val senderName = data.optString("sender_name").trim().ifBlank {
+      notification.title?.takeIf { it.isNotBlank() } ?: context.getString(R.string.app_name)
+    }
+    val conversationTitle = if (isGroupConversation) {
+      data.optString("conversation_title").trim().ifBlank {
+        notification.title?.takeIf { it.isNotBlank() } ?: senderName
+      }
+    } else {
+      senderName
+    }
     val preview = formatMessagePreview(notification.body.orEmpty(), data)
     val targetId = when (type) {
       "group" -> data.optString("group_id")
@@ -180,16 +192,17 @@ object MessagePushNotification {
     val senderPerson = buildPerson(
       name = senderName,
       bitmap = senderAvatarBitmap,
-      key = "vnseea-sender-$targetId",
+      key = "vnseea-sender-${data.optString("sender_id").ifBlank { targetId }}",
     )
 
     val builder = NotificationCompat.Builder(context, VnseeaNotificationChannels.DEFAULT_PUSH_CHANNEL_ID)
       .setSmallIcon(R.mipmap.ic_launcher)
-      .setContentTitle(senderName)
+      .setContentTitle(conversationTitle)
       .setContentText(preview)
       .setStyle(
         NotificationCompat.MessagingStyle(currentUserPerson)
-          .setConversationTitle(senderName)
+          .setConversationTitle(conversationTitle)
+          .setGroupConversation(isGroupConversation)
           .addMessage(preview, System.currentTimeMillis(), senderPerson),
       )
       .setContentIntent(contentPendingIntent)

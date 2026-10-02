@@ -73,7 +73,10 @@ import {
 } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
-import { useChatViewModel } from '../../application/view-models/useChatViewModel';
+import {
+  useChatViewModel,
+  type OutgoingChatMessage,
+} from '../../application/view-models/useChatViewModel';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
@@ -92,7 +95,6 @@ import {
 } from '../components/MessageReactions';
 import type {
   ChatItem,
-  MessageAttachment,
   GroupChatMember,
   MessageItem,
   MessageMention,
@@ -117,18 +119,28 @@ import { KeyboardSafeView } from '../../../shared-kernel/presentation/components
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   createCachedVideoPosterThumbnail,
-  createVideoUploadThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
 import {
   applyComposerVideoThumbnail,
   createComposerMediaDrafts,
   isComposerMediaAttachment,
-  markComposerMediaPreparationFailed,
+  markComposerMediaPrepared,
+  toMessageAttachment,
+  updateComposerMediaPreparationProgress,
   type ChatComposerAttachment,
-  type ComposerMediaAttachment,
 } from '../../application/media/messageComposerMediaDraft';
+import {
+  startChatMediaPreparation,
+  type ChatMediaPreparationTask,
+} from '../../application/media/chatMediaPreparation';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
+import { formatMediaGroupLabel } from '../utils/mediaGroupLabel';
+import { ChatMediaStack } from '../components/ChatMediaStack';
+import {
+  formatMessageSendingStatus,
+  getMediaGroupSendProgress,
+} from '../utils/messageSendStatus';
 import {
   buildMapShareUrl,
   buildStaticMapPreviewUrl,
@@ -199,8 +211,6 @@ type OpenChatMedia = (
 
 const MAX_MEDIA_ATTACHMENTS = 10;
 const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
-const IMAGE_GALLERY_GAP = 3;
-const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 const MAP_SHARE_CARD_WIDTH = Math.min(
   Dimensions.get('window').width * 0.76,
   340,
@@ -2237,7 +2247,7 @@ function MessageBubble({
                       }`}
                     >
                       {message.deliveryState === 'sending'
-                        ? 'Đang gửi...'
+                        ? formatMessageSendingStatus(message.sendProgress)
                         : message.deliveryState === 'failed'
                         ? 'Gửi thất bại'
                         : formatMessageTime(message.time)}
@@ -2295,6 +2305,11 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.replyTo?.storyReply?.available ===
         nextProps.message.replyTo?.storyReply?.available &&
       prevProps.message.deliveryState === nextProps.message.deliveryState &&
+      prevProps.message.sendProgress?.phase ===
+        nextProps.message.sendProgress?.phase &&
+      prevProps.message.sendProgress?.progress ===
+        nextProps.message.sendProgress?.progress &&
+      prevProps.message.mediaStatus === nextProps.message.mediaStatus &&
       prevProps.message.isRecalled === nextProps.message.isRecalled &&
       prevProps.message.recalledAt === nextProps.message.recalledAt &&
       prevProps.message.seen === nextProps.message.seen &&
@@ -2407,18 +2422,32 @@ function ChatImage({ uri }: { uri: string }) {
   );
 }
 
+function alertStreamedVideoUnavailable(status: 'processing' | 'failed') {
+  if (status === 'processing') {
+    Alert.alert(
+      'Video đang được xử lý',
+      'Video vừa được tải lên và đang được chuyển đổi để phát mượt hơn. Vui lòng thử lại sau ít phút.',
+    );
+    return;
+  }
+  Alert.alert('Không phát được video', 'Máy chủ không xử lý được video này.');
+}
+
 function ChatVideoPreview({
   uri,
   thumbnail,
   cacheKey,
   compact = false,
   isSending = false,
+  status,
 }: {
   uri: string;
   thumbnail?: string;
   cacheKey?: string;
   compact?: boolean;
   isSending?: boolean;
+  /** Set while a streamed video is still encoding or failed to encode. */
+  status?: 'processing' | 'failed';
 }) {
   const { width: viewportWidth, height: viewportHeight } =
     useWindowDimensions();
@@ -2568,6 +2597,15 @@ function ChatVideoPreview({
           <View style={styles.videoSendingOverlay}>
             <ActivityIndicator size={compact ? 'small' : 'large'} color="#fff" />
           </View>
+        ) : status ? (
+          <View style={styles.videoSendingOverlay}>
+            {status === 'processing' ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : null}
+            <Text className="mt-2 px-3 text-center text-[12px] font-semibold text-white">
+              {status === 'processing' ? 'Đang xử lý video' : 'Không xử lý được video'}
+            </Text>
+          </View>
         ) : null}
       </View>
     </View>
@@ -2641,13 +2679,17 @@ function MessageMedia({
       <DoubleTapTouchable
         activeOpacity={0.9}
         delayLongPress={320}
-        onSingleTap={() =>
+        onSingleTap={() => {
+          if (message.mediaStatus) {
+            alertStreamedVideoUnavailable(message.mediaStatus);
+            return;
+          }
           onOpenMedia({
             uri: message.media!,
             type: 'video',
             thumbnail: message.thumbnail,
-          })
-        }
+          });
+        }}
         onLongPress={onLongPress}
         onDoubleTap={onDoubleTap}
       >
@@ -2656,6 +2698,7 @@ function MessageMedia({
           thumbnail={message.thumbnail}
           cacheKey={message.id}
           isSending={message.deliveryState === 'sending'}
+          status={message.mediaStatus}
         />
       </DoubleTapTouchable>
     );
@@ -2678,6 +2721,7 @@ function MediaMessageGroup({
   showAvatar = true,
   senderName,
   senderNameColor,
+  language,
   onPressAvatar,
   onOpenMedia,
   onLongPress,
@@ -2688,30 +2732,27 @@ function MediaMessageGroup({
   showAvatar?: boolean;
   senderName?: string;
   senderNameColor?: string;
+  language: AppLanguage;
   onPressAvatar?: (message: MessageItem) => void;
   onOpenMedia: OpenChatMedia;
   onLongPress?: (message: MessageItem) => void;
   onDoubleTap?: (message: MessageItem) => void;
 }) {
-  const orderedMessages = [...messages].reverse();
-  const visibleMessages = orderedMessages.slice(0, 6);
-  const hiddenCount = Math.max(
-    0,
-    orderedMessages.length - visibleMessages.length,
-  );
-  const newestMessage = messages[0];
-  const viewerItems: ChatMediaViewerItem[] = orderedMessages.map(message => ({
+  // Messages arrive in the order they were picked: the first one sits on top
+  // of the stack, carries the caption and opens first in the viewer.
+  const firstMessage = messages[0];
+  const lastMessage = messages[messages.length - 1];
+  const isSentByMe = firstMessage.isSentByMe;
+  const viewerItems: ChatMediaViewerItem[] = messages.map(message => ({
     uri: message.media!,
     type:
       message.mediaType === 'video' ? ('video' as const) : ('image' as const),
     thumbnail: message.thumbnail,
   }));
-  const captions = orderedMessages
+  const captions = messages
     .map(message => message.message.trim())
     .filter(Boolean);
-  const captionMentions = orderedMessages.flatMap(
-    message => message.mentions ?? [],
-  );
+  const captionMentions = messages.flatMap(message => message.mentions ?? []);
   const deliveryState = messages.find(
     message => message.deliveryState,
   )?.deliveryState;
@@ -2719,15 +2760,15 @@ function MediaMessageGroup({
   return (
     <View
       className={`mb-2 flex-row px-3 ${
-        newestMessage.isSentByMe ? 'justify-end' : 'justify-start'
+        isSentByMe ? 'justify-end' : 'justify-start'
       } ${deliveryState === 'sending' ? 'opacity-70' : ''}`}
     >
-      {!newestMessage.isSentByMe &&
+      {!isSentByMe &&
         (showAvatar ? (
           <TouchableOpacity
             activeOpacity={0.8}
             disabled={!onPressAvatar}
-            onPress={() => onPressAvatar?.(newestMessage)}
+            onPress={() => onPressAvatar?.(firstMessage)}
             hitSlop={6}
             className="mr-2 mt-1"
           >
@@ -2739,8 +2780,13 @@ function MediaMessageGroup({
         ) : (
           <View className="w-7 mr-2" />
         ))}
-      <View style={styles.imageGalleryBody}>
-        {!newestMessage.isSentByMe && senderName ? (
+      <View
+        style={[
+          styles.mediaGroupBody,
+          isSentByMe ? styles.mediaGroupBodySent : styles.mediaGroupBodyReceived,
+        ]}
+      >
+        {!isSentByMe && senderName ? (
           <Text
             numberOfLines={1}
             className="mb-1 ml-1 text-[12px] font-semibold text-gray-500"
@@ -2749,64 +2795,18 @@ function MediaMessageGroup({
             {senderName}
           </Text>
         ) : null}
-        <View style={styles.imageGallery}>
-          {visibleMessages.map((message, index) => (
-            <DoubleTapTouchable
-              key={message.id}
-              activeOpacity={0.9}
-              delayLongPress={320}
-              onLongPress={() => onLongPress?.(message)}
-              onDoubleTap={() => onDoubleTap?.(message)}
-              onSingleTap={() => {
-                onOpenMedia(
-                  {
-                    uri: message.media!,
-                    type: message.mediaType === 'video' ? 'video' : 'image',
-                    thumbnail: message.thumbnail,
-                  },
-                  viewerItems,
-                );
-              }}
-              style={styles.imageGalleryTile}
-            >
-              {message.mediaType === 'video' ? (
-                <ChatVideoPreview
-                  uri={message.media!}
-                  thumbnail={message.thumbnail}
-                  cacheKey={message.id}
-                  compact
-                  isSending={message.deliveryState === 'sending'}
-                />
-              ) : (
-                <Image
-                  source={{ uri: message.media }}
-                  style={styles.imageGalleryImage}
-                  resizeMode="cover"
-                  fadeDuration={120}
-                />
-              )}
-              {hiddenCount > 0 && index === visibleMessages.length - 1 ? (
-                <View style={styles.imageGalleryMore}>
-                  <Text className="text-2xl font-bold text-white">
-                    +{hiddenCount}
-                  </Text>
-                </View>
-              ) : null}
-              {message.reactions.total > 0 ? (
-                <View style={styles.imageGalleryReactionBadge}>
-                  <MessageReactionBadge
-                    summary={message.reactions}
-                    isSentByMe={message.isSentByMe}
-                  />
-                </View>
-              ) : null}
-            </DoubleTapTouchable>
-          ))}
-        </View>
+        <ChatMediaStack
+          messages={messages}
+          isSentByMe={isSentByMe}
+          label={formatMediaGroupLabel(messages, language)}
+          onOpen={() => onOpenMedia(viewerItems[0], viewerItems)}
+          onLongPress={() => onLongPress?.(firstMessage)}
+          onDoubleTap={() => onDoubleTap?.(firstMessage)}
+        />
         {captions.length > 0 ? (
           <View
             className={`mt-1 rounded-2xl px-3 py-2 ${
-              newestMessage.isSentByMe
+              isSentByMe
                 ? 'rounded-br-md bg-brand'
                 : 'rounded-bl-md border border-gray-200 bg-white'
             }`}
@@ -2814,26 +2814,20 @@ function MediaMessageGroup({
             <LinkifiedText
               text={captions.join('\n')}
               className={`text-[15px] leading-5 ${
-                newestMessage.isSentByMe ? 'text-white' : 'text-gray-900'
+                isSentByMe ? 'text-white' : 'text-gray-900'
               }`}
-              linkColor={
-                newestMessage.isSentByMe
-                  ? '#ffffff'
-                  : APP_COLORS.status.info
-              }
-              mentionColor={
-                newestMessage.isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR
-              }
+              linkColor={isSentByMe ? '#ffffff' : APP_COLORS.status.info}
+              mentionColor={isSentByMe ? '#FFFFFF' : APP_BRAND_COLOR}
               mentions={captionMentions}
             />
           </View>
         ) : null}
         <Text className="mt-1 text-right text-[10px] text-gray-500">
           {deliveryState === 'sending'
-            ? 'Đang gửi...'
+            ? formatMessageSendingStatus(getMediaGroupSendProgress(messages))
             : deliveryState === 'failed'
             ? 'Gửi thất bại'
-            : formatMessageTime(newestMessage.time)}
+            : formatMessageTime(lastMessage.time)}
         </Text>
       </View>
     </View>
@@ -2859,7 +2853,6 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     groupInfo,
     isLoading,
     isLoadingMore,
-    isSending,
     hasMore,
     isTyping,
     isRecording,
@@ -2873,6 +2866,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     setMessageReaction,
     recallMessage,
     sendMessage,
+    sendMessageBatch,
     notifyTyping,
     stopTyping,
     loadGroupInfo,
@@ -2961,8 +2955,17 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   }, [navigation, notifyTyping, route.params?.initialText]);
   const [attachments, setAttachments] = useState<ChatComposerAttachment[]>([]);
   const mediaPreparationTasksRef = useRef(
-    new Map<string, Promise<ComposerMediaAttachment>>(),
+    new Map<string, ChatMediaPreparationTask>(),
   );
+  const [isPickingMedia, setIsPickingMedia] = useState(false);
+  const isPickingMediaRef = useRef(false);
+  useEffect(() => {
+    const preparationTasks = mediaPreparationTasksRef.current;
+    return () => {
+      preparationTasks.forEach(task => task.cancel());
+      preparationTasks.clear();
+    };
+  }, []);
   const [viewerMediaItems, setViewerMediaItems] = useState<
     ChatMediaViewerItem[]
   >([]);
@@ -3004,7 +3007,6 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   const loadingOlderRef = useRef(false);
   const sendAnim = useRef(new Animated.Value(1)).current;
   const canSend =
-    !isSending &&
     !isPickingCurrentLocation &&
     (Boolean(text.trim()) ||
       attachments.length > 0 ||
@@ -3447,33 +3449,8 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     }, [activeGroupMention, notifyTyping, selectedMentions, text],
   );
 
-  const resolvePreparedAttachments = useCallback(
-    async (pending: ChatComposerAttachment[]): Promise<MessageAttachment[]> =>
-      Promise.all(
-        pending.map(async attachment => {
-          if (!isComposerMediaAttachment(attachment)) return attachment;
-
-          const preparationTask = mediaPreparationTasksRef.current.get(
-            attachment.draftId,
-          );
-          if (!preparationTask) return attachment;
-
-          try {
-            return await preparationTask;
-          } finally {
-            mediaPreparationTasksRef.current.delete(attachment.draftId);
-          }
-        }),
-      ),
-    [],
-  );
-
   const handleSend = useCallback(async () => {
-    if (
-      sendInFlightRef.current ||
-      isSending ||
-      isPickingCurrentLocationRef.current
-    ) {
+    if (sendInFlightRef.current || isPickingCurrentLocationRef.current) {
       return;
     }
     sendInFlightRef.current = true;
@@ -3553,10 +3530,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       );
       if (replyingMessage) setReplyingMessage(undefined);
 
-      const nextAttachments = await resolvePreparedAttachments(
-        pendingAttachments,
-      );
-      const groupableAttachmentCount = nextAttachments.filter(
+      const groupableAttachmentCount = pendingAttachments.filter(
         attachment =>
           attachment.mediaType === 'image' || attachment.mediaType === 'video',
       ).length;
@@ -3564,46 +3538,60 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         groupableAttachmentCount > 1
           ? `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
           : undefined;
+      // Hand each picked item's background preparation to the send queue so
+      // the composer clears immediately instead of waiting for compression.
+      const outgoingMessages: OutgoingChatMessage[] = pendingAttachments.map(
+        (attachment, index) => {
+          let preparation: ChatMediaPreparationTask | undefined;
+          if (isComposerMediaAttachment(attachment)) {
+            preparation = mediaPreparationTasksRef.current.get(
+              attachment.draftId,
+            );
+            mediaPreparationTasksRef.current.delete(attachment.draftId);
+          }
+          return {
+            text: index === 0 ? nextText : '',
+            attachment: toMessageAttachment(attachment),
+            preparation,
+            options: {
+              ...(index === 0 && replyTo ? { replyTo } : {}),
+              ...(index === 0 && mentions.length ? { mentions } : {}),
+              ...(index === 0 && productInquiry ? { productInquiry } : {}),
+              ...(mediaGroupId &&
+              (attachment.mediaType === 'image' ||
+                attachment.mediaType === 'video')
+                ? { mediaGroupId, mediaGroupSize: groupableAttachmentCount }
+                : {}),
+            },
+          };
+        },
+      );
+      // Anything still queued belongs to drafts that are not being sent.
+      mediaPreparationTasksRef.current.forEach(task => task.cancel());
+      mediaPreparationTasksRef.current.clear();
       setText('');
       setComposerSelection({ start: 0, end: 0 });
       setSelectedMentions([]);
       stopTyping();
       setAttachments([]);
 
-      if (nextAttachments.length === 0) {
-        await sendMessage(nextText, undefined, {
+      if (outgoingMessages.length === 0) {
+        sendMessage(nextText, undefined, {
           ...(replyTo ? { replyTo } : {}),
           ...(mentions.length ? { mentions } : {}),
           ...(productInquiry ? { productInquiry } : {}),
-        });
+        }).catch(() => undefined);
       } else {
-        for (const [index, attachment] of nextAttachments.entries()) {
-          const attachmentOptions: SendMessageOptions = {
-            ...(index === 0 && replyTo ? { replyTo } : {}),
-            ...(index === 0 && mentions.length ? { mentions } : {}),
-            ...(index === 0 && productInquiry ? { productInquiry } : {}),
-            ...(mediaGroupId &&
-            (attachment.mediaType === 'image' ||
-              attachment.mediaType === 'video')
-              ? { mediaGroupId }
-              : {}),
-          };
-          await sendMessage(
-            index === 0 ? nextText : '',
-            attachment,
-            attachmentOptions,
-          );
-        }
+        sendMessageBatch(outgoingMessages).catch(() => undefined);
       }
     } finally {
       sendInFlightRef.current = false;
     }
   }, [
     attachments,
-    isSending,
     recorder,
-    resolvePreparedAttachments,
     sendMessage,
+    sendMessageBatch,
     stopTyping,
     text,
     sendAnim,
@@ -3756,11 +3744,26 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   );
 
   const handlePickMedia = useCallback(async () => {
-    const result = await launchImageLibrary({
-      mediaType: 'mixed' as MediaType,
-      selectionLimit: MAX_MEDIA_ATTACHMENTS,
-      quality: 0.8,
-    });
+    if (isPickingMediaRef.current) return;
+    isPickingMediaRef.current = true;
+    setIsPickingMedia(true);
+
+    let result: Awaited<ReturnType<typeof launchImageLibrary>>;
+    try {
+      result = await launchImageLibrary({
+        mediaType: 'mixed' as MediaType,
+        selectionLimit: MAX_MEDIA_ATTACHMENTS,
+        // Return the original files immediately. A quality below 1 makes the
+        // picker re-encode every photo at full resolution before it returns;
+        // resizing happens in the background instead.
+        quality: 1,
+        // Skip the iOS picker's own HEIC/HEVC transcode for the same reason.
+        assetRepresentationMode: 'current',
+      });
+    } finally {
+      isPickingMediaRef.current = false;
+      setIsPickingMedia(false);
+    }
 
     if (result.didCancel || result.errorCode) return;
 
@@ -3776,50 +3779,45 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
       createDraftId: index => `${selectionId}-${index}`,
     }).slice(0, availableSlots);
 
-    if (validSelected.length > 0) {
-      setSharedMapLocation(undefined);
-      setAttachments(current => {
-        const filtered = current.filter(a => a.mediaType !== 'audio');
-        return [...filtered, ...validSelected].slice(0, MAX_MEDIA_ATTACHMENTS);
-      });
+    if (validSelected.length === 0) return;
 
-      validSelected.forEach(draft => {
-        if (draft.mediaType !== 'video') return;
+    setSharedMapLocation(undefined);
+    setAttachments(current => {
+      const filtered = current.filter(a => a.mediaType !== 'audio');
+      return [...filtered, ...validSelected].slice(0, MAX_MEDIA_ATTACHMENTS);
+    });
 
-        const markFailed = () => {
-          setAttachments(current =>
-            markComposerMediaPreparationFailed(current, draft.draftId),
-          );
-          return markComposerMediaPreparationFailed(
-            [draft],
-            draft.draftId,
-          )[0] as ComposerMediaAttachment;
-        };
-        const preparationTask = createVideoUploadThumbnail(draft.uri)
-          .then(thumbnail => {
-            if (!thumbnail) return markFailed();
+    validSelected.forEach(draft => {
+      const task = startChatMediaPreparation(toMessageAttachment(draft));
+      mediaPreparationTasksRef.current.set(draft.draftId, task);
 
-            setAttachments(current =>
-              applyComposerVideoThumbnail(current, draft.draftId, thumbnail),
-            );
-            return applyComposerVideoThumbnail(
-              [draft],
-              draft.draftId,
-              thumbnail,
-            )[0] as ComposerMediaAttachment;
-          })
-          .catch(markFailed);
-        mediaPreparationTasksRef.current.set(
-          draft.draftId,
-          preparationTask,
+      task.thumbnail.then(thumbnail => {
+        if (!thumbnail) return;
+        setAttachments(current =>
+          applyComposerVideoThumbnail(current, draft.draftId, thumbnail),
         );
       });
-    }
+      task.subscribeProgress(progress => {
+        setAttachments(current =>
+          updateComposerMediaPreparationProgress(
+            current,
+            draft.draftId,
+            progress,
+          ),
+        );
+      });
+      task.result.then(() => {
+        setAttachments(current =>
+          markComposerMediaPrepared(current, draft.draftId),
+        );
+      });
+    });
   }, [visualAttachments.length]);
 
   const handleRemoveAttachment = useCallback(
     (attachment: ChatComposerAttachment) => {
       if (isComposerMediaAttachment(attachment)) {
+        mediaPreparationTasksRef.current.get(attachment.draftId)?.cancel();
         mediaPreparationTasksRef.current.delete(attachment.draftId);
       }
       setAttachments(current =>
@@ -4146,6 +4144,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               showAvatar={!isGroupChat || Boolean(groupSender)}
               senderName={groupSender?.name}
               senderNameColor={groupSender?.color}
+              language={language}
               onPressAvatar={
                 isGroupChat ? handlePressGroupSenderAvatar : undefined
               }
@@ -4555,7 +4554,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
         )}
 
         {/* Attachments Preview */}
-        {visualAttachments.length > 0 && (
+        {(visualAttachments.length > 0 || isPickingMedia) && (
           <View className="border-t border-gray-200 bg-white px-3 pt-2">
             <ScrollView
               horizontal
@@ -4594,7 +4593,14 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                       <View className="absolute inset-0 items-center justify-center bg-black/30">
                         {isComposerMediaAttachment(att) &&
                         att.preparationState === 'preparing' ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <View className="items-center">
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                            {att.preparationProgress !== undefined ? (
+                              <Text className="mt-1 text-[11px] font-semibold text-white">
+                                {Math.round(att.preparationProgress * 100)}%
+                              </Text>
+                            ) : null}
+                          </View>
                         ) : (
                           <Play size={16} color="#fff" fill="#fff" />
                         )}
@@ -4609,6 +4615,11 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
                   </TouchableOpacity>
                 </View>
               ))}
+              {isPickingMedia ? (
+                <View className="h-20 w-20 items-center justify-center rounded-xl bg-gray-100">
+                  <ActivityIndicator size="small" color={APP_BRAND_COLOR} />
+                </View>
+              ) : null}
             </ScrollView>
           </View>
         )}
@@ -4860,7 +4871,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
           <TouchableOpacity
             className="mr-2 h-10 w-10 items-center justify-center rounded-full"
             activeOpacity={0.7}
-            disabled={isPickingCurrentLocation || isSending}
+            disabled={isPickingCurrentLocation || isPickingMedia}
             onPress={() => handlePickMedia().catch(() => undefined)}
           >
             <ImagePlus size={22} color="#9DA9BE" />
@@ -4871,9 +4882,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               isPickingCurrentLocation ? 'bg-info-soft' : ''
             }`}
             activeOpacity={0.7}
-            disabled={
-              isPickingCurrentLocation || isSending || recorder.isRecording
-            }
+            disabled={isPickingCurrentLocation || recorder.isRecording}
             onPress={() => handleShareCurrentLocation().catch(() => undefined)}
           >
             {isPickingCurrentLocation ? (
@@ -4909,7 +4918,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               recorder.isRecording ? 'bg-red-100' : 'bg-brand/10'
             }`}
             activeOpacity={0.7}
-            disabled={isPickingCurrentLocation || isSending}
+            disabled={isPickingCurrentLocation}
             onPress={() => handleToggleRecording().catch(() => undefined)}
           >
             {recorder.isRecording ? (
@@ -4928,11 +4937,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
               disabled={!canSend}
               onPress={() => handleSend().catch(() => undefined)}
             >
-              {isSending ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Send size={18} color="#fff" />
-              )}
+              <Send size={18} color="#fff" />
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -5173,41 +5178,14 @@ const styles = StyleSheet.create({
   messageSkeletonRowSent: {
     justifyContent: 'flex-end',
   },
-  imageGallery: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: IMAGE_GALLERY_GAP,
-    width: IMAGE_GALLERY_WIDTH,
-    overflow: 'hidden',
-    borderRadius: 16,
+  mediaGroupBody: {
+    maxWidth: IMAGE_GALLERY_WIDTH + 48,
   },
-  imageGalleryBody: {
-    maxWidth: IMAGE_GALLERY_WIDTH,
+  mediaGroupBodyReceived: {
+    alignItems: 'flex-start',
   },
-  imageGalleryImage: {
-    height: '100%',
-    width: '100%',
-  },
-  imageGalleryMore: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-  },
-  imageGalleryReactionBadge: {
-    position: 'absolute',
-    right: 4,
-    bottom: 4,
-  },
-  imageGalleryTile: {
-    height: IMAGE_GALLERY_TILE_SIZE,
-    width: IMAGE_GALLERY_TILE_SIZE,
-    overflow: 'hidden',
-    backgroundColor: '#E5E7EB',
+  mediaGroupBodySent: {
+    alignItems: 'flex-end',
   },
   productInquiryPanel: {
     paddingHorizontal: 12,

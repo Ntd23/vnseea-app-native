@@ -137,7 +137,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(connectBlock).toContain(
       'const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)',
     );
-    expect(connectBlock).toContain('await nextRoom.connect(');
+    expect(connectBlock).toContain('await connectRoomWithRetry(');
     expect(connectBlock).toContain('publishLocalCallMedia({');
     expect(source).toContain("logCallDebug('native_audio_gate_pass'");
     expect(source).toContain("logCallDebug('native_audio_gate_failed'");
@@ -161,7 +161,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(connectBlock).toContain(
       'const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)',
     );
-    expect(connectBlock).toContain('await nextRoom.connect(');
+    expect(connectBlock).toContain('await connectRoomWithRetry(');
     expect(connectBlock).toContain('publishLocalCallMedia({');
     expect(source).toContain(
       'room.localParticipant.setMicrophoneEnabled(true)',
@@ -420,7 +420,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).not.toContain('connectOptions={{ autoSubscribe: true }}');
     expect(source).toContain('LIVEKIT_CONNECT_OPTIONS');
     expect(source).toContain('autoSubscribe: false');
-    expect(source).toContain('await nextRoom.connect(');
+    expect(source).toContain('await connectRoomWithRetry(');
   });
 
   it('keeps recording SDK-owned and uses compact stats with one SDK mic recovery', () => {

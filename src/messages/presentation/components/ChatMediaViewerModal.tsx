@@ -41,6 +41,7 @@ import {
 import VideoPlayer from 'react-native-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { getHlsPlaybackRetryDelay } from '../../../shared-kernel/application/utils/hlsPlaybackRetry';
 import {
   getChatMediaDismissTranslation,
   shouldDismissChatMedia,
@@ -151,6 +152,8 @@ function ChatVideoViewer({
   const [hasError, setHasError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRetryCountRef = useRef(0);
+  const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoRef = useRef<any>(null);
   const progressWidthRef = useRef(1);
 
@@ -167,6 +170,11 @@ function ChatVideoViewer({
     };
   }, [scheduleControlsHide]);
 
+  const clearAutoRetry = useCallback(() => {
+    if (autoRetryTimerRef.current) clearTimeout(autoRetryTimerRef.current);
+    autoRetryTimerRef.current = null;
+  }, []);
+
   useEffect(() => {
     setPaused(!isActive);
     setCurrentTime(0);
@@ -174,9 +182,15 @@ function ChatVideoViewer({
     setIsReady(false);
     setIsLoading(isActive);
     setHasError(false);
-  }, [isActive, uri]);
+    autoRetryCountRef.current = 0;
+    clearAutoRetry();
+  }, [clearAutoRetry, isActive, uri]);
+
+  useEffect(() => clearAutoRetry, [clearAutoRetry]);
 
   const handleRetry = useCallback(() => {
+    autoRetryCountRef.current = 0;
+    clearAutoRetry();
     setCurrentTime(0);
     setDuration(0);
     setPaused(false);
@@ -184,7 +198,7 @@ function ChatVideoViewer({
     setIsLoading(true);
     setHasError(false);
     setRetryKey(current => current + 1);
-  }, []);
+  }, [clearAutoRetry]);
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -260,6 +274,23 @@ function ChatVideoViewer({
             onProgress={event => setCurrentTime(event.currentTime)}
             onLoad={event => setDuration(event.duration)}
             onError={() => {
+              // A Bunny playlist can answer 404 for a short while after the
+              // video is sent: keep the spinner and retry a few times first.
+              const retryDelay = getHlsPlaybackRetryDelay(
+                uri,
+                autoRetryCountRef.current,
+              );
+              if (retryDelay !== null) {
+                autoRetryCountRef.current += 1;
+                setIsLoading(true);
+                setIsReady(false);
+                clearAutoRetry();
+                autoRetryTimerRef.current = setTimeout(() => {
+                  autoRetryTimerRef.current = null;
+                  setRetryKey(current => current + 1);
+                }, retryDelay);
+                return;
+              }
               setHasError(true);
               setIsLoading(false);
               setIsReady(false);

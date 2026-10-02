@@ -16,9 +16,16 @@
 // We expose `phase` so the UI can show 'Đang đăng...' / 'Đăng' / error
 // states without juggling its own loading bool.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import {
+  createVideoPublishJob,
+  startVideoPreUpload,
+  type VideoPreUpload,
+} from '../../../shared-kernel/application/services/videoPublishJob';
+import { videoPublishQueue } from '../../../shared-kernel/application/services/videoPublishQueue';
 import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
+import { getVideoUploadPolicy } from '../../../shared-kernel/infrastructure/upload/videoUploadPolicy';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import type {
   CreateStoryDraft,
@@ -54,6 +61,38 @@ export async function withStoryVideoThumbnail(
   }
 }
 
+type StoryUploadVideo = StoryMediaUpload & { duration?: number };
+
+function toUploadVideo(media: StoryMediaUpload): StoryUploadVideo {
+  return { ...media, duration: media.durationSeconds };
+}
+
+function enqueueBunnyVideoStory(
+  draft: CreateStoryDraft,
+  policy: Awaited<ReturnType<typeof getVideoUploadPolicy>>,
+  preUpload: VideoPreUpload<StoryUploadVideo> | null,
+  onPublished?: (storyId: string, draft: CreateStoryDraft) => void,
+) {
+  videoPublishQueue.enqueue(
+    createVideoPublishJob({
+      purpose: 'story',
+      video: toUploadVideo(draft.media),
+      thumbnailUri: draft.media.thumbnailUri,
+      policy,
+      preUpload,
+      createFromUpload: (video, uploadId) =>
+        repository.createStoryWithUploadedVideo({ ...draft, media: video }, uploadId),
+      createDirectly: async video => {
+        const result = await repository.createStory({ ...draft, media: video });
+        return { storyId: result.storyId, needsReview: false };
+      },
+      onPublished: ({ storyId }) => {
+        if (storyId) onPublished?.(storyId, draft);
+      },
+    }),
+  );
+}
+
 // ── Validation limits (mirror create_story.php) ─────────────────────────
 const MAX_TITLE_LENGTH = 100;
 const MIN_DESCRIPTION_LENGTH = 10;
@@ -70,6 +109,7 @@ const VM_COPY = {
     unknownError: 'Đã xảy ra lỗi không xác định.',
     timeoutError: 'Tải lên quá lâu. Vui lòng kiểm tra kết nối hoặc chọn tệp nhẹ hơn.',
     networkError: 'Không kết nối được máy chủ. Vui lòng kiểm tra Wi-Fi/4G.',
+    backgroundUpload: 'Đang đăng tin. Tin sẽ hiện khi video xử lý xong.',
   },
   en: {
     selectMediaError: 'Please choose 1 photo or 1 video.',
@@ -80,6 +120,7 @@ const VM_COPY = {
     unknownError: 'An unknown error occurred.',
     timeoutError: 'Upload took too long. Please check your connection or choose a lighter file.',
     networkError: 'Cannot connect to the server. Please check your Wi-Fi/4G.',
+    backgroundUpload: 'Posting your story. It will appear once the video is processed.',
   },
 };
 
@@ -98,14 +139,38 @@ export interface UseCreateStoryOptions {
    * to hand.
    */
   onCreated?: (result: CreateStoryResult) => void;
+  /**
+   * Video stories on Bunny Stream upload in the background and the server
+   * creates them once the video is encoded; this receives the story then,
+   * with the draft it was made from.
+   */
+  onPublishedInBackground?: (storyId: string, draft: CreateStoryDraft) => void;
 }
 
 export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
   const language = useAppLanguage();
   const vmCopy = VM_COPY[language];
-  const { onCreated } = options;
+  const { onCreated, onPublishedInBackground } = options;
 
   const [media, setMediaState] = useState<StoryMediaUpload | null>(null);
+
+  // Upload a picked video while the user decorates the story.
+  const preUploadRef = useRef<VideoPreUpload<StoryUploadVideo> | null>(null);
+  useEffect(() => {
+    const pickedVideo = media?.fileType === 'video' ? media : null;
+    if (preUploadRef.current?.source.uri === pickedVideo?.uri) return;
+    preUploadRef.current?.cancel();
+    preUploadRef.current = pickedVideo
+      ? startVideoPreUpload(toUploadVideo(pickedVideo), 'story')
+      : null;
+  }, [media]);
+  useEffect(
+    () => () => {
+      preUploadRef.current?.cancel();
+      preUploadRef.current = null;
+    },
+    [],
+  );
   const [title, setTitleState] = useState('');
   const [description, setDescriptionState] = useState('');
   const [audience, setAudience] = useState<ContentAudience>('followers');
@@ -205,6 +270,19 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
         description: description.trim() || undefined,
         overlay,
       };
+      const policy = draft.media.fileType === 'video'
+        ? await getVideoUploadPolicy('story')
+        : null;
+      if (policy?.provider === 'bunny_stream') {
+        // The queue takes over the upload started when the video was picked.
+        const preUpload = preUploadRef.current;
+        preUploadRef.current = null;
+        enqueueBunnyVideoStory(draft, policy, preUpload, onPublishedInBackground);
+        // No story id yet: the parent closes the composer without a placeholder.
+        const queued: CreateStoryResult = { message: vmCopy.backgroundUpload };
+        setPhase({ type: 'success', result: queued });
+        return queued;
+      }
       const result = await repository.createStory(draft);
       setPhase({ type: 'success', result });
       // Notify parent FIRST so the rail updates while we're still in
@@ -232,7 +310,17 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       setPhase({ type: 'error', message: friendly });
       return null;
     }
-  }, [media, title, description, audience, overlay, validate, onCreated, vmCopy]);
+  }, [
+    media,
+    title,
+    description,
+    audience,
+    overlay,
+    validate,
+    onCreated,
+    onPublishedInBackground,
+    vmCopy,
+  ]);
 
   // Convenience getter so the screen doesn't have to switch on `phase.type`
   // for the most common cases.

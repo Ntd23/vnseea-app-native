@@ -11,6 +11,7 @@ import type {
   MessageAttachment,
   MessageItem,
   MessageRecallResult,
+  MessageSendProgress,
   PinnedMessageItem,
   SendMessageOptions,
 } from '../../domain/types/messages.types';
@@ -42,14 +43,60 @@ import {
   getBoundedFallbackPollDelay,
 } from '../polling/messageFallbackPolling';
 import { preserveOptimisticVideoThumbnail } from '../media/messageVideoMedia';
+import type { ChatMediaPreparationHandle } from '../media/chatMediaPreparation';
 
 const PAGE_SIZE = 30;
 const TYPING_EMIT_THROTTLE_MS = 1200;
 const TYPING_IDLE_DONE_MS = 1800;
 const TYPING_REMOTE_IDLE_MS = 2600;
 const WEB_GROUP_TYPING_STATUS_SYNC_MS = 2000;
+/** How long a message waits for earlier ones that are still being prepared. */
+export const OUTGOING_ORDER_WAIT_MS = 10000;
 const URL_REGEX = /https?:\/\/[^\s)>]+/gi;
 const repository = createMessagesRepository();
+
+const wait = (milliseconds: number) =>
+  new Promise<void>(resolve => setTimeout(resolve, milliseconds));
+
+export interface OutgoingChatMessage {
+  text: string;
+  attachment?: MessageAttachment;
+  /** Background compression started when the media was picked. */
+  preparation?: ChatMediaPreparationHandle;
+  options?: SendMessageOptions;
+}
+
+interface PendingOutgoingMessage {
+  tempId: string;
+  message: string;
+  attachment?: MessageAttachment;
+  preparation?: ChatMediaPreparationHandle;
+  options?: SendMessageOptions;
+  optimisticMessage: MessageItem;
+}
+
+let pendingMessageSequence = 0;
+
+function createPendingMessageId() {
+  pendingMessageSequence += 1;
+  // Zero-padded so pending ids created in one send sort in send order.
+  return `pending-${Date.now()}-${String(pendingMessageSequence).padStart(
+    6,
+    '0',
+  )}`;
+}
+
+export function compareMessageIds(left: string, right: string) {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const leftIsServerId = Number.isFinite(leftNumber);
+  const rightIsServerId = Number.isFinite(rightNumber);
+
+  if (leftIsServerId && rightIsServerId) return leftNumber - rightNumber;
+  // Local pending messages follow delivered ones from the same second.
+  if (leftIsServerId !== rightIsServerId) return leftIsServerId ? -1 : 1;
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 
 function areCallEventsEqual(
   left: MessageItem['callEvent'],
@@ -90,6 +137,9 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.isSentByMe === right.isSentByMe &&
     left.seen === right.seen &&
     left.deliveryState === right.deliveryState &&
+    left.sendProgress?.phase === right.sendProgress?.phase &&
+    left.sendProgress?.progress === right.sendProgress?.progress &&
+    left.mediaStatus === right.mediaStatus &&
     left.isRecalled === right.isRecalled &&
     left.recalledAt === right.recalledAt &&
     left.recalledByUserId === right.recalledByUserId &&
@@ -239,7 +289,7 @@ function mergeMessages(...messageLists: MessageItem[][]) {
     const timeDifference = left.time - right.time;
     if (timeDifference !== 0) return timeDifference;
 
-    return Number(left.id) - Number(right.id);
+    return compareMessageIds(left.id, right.id);
   });
 }
 
@@ -279,6 +329,10 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const messagesRef = useRef<MessageItem[]>(messages);
   const pendingReactionMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingRecallMessageIdsRef = useRef<Set<string>>(new Set());
+  const outgoingQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const lastOutgoingTurnRef = useRef<{ turn: Promise<void>; mediaGroupId?: string }>({
+    turn: Promise.resolve(),
+  });
   const isLoadingRef = useRef(isLoading);
   const isSendingRef = useRef(isSending);
   const isLoadingMoreRef = useRef(isLoadingMore);
@@ -662,74 +716,175 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     }
   }, [chat.chatType]);
 
-  const sendMessage = useCallback(
-    async (
-      text: string,
-      attachment?: MessageAttachment,
-      options?: SendMessageOptions,
-    ) => {
-      const message = text.trim();
-      if (!message && !attachment) return false;
-      stopTyping();
+  const updateSendProgress = useCallback(
+    (messageId: string, sendProgress: MessageSendProgress) => {
+      setMessages(current => {
+        const index = current.findIndex(item => item.id === messageId);
+        const existing = index >= 0 ? current[index] : undefined;
+        if (
+          !existing ||
+          existing.deliveryState !== 'sending' ||
+          (existing.sendProgress?.phase === sendProgress.phase &&
+            existing.sendProgress?.progress === sendProgress.progress)
+        ) {
+          return current;
+        }
+        const next = [...current];
+        next[index] = { ...existing, sendProgress };
+        return next;
+      });
+    },
+    [],
+  );
 
-      const tempId = `pending-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-      const textDescriptor = describeMessageTextContent(
-        message,
-        apiConfig.webBaseUrl,
-      );
-      const marketplaceContext = options?.productInquiry
-        ? {
-            type: 'product_inquiry' as const,
-            productId: options.productInquiry.productId,
-            name: options.productInquiry.name || 'Sản phẩm',
-            price: options.productInquiry.price,
-            image: options.productInquiry.image,
-            location: options.productInquiry.location,
-            note: options.productInquiry.note || message || undefined,
-          }
-        : undefined;
-      const optimisticMessage: MessageItem = {
-        id: tempId,
-        conversationId: '',
-        fromId: sessionStorage.getSession()?.userId ?? '',
-        toId: chat.userId,
-        message,
-        media: attachment?.uri,
-        mediaType: attachment?.mediaType,
-        thumbnail: attachment?.thumbnailUri,
-        mediaGroupId: options?.mediaGroupId,
-        sharedPost: textDescriptor.sharedPost,
-        storyReply: options?.storyReply,
-        contentKind:
-          attachment?.mediaType ??
-          (options?.storyReply
-            ? 'story'
-            : marketplaceContext
-            ? 'product'
-            : textDescriptor.kind),
-        link: textDescriptor.link,
-        location: textDescriptor.location,
-        marketplaceContext,
-        mentions: options?.mentions,
-        replyTo: options?.replyTo,
-        reactions: createEmptyMessageReactionSummary(),
-        time: Math.floor(Date.now() / 1000),
-        isSentByMe: true,
-        seen: 0,
-        deliveryState: 'sending',
+  const createProgressReporter = useCallback(
+    (messageId: string, phase: MessageSendProgress['phase']) => {
+      let lastStep = -1;
+      return (progress: number) => {
+        // Re-render at most once per 2% so a fast upload does not flood the
+        // message list with state updates.
+        const step = Math.round(Math.min(1, Math.max(0, progress)) * 50);
+        if (step === lastStep) return;
+        lastStep = step;
+        updateSendProgress(messageId, { phase, progress: step / 50 });
       };
+    },
+    [updateSendProgress],
+  );
 
-      setMessages(current => mergeMessages(current, [optimisticMessage]));
-      setPendingSendCount(current => current + 1);
+  const beginOutgoingMessages = useCallback(
+    (items: OutgoingChatMessage[]): PendingOutgoingMessage[] => {
+      const pendingMessages = items.flatMap(item => {
+        const message = item.text.trim();
+        const { attachment, options } = item;
+        if (!message && !attachment) return [];
+
+        const tempId = createPendingMessageId();
+        const textDescriptor = describeMessageTextContent(
+          message,
+          apiConfig.webBaseUrl,
+        );
+        const marketplaceContext = options?.productInquiry
+          ? {
+              type: 'product_inquiry' as const,
+              productId: options.productInquiry.productId,
+              name: options.productInquiry.name || 'Sản phẩm',
+              price: options.productInquiry.price,
+              image: options.productInquiry.image,
+              location: options.productInquiry.location,
+              note: options.productInquiry.note || message || undefined,
+            }
+          : undefined;
+        const optimisticMessage: MessageItem = {
+          id: tempId,
+          conversationId: '',
+          fromId: sessionStorage.getSession()?.userId ?? '',
+          toId: chat.userId,
+          message,
+          media: attachment?.uri,
+          mediaType: attachment?.mediaType,
+          thumbnail: attachment?.thumbnailUri,
+          mediaGroupId: options?.mediaGroupId,
+          sharedPost: textDescriptor.sharedPost,
+          storyReply: options?.storyReply,
+          contentKind:
+            attachment?.mediaType ??
+            (options?.storyReply
+              ? 'story'
+              : marketplaceContext
+              ? 'product'
+              : textDescriptor.kind),
+          link: textDescriptor.link,
+          location: textDescriptor.location,
+          marketplaceContext,
+          mentions: options?.mentions,
+          replyTo: options?.replyTo,
+          reactions: createEmptyMessageReactionSummary(),
+          time: Math.floor(Date.now() / 1000),
+          isSentByMe: true,
+          seen: 0,
+          deliveryState: 'sending',
+        };
+
+        return [
+          {
+            tempId,
+            message,
+            attachment,
+            preparation: item.preparation,
+            options,
+            optimisticMessage,
+          },
+        ];
+      });
+
+      if (pendingMessages.length === 0) return pendingMessages;
+
+      stopTyping();
+      setMessages(current =>
+        mergeMessages(
+          current,
+          pendingMessages.map(pending => pending.optimisticMessage),
+        ),
+      );
+      setPendingSendCount(current => current + pendingMessages.length);
       setError(null);
+      return pendingMessages;
+    },
+    [chat, stopTyping],
+  );
+
+  const prepareOutgoingAttachment = useCallback(
+    async (pending: PendingOutgoingMessage) => {
+      if (!pending.preparation) return pending.attachment;
+      let stopPreparationProgress: (() => void) | undefined;
+      if (pending.attachment?.mediaType === 'video') {
+        const reportPreparation = createProgressReporter(
+          pending.tempId,
+          'preparing',
+        );
+        reportPreparation(pending.preparation.getProgress() ?? 0);
+        stopPreparationProgress =
+          pending.preparation.subscribeProgress(reportPreparation);
+      }
+      try {
+        return await pending.preparation.result;
+      } finally {
+        stopPreparationProgress?.();
+      }
+    },
+    [createProgressReporter],
+  );
+
+  const deliverOutgoingMessage = useCallback(
+    async (
+      pending: PendingOutgoingMessage,
+      prepared: Promise<MessageAttachment | undefined>,
+    ) => {
+      const { tempId, message, options, optimisticMessage } = pending;
 
       try {
+        const attachment = await prepared;
+
+        const preparedThumbnail = attachment?.thumbnailUri;
+        if (preparedThumbnail && preparedThumbnail !== optimisticMessage.thumbnail) {
+          setMessages(current =>
+            current.map(item =>
+              item.id === tempId ? { ...item, thumbnail: preparedThumbnail } : item,
+            ),
+          );
+        }
+
+        const reportUpload = attachment
+          ? createProgressReporter(tempId, 'uploading')
+          : undefined;
+        reportUpload?.(0);
         const response = await sendMessageForChat(
           message,
           attachment,
-          options,
+          reportUpload
+            ? { ...options, onUploadProgress: reportUpload }
+            : options,
         );
         let sentMessages = response.sentMessages ?? [];
 
@@ -746,10 +901,10 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
           }));
         }
 
-        sentMessages = preserveOptimisticVideoThumbnail(
-          sentMessages,
-          optimisticMessage,
-        );
+        sentMessages = preserveOptimisticVideoThumbnail(sentMessages, {
+          ...optimisticMessage,
+          thumbnail: preparedThumbnail ?? optimisticMessage.thumbnail,
+        });
 
         setMessages(current =>
           mergeMessages(
@@ -764,7 +919,9 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         );
         setMessages(current =>
           current.map(item =>
-            item.id === tempId ? { ...item, deliveryState: 'failed' } : item,
+            item.id === tempId
+              ? { ...item, deliveryState: 'failed', sendProgress: undefined }
+              : item,
           ),
         );
         return false;
@@ -772,7 +929,60 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         setPendingSendCount(current => Math.max(0, current - 1));
       }
     },
-    [chat, getMessagesForChat, sendMessageForChat, stopTyping],
+    [createProgressReporter, getMessagesForChat, sendMessageForChat],
+  );
+
+  const enqueueOutgoingMessage = useCallback(
+    (pending: PendingOutgoingMessage) => {
+      // Every bubble is on screen at once. A message waits for the ones sent
+      // before it to be ready, but only briefly: a video still compressing or
+      // uploading after OUTGOING_ORDER_WAIT_MS no longer holds up what was
+      // sent after it, like WhatsApp. Items of one album always keep their
+      // order, and sends run one at a time so the server stores them in the
+      // order they went out.
+      const prepared = prepareOutgoingAttachment(pending);
+      const previous = lastOutgoingTurnRef.current;
+      const mediaGroupId = pending.options?.mediaGroupId;
+      const earlierTurn =
+        mediaGroupId && previous.mediaGroupId === mediaGroupId
+          ? previous.turn
+          : Promise.race([previous.turn, wait(OUTGOING_ORDER_WAIT_MS)]);
+      let delivery: Promise<boolean> = Promise.resolve(false);
+      const turn = Promise.all([prepared.catch(() => undefined), earlierTurn]).then(
+        () => {
+          delivery = outgoingQueueRef.current.then(() =>
+            deliverOutgoingMessage(pending, prepared),
+          );
+          outgoingQueueRef.current = delivery.catch(() => undefined);
+        },
+      );
+      lastOutgoingTurnRef.current = { turn, mediaGroupId };
+      return turn.then(() => delivery);
+    },
+    [deliverOutgoingMessage, prepareOutgoingAttachment],
+  );
+
+  const sendMessage = useCallback(
+    async (
+      text: string,
+      attachment?: MessageAttachment,
+      options?: SendMessageOptions,
+    ) => {
+      const [pending] = beginOutgoingMessages([{ text, attachment, options }]);
+      if (!pending) return false;
+      return enqueueOutgoingMessage(pending);
+    },
+    [beginOutgoingMessages, enqueueOutgoingMessage],
+  );
+
+  const sendMessageBatch = useCallback(
+    async (items: OutgoingChatMessage[]) =>
+      Promise.all(
+        beginOutgoingMessages(items).map(pending =>
+          enqueueOutgoingMessage(pending),
+        ),
+      ),
+    [beginOutgoingMessages, enqueueOutgoingMessage],
   );
 
   const loadGroupInfo = useCallback(async () => {
@@ -1194,6 +1404,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     setMessageReaction,
     recallMessage,
     sendMessage,
+    sendMessageBatch,
     notifyTyping,
     stopTyping,
     loadGroupInfo,

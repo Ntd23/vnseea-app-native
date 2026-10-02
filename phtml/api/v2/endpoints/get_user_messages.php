@@ -111,6 +111,10 @@ if (!empty($_POST['recipient_id']) && is_numeric($_POST['recipient_id']) && $_PO
                     if (file_exists($message['file_size'])) {
                         $message['file_size'] = Wo_SizeFormat(filesize($message['media']));
                     }
+                    $media_status = VNSEEA_BunnyMediaStatus($message['media']);
+                    if ($media_status !== '') {
+                        $message['media_status'] = $media_status;
+                    }
                     $message['media']     = Wo_GetMedia($message['media']);
                 }
                 if (!empty($message['time'])) {

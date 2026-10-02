@@ -24,14 +24,15 @@ import {
 } from '@livekit/react-native-webrtc';
 import {
   ConnectionState,
+  DisconnectReason,
   MediaDeviceFailure,
   ParticipantEvent,
   Room,
   RoomEvent,
   Track,
   TrackEvent,
-  type DisconnectReason,
 } from 'livekit-client';
+import { connectRoomWithRetry } from '../livekit/connectRoomWithRetry';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigationRef } from '../../../navigation/navigationRef';
 import { requestCallMediaPermissions } from '../../../shared-kernel/application/utils/microphonePermission';
@@ -2618,6 +2619,11 @@ export function LiveKitCallSessionProvider({
           roomName: nextPayload.call.roomName,
           reason: reason ? String(reason) : '',
         });
+        // An unreachable server during join is handled where the room
+        // connects: it retries, and ends the call only if every attempt fails.
+        if (reason === DisconnectReason.JOIN_FAILURE) {
+          return;
+        }
         const activeSession = sessionRef.current;
         if (
           activeRoomRef.current !== nextRoom ||
@@ -3046,10 +3052,24 @@ export function LiveKitCallSessionProvider({
           dynacast: LIVEKIT_ROOM_OPTIONS.dynacast,
           singlePeerConnection: LIVEKIT_ROOM_OPTIONS.singlePeerConnection,
         });
-        await nextRoom.connect(
+        await connectRoomWithRetry(
+          nextRoom,
           nextPayload.wsUrl,
           nextPayload.token,
           LIVEKIT_CONNECT_OPTIONS,
+          {
+            shouldContinue: () =>
+              activeRoomRef.current === nextRoom && !closeSentRef.current,
+            onRetry: (attempt, error) =>
+              logCallDebug('room_connect_retry', {
+                callId,
+                callType,
+                callUuid,
+                roomName: nextPayload.call.roomName,
+                attempt,
+                error: serializeCallDebugError(error),
+              }),
+          },
         );
         await applyCallAudioOutputMode(
           nextRoom,

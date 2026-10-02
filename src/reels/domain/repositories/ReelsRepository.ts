@@ -11,6 +11,7 @@ import type {
   ReelsItem,
   ReelsPage,
 } from '../types/reels.types';
+import type { VideoPublishStatus } from '../../../shared-kernel/domain/types/videoPublish.types';
 
 export interface CommentAuthorContext {
   pageId?: string;
@@ -28,6 +29,15 @@ export interface FetchReelsOptions {
 export interface ReelsRepository {
   /** Upload a new reel video post */
   createReel(draft: ReelDraft): Promise<ReelUploadResult>;
+
+  /**
+   * Create a reel whose video was already uploaded to Bunny Stream with ticket
+   * `videoUploadId`. The server holds the reel back until the video is encoded.
+   */
+  createReelWithUploadedVideo(
+    draft: ReelDraft,
+    videoUploadId: string,
+  ): Promise<VideoPublishStatus>;
 
   /** Fetch a page of reels (TikTok-style infinite feed). */
   fetchReels(options?: FetchReelsOptions): Promise<ReelsPage>;

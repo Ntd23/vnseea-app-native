@@ -412,6 +412,47 @@ if (isset($_FILES['postVideo']['name']) && empty($mediaFilename)) {
 		$error_message = 'invalid file';
     }
 }
+$bunny_upload = null;
+if (!isset($_FILES['postVideo']['name']) && empty($mediaFilename) && !empty($_POST['bunny_upload_id'])) {
+    // The app already uploaded this video to Bunny Stream with a ticket from
+    // media-upload-ticket; only the caller's own unused upload counts.
+    $bunny_upload = VNSEEA_BunnyReservePublishUpload(
+        $wo['user']['user_id'],
+        $_POST['bunny_upload_id'],
+        (!empty($_POST['postType']) && $_POST['postType'] === 'reel') ? 'reel' : 'post'
+    );
+    if (empty($bunny_upload)) {
+        $error_code    = 8;
+        $error_message = 'invalid file';
+    } else {
+        $mediaFilename = VNSEEA_BunnyMediaRef('public', $bunny_upload['video_guid']);
+        $mediaName     = !empty($bunny_upload['file_name']) ? $bunny_upload['file_name'] : 'video.mp4';
+        if (!empty($_FILES['video_thumb']) && in_array($_FILES['video_thumb']['type'], array('image/png', 'image/jpeg', 'image/jpg', 'image/gif'))) {
+            $fileInfo = array(
+                'file' => $_FILES['video_thumb']['tmp_name'],
+                'name' => $_FILES['video_thumb']['name'],
+                'size' => $_FILES['video_thumb']['size'],
+                'type' => $_FILES['video_thumb']['type'],
+                'types' => 'jpeg,png,jpg,gif'
+            );
+            if (!$preserve_video_thumbnail_aspect) {
+                $fileInfo['crop'] = array(
+                    'width' => 525,
+                    'height' => 295
+                );
+            }
+            $media = Wo_ShareFile($fileInfo);
+            if (!empty($media)) {
+                $video_thumb = $media['filename'];
+            }
+        }
+        if (empty($video_thumb)) {
+            // Bunny renders its own poster frame while it encodes.
+            $bunny_library = VNSEEA_BunnyStreamLibrary('public');
+            $video_thumb = 'https://' . $bunny_library['cdn_host'] . '/' . $bunny_upload['video_guid'] . '/thumbnail.jpg';
+        }
+    }
+}
 if (isset($_FILES['postMusic']['name']) && empty($mediaFilename)) {
     $fileInfo = array(
         'file' => $_FILES["postMusic"]["tmp_name"],
@@ -461,10 +502,10 @@ if (isset($_FILES['postPhotos']['name']) && empty($mediaFilename) && empty($_POS
         $multi = 1;
     }
 }
-if (!empty($mediaFilename)) {
+if (!empty($mediaFilename) && strpos($mediaFilename, 'bunny-stream://') !== 0) {
     $created_post_media_files[] = $mediaFilename;
 }
-if (!empty($video_thumb)) {
+if (!empty($video_thumb) && !filter_var($video_thumb, FILTER_VALIDATE_URL)) {
     $created_post_media_files[] = $video_thumb;
 }
 $privacy = VNSEEA_NormalizePostPrivacyRequest($_POST);
@@ -646,6 +687,38 @@ if (empty($error_message)) {
     }
     if (!empty($_POST['post_color']) && !empty($post_text) && empty($_POST['postRecord']) && empty($mediaFilename) && empty($mediaName) && empty($post_map) && empty($url_title) && empty($url_content) && empty($url_link) && empty($import_url_image) && empty($album_name) && empty($multi) && empty($video_thumb) && empty($post_data['postPhoto'])) {
         $post_data['color_id'] = Wo_Secure($_POST['post_color']);
+    }
+    if (!empty($bunny_upload)) {
+        // Hold the post back until Bunny has encoded the video, so nobody sees a
+        // video that cannot play. VNSEEA_BunnyPublishPost registers it then, the
+        // way FFMPEGUpload registers converted videos.
+        $bunny_payload = array(
+            'post_data' => $post_data,
+            'tagged_user_ids' => $tagged_user_ids,
+            'poll_answers' => $is_option ? array_values(array_filter($_POST['answer'])) : array()
+        );
+        if (!VNSEEA_BunnyAttachPendingPublish($bunny_upload['id'], $bunny_payload)) {
+            VNSEEA_BunnyReleaseReservation($bunny_upload['id']);
+            $cleanup_created_post_media();
+            $error_code    = 23;
+            $error_message = 'Unable to create post.';
+            return;
+        }
+        // Publishes at once when Bunny already finished encoding.
+        $bunny_row = VNSEEA_BunnyFinalizePublish($bunny_upload['id']);
+        $response_data = array(
+            'api_status' => 200,
+            'code' => 'processing',
+            'message' => 'Your video is processing',
+            'bunny_upload' => array(
+                'upload_id' => (string) $bunny_upload['id'],
+                'status' => VNSEEA_BunnyClientUploadStatus(!empty($bunny_row['status']) ? (string) $bunny_row['status'] : 'uploaded'),
+                'publish_state' => !empty($bunny_row['publish_state']) ? (string) $bunny_row['publish_state'] : 'pending',
+                'needs_review' => (int) $post_active !== 1,
+                'post_id' => !empty($bunny_row['post_id']) ? (string) $bunny_row['post_id'] : ''
+            )
+        );
+        return;
     }
     if (!empty($ffmpeg_convert_video)) {
         $ffmpeg_b             = $wo['config']['ffmpeg_binary_file'];
@@ -920,4 +993,8 @@ if (empty($error_message)) {
 }
 if (!empty($error_message) && !empty($created_post_media_files)) {
     $cleanup_created_post_media();
+}
+if (!empty($error_message) && !empty($bunny_upload)) {
+    // Let the app retry with the same uploaded video.
+    VNSEEA_BunnyReleaseReservation($bunny_upload['id']);
 }
