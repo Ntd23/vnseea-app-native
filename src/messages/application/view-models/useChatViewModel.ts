@@ -11,7 +11,6 @@ import type {
   MessageAttachment,
   MessageItem,
   MessageRecallResult,
-  MessageSendProgress,
   PinnedMessageItem,
   SendMessageOptions,
 } from '../../domain/types/messages.types';
@@ -42,21 +41,20 @@ import {
   CHAT_FALLBACK_POLL_DELAYS_MS,
   getBoundedFallbackPollDelay,
 } from '../polling/messageFallbackPolling';
-import { preserveOptimisticVideoThumbnail } from '../media/messageVideoMedia';
 import type { ChatMediaPreparationHandle } from '../media/chatMediaPreparation';
+import {
+  chatOutgoingQueue,
+  type ChatOutgoingSnapshot,
+  type OutgoingChatSend,
+} from '../services/chatOutgoingQueue';
 
 const PAGE_SIZE = 30;
 const TYPING_EMIT_THROTTLE_MS = 1200;
 const TYPING_IDLE_DONE_MS = 1800;
 const TYPING_REMOTE_IDLE_MS = 2600;
 const WEB_GROUP_TYPING_STATUS_SYNC_MS = 2000;
-/** How long a message waits for earlier ones that are still being prepared. */
-export const OUTGOING_ORDER_WAIT_MS = 10000;
 const URL_REGEX = /https?:\/\/[^\s)>]+/gi;
 const repository = createMessagesRepository();
-
-const wait = (milliseconds: number) =>
-  new Promise<void>(resolve => setTimeout(resolve, milliseconds));
 
 export interface OutgoingChatMessage {
   text: string;
@@ -64,15 +62,6 @@ export interface OutgoingChatMessage {
   /** Background compression started when the media was picked. */
   preparation?: ChatMediaPreparationHandle;
   options?: SendMessageOptions;
-}
-
-interface PendingOutgoingMessage {
-  tempId: string;
-  message: string;
-  attachment?: MessageAttachment;
-  preparation?: ChatMediaPreparationHandle;
-  options?: SendMessageOptions;
-  optimisticMessage: MessageItem;
 }
 
 let pendingMessageSequence = 0;
@@ -84,6 +73,10 @@ function createPendingMessageId() {
     6,
     '0',
   )}`;
+}
+
+function isPendingMessageId(id: string) {
+  return id.startsWith('pending-');
 }
 
 export function compareMessageIds(left: string, right: string) {
@@ -286,11 +279,37 @@ function mergeMessages(...messageLists: MessageItem[][]) {
   }
 
   return [...messages.values()].sort((left, right) => {
-    const timeDifference = left.time - right.time;
+    const timeDifference = sortTime(left) - sortTime(right);
     if (timeDifference !== 0) return timeDifference;
 
     return compareMessageIds(left.id, right.id);
   });
+}
+
+/**
+ * Media still being prepared or uploaded stays below everything else: the
+ * server dates it when it is actually sent, after any text sent meanwhile, so
+ * it does not jump when it arrives.
+ */
+function sortTime(message: MessageItem) {
+  return message.deliveryState !== undefined && message.mediaType
+    ? Number.MAX_SAFE_INTEGER
+    : message.time;
+}
+
+/**
+ * Adds what this device is sending to a thread: bubbles still pending, and
+ * the server's copies of delivered ones until the thread reloads them.
+ */
+function withOutgoingMessages(current: MessageItem[], outgoing: ChatOutgoingSnapshot) {
+  const pendingIds = new Set(outgoing.pending.map(message => message.id));
+  const kept = current.filter(
+    message => !isPendingMessageId(message.id) || pendingIds.has(message.id),
+  );
+  const knownIds = new Set(kept.map(message => message.id));
+  // A copy the thread already has may be newer (seen, reactions).
+  const delivered = outgoing.delivered.filter(message => !knownIds.has(message.id));
+  return mergeMessages(kept, outgoing.pending, delivered);
 }
 
 export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
@@ -304,7 +323,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const [isLoadingAddableUsers, setIsLoadingAddableUsers] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pendingSendCount, setPendingSendCount] = useState(0);
+  const [outgoing, setOutgoing] = useState(() => chatOutgoingQueue.getSnapshot(chat));
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
@@ -314,7 +333,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(
     isMessageRealtimeConnected(),
   );
-  const isSending = pendingSendCount > 0;
+  const isSending = outgoing.pending.some(message => message.deliveryState === 'sending');
   const isRefreshingRef = useRef(false);
   const remoteTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -329,26 +348,13 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const messagesRef = useRef<MessageItem[]>(messages);
   const pendingReactionMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingRecallMessageIdsRef = useRef<Set<string>>(new Set());
-  const outgoingQueueRef = useRef<Promise<unknown>>(Promise.resolve());
-  const lastOutgoingTurnRef = useRef<{ turn: Promise<void>; mediaGroupId?: string }>({
-    turn: Promise.resolve(),
-  });
   const isLoadingRef = useRef(isLoading);
-  const isSendingRef = useRef(isSending);
   const isLoadingMoreRef = useRef(isLoadingMore);
   const hasMoreRef = useRef(hasMore);
   const initialLoadPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const getMessagesForChat = useCallback(
     (options?: Parameters<typeof repository.getMessages>[1]) =>
       repository.getMessages(chat, options),
-    [chat],
-  );
-  const sendMessageForChat = useCallback(
-    (
-      message: string,
-      attachment?: MessageAttachment,
-      options?: SendMessageOptions,
-    ) => repository.sendMessage(chat, message, attachment, options),
     [chat],
   );
   const typingRecipientId = getTypingRecipientId(chat);
@@ -412,7 +418,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         const page = await getMessagesForChat({
           limit: PAGE_SIZE,
         });
-        setMessages(mergeMessages(page));
+        setMessages(withOutgoingMessages(mergeMessages(page), chatOutgoingQueue.getSnapshot(chat)));
         setHasMore(page.length >= PAGE_SIZE);
         setIsTyping(false);
         setIsRecording(false);
@@ -433,7 +439,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     })();
     initialLoadPromiseRef.current = operation;
     return operation;
-  }, [chat.chatType, chat.userId, getMessagesForChat, loadPinnedMessages]);
+  }, [chat, getMessagesForChat, loadPinnedMessages]);
 
   const loadOlder = useCallback(async () => {
     const oldestMessageId = oldestMessageIdRef.current;
@@ -475,7 +481,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     async (showSpinner = true) => {
       if (
         isLoadingRef.current ||
-        isSendingRef.current ||
+        chatOutgoingQueue.hasActiveRequest(chat) ||
         isRefreshingRef.current
       ) {
         return false;
@@ -520,7 +526,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       }
       return true;
     },
-    [getMessagesForChat],
+    [chat, getMessagesForChat],
   );
 
   const loadMessageContext = useCallback(
@@ -716,44 +722,8 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     }
   }, [chat.chatType]);
 
-  const updateSendProgress = useCallback(
-    (messageId: string, sendProgress: MessageSendProgress) => {
-      setMessages(current => {
-        const index = current.findIndex(item => item.id === messageId);
-        const existing = index >= 0 ? current[index] : undefined;
-        if (
-          !existing ||
-          existing.deliveryState !== 'sending' ||
-          (existing.sendProgress?.phase === sendProgress.phase &&
-            existing.sendProgress?.progress === sendProgress.progress)
-        ) {
-          return current;
-        }
-        const next = [...current];
-        next[index] = { ...existing, sendProgress };
-        return next;
-      });
-    },
-    [],
-  );
-
-  const createProgressReporter = useCallback(
-    (messageId: string, phase: MessageSendProgress['phase']) => {
-      let lastStep = -1;
-      return (progress: number) => {
-        // Re-render at most once per 2% so a fast upload does not flood the
-        // message list with state updates.
-        const step = Math.round(Math.min(1, Math.max(0, progress)) * 50);
-        if (step === lastStep) return;
-        lastStep = step;
-        updateSendProgress(messageId, { phase, progress: step / 50 });
-      };
-    },
-    [updateSendProgress],
-  );
-
   const beginOutgoingMessages = useCallback(
-    (items: OutgoingChatMessage[]): PendingOutgoingMessage[] => {
+    (items: OutgoingChatMessage[]): OutgoingChatSend[] => {
       const pendingMessages = items.flatMap(item => {
         const message = item.text.trim();
         const { attachment, options } = item;
@@ -821,145 +791,10 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       if (pendingMessages.length === 0) return pendingMessages;
 
       stopTyping();
-      setMessages(current =>
-        mergeMessages(
-          current,
-          pendingMessages.map(pending => pending.optimisticMessage),
-        ),
-      );
-      setPendingSendCount(current => current + pendingMessages.length);
       setError(null);
       return pendingMessages;
     },
     [chat, stopTyping],
-  );
-
-  const prepareOutgoingAttachment = useCallback(
-    async (pending: PendingOutgoingMessage) => {
-      if (!pending.preparation) return pending.attachment;
-      let stopPreparationProgress: (() => void) | undefined;
-      if (pending.attachment?.mediaType === 'video') {
-        const reportPreparation = createProgressReporter(
-          pending.tempId,
-          'preparing',
-        );
-        reportPreparation(pending.preparation.getProgress() ?? 0);
-        stopPreparationProgress =
-          pending.preparation.subscribeProgress(reportPreparation);
-      }
-      try {
-        return await pending.preparation.result;
-      } finally {
-        stopPreparationProgress?.();
-      }
-    },
-    [createProgressReporter],
-  );
-
-  const deliverOutgoingMessage = useCallback(
-    async (
-      pending: PendingOutgoingMessage,
-      prepared: Promise<MessageAttachment | undefined>,
-    ) => {
-      const { tempId, message, options, optimisticMessage } = pending;
-
-      try {
-        const attachment = await prepared;
-
-        const preparedThumbnail = attachment?.thumbnailUri;
-        if (preparedThumbnail && preparedThumbnail !== optimisticMessage.thumbnail) {
-          setMessages(current =>
-            current.map(item =>
-              item.id === tempId ? { ...item, thumbnail: preparedThumbnail } : item,
-            ),
-          );
-        }
-
-        const reportUpload = attachment
-          ? createProgressReporter(tempId, 'uploading')
-          : undefined;
-        reportUpload?.(0);
-        const response = await sendMessageForChat(
-          message,
-          attachment,
-          reportUpload
-            ? { ...options, onUploadProgress: reportUpload }
-            : options,
-        );
-        let sentMessages = response.sentMessages ?? [];
-
-        if (sentMessages.length === 0) {
-          sentMessages = await getMessagesForChat({
-            limit: 1,
-          });
-        }
-
-        if (options?.mediaGroupId) {
-          sentMessages = sentMessages.map(item => ({
-            ...item,
-            mediaGroupId: options.mediaGroupId,
-          }));
-        }
-
-        sentMessages = preserveOptimisticVideoThumbnail(sentMessages, {
-          ...optimisticMessage,
-          thumbnail: preparedThumbnail ?? optimisticMessage.thumbnail,
-        });
-
-        setMessages(current =>
-          mergeMessages(
-            current.filter(item => item.id !== tempId),
-            sentMessages,
-          ),
-        );
-        return true;
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'Không gửi được tin nhắn',
-        );
-        setMessages(current =>
-          current.map(item =>
-            item.id === tempId
-              ? { ...item, deliveryState: 'failed', sendProgress: undefined }
-              : item,
-          ),
-        );
-        return false;
-      } finally {
-        setPendingSendCount(current => Math.max(0, current - 1));
-      }
-    },
-    [createProgressReporter, getMessagesForChat, sendMessageForChat],
-  );
-
-  const enqueueOutgoingMessage = useCallback(
-    (pending: PendingOutgoingMessage) => {
-      // Every bubble is on screen at once. A message waits for the ones sent
-      // before it to be ready, but only briefly: a video still compressing or
-      // uploading after OUTGOING_ORDER_WAIT_MS no longer holds up what was
-      // sent after it, like WhatsApp. Items of one album always keep their
-      // order, and sends run one at a time so the server stores them in the
-      // order they went out.
-      const prepared = prepareOutgoingAttachment(pending);
-      const previous = lastOutgoingTurnRef.current;
-      const mediaGroupId = pending.options?.mediaGroupId;
-      const earlierTurn =
-        mediaGroupId && previous.mediaGroupId === mediaGroupId
-          ? previous.turn
-          : Promise.race([previous.turn, wait(OUTGOING_ORDER_WAIT_MS)]);
-      let delivery: Promise<boolean> = Promise.resolve(false);
-      const turn = Promise.all([prepared.catch(() => undefined), earlierTurn]).then(
-        () => {
-          delivery = outgoingQueueRef.current.then(() =>
-            deliverOutgoingMessage(pending, prepared),
-          );
-          outgoingQueueRef.current = delivery.catch(() => undefined);
-        },
-      );
-      lastOutgoingTurnRef.current = { turn, mediaGroupId };
-      return turn.then(() => delivery);
-    },
-    [deliverOutgoingMessage, prepareOutgoingAttachment],
   );
 
   const sendMessage = useCallback(
@@ -968,21 +803,18 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       attachment?: MessageAttachment,
       options?: SendMessageOptions,
     ) => {
-      const [pending] = beginOutgoingMessages([{ text, attachment, options }]);
-      if (!pending) return false;
-      return enqueueOutgoingMessage(pending);
+      const sends = beginOutgoingMessages([{ text, attachment, options }]);
+      if (sends.length === 0) return false;
+      const [sent] = await chatOutgoingQueue.enqueue(chat, sends);
+      return sent ?? false;
     },
-    [beginOutgoingMessages, enqueueOutgoingMessage],
+    [beginOutgoingMessages, chat],
   );
 
   const sendMessageBatch = useCallback(
     async (items: OutgoingChatMessage[]) =>
-      Promise.all(
-        beginOutgoingMessages(items).map(pending =>
-          enqueueOutgoingMessage(pending),
-        ),
-      ),
-    [beginOutgoingMessages, enqueueOutgoingMessage],
+      chatOutgoingQueue.enqueue(chat, beginOutgoingMessages(items)),
+    [beginOutgoingMessages, chat],
   );
 
   const loadGroupInfo = useCallback(async () => {
@@ -1090,6 +922,25 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     () => subscribeToMessageRealtimeConnection(setIsRealtimeConnected),
     [],
   );
+
+  // What this device is sending lives outside the screen, so leaving the chat
+  // and coming back still shows bubbles that are compressing or uploading.
+  useEffect(() => {
+    let reportedFailureId = chatOutgoingQueue.getSnapshot(chat).failure?.tempId;
+    const apply = (snapshot: ChatOutgoingSnapshot) => {
+      setOutgoing(snapshot);
+      setMessages(current => {
+        const next = withOutgoingMessages(current, snapshot);
+        return areMessageArraysSame(current, next) ? current : next;
+      });
+      if (snapshot.failure && snapshot.failure.tempId !== reportedFailureId) {
+        reportedFailureId = snapshot.failure.tempId;
+        setError(snapshot.failure.message);
+      }
+    };
+    apply(chatOutgoingQueue.getSnapshot(chat));
+    return chatOutgoingQueue.subscribe(chat, apply);
+  }, [chat]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1269,10 +1120,6 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   useEffect(() => {
     isLoadingRef.current = isLoading;
   }, [isLoading]);
-
-  useEffect(() => {
-    isSendingRef.current = isSending;
-  }, [isSending]);
 
   useEffect(() => {
     isLoadingMoreRef.current = isLoadingMore;

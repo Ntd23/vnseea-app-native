@@ -1776,6 +1776,9 @@ function Wo_GetMedia($media)
         return VNSEEA_BunnyPlaybackUrl($media);
     }
     if (filter_var($media, FILTER_VALIDATE_URL)) {
+        if (function_exists('VNSEEA_BunnyCurrentPosterUrl')) {
+            $media = VNSEEA_BunnyCurrentPosterUrl($media);
+        }
         return VNSEEA_RewriteMediaUrlForCdn($media);
     }
     $shared_upload_url = VNSEEA_GetSharedUploadUrl($media);
