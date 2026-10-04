@@ -447,9 +447,9 @@ if (!isset($_FILES['postVideo']['name']) && empty($mediaFilename) && !empty($_PO
             }
         }
         if (empty($video_thumb)) {
-            // Bunny renders its own poster frame while it encodes.
-            $bunny_library = VNSEEA_BunnyStreamLibrary('public');
-            $video_thumb = 'https://' . $bunny_library['cdn_host'] . '/' . $bunny_upload['video_guid'] . '/thumbnail.jpg';
+            // Bunny renders its own poster frame while it encodes. Wo_GetMedia
+            // serves it from the library's current hostname.
+            $video_thumb = VNSEEA_BunnyPosterUrl(VNSEEA_BunnyMediaRef('public', $bunny_upload['video_guid']));
         }
     }
 }

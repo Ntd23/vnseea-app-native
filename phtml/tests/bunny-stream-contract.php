@@ -129,9 +129,9 @@ $GLOBALS['vnseea_bunny_http'] = function ($method, $url, $headers, $body) use (&
     return array('status' => 403, 'body' => '');
 };
 $results = VNSEEA_BunnyStreamSelfTest();
-stream_equals(count($results), 3, 'the self-test reports both libraries');
+stream_equals(count($results), 4, 'the self-test reports both libraries');
 stream_assert(!$results[0]['ok'] && strpos($results[0]['message'], 'HTTP 401') !== false, 'a rejected API key is reported');
-stream_assert($results[1]['ok'] && $results[2]['ok'], 'a working private library passes both checks');
+stream_assert($results[1]['ok'] && !$results[2]['ok'] && $results[3]['ok'], 'a working private library passes its checks apart from the *.b-cdn.net hostname warning');
 stream_assert(in_array('GET https://vz-chat.b-cdn.net/' . $guid . '/playlist.m3u8', $requests, true), 'the unsigned playlist is probed');
 unset($GLOBALS['vnseea_bunny_http']);
 
@@ -208,10 +208,12 @@ $GLOBALS['vnseea_bunny_http'] = function ($method, $url, $headers, $body) use (&
     return array('status' => 403, 'body' => '');
 };
 $results = VNSEEA_BunnyStreamSelfTest();
-stream_equals(count($results), 4, 'both libraries report the API and playback checks');
+stream_equals(count($results), 6, 'both libraries report the API, hostname and playback checks');
 stream_assert(in_array('GET https://vz-public.b-cdn.net/' . $guid . '/playlist.m3u8', $requests, true), 'the public library is probed like the apps request it');
-stream_assert(!$results[1]['ok'] && strpos($results[1]['message'], 'Block direct URL file access') !== false, 'public referrer blocking is named');
-stream_assert(!$results[3]['ok'] && strpos($results[3]['message'], 'Block direct URL file access') !== false, 'chat referrer blocking is not blamed on the token key');
+stream_assert(!$results[1]['ok'] && strpos($results[1]['message'], 'chặn mọi tên miền *.b-cdn.net') !== false, 'a default *.b-cdn.net hostname is flagged as blocked in Vietnam');
+stream_assert(!$results[2]['ok'] && strpos($results[2]['message'], 'Block direct URL file access') !== false, 'public referrer blocking is named');
+stream_assert(!$results[5]['ok'] && strpos($results[5]['message'], 'Block direct URL file access') !== false, 'chat referrer blocking is not blamed on the token key');
+stream_assert(VNSEEA_BunnyBlockedHostname('vz-231f8eb0-38d.b-cdn.net') && !VNSEEA_BunnyBlockedHostname('stream.vnseea.vn'), 'only *.b-cdn.net hostnames count as blocked');
 unset($GLOBALS['vnseea_bunny_http']);
 
 // Without the file on this server, posts take their upright display size from what Bunny encoded.
@@ -292,6 +294,18 @@ stream_equals(
     'video stories without a cover show the poster Bunny renders'
 );
 stream_assert(VNSEEA_BunnyPosterUrl('upload/videos/a.mp4') === '', 'local videos have no Bunny poster');
+$GLOBALS['wo']['config']['vnseea_bunny_stream_public_cdn_hostname'] = 'stream.vnseea.vn';
+stream_equals(
+    VNSEEA_BunnyCurrentPosterUrl('https://vz-231f8eb0-38d.b-cdn.net/' . $guid . '/thumbnail.jpg'),
+    'https://stream.vnseea.vn/' . $guid . '/thumbnail.jpg',
+    'posters stored on the old *.b-cdn.net host are served from the current hostname'
+);
+stream_equals(
+    VNSEEA_BunnyCurrentPosterUrl('https://cdn.vnseea.vn/upload/photos/a.jpg'),
+    'https://cdn.vnseea.vn/upload/photos/a.jpg',
+    'other media URLs are left alone'
+);
+$GLOBALS['wo']['config']['vnseea_bunny_stream_public_cdn_hostname'] = 'vz-public.b-cdn.net';
 
 $publish_sources = array(
     'new_post' => file_get_contents($root . '/api/v2/endpoints/new_post.php'),
@@ -320,5 +334,7 @@ stream_assert(
     'held-back items publish only once their video plays'
 );
 stream_assert(strpos($publish_sources['functions_three'], "VNSEEA_BunnyPosterUrl(\$video['filename'])") !== false, 'story thumbnails fall back to the Bunny poster');
+stream_assert(strpos($sources['functions'], '$media = VNSEEA_BunnyCurrentPosterUrl($media);') !== false, 'Wo_GetMedia moves stored Bunny posters to the current hostname');
+stream_assert(strpos($publish_sources['new_post'], "\$video_thumb = VNSEEA_BunnyPosterUrl(VNSEEA_BunnyMediaRef('public', \$bunny_upload['video_guid']));") !== false, 'post poster fallbacks use the poster helper');
 
 fwrite(STDOUT, "bunny stream contract: ok\n");

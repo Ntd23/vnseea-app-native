@@ -317,6 +317,33 @@ if (!function_exists('VNSEEA_BunnyPosterUrl')) {
     }
 }
 
+if (!function_exists('VNSEEA_BunnyCurrentPosterUrl')) {
+    /**
+     * Posts used to store Bunny's poster as an absolute URL on the library's
+     * default *.b-cdn.net host, which VNPT and Viettel resolvers block. Such a
+     * URL is served from the public library's current CDN hostname instead;
+     * any other URL comes back unchanged.
+     */
+    function VNSEEA_BunnyCurrentPosterUrl($url)
+    {
+        if (!is_string($url) ||
+            !preg_match('~^https://vz-[0-9a-z-]+\.b-cdn\.net/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/thumbnail\.jpg$~i', trim($url), $matches)
+        ) {
+            return $url;
+        }
+        $current = VNSEEA_BunnyPosterUrl(VNSEEA_BunnyMediaRef('public', $matches[1]));
+        return $current !== '' ? $current : $url;
+    }
+}
+
+if (!function_exists('VNSEEA_BunnyBlockedHostname')) {
+    /** Whether a CDN hostname is a Bunny default *.b-cdn.net name, which VNPT and Viettel DNS block. */
+    function VNSEEA_BunnyBlockedHostname($hostname)
+    {
+        return (bool) preg_match('/(^|\.)b-cdn\.net$/i', trim((string) $hostname));
+    }
+}
+
 if (!function_exists('VNSEEA_BunnyUploadsTableAvailable')) {
     function VNSEEA_BunnyUploadsTableAvailable()
     {
@@ -1534,6 +1561,14 @@ if (!function_exists('VNSEEA_BunnyStreamSelfTest')) {
                 continue;
             }
             $results[] = array('ok' => true, 'message' => $label . ': kết nối API thành công.');
+            $library = VNSEEA_BunnyStreamLibrary($kind);
+            if (VNSEEA_BunnyBlockedHostname($library['cdn_host'])) {
+                $results[] = array(
+                    'ok' => false,
+                    'message' => $label . ': CDN Hostname đang là ' . $library['cdn_host'] . '. DNS của VNPT và Viettel chặn mọi tên miền *.b-cdn.net, ' .
+                        'nên phần lớn người dùng trong nước không xem được video. Gắn tên miền riêng (CNAME) theo docs/bunny-setup.md, mục "Tên miền riêng".',
+                );
+            }
             $finished_guid = '';
             $items = isset($list['data']['items']) && is_array($list['data']['items']) ? $list['data']['items'] : array();
             foreach ($items as $item) {
@@ -1551,7 +1586,6 @@ if (!function_exists('VNSEEA_BunnyStreamSelfTest')) {
                 );
                 continue;
             }
-            $library = VNSEEA_BunnyStreamLibrary($kind);
             $playback_url = VNSEEA_BunnyPlaybackUrl(VNSEEA_BunnyMediaRef($kind, $finished_guid));
             $playback = VNSEEA_BunnyHttpRequest('GET', $playback_url, array(), null, 8);
             if ((int) $playback['status'] !== 200) {

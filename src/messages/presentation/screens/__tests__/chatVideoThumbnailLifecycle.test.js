@@ -31,12 +31,15 @@ describe('chat video thumbnail lifecycle contract', () => {
     const viewModel = read(
       'src/messages/application/view-models/useChatViewModel.ts',
     );
+    const outgoingQueue = read(
+      'src/messages/application/services/chatOutgoingQueue.ts',
+    );
 
     expect(chat).toContain('att.thumbnailUri');
     expect(chat).toContain("message.deliveryState === 'sending'");
     expect(chat).toContain('ActivityIndicator');
     expect(viewModel).toContain('thumbnail: attachment?.thumbnailUri');
-    expect(viewModel).toContain('preserveOptimisticVideoThumbnail');
+    expect(outgoingQueue).toContain('preserveOptimisticVideoThumbnail');
   });
 
   it('keeps a poster while only the active viewer video loads and supports retry', () => {
