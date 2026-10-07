@@ -34,14 +34,16 @@ function compareNames(left: ChatItem, right: ChatItem) {
   return leftName.localeCompare(rightName, 'vi-VN');
 }
 
-export function sortMessageUserChats(chats: ChatItem[]) {
+/**
+ * The "Tất cả" list: one-to-one, Page and group conversations newest first
+ * by their latest activity (a message, or a follow for contacts without a
+ * conversation). Every chat type uses the same keys, so the order stays
+ * consistent when groups sit between people.
+ */
+export function sortMessageChats(chats: ChatItem[]) {
   return [...chats].sort((left, right) => {
-    const bothDirectUsers =
-      left.chatType === 'user' && right.chatType === 'user';
-    if (bothDirectUsers) {
-      const timeDiff = getChatActivityTime(right) - getChatActivityTime(left);
-      if (timeDiff !== 0) return timeDiff;
-    }
+    const timeDiff = getChatActivityTime(right) - getChatActivityTime(left);
+    if (timeDiff !== 0) return timeDiff;
 
     const unreadDiff = right.unreadCount - left.unreadCount;
     if (unreadDiff !== 0) return unreadDiff;
@@ -50,11 +52,6 @@ export function sortMessageUserChats(chats: ChatItem[]) {
     const rightBucket = getUserChatSortBucket(right);
 
     if (leftBucket !== rightBucket) return leftBucket - rightBucket;
-
-    if (!bothDirectUsers) {
-      const timeDiff = right.lastMessageTime - left.lastMessageTime;
-      if (timeDiff !== 0) return timeDiff;
-    }
 
     if (leftBucket >= 2) {
       const relationshipDiff =

@@ -1,6 +1,6 @@
 import type { ChatItem } from '../../../domain/types/messages.types';
 import { getChatPreviewTime } from '../../../domain/utils/messageChatActivity';
-import { sortMessageUserChats } from '../messageListOrdering';
+import { sortMessageChats } from '../messageListOrdering';
 
 function chat(overrides: Partial<ChatItem>): ChatItem {
   return {
@@ -19,7 +19,7 @@ function chat(overrides: Partial<ChatItem>): ChatItem {
   };
 }
 
-describe('message user list ordering', () => {
+describe('message list ordering', () => {
   it('sorts newer follow activity above an older conversation', () => {
     const olderConversation = chat({
       id: 'conversation-old',
@@ -38,7 +38,7 @@ describe('message user list ordering', () => {
       relationshipActivityTime: 200,
     });
 
-    expect(sortMessageUserChats([newFollower, olderConversation])).toEqual([
+    expect(sortMessageChats([newFollower, olderConversation])).toEqual([
       newFollower,
       olderConversation,
     ]);
@@ -60,7 +60,7 @@ describe('message user list ordering', () => {
       lastMessageTime: 200,
     });
 
-    expect(sortMessageUserChats([older, newer])).toEqual([newer, older]);
+    expect(sortMessageChats([older, newer])).toEqual([newer, older]);
   });
 
   it('sorts by latest activity before unread state', () => {
@@ -80,7 +80,7 @@ describe('message user list ordering', () => {
       lastMessageTime: 200,
     });
 
-    expect(sortMessageUserChats([read, unread])).toEqual([read, unread]);
+    expect(sortMessageChats([read, unread])).toEqual([read, unread]);
   });
 
   it('interleaves follow discovery rows and conversations by activity time', () => {
@@ -109,8 +109,48 @@ describe('message user list ordering', () => {
     });
 
     expect(
-      sortMessageUserChats([olderDiscovery, newerDiscovery, conversation]),
+      sortMessageChats([olderDiscovery, newerDiscovery, conversation]),
     ).toEqual([newerDiscovery, olderDiscovery, conversation]);
+  });
+
+  it('places group chats among people by their latest message', () => {
+    const olderPerson = chat({
+      id: 'user:10',
+      userId: '10',
+      hasConversationRecord: true,
+      lastMessage: 'old',
+      lastMessageTime: 100,
+    });
+    const group = chat({
+      id: 'group:5',
+      chatType: 'group',
+      userId: '5',
+      groupId: '5',
+      name: 'Team',
+      lastMessage: 'meeting',
+      lastMessageTime: 200,
+      unreadCount: 3,
+    });
+    const newerPerson = chat({
+      id: 'user:11',
+      userId: '11',
+      hasConversationRecord: true,
+      lastMessage: 'new',
+      lastMessageTime: 300,
+      unreadCount: 1,
+    });
+
+    expect(sortMessageChats([olderPerson, group, newerPerson])).toEqual([
+      newerPerson,
+      group,
+      olderPerson,
+    ]);
+    // The same order whatever the input order.
+    expect(sortMessageChats([group, newerPerson, olderPerson])).toEqual([
+      newerPerson,
+      group,
+      olderPerson,
+    ]);
   });
 
   it('keeps the displayed preview time tied to the message when a follow is newer', () => {

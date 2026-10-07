@@ -1,4 +1,4 @@
-// Description: Renders the canonical Messages conversation list with user, broadcast, and group tabs.
+// Description: Renders the canonical Messages conversation list with broadcast, all-conversations and group tabs.
 
 import {
   APP_BRAND_COLOR,
@@ -146,7 +146,7 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
 import { feedLogoEvents } from '../../../feed/application/events/feedLogoEvents';
 import { getChatPreviewTime } from '../../domain/utils/messageChatActivity';
-import { sortMessageUserChats } from '../utils/messageListOrdering';
+import { sortMessageChats } from '../utils/messageListOrdering';
 import {
   isMessageRealtimeConnected,
   subscribeToMessageInvalidations,
@@ -166,7 +166,7 @@ import Svg, {
 
 type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
-type ChatFilter = 'broadcast' | 'users' | 'groups';
+type ChatFilter = 'broadcast' | 'all' | 'groups';
 
 const MESSAGE_BROADCAST_RECIPIENT_LIST_MAX_HEIGHT = 240;
 const MESSAGE_LIST_INITIAL_RENDER_COUNT = 8;
@@ -368,7 +368,7 @@ const MESSAGE_COPY: Record<
 
       broadcast: 'Gửi nhiều người',
 
-      users: 'Người dùng',
+      all: 'Tất cả',
 
       groups: 'Các nhóm',
 
@@ -538,7 +538,7 @@ const MESSAGE_COPY: Record<
 
       broadcast: 'Broadcast',
 
-      users: 'People',
+      all: 'All',
 
       groups: 'Groups',
 
@@ -1797,7 +1797,7 @@ const FILTERS: Array<{
 
   { key: 'broadcast', icon: Send },
 
-  { key: 'users', icon: MessageCircle },
+  { key: 'all', icon: MessageCircle },
 
   { key: 'groups', icon: Users },
 
@@ -2280,13 +2280,13 @@ function MessageScreen() {
 
   const [query, setQuery] = useState('');
 
-  const [activeFilter, setActiveFilter] = useState<ChatFilter>('users');
+  const [activeFilter, setActiveFilter] = useState<ChatFilter>('all');
 
   const [mountedFilters, setMountedFilters] = useState<
 
     ReadonlySet<ChatFilter>
 
-  >(() => new Set<ChatFilter>(['users']));
+  >(() => new Set<ChatFilter>(['all']));
 
   const [isDeferredContentReady, setIsDeferredContentReady] = useState(false);
 
@@ -2366,7 +2366,7 @@ function MessageScreen() {
 
   const initialScrollOffset = useRef(
 
-    activeFilter === 'users' ? screenWidth : activeFilter === 'groups' ? screenWidth * 2 : 0
+    activeFilter === 'all' ? screenWidth : activeFilter === 'groups' ? screenWidth * 2 : 0
 
   ).current;
 
@@ -2770,13 +2770,13 @@ function MessageScreen() {
 
   }, [broadcastLabelId, broadcastRecipientChats, query, copy]);
 
-  const usersChats = useMemo(() => {
+  // Every conversation, groups included; the Groups tab narrows it down.
+
+  const allChats = useMemo(() => {
 
     const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
 
     const filtered = chats.filter(chat => {
-
-      const matchesFilter = chat.chatType !== 'group';
 
       const matchesQuery =
 
@@ -2788,11 +2788,11 @@ function MessageScreen() {
 
           .includes(normalizedQuery);
 
-      return matchesFilter && matchesQuery;
+      return matchesQuery;
 
     });
 
-    return sortMessageUserChats(filtered);
+    return sortMessageChats(filtered);
 
   }, [chats, query, copy]);
 
@@ -2826,9 +2826,9 @@ function MessageScreen() {
 
     if (activeFilter === 'groups') return groupsChats;
 
-    return usersChats;
+    return allChats;
 
-  }, [activeFilter, broadcastChats, groupsChats, usersChats]);
+  }, [activeFilter, broadcastChats, groupsChats, allChats]);
 
   const selectedBroadcastLabel = useMemo(
 
@@ -3040,7 +3040,7 @@ function MessageScreen() {
 
     }
 
-    const currentChats = filter === 'broadcast' ? broadcastChats : filter === 'groups' ? groupsChats : usersChats;
+    const currentChats = filter === 'broadcast' ? broadcastChats : filter === 'groups' ? groupsChats : allChats;
 
     if (error && currentChats.length === 0) {
 
@@ -3050,7 +3050,7 @@ function MessageScreen() {
 
     return <EmptyChats filter={filter} hasQuery={query.trim().length > 0} />;
 
-  }, [isLoadingChats, refreshing, broadcastChats, groupsChats, usersChats, error, copy, loadChats, query]);
+  }, [isLoadingChats, refreshing, broadcastChats, groupsChats, allChats, error, copy, loadChats, query]);
 
   return (
 
@@ -3827,13 +3827,13 @@ function MessageScreen() {
 
         </View>
 
-        {/* PAGE 1: People (Người dùng) */}
+        {/* PAGE 1: All conversations (Tất cả) */}
 
         <View style={{ width: screenWidth, flex: 1 }}>
 
           <FlatList
 
-            data={isLoadingChats && !refreshing ? [] : usersChats}
+            data={isLoadingChats && !refreshing ? [] : allChats}
 
             keyExtractor={item => item.id}
 
@@ -3872,13 +3872,13 @@ function MessageScreen() {
 
             }
 
-            ListEmptyComponent={renderListEmpty('users')}
+            ListEmptyComponent={renderListEmpty('all')}
 
             renderItem={renderConversationChatItem}
 
             contentContainerStyle={
 
-              (isLoadingChats && !refreshing) || (error && usersChats.length === 0) || usersChats.length === 0
+              (isLoadingChats && !refreshing) || (error && allChats.length === 0) || allChats.length === 0
 
                 ? { flexGrow: 1 }
 
