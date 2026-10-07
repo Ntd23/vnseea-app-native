@@ -201,6 +201,7 @@ import {
   isPersistedDiscoveryLocationFresh,
   mapDiscoveryDistanceMeters,
   mapDiscoveryRadiusKmForRegion,
+  nextDiscoveryRadiusKm,
   shouldReloadNearbyPages,
   shouldReloadViewportPages,
   type MapDiscoveryLocationSource,
@@ -2315,6 +2316,11 @@ export default function NearbyUsersScreen() {
   const lastDeviceHeadingStateRef = useRef<number | null>(null);
   const lastDeviceHeadingUpdatedAtRef = useRef(0);
   const [locationAllowed, setLocationAllowed] = useState(Platform.OS === 'ios');
+  // Whether the Pages around the user are still being searched, for the chip
+  // strip; searches of the area being browsed do not count.
+  const [nearbyDiscoveryState, setNearbyDiscoveryState] = useState<
+    'searching' | 'done' | 'failed'
+  >('searching');
   const [locationAccessError, setLocationAccessError] =
     useState<LocationAccessErrorType | null>(null);
   const [locationRequestVersion, setLocationRequestVersion] = useState(0);
@@ -4052,28 +4058,47 @@ export default function NearbyUsersScreen() {
       nearbyPagesPendingSourceRef.current = source;
       nearbyPagesPendingRadiusKmRef.current = distanceKm;
       hasLoadedNearbyPagesRef.current = true;
+      const isAroundUser = source !== 'viewport';
+      if (isAroundUser) setNearbyDiscoveryState('searching');
 
       try {
-        await loadNearbyPages({
-          lat: location.latitude,
-          lng: location.longitude,
-          distance: distanceKm,
-          limit: options?.limit ?? MAP_DISCOVERY_PAGE_LIMIT,
-          fast: options?.fast ?? true,
-        });
+        const requestPages = (radiusKm: number) =>
+          loadNearbyPages({
+            lat: location.latitude,
+            lng: location.longitude,
+            distance: radiusKm,
+            limit: options?.limit ?? MAP_DISCOVERY_PAGE_LIMIT,
+            fast: options?.fast ?? true,
+          });
+        let loadedRadiusKm = distanceKm;
+        let pages = await requestPages(loadedRadiusKm);
+        // No Page around the user: widen the ring so the map still suggests
+        // the nearest ones. The area being browsed is shown as it is.
+        let widerRadiusKm = isAroundUser ? nextDiscoveryRadiusKm(loadedRadiusKm) : null;
+        while (
+          pages.length === 0 &&
+          widerRadiusKm !== null &&
+          requestId === nearbyPagesRequestIdRef.current
+        ) {
+          loadedRadiusKm = widerRadiusKm;
+          pages = await requestPages(loadedRadiusKm);
+          widerRadiusKm = nextDiscoveryRadiusKm(loadedRadiusKm);
+        }
         if (requestId !== nearbyPagesRequestIdRef.current) return;
         nearbyPagesPendingOriginRef.current = null;
         nearbyPagesPendingSourceRef.current = null;
         nearbyPagesPendingRadiusKmRef.current = null;
         nearbyPagesOriginRef.current = location;
         nearbyPagesOriginSourceRef.current = source;
-        nearbyPagesRadiusKmRef.current = distanceKm;
+        nearbyPagesRadiusKmRef.current = loadedRadiusKm;
         nearbyPagesLoadedAtRef.current = Date.now();
+        if (isAroundUser) setNearbyDiscoveryState('done');
       } catch (caughtError) {
         if (requestId === nearbyPagesRequestIdRef.current) {
           nearbyPagesPendingOriginRef.current = null;
           nearbyPagesPendingSourceRef.current = null;
           nearbyPagesPendingRadiusKmRef.current = null;
+          if (isAroundUser) setNearbyDiscoveryState('failed');
         }
         if (
           requestId === nearbyPagesRequestIdRef.current &&
@@ -6485,7 +6510,17 @@ export default function NearbyUsersScreen() {
                 ) : (
                   <View style={styles.exploreChip}>
                     <MapPin size={17} color="#0F172A" />
-                    <Text style={styles.exploreChipText}>Đang tìm gần bạn</Text>
+                    <Text style={styles.exploreChipText}>
+                      {locationSource !== 'gps'
+                        ? locationAccessError
+                          ? 'Chưa lấy được vị trí của bạn'
+                          : 'Đang lấy vị trí của bạn'
+                        : nearbyDiscoveryState === 'searching'
+                        ? 'Đang tìm gần bạn'
+                        : nearbyDiscoveryState === 'failed'
+                        ? 'Chưa tải được địa điểm gần bạn'
+                        : 'Chưa có địa điểm nào gần bạn'}
+                    </Text>
                   </View>
                 )}
               </ScrollView>

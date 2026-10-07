@@ -27,6 +27,11 @@ export const DISCOVERY_VIEWPORT_MIN_RADIUS_KM = 3;
 export const DISCOVERY_VIEWPORT_MAX_RADIUS_KM = 50;
 export const DISCOVERY_VIEWPORT_RELOAD_DISTANCE_METERS = 350;
 export const DISCOVERY_VIEWPORT_RELOAD_MIN_INTERVAL_MS = 600;
+/**
+ * Wider rings searched around the user when the first radius has no Page, so
+ * the map always suggests the nearest ones instead of an empty strip.
+ */
+export const DISCOVERY_EXPANDED_RADII_KM = [10, 25, DISCOVERY_VIEWPORT_MAX_RADIUS_KM];
 
 const DISCOVERY_VIEWPORT_RADIUS_BUFFER = 1.15;
 const DISCOVERY_VIEWPORT_RADIUS_CHANGE_RATIO = 0.2;
@@ -189,4 +194,9 @@ export function shouldReloadNearbyPages(input: {
 
   const now = input.now ?? Date.now();
   return now - input.lastLoadedAt >= DISCOVERY_RELOAD_MIN_INTERVAL_MS;
+}
+
+/** Next wider ring to search after `radiusKm` found nothing, or null when none is left. */
+export function nextDiscoveryRadiusKm(radiusKm: number) {
+  return DISCOVERY_EXPANDED_RADII_KM.find(candidate => candidate > radiusKm) ?? null;
 }
