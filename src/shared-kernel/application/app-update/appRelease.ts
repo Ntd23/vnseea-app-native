@@ -15,8 +15,8 @@ export interface MobileReleaseSettings {
 
 // Update these values when preparing a new App Store or Google Play release.
 export const APP_RELEASE_VERSION: Record<MobilePlatform, string> = {
-  ios: '2.0.5',
-  android: '9.0.20',
+  ios: '2.0.6',
+  android: '9.0.21',
 };
 
 export const DEFAULT_STORE_URL: Record<MobilePlatform, string> = {
