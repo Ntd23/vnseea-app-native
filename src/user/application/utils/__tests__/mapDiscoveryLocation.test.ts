@@ -4,6 +4,7 @@ import {
   DISCOVERY_VIEWPORT_MAX_RADIUS_KM,
   isPersistedDiscoveryLocationFresh,
   mapDiscoveryRadiusKmForRegion,
+  nextDiscoveryRadiusKm,
   shouldReloadViewportPages,
   shouldReloadNearbyPages,
 } from '../mapDiscoveryLocation';
@@ -169,5 +170,14 @@ describe('map discovery location stability', () => {
         now,
       }),
     ).toBe(true);
+  });
+});
+
+describe('nextDiscoveryRadiusKm', () => {
+  it('widens an empty search ring by ring up to the viewport maximum', () => {
+    expect(nextDiscoveryRadiusKm(3)).toBe(10);
+    expect(nextDiscoveryRadiusKm(10)).toBe(25);
+    expect(nextDiscoveryRadiusKm(25)).toBe(DISCOVERY_VIEWPORT_MAX_RADIUS_KM);
+    expect(nextDiscoveryRadiusKm(DISCOVERY_VIEWPORT_MAX_RADIUS_KM)).toBeNull();
   });
 });
