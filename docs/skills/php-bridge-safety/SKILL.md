@@ -2,7 +2,11 @@
 
 # PHP Bridge Safety
 
-Use this skill before editing API bridge code that touches the bundled `phtml` backend.
+Use this skill before editing API bridge code that touches the WoWonder PHP backend.
+
+## Source Of Truth
+
+The real backend is the separate `demo.vnseea` repo (`Ntd23/demo.vnseea`). The `phtml/` folder in this app repo is only a mirror for reference and can drift from the real backend. Read and edit the same path in `demo.vnseea` (e.g. `phtml/api/v2/endpoints/x.php` → `demo.vnseea/api/v2/endpoints/x.php`), follow that repo's `AGENTS.md`, and only mirror the change back into `phtml/` when asked.
 
 ## Rule
 

@@ -3086,7 +3086,7 @@ SPEC CHECKSUMS:
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   Google-Maps-iOS-Utils: 0a484b05ed21d88c9f9ebbacb007956edd508a96
   GoogleMaps: 0608099d4870cac8754bdba9b6953db543432438
-  hermes-engine: bb344a9154603a1fe6bf20c5790af4dbbf40f77f
+  hermes-engine: 0322d512b851e0817cbf5f7c84ba2de2fd8de68c
   LiquidGlass: 9dd6be7ac113cae8b84f895d8a3eede578dbef98
   livekit-react-native: 8b8f3cb64195b11c40d3b724aa07c44d0eed20dc
   livekit-react-native-webrtc: 9f52dbcc5edee327cdc8c9b458b6d6fd8ece1561
@@ -3103,7 +3103,7 @@ SPEC CHECKSUMS:
   React: e2dc35338068bbd299c66f043ae0d7f25de8499e
   React-callinvoker: 28b25d21b124c26cebaea713ba7d801b9351dc48
   React-Core: 02ed7d2ffb70437bdf2aba074a13078a7b0b9ff0
-  React-Core-prebuilt: 71bb4ae1632e011d1730d8b8c8045e082f4108f9
+  React-Core-prebuilt: e95d759fdf750ed179895ee5c8da7a8c4d638ab6
   React-CoreModules: b3a5a42dadcde3b5d47b325bd912eb2ced89e146
   React-cxxreact: fe8f88dda044e5905e99a00f41b7a874c3908716
   React-debug: 92944dc4d89f56d640e75498266cbde557a48189
@@ -3180,7 +3180,7 @@ SPEC CHECKSUMS:
   ReactCodegen: c8f81e6c6f762dcf442a6203a1fb58f7dafc8014
   ReactCommon: 7dfc3250793bf36cf221096ff59e1179e13eef7f
   ReactNativeCameraKit: cf0ae8d9e1ab991453dbe97c3ba98e69f1f0bc5b
-  ReactNativeDependencies: bddccee12fa8a605b49656cc0bafdd454d1b37ed
+  ReactNativeDependencies: e043e10e844883a2037e3a86d80af988ccb35601
   RNCallKeep: 1930a01d8caf48f018be4f2db0c9f03405c2f977
   RNDateTimePicker: 7b2738f1e595f83c14580a11c476872755c5befc
   RNGestureHandler: 2ff61eac036eaf89f6818bf4ed9c39771a17d134
@@ -3195,6 +3195,6 @@ SPEC CHECKSUMS:
   WebRTC-SDK: 1d7fc2ae91da6edd63e25f3882ff24f86a8d9d8b
   Yoga: 77dfa8673de2874e1855002ae59c68b8be9b007b
 
-PODFILE CHECKSUM: 3835bfeadf5e4df203ebf17c6fa88dd6f59920ff
+PODFILE CHECKSUM: 332f89875cc28b89073859c7c4d189a6c9ffb9ec
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.17.0
