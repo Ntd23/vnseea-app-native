@@ -1053,6 +1053,7 @@ export function createPagesRepository(): PagesRepository {
         admins: privileges.admins ? 1 : 0,
         analytics: privileges.analytics ? 1 : 0,
         delete_page: privileges.delete_page ? 1 : 0,
+        messages: privileges.messages ? 1 : 0,
       };
 
       const response = await apiBridge.post<PageActionResponse>(

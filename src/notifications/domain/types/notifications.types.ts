@@ -66,6 +66,10 @@ export interface NotificationsItem {
   groupChatId?: string; // ID của nhóm chat khi có lời mời tham gia
   messageConversationType?: 'user' | 'page' | 'group';
   messageConversationId?: string;
+  /** Page messages for a Page member: the customer to open in the Page Inbox. */
+  messagePageInboxCustomerId?: string;
+  /** Page messages: the Page's display title. */
+  messagePageTitle?: string;
   focusComments?: boolean;
   seen: boolean;
   seenAt?: number;

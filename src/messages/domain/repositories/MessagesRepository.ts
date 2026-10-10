@@ -21,6 +21,8 @@ import type {
   MessageLabel,
   MessageRecallResult,
   MessageReactionSummary,
+  PageInboxConversationsPage,
+  PageInboxPage,
   SendMessageOptions,
   PinnedMessageItem,
   SendMessageResponse,
@@ -106,9 +108,25 @@ export interface MessagesRepository {
 
   /**
    * Mark messages as seen
-   * API: POST /api/delete-conversation (with action=seen)
+   * API: POST /api/read_chats, or page_inbox `read` for a Page Inbox thread
    */
-  markAsSeen(userId: string): Promise<void>;
+  markAsSeen(target: ChatItem | string): Promise<void>;
+
+  /**
+   * Pages whose inbox the current user may open (owner, or admin with the
+   * Messages permission).
+   * API: POST /api/page_inbox with type=my_pages
+   */
+  getPageInboxPages(): Promise<PageInboxPage[]>;
+
+  /**
+   * One row per customer who messaged the Page, newest first.
+   * API: POST /api/page_inbox with type=list
+   */
+  getPageInboxConversations(
+    pageId: string,
+    options?: { before?: string; search?: string; limit?: number },
+  ): Promise<PageInboxConversationsPage>;
 
   searchConversationMessages(
     chat: ChatItem,

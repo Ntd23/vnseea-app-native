@@ -94,6 +94,8 @@ export const apiRoutes = {
     react: 'react_message',
     recallMessage: 'recall_message',
     reportUser: 'report_user',
+    pageChat: 'page_chat',
+    pageInbox: 'page_inbox',
   },
   products: {
     get: 'get-products',

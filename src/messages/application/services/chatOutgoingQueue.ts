@@ -11,6 +11,7 @@ import { createMessagesRepository } from '../../infrastructure/repositories/ApiM
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { ChatMediaPreparationHandle } from '../media/chatMediaPreparation';
 import { preserveOptimisticVideoThumbnail } from '../media/messageVideoMedia';
+import { getPageConversationKey } from '../page-conversations/pageConversationChat';
 
 /** Delivered messages kept per conversation until its screen reloads them. */
 const DELIVERED_LIMIT = 30;
@@ -65,6 +66,8 @@ interface ConversationState {
 const EMPTY_SNAPSHOT: ChatOutgoingSnapshot = { pending: [], delivered: [] };
 
 function conversationId(chat: ChatItem) {
+  // Page threads share the Page id as `userId`, so key them per customer.
+  if (chat.page) return getPageConversationKey(chat.page);
   return chat.chatType === 'group'
     ? `group:${chat.groupId || chat.chatId || chat.userId || chat.id.replace(/^group:/, '')}`
     : `user:${chat.userId || chat.id}`;

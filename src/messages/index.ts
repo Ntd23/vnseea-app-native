@@ -12,9 +12,15 @@ export {
   buildSharedPageMessage,
   buildSharedPageUrl,
 } from './application/shared-pages/sharedPageMessage';
+export {
+  createCustomerPageChat,
+  createPageInboxChat,
+} from './application/page-conversations/pageConversationChat';
+export { usePageInboxViewModel } from './application/view-models/usePageInboxViewModel';
 export { default as MessageScreen } from './presentation/screens/MessageScreen';
 export { default as MessageLabelsScreen } from './presentation/screens/MessageLabelsScreen';
 export { default as ChatScreen } from './presentation/screens/ChatScreen';
+export { default as PageInboxScreen } from './presentation/screens/PageInboxScreen';
 export { default as ConversationDetailsScreen } from './presentation/screens/ConversationDetailsScreen';
 export { default as ConversationSearchScreen } from './presentation/screens/ConversationSearchScreen';
 export { default as ConversationMediaScreen } from './presentation/screens/ConversationMediaScreen';

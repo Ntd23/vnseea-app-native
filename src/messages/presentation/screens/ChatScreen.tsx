@@ -100,6 +100,7 @@ import type {
   MessageMention,
   MarketplaceMessageContext,
   MessageReplyReference,
+  PageConversationRef,
   SendMessageOptions,
   MessageSystemEvent,
 } from '../../domain/types/messages.types';
@@ -1666,6 +1667,28 @@ function OrderInquiryBubble({
   );
 }
 
+function resolvePageReplyLabel(message: MessageItem, language: string) {
+  const sender = message.pageSentBy;
+  if (!message.isSentByMe || !sender) return undefined;
+  const isMe = sender.id === (sessionStorage.getSession()?.userId ?? '');
+  if (language === 'vi') {
+    return isMe ? 'Bạn đã trả lời' : `${sender.name} đã trả lời`;
+  }
+  return isMe ? 'You replied' : `Replied by ${sender.name}`;
+}
+
+function resolvePageConversationSubtitle(
+  page: PageConversationRef,
+  language: string,
+) {
+  if (page.actsAsPage) {
+    return language === 'vi'
+      ? `Trả lời với tư cách ${page.pageTitle}`
+      : `Replying as ${page.pageTitle}`;
+  }
+  return language === 'vi' ? 'Trang' : 'Page';
+}
+
 function MessageBubble({
   message,
   avatar,
@@ -1674,6 +1697,7 @@ function MessageBubble({
   avatarAtTop = false,
   senderName,
   senderNameColor,
+  pageReplyLabel,
   onPressAvatar,
   onOpenMedia,
   onReply,
@@ -1694,6 +1718,8 @@ function MessageBubble({
   /** Set on the first incoming bubble of a group sender run. */
   senderName?: string;
   senderNameColor?: string;
+  /** Page Inbox: which Page member sent this Page-side reply. */
+  pageReplyLabel?: string;
   onPressAvatar?: (message: MessageItem) => void;
   onOpenMedia: OpenChatMedia;
   onReply?: (message: MessageItem) => void;
@@ -1983,6 +2009,14 @@ function MessageBubble({
               style={senderLabelStyle}
             >
               {senderLabel}
+            </Text>
+          ) : null}
+          {isSentByMe && pageReplyLabel ? (
+            <Text
+              numberOfLines={1}
+              className="mb-1 mr-1 text-[11px] font-medium text-gray-500"
+            >
+              {pageReplyLabel}
             </Text>
           ) : null}
           {/* Shared Post Card (renders instead of the raw URL bubble) */}
@@ -2338,6 +2372,7 @@ const MemoizedMessageBubble = React.memo(
       prevProps.avatarAtTop === nextProps.avatarAtTop &&
       prevProps.senderName === nextProps.senderName &&
       prevProps.senderNameColor === nextProps.senderNameColor &&
+      prevProps.pageReplyLabel === nextProps.pageReplyLabel &&
       prevProps.onPressAvatar === nextProps.onPressAvatar
     );
   },
@@ -4219,6 +4254,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
             avatarAtTop={isGroupChat}
             senderName={groupSender?.name}
             senderNameColor={groupSender?.color}
+            pageReplyLabel={resolvePageReplyLabel(item.message, language)}
             onPressAvatar={
               isGroupChat ? handlePressGroupSenderAvatar : undefined
             }
@@ -4270,6 +4306,9 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   }, [chat, conversationPartnerId, displayChat, navigation]);
 
   const conversationSubtitle = useMemo(() => {
+    if (chat.page) {
+      return resolvePageConversationSubtitle(chat.page, language);
+    }
     if (chat.chatType === 'group') {
       return `${groupInfo?.memberCount ?? 0} ${
         language === 'vi' ? 'thành viên' : 'members'
@@ -4280,6 +4319,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     }
     return `@${chat.username || displayChat.name}`;
   }, [
+    chat.page,
     chat.chatType,
     chat.isOnline,
     chat.username,
@@ -4289,6 +4329,9 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
   ]);
 
   const conversationFooterSubtitle = useMemo(() => {
+    if (chat.page) {
+      return resolvePageConversationSubtitle(chat.page, language);
+    }
     if (chat.chatType === 'group') {
       return `${groupInfo?.memberCount ?? 0} ${
         language === 'vi' ? 'thành viên' : 'members'
@@ -4296,6 +4339,7 @@ function ChatScreenContent({ navigation, route }: ChatScreenProps) {
     }
     return `@${chat.username || displayChat.name}`;
   }, [
+    chat.page,
     chat.chatType,
     chat.username,
     displayChat.name,

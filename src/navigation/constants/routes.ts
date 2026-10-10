@@ -23,6 +23,7 @@ export const ROUTES = {
   MESSAGE_LABELS: 'MessageLabels',
   CREATE_GROUP_CHAT: 'CreateGroupChat',
   CHAT: 'Chat',
+  PAGE_INBOX: 'PageInbox',
   CONVERSATION_DETAILS: 'ConversationDetails',
   CONVERSATION_SEARCH: 'ConversationSearch',
   CONVERSATION_MEDIA: 'ConversationMedia',

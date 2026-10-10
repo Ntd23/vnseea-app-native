@@ -362,6 +362,14 @@ export function mapNotificationRecord(
     groupChatId: readTargetString(raw, 'group_chat_id', 'groupChatId'),
     messageConversationType,
     messageConversationId: messageConversationId || undefined,
+    messagePageInboxCustomerId:
+      messageConversationType === 'page' && readString(raw, 'page_inbox') === '1'
+        ? readTargetString(raw, 'page_inbox_user_id') || undefined
+        : undefined,
+    messagePageTitle:
+      messageConversationType === 'page'
+        ? readString(raw, 'page_title') || undefined
+        : undefined,
     focusComments: readBool(raw, 'focus_comments'),
     seen: readBool(raw, 'seen'),
     seenAt: normalizeNotificationTimestamp(

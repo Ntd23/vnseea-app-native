@@ -31,6 +31,53 @@ export interface ChatItem {
   isFollower?: boolean;
   labels?: MessageLabel[];
   notificationsMuted?: boolean;
+  /** Set on Page conversations (`chatType: 'page'`). */
+  page?: PageConversationRef;
+}
+
+/**
+ * A conversation between one customer and a Page. The backend stores the Page
+ * side as the Page owner's user id, so `ownerId` stands for the Page.
+ */
+export interface PageConversationRef {
+  pageId: string;
+  /** The Page owner's user id; empty when the viewer only knows the Page. */
+  ownerId: string;
+  /** The person talking to the Page. */
+  customerId: string;
+  /** True when the viewer answers for the Page (owner or admin with Messages). */
+  actsAsPage: boolean;
+  pageTitle: string;
+  pageAvatar?: string;
+}
+
+/** A Page whose inbox the current user may open. */
+export interface PageInboxPage {
+  pageId: string;
+  pageName: string;
+  pageTitle: string;
+  avatar: string;
+  role: 'owner' | 'admin';
+  unreadCount: number;
+}
+
+export interface PageInboxConversation {
+  customer: ConversationGroupMember;
+  lastMessageId: string;
+  lastMessagePreview: string;
+  lastMessageTime: number;
+  /** The last message came from the Page side. */
+  lastMessageIsPageSide: boolean;
+  /** Page member who sent the last message, when it came from the Page side. */
+  lastMessageSentBy?: { id: string; name: string };
+  unreadCount: number;
+}
+
+export interface PageInboxConversationsPage {
+  page?: PageInboxPage;
+  conversations: PageInboxConversation[];
+  /** Pass back as `before` to load older conversations; empty when done. */
+  nextCursor: string;
 }
 
 export interface ConversationGroupMember {
@@ -239,6 +286,8 @@ export interface MessageItem {
   time: number;
   isSentByMe: boolean;
   seen: number;
+  /** Page Inbox only: the Page member who sent a Page-side reply. */
+  pageSentBy?: { id: string; name: string };
   deliveryState?: 'sending' | 'failed';
   /** Local progress of an outgoing media message while it is being sent. */
   sendProgress?: MessageSendProgress;

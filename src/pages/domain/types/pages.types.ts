@@ -95,6 +95,8 @@ export interface PagePrivileges {
   admins: boolean;
   analytics: boolean;
   delete_page: boolean;
+  /** Read and answer the Page Inbox as the Page. */
+  messages: boolean;
 }
 
 export interface CreatePageDraft {

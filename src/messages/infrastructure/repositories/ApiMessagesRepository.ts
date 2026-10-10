@@ -58,10 +58,15 @@ import type {
   MessageRecallResult,
   MarketplaceMessageContext,
   MessageSystemEvent,
+  PageConversationRef,
+  PageInboxConversation,
+  PageInboxConversationsPage,
+  PageInboxPage,
   PinnedMessageItem,
   SendMessageOptions,
   SendMessageResponse,
 } from '../../domain/types/messages.types';
+import { isPageSideMessage } from '../../application/page-conversations/pageConversationChat';
 type RawRecord = Record<string, unknown>;
 type ChatTarget =
   | {
@@ -1015,6 +1020,69 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
       : undefined,
     notificationsMuted:
       readString(asRecord(raw.mute) ?? {}, 'notify') === 'no',
+    page: chatType === 'page' ? mapPageConversationRef(raw, lastMessage) : undefined,
+  };
+}
+/**
+ * get_chats returns the Page record (its `user_id` is the owner) with the last
+ * message of the thread, which tells who the customer is.
+ */
+function mapPageConversationRef(
+  raw: RawRecord,
+  lastMessage: RawRecord,
+): PageConversationRef | undefined {
+  const pageId = readString(raw, 'page_id');
+  const ownerId = readString(raw, 'user_id');
+  const viewerId = sessionStorage.getSession()?.userId ?? '';
+  if (!pageId || !ownerId || !viewerId) return undefined;
+  const actsAsPage = viewerId === ownerId;
+  const fromId = readString(lastMessage, 'from_id');
+  const toId = readString(lastMessage, 'to_id');
+  const customerId = actsAsPage ? (fromId === ownerId ? toId : fromId) : viewerId;
+  if (!customerId || customerId === ownerId) return undefined;
+  return {
+    pageId,
+    ownerId,
+    customerId,
+    actsAsPage,
+    pageTitle:
+      readString(raw, 'page_title', 'name', 'page_name') || 'Trang',
+    pageAvatar: readString(raw, 'avatar') || undefined,
+  };
+}
+async function fetchRawPageMessages(
+  page: PageConversationRef,
+  options: GetMessagesOptions = {},
+) {
+  // Page members read through the Page Inbox (it knows who replied);
+  // customers read their own thread with the Page through page_chat.
+  const response = page.actsAsPage
+    ? await apiBridge.post<{ data?: RawRecord[] }>(apiRoutes.messages.pageInbox, {
+        type: 'fetch',
+        page_id: page.pageId,
+        user_id: page.customerId,
+        limit: options.limit ?? 20,
+        before: options.beforeMessageId,
+        after: options.afterMessageId,
+      })
+    : await apiBridge.post<{ data?: RawRecord[] }>(apiRoutes.messages.pageChat, {
+        type: 'fetch',
+        page_id: page.pageId,
+        recipient_id: page.ownerId,
+        limit: options.limit ?? 20,
+        before: options.beforeMessageId,
+        after: options.afterMessageId,
+      });
+  return (response.data ?? []) as RawRecord[];
+}
+function mapPageInboxPage(raw: RawRecord): PageInboxPage {
+  return {
+    pageId: readString(raw, 'page_id'),
+    pageName: readString(raw, 'page_name'),
+    pageTitle: readString(raw, 'page_title', 'page_name') || 'Trang',
+    avatar: readString(raw, 'avatar'),
+    role: readString(raw, 'role') === 'owner' ? 'owner' : 'admin',
+    unreadCount: readNumber(raw, 'unread_count'),
   };
 }
 async function fetchRawUserMessages(
@@ -1698,7 +1766,7 @@ function mapMessageForConversation(
   raw: RawRecord,
   chat: ChatItem | string,
 ): MessageItem {
-  const message = mapMessage(raw);
+  const message = mapPageConversationMessage(mapMessage(raw), raw, chat);
   const reply = message.replyTo;
   if (!reply) return message;
 
@@ -1723,6 +1791,40 @@ function mapMessageForConversation(
       ...reply,
       senderName,
     },
+  };
+}
+
+/**
+ * On a Page thread the Page side speaks as the Page: customers see the Page's
+ * name and avatar, and Page members see every Page-side reply as their own
+ * side with the member who actually sent it.
+ */
+function mapPageConversationMessage(
+  message: MessageItem,
+  raw: RawRecord,
+  chat: ChatItem | string,
+): MessageItem {
+  if (typeof chat === 'string' || !chat.page) return message;
+  const page = chat.page;
+  const pageSide = isPageSideMessage(page, raw, message.fromId);
+  if (!page.actsAsPage) {
+    return pageSide
+      ? {
+          ...message,
+          senderName: page.pageTitle,
+          senderAvatar: page.pageAvatar || message.senderAvatar,
+        }
+      : message;
+  }
+  const sentByRaw = asRecord(raw.sent_by);
+  const sentById = sentByRaw ? readString(sentByRaw, 'user_id') : '';
+  return {
+    ...message,
+    isSentByMe: pageSide,
+    pageSentBy:
+      pageSide && sentById
+        ? { id: sentById, name: getRawUserName(sentByRaw ?? {}) }
+        : undefined,
   };
 }
 
@@ -1998,6 +2100,10 @@ export function createMessagesRepository(): MessagesRepository {
       return fetchUnreadChats();
     },
     async getMessages(chat: ChatItem | string, options?: GetMessagesOptions) {
+      if (typeof chat !== 'string' && chat.page) {
+        const pageMessages = await fetchRawPageMessages(chat.page, options);
+        return pageMessages.map(item => mapMessageForConversation(item, chat));
+      }
       const target = getChatTarget(chat);
       const messages =
         target.type === 'group'
@@ -2102,13 +2208,35 @@ export function createMessagesRepository(): MessagesRepository {
           : {}),
         ...mediaGroupPayload,
       };
-      const route =
-        target.type === 'group'
+      const pageRef = typeof chat !== 'string' ? chat.page : undefined;
+      // Page threads go to the customer's page_chat, or to the Page Inbox when
+      // the viewer answers as the Page. Neither takes Bunny Stream tickets, so
+      // their videos are uploaded as a regular file.
+      const pagePayload = pageRef
+        ? {
+            type: 'send',
+            page_id: pageRef.pageId,
+            ...(pageRef.actsAsPage
+              ? { user_id: pageRef.customerId }
+              : { recipient_id: pageRef.ownerId }),
+            text: textPayload,
+            message_hash_id: messageHashId,
+            ...(options?.replyTo?.messageId
+              ? { reply_id: options.replyTo.messageId }
+              : {}),
+          }
+        : undefined;
+      const route = pageRef
+        ? pageRef.actsAsPage
+          ? apiRoutes.messages.pageInbox
+          : apiRoutes.messages.pageChat
+        : target.type === 'group'
           ? apiRoutes.messages.groupChat
           : apiRoutes.messages.send;
-      const payload = target.type === 'group' ? groupPayload : userPayload;
+      const payload =
+        pagePayload ?? (target.type === 'group' ? groupPayload : userPayload);
       const uploadVideo = () =>
-        uploadAttachment?.mediaType === 'video'
+        uploadAttachment?.mediaType === 'video' && !pageRef
           ? uploadVideoWithTicket(
               uploadAttachment,
               'chat',
@@ -2117,7 +2245,7 @@ export function createMessagesRepository(): MessagesRepository {
           : Promise.resolve(null);
       // Usually uploaded while the user was composing (chatMediaPreparation).
       const preUploadedId =
-        uploadAttachment?.mediaType === 'video'
+        uploadAttachment?.mediaType === 'video' && !pageRef
           ? uploadAttachment.bunnyUploadId ?? null
           : null;
       const submit = async (bunnyUploadId: string | null) => {
@@ -2282,8 +2410,86 @@ export function createMessagesRepository(): MessagesRepository {
     async deleteConversation(userId: string) {
       await apiBridge.post(apiRoutes.messages.delete, { user_id: userId });
     },
-    async markAsSeen(userId: string) {
+    async markAsSeen(target: ChatItem | string) {
+      if (typeof target !== 'string' && target.page) {
+        // page_chat marks the customer's thread read while fetching it.
+        if (!target.page.actsAsPage) return;
+        await apiBridge.post(apiRoutes.messages.pageInbox, {
+          type: 'read',
+          page_id: target.page.pageId,
+          user_id: target.page.customerId,
+        });
+        return;
+      }
+      const userId = typeof target === 'string' ? target : target.userId;
       await apiBridge.post(apiRoutes.messages.read, { recipient_id: userId });
+    },
+    async getPageInboxPages() {
+      const response = await apiBridge.post<{ data?: RawRecord[] }>(
+        apiRoutes.messages.pageInbox,
+        { type: 'my_pages' },
+      );
+      return (response.data ?? [])
+        .map(item => mapPageInboxPage(item))
+        .filter(page => Boolean(page.pageId));
+    },
+    async getPageInboxConversations(pageId, options = {}) {
+      const response = await apiBridge.post<{
+        data?: RawRecord[];
+        page?: RawRecord;
+        role?: string;
+      }>(apiRoutes.messages.pageInbox, {
+        type: 'list',
+        page_id: pageId,
+        limit: options.limit ?? 20,
+        before: options.before || undefined,
+        search: options.search?.trim() || undefined,
+      });
+      const limit = options.limit ?? 20;
+      const rows = response.data ?? [];
+      const conversations = rows
+        .map((row): PageInboxConversation | undefined => {
+          const customerRaw = asRecord(row.customer);
+          const customerId = customerRaw ? readString(customerRaw, 'user_id') : '';
+          if (!customerRaw || !customerId) return undefined;
+          const lastRaw = asRecord(row.last_message) ?? {};
+          const sentByRaw = asRecord(lastRaw.sent_by);
+          const isPageSide = readString(lastRaw, 'is_page_side') === '1';
+          return {
+            customer: {
+              id: customerId,
+              name: getRawUserName(customerRaw),
+              username: readString(customerRaw, 'username'),
+              avatar: readString(customerRaw, 'avatar'),
+            },
+            lastMessageId: readString(row, 'last_message_id'),
+            lastMessagePreview: getMessagePreview(lastRaw).text,
+            lastMessageTime: readNumber(lastRaw, 'time'),
+            lastMessageIsPageSide: isPageSide,
+            lastMessageSentBy:
+              isPageSide && sentByRaw
+                ? {
+                    id: readString(sentByRaw, 'user_id'),
+                    name: getRawUserName(sentByRaw),
+                  }
+                : undefined,
+            unreadCount: readNumber(row, 'unread_count'),
+          };
+        })
+        .filter((item): item is PageInboxConversation => Boolean(item));
+      const pageRaw = asRecord(response.page);
+      const last = rows[rows.length - 1];
+      return {
+        page: pageRaw
+          ? {
+              ...mapPageInboxPage(pageRaw),
+              role: response.role === 'owner' ? 'owner' : 'admin',
+            }
+          : undefined,
+        conversations,
+        nextCursor:
+          rows.length >= limit && last ? readString(last, 'last_message_id') : '',
+      } satisfies PageInboxConversationsPage;
     },
     async searchConversationMessages(chat: ChatItem, query: string) {
       const target = getChatTarget(chat);
@@ -2397,6 +2603,8 @@ export function createMessagesRepository(): MessagesRepository {
       });
     },
     async getPinnedMessages(chat: ChatItem | string) {
+      // Pins are not supported on Page threads.
+      if (typeof chat !== 'string' && chat.page) return [];
       const target = getPinnedChatTarget(chat);
       if (!target.chatId) return [];
       const response = await apiBridge.post<{ data?: RawRecord[] }>(

@@ -219,6 +219,8 @@ function getRawGroupId(chat: ChatItem) {
 }
 
 function getTypingRecipientId(chat: ChatItem) {
+  // Page threads have no typing channel.
+  if (chat.page) return '';
   return chat.chatType === 'group' ? getGroupRoomId(chat) : chat.userId;
 }
 
@@ -424,7 +426,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         setIsRecording(false);
         if (chat.chatType !== 'group') {
           repository
-            .markAsSeen(chat.userId)
+            .markAsSeen(chat.page ? chat : chat.userId)
             .then(() => setUnreadBadgeCounts({ messageCount: 0 }))
             .catch(() => undefined);
         }
@@ -1129,8 +1131,12 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
 
+  // Page threads always poll: Page members other than the owner get no
+  // realtime events for messages addressed to the Page.
+  const reliesOnRealtime = isRealtimeConnected && !chat.page;
+
   useEffect(() => {
-    if (isRealtimeConnected || !isScreenFocused) return undefined;
+    if (reliesOnRealtime || !isScreenFocused) return undefined;
 
     let cancelled = false;
     let running = false;
@@ -1189,7 +1195,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       clearTimer();
       appStateSubscription.remove();
     };
-  }, [isRealtimeConnected, isScreenFocused, loadPinnedMessages, refreshLatest]);
+  }, [reliesOnRealtime, isScreenFocused, loadPinnedMessages, refreshLatest]);
 
   // Build shared assets from loaded messages
   const groupSharedAssetsFromMessages = useMemo<GroupSharedAssets>(() => {

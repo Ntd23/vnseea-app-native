@@ -94,8 +94,12 @@ describe('message realtime runtime', () => {
     expect(chatScreenSource).toContain(
       'useChatViewModel(chat, isScreenFocused)',
     );
+    // Page threads keep polling: Page admins get no realtime events for them.
     expect(chatViewModelSource).toContain(
-      'if (isRealtimeConnected || !isScreenFocused) return undefined;',
+      'const reliesOnRealtime = isRealtimeConnected && !chat.page;',
+    );
+    expect(chatViewModelSource).toContain(
+      'if (reliesOnRealtime || !isScreenFocused) return undefined;',
     );
     expect(chatViewModelSource).toContain(
       'CHAT_FALLBACK_POLL_DELAYS_MS',

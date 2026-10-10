@@ -104,6 +104,7 @@ import {
   GroupCallRoomScreen,
   MessageLabelsScreen,
   MessageScreen,
+  PageInboxScreen,
 } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { ActivityCenterScreen } from '../activity';
@@ -241,6 +242,7 @@ export function createStackRoutes(
     { name: ROUTES.MESSAGES, component: MessageScreen },
     { name: ROUTES.MESSAGE_LABELS, component: MessageLabelsScreen },
     { name: ROUTES.CHAT, component: ChatScreen },
+    { name: ROUTES.PAGE_INBOX, component: PageInboxScreen },
     { name: ROUTES.CONVERSATION_DETAILS, component: ConversationDetailsScreen },
     { name: ROUTES.CONVERSATION_SEARCH, component: ConversationSearchScreen },
     { name: ROUTES.CONVERSATION_MEDIA, component: ConversationMediaScreen },

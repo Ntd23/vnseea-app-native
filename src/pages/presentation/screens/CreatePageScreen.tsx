@@ -250,6 +250,7 @@ const DEFAULT_PAGE_PRIVILEGES: PagePrivileges = {
   admins: false,
   analytics: false,
   delete_page: false,
+  messages: false,
 };
 
 const PAGE_PRIVILEGE_OPTIONS: Array<{
@@ -263,6 +264,7 @@ const PAGE_PRIVILEGE_OPTIONS: Array<{
   { key: 'design', label: 'Thiết kế' },
   { key: 'admins', label: 'Quản trị viên' },
   { key: 'analytics', label: 'Thống kê' },
+  { key: 'messages', label: 'Tin nhắn (trả lời với tư cách trang)' },
   { key: 'delete_page', label: 'Xóa trang' },
 ];
 
@@ -286,6 +288,7 @@ function readPagePrivileges(user?: PageUser | null): PagePrivileges {
     admins: read('admins'),
     analytics: read('analytics'),
     delete_page: read('delete_page'),
+    messages: read('messages'),
   };
 }
 

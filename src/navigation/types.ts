@@ -171,6 +171,7 @@ export type RootStackParamList = {
     initialText?: string;
     sharedMapLocation?: SharedMapLocation;
   };
+  [ROUTES.PAGE_INBOX]: { pageId?: string } | undefined;
   [ROUTES.CONVERSATION_DETAILS]: { chat: ChatItem };
   [ROUTES.CONVERSATION_SEARCH]: { chat: ChatItem };
   [ROUTES.CONVERSATION_MEDIA]: { chat: ChatItem };

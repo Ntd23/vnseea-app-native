@@ -2,7 +2,7 @@
 
 # Hộp thư Page — trả lời tin nhắn với tư cách Page
 
-Ngày: 2026-10-09 · Trạng thái: **Bản nháp, chờ chốt các quyết định ở mục 6**
+Ngày: 2026-10-09 · Trạng thái: **Đã chốt quyết định (2026-10-09), sẵn sàng làm giai đoạn 1**
 
 Kế hoạch này động tới hai repo:
 - **Backend + web:** `demo.vnseea` (PHP WoWonder ở thư mục gốc, web Nuxt ở `client/`, socket Node.js ở `nodejs/`). Đây là backend thật.
@@ -44,7 +44,7 @@ Mục tiêu là làm theo mô hình mà Facebook, LinkedIn và Zalo OA đang dù
 
 ### 3.1. Quyết định cốt lõi: giữ nguyên "phía Page = `user_id` của chủ", chỉ thêm cột ghi người gửi thật
 
-Khi admin trả lời, tin được lưu với **`from_id = chủ Page`**, và thêm cột **`sent_by_user_id = admin`** để ghi lại người thực sự gửi.
+Khi admin trả lời, tin được lưu với **`from_id = chủ Page`**. Người thực sự gửi được ghi vào **bảng riêng `Wo_PageMessageSenders`** (`message_id` → `sent_by_user_id`).
 
 Lý do chọn cách này: toàn bộ hệ thống đang lấy `user_id` của chủ làm danh tính phía Page, gồm truy vấn của web, socket, push, `Wo_UsersChat` và các bản app cũ đang chạy. Giữ nguyên quy ước đó thì:
 - Khách thấy tin admin trả lời **ngay lập tức** trên web, trên app cũ và app mới, không cần sửa phía khách.
@@ -57,15 +57,16 @@ Lý do chọn cách này: toàn bộ hệ thống đang lấy `user_id` của ch
 
 ### 3.2. Dữ liệu (migration chỉ thêm, theo kiểu `database/migrations/20261001_message_media_groups.sql`)
 
-File: `database/migrations/2026MMDD_page_inbox.sql`
+File: `database/migrations/20261009_page_inbox.sql`
 
-1. `Wo_Messages`: thêm `sent_by_user_id INT UNSIGNED NULL`. Giá trị `NULL` nghĩa là người gửi chính là `from_id`. Cột nullable thêm vào cuối bảng là thao tác INSTANT trên MySQL 8 / MariaDB ≥ 10.3, không khoá bảng lớn.
-2. `Wo_PageAdmins`: thêm `messages TINYINT(1) NOT NULL DEFAULT <xem quyết định Q1>`.
-3. Kiểm tra index của `Wo_Messages` theo `page_id`. Nếu thiếu, thêm `(page_id, id)` để truy vấn danh sách hộp thư nhanh. Cần xem `SHOW INDEX` trên production trước.
+1. Bảng mới `Wo_PageMessageSenders` (`message_id` PK, `page_id`, `sent_by_user_id`, `created_at`).
+   **Vì sao không thêm cột vào `Wo_Messages`** (thay đổi so với bản nháp): nhiều chỗ đọc `SELECT *` từ `Wo_Messages` rồi trả nguyên dòng cho khách, gồm `page_chat`, tin được trích dẫn (`GetMessageById`) và realtime. Nếu thêm cột, ID người trả lời sẽ lộ ra phía khách, vi phạm Q3. Bảng riêng chỉ có Hộp thư Page đọc tới, và còn tránh được việc `ALTER` một bảng rất lớn.
+2. `Wo_PageAdmins`: thêm `messages TINYINT(1) NOT NULL DEFAULT 0`. Admin hiện có **không** được tự bật; chủ Page tự bật cho từng người (Q1).
+3. Index `(page_id, id)` trên `Wo_Messages` nằm ở file riêng `20261009_page_inbox_messages_index.sql`. File này tự bỏ qua nếu đã có index bắt đầu bằng `page_id`. Vì bảng lớn, **nên chạy ngoài giờ cao điểm**.
 
 ### 3.3. Quyền truy cập
 
-Thêm hàm riêng `VNSEEA_PageInboxCanAccess($page_id, $user_id)` trong file mới `assets/includes/vnseea_page_inbox.php`. Hàm trả về true khi người dùng là **chủ Page**, hoặc có dòng trong `Wo_PageAdmins` với `messages = 1`.
+Thêm hàm riêng `VNSEEA_PageInboxRole` / `VNSEEA_PageInboxCanAccess($page_id, $user_id)` trong file mới `assets/includes/vnseea_page_inbox.php`. Hàm trả về true khi người dùng là **chủ Page**, hoặc có dòng trong `Wo_PageAdmins` với `messages = 1`.
 
 - **Không dùng lại `Wo_IsCanPageUpdate`.** Hàm đó tự cho qua admin/moderator của toàn site, nghĩa là ai quản trị site cũng đọc được tin nhắn riêng của mọi Page. Ngoài ra danh sách quyền trong hàm đó được viết cứng.
 - Quyền được kiểm tra ở **mỗi request**, nên gỡ admin là người đó mất quyền ngay.
@@ -77,11 +78,11 @@ Thêm hàm riêng `VNSEEA_PageInboxCanAccess($page_id, $user_id)` trong file m�
 | `my_pages` | — | Danh sách Page mà người dùng có quyền vào hộp thư (là chủ hoặc có quyền `messages`), kèm số hội thoại chưa đọc. | Dùng để hiện lối vào Hộp thư. |
 | `list` | `page_id`, `offset`, `limit`, `search` | Danh sách hội thoại của Page, mỗi khách một dòng: tin cuối, thời gian, số chưa đọc. | Truy vấn `Wo_Messages` theo `page_id` và phía chủ, nhóm theo khách. |
 | `fetch` | `page_id`, `user_id` (khách), `before`/`after`, `limit` | Lấy tin trong thread. Tin phía Page được đánh dấu `is_page_side = 1` và kèm `sent_by` (id, tên, avatar). | `sent_by` **chỉ** trả về ở endpoint này. |
-| `send` | `page_id`, `user_id`, `text`/`file`/…, `message_hash_id`, `reply_id` | Gọi `Wo_RegisterPageMessage` với `from_id = chủ`, sau đó ghi `sent_by_user_id = người đang đăng nhập`, rồi đưa push vào hàng đợi. | **Chỉ cho gửi khi khách đã từng nhắn Page trước** (xem Q4). |
+| `send` | `page_id`, `user_id`, `text`/`file`/…, `message_hash_id`, `reply_id` | Gọi `Wo_RegisterPageMessage` với `from_id = chủ`, sau đó ghi người đang đăng nhập vào `Wo_PageMessageSenders`. Push được `Wo_RegisterPageMessage` tự đưa vào hàng đợi. | **Chỉ cho gửi khi khách đã từng nhắn Page trước** (Q4). |
 | `read` | `page_id`, `user_id` | Đánh dấu đã đọc các tin khách gửi cho phía Page. | |
 
 **Bảo mật và riêng tư:**
-- `page_chat.php` và các endpoint phía khách **không bao giờ** trả về `sent_by_user_id`.
+- `page_chat.php` và các endpoint phía khách **không bao giờ** đọc `Wo_PageMessageSenders`.
 - Chạy `php -l` cho mọi file PHP được sửa.
 - Viết test hợp đồng `tests/page-inbox-contract.php`, theo kiểu `tests/page-comment-identity-contract.php`.
 
@@ -93,6 +94,12 @@ Thêm hàm riêng `VNSEEA_PageInboxCanAccess($page_id, $user_id)` trong file m�
 4. **Socket (`nodejs/controllers/PageMessageController.js`):** để sang giai đoạn 2. Giai đoạn 1, app dùng polling khi đang mở Hộp thư Page, giống cơ chế `src/messages/application/polling`.
 
 ### 3.6. App (`vnseea-app-native`)
+
+> **Đã triển khai (2026-10-10), khác bản nháp ở các điểm sau:**
+> - **Không tạo domain `src/page-inbox/`.** Hộp thư Page nằm trong domain `messages` và **dùng lại `ChatScreen`** cho thread. Hội thoại Page mang thêm `ChatItem.page` (`pageId`, `ownerId`, `customerId`, `actsAsPage`). Repository dựa vào đó để chọn `page_chat` (phía khách) hoặc `page_inbox` (phía đội ngũ Page).
+> - **Sửa lỗi có sẵn từ trước:** trước đây app tải và gửi chat Page qua `get_user_messages` / `send-message`, với ID Page bị dùng như ID người dùng, nên hội thoại Page chưa từng chạy đúng. Giờ app dùng `page_chat`.
+> - Thread Page luôn **polling** (kể cả khi socket đang kết nối), vì admin Page không nhận được sự kiện realtime.
+> - Với thread Page, app **chưa hỗ trợ**: ghim tin, trạng thái "đang nhập", và upload video qua Bunny (video được gửi như file thường).
 
 1. **Nút "Nhắn tin" trên trang Page** (`src/pages/presentation/screens/PageDetailScreen.tsx`): chỉ hiện với người không phải chủ hoặc admin. Bấm vào sẽ mở chat loại `page` đã có sẵn, với người nhận là chủ Page. Chủ và admin có quyền thì thấy nút **"Hộp thư"** thay thế.
 2. **Domain mới `src/page-inbox/`** (hoặc `src/pages/.../inbox`, theo quy ước DDD + MVVM):
@@ -124,18 +131,18 @@ Kích thước: **S** ≈ ≤ 1 ngày, **M** ≈ 2–3 ngày, **L** ≈ 4–5 ng
 
 | # | Repo | Việc | Cỡ | Phụ thuộc |
 |---|---|---|---|---|
-| B1 | backend | Migration: `sent_by_user_id`, `Wo_PageAdmins.messages`, kiểm tra index | S | Q1 |
-| B2 | backend | `vnseea_page_inbox.php`: hàm kiểm quyền và truy vấn hộp thư | M | B1 |
-| B3 | backend | Endpoint `page_inbox.php` (`my_pages`, `list`, `fetch`, `send`, `read`) | L | B2, Q4 |
-| B4 | backend | `update_privileges` / `get_page_admins` hỗ trợ `messages` | S | B1 |
-| B5 | backend | Push gửi thêm cho admin có quyền tin nhắn | M | B2 |
-| B6 | backend | `tests/page-inbox-contract.php` + `php -l` | S | B3–B5 |
-| A1 | app | Nút "Nhắn tin" và "Hộp thư" trên PageDetail | S | — |
-| A2 | app | Domain `page-inbox`: repository và view-model | M | B3 |
-| A3 | app | Màn hình danh sách và thread, nhãn "Trả lời bởi" | L | A2 |
-| A4 | app | Công tắc quyền "Tin nhắn" | S | B4 |
-| A5 | app | Mở push vào đúng thread Page Inbox | S | B5, A3 |
-| A6 | app | Jest và i18n | S | A2–A5 |
+| B1 ✅ | backend | Migration: `Wo_PageMessageSenders`, `Wo_PageAdmins.messages`, index riêng | S | — |
+| B2 ✅ | backend | `vnseea_page_inbox.php`: hàm kiểm quyền và truy vấn hộp thư | M | B1 |
+| B3 ✅ | backend | Endpoint `page_inbox.php` (`my_pages`, `list`, `fetch`, `send`, `read`) | L | B2 |
+| B4 ✅ | backend | `update_privileges` hỗ trợ `messages`. `get_page_admins` tự trả field này qua `admin_info` sau khi chạy migration, không cần sửa | S | B1 |
+| B5 ✅ | backend | Push gửi thêm cho admin có quyền tin nhắn; tin phía Page hiện tên và ảnh của Page | M | B2 |
+| B6 ✅ | backend | `tests/page-inbox-contract.php` + `php -l` | S | B3–B5 |
+| A1 ✅ | app | Nút "Nhắn tin" và "Hộp thư trang" trên PageDetail | S | — |
+| A2 ✅ | app | Repository (`ApiMessagesRepository`) + `usePageInboxViewModel` | M | B3 |
+| A3 ✅ | app | `PageInboxScreen` + thread dùng lại `ChatScreen`, nhãn "… đã trả lời" | L | A2 |
+| A4 ✅ | app | Công tắc quyền "Tin nhắn" trong phân quyền admin (`CreatePageScreen`) | S | B4 |
+| A5 ✅ | app | Mở push vào đúng thread (khách hoặc Hộp thư); backend gửi thêm `page_title` | S | B5, A3 |
+| A6 ✅ | app | Jest `ApiMessagesRepository.pageConversations.test.ts`, chuỗi vi/en | S | A2–A5 |
 | W1 | web | Kiểm tra tương thích (không sửa code) | S | B3 |
 | M1 | app | Chép backend sang `phtml/` (chỉ khi được yêu cầu) | S | B* |
 
@@ -143,7 +150,7 @@ Kích thước: **S** ≈ ≤ 1 ngày, **M** ≈ 2–3 ngày, **L** ≈ 4–5 ng
 - Socket gửi thêm cho admin có quyền tin nhắn (`PageMessageController.js`), app chuyển từ polling sang socket.
 - Hộp thư Page và công tắc quyền trên web Nuxt.
 - Web hiện "Trả lời bởi X" cho chủ và admin.
-- Cân nhắc gỡ hội thoại Page khỏi tab Tin nhắn cá nhân của chủ (xem Q2).
+- Cân nhắc gỡ hội thoại Page khỏi tab Tin nhắn cá nhân của chủ (Q2 chỉ giữ ở giai đoạn 1).
 
 ### Giai đoạn 3 — công cụ cho đội ngũ
 - Bảng `Wo_PageConversations` (`page_id`, `user_id`, `assigned_to`, `status` mở/đã xong, `labels`, `note`).
@@ -171,15 +178,15 @@ Kích thước: **S** ≈ ≤ 1 ngày, **M** ≈ 2–3 ngày, **L** ≈ 4–5 ng
 1. Chạy migration (chỉ thêm cột, an toàn với code cũ).
 2. Deploy backend. App cũ và web không bị ảnh hưởng.
 3. Phát hành app mới (qua duyệt store).
-4. Bật quyền tin nhắn cho admin theo quyết định Q1.
+4. Chủ Page tự bật quyền Tin nhắn cho từng admin (Q1); không có bước bật hàng loạt.
 
 Nếu cần rollback, chỉ việc ẩn lối vào Hộp thư trong app. Các cột mới không ảnh hưởng gì đến code cũ.
 
 ---
 
-## 6. Quyết định cần chốt trước khi bắt đầu
+## 6. Quyết định đã chốt (2026-10-09)
 
-| # | Câu hỏi | Đề xuất |
+| # | Câu hỏi | Quyết định |
 |---|---|---|
 | Q1 | Admin Page **đang có** có được tự động bật quyền Tin nhắn không? | **Không** (mặc định `0`). Chủ Page tự bật cho từng người, vì tin nhắn là dữ liệu riêng tư. |
 | Q2 | Hội thoại Page có còn hiện trong tab Tin nhắn **cá nhân** của chủ Page không? | **Giữ ở giai đoạn 1** để tương thích với app cũ và web. Cân nhắc gỡ ở giai đoạn 2. |

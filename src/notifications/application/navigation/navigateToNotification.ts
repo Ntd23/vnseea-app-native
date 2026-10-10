@@ -5,6 +5,11 @@ import { Linking } from 'react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import {
+  createCustomerPageChat,
+  createPageInboxChat,
+} from '../../../messages/application/page-conversations/pageConversationChat';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { GroupItem } from '../../../community/domain/types/community.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import type { OrdersItem } from '../../../orders/domain/types/orders.types';
@@ -116,11 +121,47 @@ function toGroupChatRouteItem(
   };
 }
 
+function toPageThreadRouteItem(
+  item: NotificationsItem,
+  pageId: string,
+): ChatItem | undefined {
+  const pageTitle = item.messagePageTitle || item.pageName || 'Trang';
+  const customerId = item.messagePageInboxCustomerId;
+  if (customerId) {
+    // A Page member: open the customer's thread in the Page Inbox.
+    return createPageInboxChat({
+      pageId,
+      pageTitle,
+      customer: {
+        id: customerId,
+        name: item.notifier?.name || 'Người dùng',
+        username: item.notifier?.username || '',
+        avatar: item.notifier?.avatarUrl || '',
+      },
+      unreadCount: 1,
+    });
+  }
+  // The customer: the Page replied, and the sender is the Page owner.
+  const viewerId = sessionStorage.getSession()?.userId ?? '';
+  if (!item.notifierId || !viewerId) return undefined;
+  return createCustomerPageChat({
+    pageId,
+    ownerId: item.notifierId,
+    viewerId,
+    pageTitle,
+    avatar: item.notifier?.avatarUrl,
+  });
+}
+
 function toMessageThreadRouteItem(
   item: NotificationsItem,
   conversationType: 'user' | 'page' | 'group',
   conversationId: string,
 ): ChatItem {
+  if (conversationType === 'page') {
+    const pageChat = toPageThreadRouteItem(item, conversationId);
+    if (pageChat) return pageChat;
+  }
   const isGroup = conversationType === 'group';
   const isPage = conversationType === 'page';
   const name = isGroup

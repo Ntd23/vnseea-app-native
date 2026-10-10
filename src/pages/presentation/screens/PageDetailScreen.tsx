@@ -50,6 +50,7 @@ import {
   Gift,
   Globe2,
   Heart,
+  Inbox,
   MapPin,
   Tag,
   MessageCircle,
@@ -110,6 +111,7 @@ import type { SharePageInput } from '../../../feed/presentation/components/FeedS
 import {
   buildSharedPageMessage,
   buildSharedPageUrl,
+  createCustomerPageChat,
   createMessagesRepository,
 } from '../../../messages';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
@@ -224,6 +226,8 @@ const PAGE_DETAIL_UI_COPY = {
     followBtn: 'Theo dõi',
     followingBtn: 'Đang theo dõi',
     inviteBtn: 'Mời',
+    messageBtn: 'Nhắn tin',
+    inboxBtn: 'Hộp thư trang',
     inviteRow: 'Mời bạn bè thích Trang này',
     inviteHint: 'Mở danh sách bạn bè để gửi lời mời',
     shareBtn: 'Chia sẻ',
@@ -288,6 +292,8 @@ const PAGE_DETAIL_UI_COPY = {
     followBtn: 'Follow',
     followingBtn: 'Following',
     inviteBtn: 'Invite',
+    messageBtn: 'Message',
+    inboxBtn: 'Page inbox',
     inviteRow: 'Invite friends to like this Page',
     inviteHint: 'Open your friend list to send invitations',
     shareBtn: 'Share',
@@ -485,6 +491,8 @@ function PageHero({
   onCreateJob,
   onOpenOffers,
   onEditPage,
+  onMessagePage,
+  onOpenInbox,
   onChangeAvatar,
   onChangeCover,
   onViewAvatar,
@@ -505,6 +513,10 @@ function PageHero({
   onCreateJob?: () => void;
   onOpenOffers?: () => void;
   onEditPage?: () => void;
+  /** Customers start (or continue) a conversation with the Page. */
+  onMessagePage?: () => void;
+  /** Owner and admins with the Messages permission answer as the Page. */
+  onOpenInbox?: () => void;
   onChangeAvatar?: () => void;
   onChangeCover?: () => void;
   onViewAvatar?: () => void;
@@ -754,6 +766,16 @@ function PageHero({
                 onPress={onOpenOffers || (() => {})}
               />
             </View>
+            {onOpenInbox ? (
+              <View className="mt-2 flex-row">
+                <HeroActionButton
+                  icon={<Inbox size={18} color={APP_BRAND_COLOR} />}
+                  label={copy.inboxBtn}
+                  variant="active"
+                  onPress={onOpenInbox}
+                />
+              </View>
+            ) : null}
           </Animated.View>
         ) : null}
 
@@ -795,6 +817,16 @@ function PageHero({
                 onPress={onFollow}
               />
             </View>
+            {onMessagePage ? (
+              <View className="mt-2 flex-row">
+                <HeroActionButton
+                  label={copy.messageBtn}
+                  icon={<MessageCircle size={20} color={APP_BRAND_COLOR} />}
+                  variant="active"
+                  onPress={onMessagePage}
+                />
+              </View>
+            ) : null}
             <View className="mt-2 flex-row gap-2">
               <HeroActionButton
                 label={copy.inviteBtn}
@@ -1851,6 +1883,18 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   );
   const canManagePage =
     isPageOwner || Boolean(adminInfo && Object.keys(adminInfo).length > 0);
+  // Admins see the Page Inbox only once the owner grants them Messages.
+  const canOpenPageInbox =
+    isPageOwner ||
+    Boolean(
+      adminInfo &&
+        (adminInfo.messages === 1 ||
+          adminInfo.messages === '1' ||
+          adminInfo.messages === true),
+    );
+  const canMessagePage = Boolean(
+    !canManagePage && currentUserId && vm.page.ownerId && vm.page.pageId,
+  );
   const commentAsPage = useMemo(
     () =>
       isPageOwner && vm.page.pageId
@@ -2187,6 +2231,34 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     navigation.navigate(ROUTES.EDIT_PAGE, { page: vm.page });
   }, [navigation, vm.page]);
 
+  const handleMessagePage = useCallback(() => {
+    if (!currentUserId || !vm.page.ownerId || !vm.page.pageId) return;
+    navigation.navigate(ROUTES.CHAT, {
+      chat: createCustomerPageChat({
+        pageId: String(vm.page.pageId),
+        ownerId: String(vm.page.ownerId),
+        viewerId: String(currentUserId),
+        pageTitle: vm.page.pageTitle || vm.page.pageName || copy.defaultTitle,
+        pageName: vm.page.pageName,
+        avatar: vm.page.avatar,
+      }),
+    });
+  }, [
+    copy.defaultTitle,
+    currentUserId,
+    navigation,
+    vm.page.avatar,
+    vm.page.ownerId,
+    vm.page.pageId,
+    vm.page.pageName,
+    vm.page.pageTitle,
+  ]);
+
+  const handleOpenPageInbox = useCallback(() => {
+    if (!vm.page.pageId) return;
+    navigation.navigate(ROUTES.PAGE_INBOX, { pageId: String(vm.page.pageId) });
+  }, [navigation, vm.page.pageId]);
+
   const handleReportFromMenu = useCallback(async () => {
     await vm.reportPage('Báo cáo từ ứng dụng');
     Alert.alert(copy.reportSent, copy.reportSentMsg);
@@ -2437,6 +2509,8 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onCreateJob={handleCreateJob}
         onOpenOffers={handleOpenOffers}
         onEditPage={handleEditPage}
+        onMessagePage={canMessagePage ? handleMessagePage : undefined}
+        onOpenInbox={canOpenPageInbox ? handleOpenPageInbox : undefined}
         onChangeAvatar={handleChangeAvatar}
         onChangeCover={handleChangeCover}
         onViewAvatar={handleViewAvatar}
